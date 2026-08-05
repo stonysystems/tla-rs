@@ -65,8 +65,8 @@ requires
     inp.msg is CMessage1a,
 ensures
     self.valid(),
-    forall |i: int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i: int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i: int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i: int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LAcceptorProcess1a(old(self)@, self@, inp@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(self)@;
@@ -150,8 +150,8 @@ requires
     LeqUpperBound(inp@.msg->opn_2a, old(self)@.constants.all.params.max_integer_val),
 ensures
     self.valid(),
-    forall |i: int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i: int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i: int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i: int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LAcceptorProcess2a(old(self)@, self@, inp@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(self)@;

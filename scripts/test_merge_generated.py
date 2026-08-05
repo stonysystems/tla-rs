@@ -18,6 +18,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import merge_generated as mg  # noqa: E402
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 FRESH = """use vstd::prelude::*;
 use crate::a::B;
@@ -132,6 +134,375 @@ class TestMerge(unittest.TestCase):
         fresh_improved = FRESH.replace("    1\n", "    #![trigger x] 2\n")
         merged = mg.merge(fresh_improved, EXISTING)
         self.assertIn("#![trigger x]", merged)
+
+
+
+
+class MultiLineConstructs(unittest.TestCase):
+    """Phase 42.8.c: two parser bugs that made merged output fail to *parse*,
+    upstream of the signature mismatches 42.8.c.2.iv records. Both were found by
+    running the merge over all seven RSL modules and feeding the result to
+    rustfmt, not by any existing test."""
+
+    def test_rustfmt_wrapped_import_is_captured_whole(self):
+        # rustfmt wraps long imports. Capturing only the first line leaves
+        # `use crate::x::{` dangling -- an unclosed delimiter.
+        existing = (
+            "use crate::x::{\n"
+            "    alpha, beta,\n"
+            "};\n"
+            "use crate::solo::Thing;\n"
+        )
+        _, _, imports = mg.parse_items(existing)
+        self.assertEqual(len(imports), 2, f"expected 2 imports, got {imports!r}")
+        self.assertTrue(
+            any(i.count("{") == i.count("}") for i in imports if "{" in i),
+            f"wrapped import was not captured whole: {imports!r}",
+        )
+
+    def test_wrapped_and_flat_imports_compare_equal(self):
+        flat = "use crate::x::{alpha, beta};"
+        wrapped = "use crate::x::{\n    beta, alpha,\n};"
+        self.assertEqual(
+            mg._import_path(flat),
+            mg._import_path(wrapped),
+            "a wrapped import must not be carried over as a duplicate of its flat form",
+        )
+
+    def test_block_end_does_not_stop_inside_an_open_paren(self):
+        # Braces balance on the `=~= (` line while the paren is still open;
+        # stopping there truncates the body mid-expression.
+        lines = [
+            "pub proof fn f() {",
+            "    assert(g(s.push(x), r) =~= (",
+            "        h(a) + h(b)",
+            "    ));",
+            "}",
+            "pub proof fn next() {}",
+        ]
+        end = mg._block_end(lines, 0)
+        self.assertEqual(
+            end, 4, f"block ended at line {end} ({lines[end]!r}), truncating the body"
+        )
+
+    def test_block_end_still_handles_a_plain_body(self):
+        lines = ["fn f() {", "    let x = 1;", "}", "fn g() {}"]
+        self.assertEqual(mg._block_end(lines, 0), 2)
+
+
+
+
+class PreserveOverride(unittest.TestCase):
+    """Phase 42.8.c: the transpiler synthesises some helpers naively -- a `for`
+    loop over `m.iter()` where the checked-in file holds a hand-verified `while`
+    loop with invariants. Merging without this replaces verified code with code
+    that does not verify, silently. `--preserve` names those helpers."""
+
+    FRESH = (
+        "verus! {\n"
+        "pub fn helper(m: &Map) -> Map {\n"
+        "    naive_body()\n"
+        "}\n"
+        "pub fn other() {}\n"
+        "} // verus!\n"
+    )
+    EXISTING = (
+        "verus! {\n"
+        "pub fn helper(m: &Map) -> Map {\n"
+        "    verified_body_with_invariants()\n"
+        "}\n"
+        "pub fn other() {}\n"
+        "} // verus!\n"
+    )
+
+    def test_without_preserve_fresh_wins(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        self.assertIn("naive_body", out)
+        self.assertNotIn("verified_body_with_invariants", out)
+
+    def test_with_preserve_existing_wins(self):
+        out = mg.merge(self.FRESH, self.EXISTING, ["helper"])
+        self.assertIn("verified_body_with_invariants", out)
+        self.assertNotIn("naive_body", out)
+
+    def test_preserve_leaves_other_functions_on_fresh(self):
+        out = mg.merge(self.FRESH, self.EXISTING, ["helper"])
+        self.assertIn("pub fn other", out)
+
+    def test_unknown_preserve_name_is_an_error_not_a_silent_no_op(self):
+        # Typing the name wrong must not quietly produce the un-preserved merge.
+        with self.assertRaises(ValueError):
+            mg.merge(self.FRESH, self.EXISTING, ["helpr"])
+
+
+
+
+class PreserveListIsWiredUp(unittest.TestCase):
+    """Phase 42.8.c.2.iv.A: `--preserve` only helps if something passes it. The
+    list lives in scripts/rsl_merge_preserve.txt and regenerate_rsl.sh turns it
+    into flags; these check the list is real and that every name in it actually
+    exists in the file it claims to protect -- a stale entry would make
+    merge_generated.py raise mid-regeneration."""
+
+    LIST = os.path.join(REPO_ROOT, "scripts", "rsl_merge_preserve.txt")
+
+    def _entries(self):
+        """(module, fn) pairs, using the real parser rather than a second one.
+
+        `check_merge_body_drift.load_preserve` is the parser the tooling uses; a
+        copy here would drift from it -- and it already grew a third
+        `accept-fresh` field that a private copy would have rejected.
+        """
+        import check_merge_body_drift as cd  # noqa: PLC0415
+
+        out = []
+        with open(self.LIST) as fh:
+            for line in fh:
+                line = line.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                parts = line.split()
+                self.assertIn(
+                    len(parts), (2, 3), f"unparseable preserve line: {line!r}"
+                )
+                out.append((parts[0], parts[1], parts[2] if len(parts) == 3 else "preserve"))
+        # the real parser must accept the whole file
+        cd.load_preserve(self.LIST)
+        return out
+
+    def test_list_exists_and_covers_the_known_collision(self):
+        self.assertIn(
+            ("learner", "filter_clearnerstate", "preserve"),
+            self._entries(),
+            "filter_clearnerstate must stay protected: the transpiler synthesises a "
+            "naive version that would replace the hand-verified one",
+        )
+
+    def test_every_named_function_exists_in_its_generated_file(self):
+        for module, fn, _kind in self._entries():
+            path = os.path.join(REPO_ROOT, "src", "generated", "RSL", f"{module}_gen.rs")
+            self.assertTrue(os.path.exists(path), f"no generated file for {module}")
+            import check_merge_body_drift as cd  # noqa: PLC0415
+
+            with open(path) as fh:
+                src = fh.read()
+            # Free functions *and* impl methods -- the RSL protocol actions are
+            # `&mut self` methods, and requiring free functions here would reject
+            # the 17 of them the preserve list now covers.
+            bodies = cd._all_bodies(src)
+            names = set(bodies) | {n.split("::")[-1] for n in bodies}
+            self.assertIn(
+                fn,
+                names,
+                f"{fn} is listed for {module} but is not a function in "
+                f"{module}_gen.rs -- a stale entry the tooling would trip on",
+            )
+
+    def test_regenerate_script_reads_the_list(self):
+        with open(os.path.join(REPO_ROOT, "scripts", "regenerate_rsl.sh")) as fh:
+            script = fh.read()
+        self.assertIn("rsl_merge_preserve.txt", script)
+        self.assertIn("--preserve", script)
+
+
+
+
+class OverlappingBraceImports(unittest.TestCase):
+    """Phase 42.8.c.2.iv.D. Fresh `use X::{a, b}` plus a carried
+    `use X::{b, a, c}` is a duplicate-name error, not two imports -- the earlier
+    `_import_path` normalisation compared whole member sets, so the two looked
+    distinct. The fix widens fresh's import instead of emitting a second one."""
+
+    FRESH = "verus! {\nuse crate::x::{a, b};\npub fn f() {}\n} // verus!\n"
+    EXISTING = (
+        "verus! {\nuse crate::x::{b, a, c};\npub fn f() {}\npub fn g() {}\n} // verus!\n"
+    )
+
+    def test_module_path_is_imported_once(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        uses = [l for l in out.split("\n") if l.strip().startswith("use crate::x")]
+        self.assertEqual(len(uses), 1, f"expected one import, got {uses!r}")
+
+    def test_the_extra_member_survives(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        use_line = next(l for l in out.split("\n") if "crate::x" in l)
+        for member in ("a", "b", "c"):
+            self.assertIn(member, use_line, f"{member} missing from {use_line!r}")
+
+    def test_no_double_use_keyword(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        self.assertNotIn("use use", out.replace("\n", " "))
+
+
+
+
+class ContractStructLiteral(unittest.TestCase):
+    """Phase 42.8.c.2.iv.D. A struct literal inside a `requires` clause --
+    `UpperBound::UpperBoundFinite{n: ..}` -- opens and closes braces on one line.
+    Treating that as the body-opening brace truncated CExecutorExecute from 99
+    lines to 5, and the merge then carried the fragment. The body-opening brace
+    is the one still open at end of line."""
+
+    def test_struct_literal_in_requires_does_not_end_the_block(self):
+        lines = [
+            "pub exec fn f(s: &S) -> (r: R)",
+            "requires",
+            "    Lt(s.x as int, UpperBound::UpperBoundFinite{n: s.max as int}),",
+            "ensures",
+            "    r.valid(),",
+            "{",
+            "    body();",
+            "}",
+            "pub exec fn next() {}",
+        ]
+        end = mg._block_end(lines, 0)
+        self.assertEqual(
+            end, 7, f"block ended at line {end} ({lines[end]!r}), truncating the body"
+        )
+
+    def test_parsed_body_is_brace_balanced(self):
+        src = (
+            "verus! {\n"
+            "pub exec fn f(s: &S) -> (r: R)\n"
+            "requires\n"
+            "    Lt(s.x, Bound::Finite{n: s.max}),\n"
+            "{\n"
+            "    body();\n"
+            "}\n"
+            "} // verus!\n"
+        )
+        free, _, _ = mg.parse_items(src)
+        body = free["f"]
+        self.assertEqual(body.count("{"), body.count("}"), body)
+
+
+
+
+class SingleNameImportOverlap(unittest.TestCase):
+    """Phase 42.8.c.2.iv.H. `use X::a;` and `use X::{a, b, c};` are the same
+    module path. Treating a single-name import as having none meant both were
+    emitted (E0252) and, once that was patched, that fresh's single-name form was
+    never widened -- so `b` and `c` went missing and the file stopped compiling
+    for the opposite reason."""
+
+    FRESH = "verus! {\nuse crate::x::a;\npub fn f() {}\n} // verus!\n"
+    EXISTING = "verus! {\nuse crate::x::{a, b, c};\npub fn f() {}\npub fn g() {}\n} // verus!\n"
+
+    def test_module_path_of_a_single_name_import(self):
+        self.assertEqual(mg._module_path("use crate::x::a;"), "usecrate::x::")
+        self.assertEqual(mg._module_path("use crate::x::{a, b};"), "usecrate::x::")
+
+    def test_members_of_a_single_name_import(self):
+        self.assertEqual(mg._members("use crate::x::a;"), ["a"])
+
+    def test_imported_once_and_all_members_kept(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        uses = [l for l in out.split("\n") if l.strip().startswith("use crate::x")]
+        self.assertEqual(len(uses), 1, f"expected one import, got {uses!r}")
+        for member in ("a", "b", "c"):
+            self.assertIn(member, uses[0], f"{member} missing from {uses[0]!r}")
+
+
+class BodyBraceIsTopLevel(unittest.TestCase):
+    """Phase 42.8.c.2.iv.H. A contract can contain braces that stay open across a
+    line -- `=~= ( if cond { .. } else { .. } )` -- so "still open at end of line"
+    is not enough. The body-opening brace is the one outside every paren."""
+
+    def test_if_else_inside_parens_in_a_contract(self):
+        lines = [
+            "proof fn f(s: Seq<T>, x: T)",
+            "    ensures",
+            "        G(s.push(x)) =~= (",
+            "            if P(x) {",
+            "                G(s)",
+            "            } else {",
+            "                G(s).push(x)",
+            "            }",
+            "        ),",
+            "{",
+            "    body();",
+            "}",
+            "proof fn next() {}",
+        ]
+        self.assertEqual(mg._block_end(lines, 0), 11)
+
+
+class FreeFunctionMigratedToMethod(unittest.TestCase):
+    """Phase 42.8.c.2.iv.J. The `&mut self` conversion turns a free function into
+    an impl method. Comparing free-function names only made the existing free
+    form look absent from fresh, so the merge carried it over and the file ended
+    up with both forms under one name -- which is what put replica's merged
+    `assume(false)` count at 0 -> 18."""
+
+    FRESH = (
+        "verus! {\nimpl CReplica {\n"
+        "pub exec fn act(&mut self) {\n    fresh_body();\n}\n"
+        "}\n} // verus!\n"
+    )
+    EXISTING = (
+        "verus! {\n"
+        "pub exec fn act(s: &mut CReplica) {\n    old_free_body();\n}\n"
+        "} // verus!\n"
+    )
+
+    def test_the_existing_free_form_is_not_carried_over(self):
+        plan = mg.plan_merge(self.FRESH, self.EXISTING)
+        self.assertEqual(plan["carried_free_fns"], [])
+        self.assertEqual(plan["migrated_to_method"], ["act"])
+
+    def test_merged_file_holds_only_the_method(self):
+        merged = mg.merge(self.FRESH, self.EXISTING)
+        self.assertIn("fresh_body()", merged)
+        self.assertNotIn("old_free_body()", merged)
+        self.assertEqual(merged.count("fn act"), 1)
+
+    def test_a_free_function_fresh_does_not_emit_is_still_carried(self):
+        # The skip_functions bodies must keep working -- they are free functions
+        # absent from fresh in *both* forms.
+        existing = (
+            "verus! {\n"
+            "pub exec fn skipped() {\n    hand_written();\n}\n"
+            "} // verus!\n"
+        )
+        plan = mg.plan_merge(self.FRESH, existing)
+        self.assertEqual(plan["carried_free_fns"], ["skipped"])
+        self.assertEqual(plan["migrated_to_method"], [])
+        self.assertIn("hand_written()", mg.merge(self.FRESH, existing))
+
+    def test_report_names_the_dropped_form(self):
+        plan = mg.plan_merge(self.FRESH, self.EXISTING)
+        report = mg.render_report(plan, "fresh.rs", "existing.rs")
+        self.assertIn("act", report)
+        self.assertIn("dropped", report)
+
+
+class ProvenanceCommentsAreCarried(unittest.TestCase):
+    """Phase 42.8.c.2.iv.J.3.d. The generated files mark each skipped function with
+    `// TRANSLATE-TODO: explicitly skipped (skip_functions)`. ATTR_RE matched `///`
+    and `#[` but not a plain `//`, so the merge carried the body and dropped the
+    only marker saying why it is hand-written."""
+
+    FRESH = "verus! {\npub exec fn other() {\n    x();\n}\n} // verus!\n"
+    EXISTING = (
+        "verus! {\n"
+        "// TRANSLATE-TODO: explicitly skipped (skip_functions)\n"
+        "#[verifier(external_body)]\n"
+        "pub exec fn skipped() {\n    unimplemented!()\n}\n"
+        "} // verus!\n"
+    )
+
+    def test_the_marker_survives_the_merge(self):
+        merged = mg.merge(self.FRESH, self.EXISTING)
+        self.assertIn("TRANSLATE-TODO: explicitly skipped", merged)
+        self.assertIn("#[verifier(external_body)]", merged)
+        self.assertIn("unimplemented!()", merged)
+
+    def test_marker_stays_attached_above_its_function(self):
+        merged = mg.merge(self.FRESH, self.EXISTING)
+        marker = merged.index("TRANSLATE-TODO")
+        fn = merged.index("pub exec fn skipped")
+        self.assertLess(marker, fn)
+        self.assertNotIn("\n\n", merged[marker:fn])
 
 
 if __name__ == "__main__":

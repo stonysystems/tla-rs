@@ -90,11 +90,14 @@ Recv(self, m) ==
   /\ UNCHANGED x
 
 (***************************************************************************)
-(* Allow infinite stuttering to prevent deadlock on termination, as in the  *)
-(* original.                                                               *)
+(* Allow infinite stuttering to prevent deadlock on termination. Guarded on *)
+(* this node's own pc, not on every node's: `\A i \in Proc : pc[i] = "Done"` *)
+(* asks a question no single node can answer, so it is not projectable.     *)
+(* Behaviour is unchanged -- `[][Next]_vars` already permits stuttering, so *)
+(* the guard only affects TLC's deadlock check, which is what it is for.    *)
 (***************************************************************************)
-Terminating ==
-  /\ \A i \in Proc : pc[i] = "Done"
+Terminating(self) ==
+  /\ pc[self] = "Done"
   /\ UNCHANGED <<x, y, pc, network>>
 
 Next ==
@@ -102,7 +105,7 @@ Next ==
         \/ a(self)
         \/ b(self)
         \/ \E m \in network : Reply(self, m) \/ Recv(self, m)
-  \/ Terminating
+        \/ Terminating(self)
 
 vars == <<x, y, pc, network>>
 

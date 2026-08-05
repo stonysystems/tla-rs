@@ -599,7 +599,7 @@ impl CProposer{
         && Self::CSetOfMessage1bAboutBallot(&self.received_1b_packets, &self.max_ballot_i_sent_1a)
         && Self::CIsAfterLogTruncationPoint(opn, &self.received_1b_packets)
         && opn < CUpperBoundedAddition(log_truncation_point, self.constants.all.params.max_log_length, self.constants.all.params.max_integer_val)
-        && opn >= 0
+        // opn: u64, so the spec's `opn >= 0` is automatic
         && opn < self.constants.all.params.max_integer_val // CLtUpperBound
     }
 

@@ -83,7 +83,6 @@ impl View for CElectionState {
     }
 }
 
-#[derive(Clone)]
 pub enum COutstandingOperation {
     COutstandingOpKnown {
         v: CRequestBatch,
@@ -91,6 +90,25 @@ pub enum COutstandingOperation {
     },
     COutstandingOpUnknown {
     },
+}
+
+impl Clone for COutstandingOperation {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+        result.abstractable() == self.abstractable(),
+    {
+        match self {
+            COutstandingOperation::COutstandingOpKnown{v, bal} =>
+                COutstandingOperation::COutstandingOpKnown {
+                    v: clone_request_batch_up_to_view(v),
+                    bal: *bal,
+                },
+            COutstandingOperation::COutstandingOpUnknown{} =>
+                COutstandingOperation::COutstandingOpUnknown {},
+        }
+    }
 }
 
 impl COutstandingOperation {
@@ -159,10 +177,23 @@ impl Clone for CElectionState {
     }
 }
 
-#[derive(Clone, Eq, Hash)]
+#[derive(Eq, Hash)]
 pub struct CRequestHeader {
     pub client : EndPoint,
     pub seqno : u64,
+}
+
+impl Clone for CRequestHeader {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result.client@ == self.client@,
+        result.seqno == self.seqno,
+    {
+        CRequestHeader {
+            client: self.client.clone_up_to_view(),
+            seqno: self.seqno,
+        }
+    }
 }
 
 impl PartialEqSpecImpl for CRequestHeader {
@@ -218,7 +249,7 @@ impl CElectionState
     {
         let s_len = s.len() as u64;
         assert(s_len == s@.len() as u64);
-        if 0 <= lengthBound && lengthBound < s_len {
+        if lengthBound < s_len {  // lengthBound: u64, so the spec's `0 <=` is automatic
             let rc = truncate_vec(&s, 0, lengthBound as usize);
             assert(rc@.map(|i, r: CRequest| r@) == BoundRequestSequence(s@.map(|i, r: CRequest| r@), UpperBound::UpperBoundFinite{n: lengthBound as int}));
             rc

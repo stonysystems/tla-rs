@@ -71,6 +71,13 @@ SOURCE_LINE_RE = re.compile(r"^\s*(?P<lineno>\d+)\s\|(?P<rest>.*)$")
 # `    |            ^^^^` / `    | |____^` / `    |  __^`
 MARKER_LINE_RE = re.compile(r"^\s*\|(?P<rest>[\s|^_/\\]*)$")
 VERUS_VERSION_RE = re.compile(r"^\s*Version:\s*(\S+)\s*$")
+# `verification results:: N verified, M errors` -- the evidence that a capture
+# with zero notes is a *clean* run rather than one that died before Verus
+# printed any. Phase 54.7.f drove the count to 0, at which point "empty" stopped
+# meaning "broken" and the guard could no longer tell the two apart.
+VERIFICATION_RESULT_RE = re.compile(
+    r"verification results::\s*(?P<verified>\d+)\s+verified,\s*(?P<errors>\d+)\s+error"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +205,21 @@ def _parse_block(lines):
     else:
         snippet = ""
 
-    return location, normalize(snippet), spans, multiline
+    # The whole quoted region, not just the underlined span. `expr` is the span,
+    # and for an `assert forall ..` the caret run covers only the keyword -- so
+    # every assert in a file shares the identity "assert" and the entries are
+    # told apart by ordinal alone. Annotating one then shifts every later
+    # ordinal and the diff reports the rest as `changed` (Phase 54.10.a; seen
+    # twice, 3 sites in proposer_gen.rs and 4 in learner_gen.rs, both times a
+    # pure rename with an identical trigger multiset).
+    source_parts = []
+    for _, raw in source_lines:
+        stripped = _strip_span_marker(raw)
+        if stripped:
+            source_parts.append(stripped)
+    source_text = normalize(" ".join(source_parts))
+
+    return location, normalize(snippet), spans, multiline, source_text
 
 
 def normalize(text):
@@ -254,7 +275,7 @@ def parse_log(text, root=None):
     current = None
     orphans = 0
     for kind, header, block in _split_blocks(lines):
-        location, snippet, spans, multiline = _parse_block(block)
+        location, snippet, spans, multiline, source_text = _parse_block(block)
         if location is None:
             continue
         path, line_no, col = location
@@ -267,6 +288,7 @@ def parse_log(text, root=None):
                     ("line", line_no),
                     ("col", col),
                     ("expr", snippet),
+                    ("source_text", source_text),
                     ("multiline", multiline),
                     ("triggers", []),
                 ]
@@ -297,14 +319,20 @@ def parse_log(text, root=None):
     return entries, orphans
 
 
-def entry_key(entry):
+def entry_key(entry, use_source_text=True):
     """Location-independent identity of an expression.
 
     Line numbers move whenever anything above them is edited, so the diff keys
     on (file, expression text, position among identical expressions in the
     file) instead.  The caller assigns the ordinal.
+
+    The expression text is the whole quoted source region, not the underlined
+    span: Verus underlines only the `assert` keyword on an `assert forall`, so
+    keying on the span gives every assert in a file the same identity and leaves
+    the ordinal doing all the work (Phase 54.10.a).
     """
-    return "{}::{}".format(entry["file"], entry["expr"])
+    text = entry.get("source_text") if use_source_text else None
+    return "{}::{}".format(entry["file"], text or entry["expr"])
 
 
 def detect_verus_version(text):
@@ -326,6 +354,13 @@ def build_inventory(text, label=None, verus_version=None, source=None, root=None
         if seen[base] > 1:
             e["key"] = "{}#{}".format(base, seen[base])
 
+    verified = errors = None
+    for line in text.splitlines():
+        m = VERIFICATION_RESULT_RE.search(line)
+        if m:
+            verified = int(m.group("verified"))
+            errors = int(m.group("errors"))
+
     by_file = Counter(e["file"] for e in entries)
     by_dir = Counter(os.path.dirname(e["file"]) or "." for e in entries)
     by_trigger_count = Counter(str(e["trigger_count"]) for e in entries)
@@ -336,6 +371,8 @@ def build_inventory(text, label=None, verus_version=None, source=None, root=None
             ("verus_version", verus_version or detect_verus_version(text) or ""),
             ("source_log", source or ""),
             ("total_notes", len(entries)),
+            ("verified", verified),
+            ("errors", errors),
             ("total_triggers", sum(e["trigger_count"] for e in entries)),
             ("orphan_trigger_notes", orphans),
             ("multiline_notes", sum(1 for e in entries if e["multiline"])),
@@ -403,9 +440,29 @@ def trigger_signature(entry):
     return [tuple(t["terms"]) for t in entry["triggers"]]
 
 
+def _rekey(entries, use_source_text):
+    """Recompute keys, re-assigning the duplicate ordinals to match."""
+    seen = Counter()
+    out = OrderedDict()
+    for e in entries:
+        k = entry_key(e, use_source_text)
+        seen[k] += 1
+        if seen[k] > 1:
+            k = "{}#{}".format(k, seen[k])
+        out[k] = e
+    return out
+
+
 def diff_inventories(base, new):
-    base_map = OrderedDict((e["key"], e) for e in base["entries"])
-    new_map = OrderedDict((e["key"], e) for e in new["entries"])
+    # An inventory captured before Phase 54.10.a has no `source_text`. Comparing
+    # a rich key against a coarse one would make every entry look
+    # removed-and-added, so fall back to the coarse key for *both* sides. The
+    # diff is then exactly as good as the older run allowed, and no worse.
+    both_rich = all(
+        e.get("source_text") for inv in (base, new) for e in inv["entries"]
+    )
+    base_map = _rekey(base["entries"], both_rich)
+    new_map = _rekey(new["entries"], both_rich)
 
     removed = [e for k, e in base_map.items() if k not in new_map]
     added = [e for k, e in new_map.items() if k not in base_map]
@@ -575,11 +632,23 @@ def guard(inventory, ceiling, mode=None, baseline=None, out=None):
         )
         return 2, "\n".join(lines)
 
-    if total == 0:
+    # Zero notes is ambiguous on its face: it is either a clean run or one that
+    # died before Verus printed anything. The capture says which -- a recorded
+    # `N verified, 0 errors` with N > 0 is a run that finished. Treating every
+    # empty capture as suspect was right until Phase 54.7.f reached 0, and would
+    # now make a ceiling of 0 unenforceable: the success state would be the one
+    # state never checked.
+    finished = (
+        inventory.get("verified") is not None
+        and inventory["verified"] > 0
+        and inventory.get("errors") == 0
+    )
+    if total == 0 and not finished:
         lines.append(
-            "no trigger notes in this capture — Verus only prints them for verified "
-            "modules, so the run probably failed early. Not judging a ceiling on an "
-            "empty capture."
+            "no trigger notes in this capture, and the log does not record a "
+            "successful `N verified, 0 errors` — Verus only prints notes for "
+            "verified modules, so the run probably failed early. Not judging a "
+            "ceiling on an empty capture."
         )
         return 0, "\n".join(lines)
 

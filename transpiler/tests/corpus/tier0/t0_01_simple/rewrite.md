@@ -162,3 +162,25 @@ mkdir clean && cp clean.tla clean/SimpleClean.tla
 printf 'CONSTANT N = 4\nSPECIFICATION Spec\nINVARIANTS TypeOK PCorrect\n' > clean/SimpleClean.cfg
 (cd clean && java -cp tla2tools.jar tlc2.TLC -workers 8 SimpleClean)
 ```
+
+## `Terminating` guarded per node (2026-08-05)
+
+The original guards its stuttering step on `\A i \in Proc : pc[i] = "Done"`.
+That asks whether *every* process is finished, which no single node can observe,
+so the disjunct is not projectable — and the first version of this rewrite
+carried it over unchanged. Phase 52 taught the linter to look inside a `Next`
+disjunct with no node parameter instead of whitelisting it, and this is the case
+it caught.
+
+`clean.tla` now reads `Terminating(self) == pc[self] = "Done" /\ UNCHANGED ..`,
+quantified with the other actions under `\E self \in Proc`.
+
+**This does not change behaviour.** `Spec == Init /\ [][Next]_vars` already
+permits a stuttering step at any point, so an explicit stuttering action adds no
+behaviour to the set; its only effect is on TLC's deadlock check, which is why
+the original has one. Once every process is `"Done"`, every node can take
+`Terminating(self)`, so the check is satisfied exactly as before.
+
+`clean_distance` for `original.tla` moves 1 → 2: the same rule now reports the
+original's `Terminating` too, which it always violated.
+

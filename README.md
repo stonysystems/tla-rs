@@ -84,13 +84,26 @@ and verifies, compiles, and runs this example.
 
 ## Requirements
 
-- Verus `release/0.2026.08.02.b677dd5` (rolling currently points to the same commit)
-- Rust 1.97.1 for Verus and a recent stable Rust toolchain for the transpiler
-- .NET 6.0 SDK
-- SCons and Python 3
+Ubuntu 24.04 or newer — the Verus release binaries link against glibc 2.39. On an older
+distribution, build Verus from source instead.
 
-Verus release binaries require glibc 2.39, normally Ubuntu 24.04 or newer. See
-[*The tla-rs Book*](docs/tla-rs-book.md), Chapters 2 and 16, for installation details.
+```bash
+# rustup — must be rustup, not just a matching rustc: the verus launcher shells out to it
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+rustup toolchain install 1.97.1
+
+# Verus 0.2026.08.02.b677dd5 — the zip drops the executable bit, hence chmod
+V=0.2026.08.02.b677dd5
+wget https://github.com/verus-lang/verus/releases/download/release/$V/verus-$V-x86-linux.zip
+unzip -q verus-$V-x86-linux.zip -d ~/ && mv ~/verus-x86-linux ~/verus
+chmod +x ~/verus/verus && export VERUS_PATH=~/verus/verus
+
+sudo apt install scons          # `pip install scons` is blocked by PEP 668 on 24.04
+```
+
+.NET 6.0 SDK is needed only to build and run the services, not to verify.
+See [*The tla-rs Book*](docs/tla-rs-book.md), Chapters 2 and 16, for complete
+installation and development-environment guidance.
 
 ## Verify and build
 
@@ -105,9 +118,11 @@ scons --verus-path="$VERUS_PATH"
 scons --skip-verus
 ```
 
-The Verus invocation covers all ten protocol modules in the crate. Verification is
-relative to the declared trusted and externally implemented boundaries; Appendix F of
-the book records those boundaries and the remaining proof escapes.
+The Verus invocation covers all ten protocol modules in the crate. The current full-crate
+gate reports `1048 verified, 0 errors`, with no warnings or automatically chosen trigger
+notes, and runs on every push. Verification remains relative to the declared trusted and
+externally implemented boundaries; Appendix F of the book records those boundaries and
+the remaining proof escapes.
 
 ## Running a service
 
@@ -171,7 +186,8 @@ workflow are documented in [Chapter 25 of the book](docs/tla-rs-book.md) and the
 Capability claims tied directly to tests remain in
 [`docs/model_checker_status.md`](docs/model_checker_status.md), while
 [`docs/clean_tla_subset.md`](docs/clean_tla_subset.md) defines the normative clean-TLA
-projection contract.
+projection contract. RSL's trusted, proved hand-written, and unsupported generated paths
+are classified in [`docs/rsl-skip-functions.md`](docs/rsl-skip-functions.md).
 
 ## Contributing
 

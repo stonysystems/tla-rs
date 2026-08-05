@@ -27,30 +27,147 @@ import re
 import sys
 from collections import Counter, OrderedDict
 
+def _skip_functions_by_module(repo_root="."):
+    """`skip_functions` per RSL module, from the transpile configs.
+
+    A note inside one of these lives in a *hand-written* body that regeneration
+    preserves verbatim, so it is not transpiler output and no amount of
+    regenerating will change it -- a different disposition from the emitted
+    notes, and the reason this file distinguishes them.
+    """
+    out = {}
+    base = os.path.join(repo_root, "src", "protocol", "RSL")
+    for mod in (
+        "broadcast", "acceptor", "learner", "executor", "election", "proposer", "replica",
+    ):
+        path = os.path.join(base, "%s_transpile.toml" % mod)
+        try:
+            with open(path) as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        m = re.search(r"skip_functions\s*=\s*\[(.*?)\]", text, re.S)
+        out[mod] = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+    return out
+
+
+_FN_RE = re.compile(r"\s*(?:pub )?(?:exec |proof |open spec |spec )*fn ([A-Za-z0-9_]+)")
+
+
+def _enclosing_fn(path, line):
+    try:
+        with open(path) as fh:
+            lines = fh.read().split("\n")
+    except OSError:
+        return None
+    for i in range(min(line, len(lines)) - 1, -1, -1):
+        m = _FN_RE.match(lines[i])
+        if m:
+            return m.group(1)
+    return None
+
+
+def _preserve_list_by_module(repo_root="."):
+    """Names in `scripts/rsl_merge_preserve.txt`, per module.
+
+    `skip_functions` alone is the wrong test for "regeneration cannot reach this
+    body". A function can be emitted fresh and still have its body preserved by
+    `merge_generated.py --preserve` -- which is the case for the 17 `&mut self`
+    protocol actions whose fresh output is an `assume(false)` stub. Notes inside
+    those were being reported as transpiler output that regeneration would
+    clear, and it never will (Phase 42.8.c.2.iv.G).
+    """
+    path = os.path.join(repo_root, "scripts", "rsl_merge_preserve.txt")
+    out = {}
+    try:
+        with open(path) as fh:
+            text = fh.read()
+    except OSError:
+        return out
+    for line in text.split("\n"):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 2 or (len(parts) == 3 and parts[2] == "accept-fresh"):
+            continue  # accept-fresh takes the transpiler's version
+        out.setdefault(parts[0], set()).add(parts[1])
+    return out
+
+
+def _in_preserved_body(entry, skip_by_module, repo_root="."):
+    path = entry["file"]
+    if "generated/RSL/" not in path:
+        return False
+    mod = os.path.basename(path).replace("_gen.rs", "")
+    fn = _enclosing_fn(os.path.join(repo_root, path), entry["line"])
+    if not fn:
+        return False
+    base = fn[1:] if fn.startswith("C") else fn
+    stem = base[:-4] if base.endswith("_mut") else base
+    candidates = {base, stem, "L" + base, "L" + stem, fn}
+    preserved = skip_by_module.get(mod, set()) | _PRESERVE_BY_MODULE.get(mod, set())
+    return bool(candidates & preserved)
+
+
 # Why a note is still here. Order matters: the first matching rule wins.
+_SKIP_BY_MODULE = _skip_functions_by_module()
+_PRESERVE_BY_MODULE = _preserve_list_by_module()
+
 RULES = [
     (
+        lambda e: e["file"].startswith("src/generated/")
+        and _in_preserved_body(e, _SKIP_BY_MODULE),
+        "generated-preserved",
+        "hand-written body inside a generated file",
+        "These sit in `skip_functions` bodies that regeneration copies through "
+        "verbatim, so they are **not transpiler output** and regenerating will "
+        "never change them. 42.8.c has now landed in full -- all seven RSL "
+        "modules are reconciled -- and it cleared none of these, as predicted. "
+        "They are under `src/generated/`, so `CLAUDE.md` forbids editing them in "
+        "place, and it equally forbids the alternative this note used to "
+        "recommend: *\"Do NOT delegate to manual implementation code or use "
+        "'clone-delegate-extract' patterns in generated files.\"* (That "
+        "recommendation also mis-stated the facts -- it claimed acceptor *and "
+        "executor* already extract to a `*_manual.rs`; only acceptor does, and "
+        "`test_manual_code_footprint_is_empty` pins it that way.) The one "
+        "compliant route is to teach the transpiler to generate the function; "
+        "see `docs/rsl-skip-functions.md` for which are capability gaps versus a "
+        "deliberate trust boundary, and 54.7.c/d for the policy question.",
+    ),
+    (
         lambda e: e["file"].startswith("src/generated/"),
-        "generated",
-        "transpiler output",
-        "Cannot be hand-edited (`CLAUDE.md`). The codegen fix for the dominant "
-        "shape landed in 54.7.a, but delivering it needs a regeneration that is "
-        "blocked: the five RSL modules with `skip_functions` cannot be replaced "
-        "wholesale, and merging them hits signature mismatches between the "
-        "preserved hand-written bodies and the current emitted API "
-        "(42.8.c.2.iv). The remainder sit inside those preserved bodies, whose "
-        "disposition is the open 54.7.c decision.",
+        "generated-unlisted",
+        "hand-written body in a generated file, named in no config",
+        "Cannot be hand-edited (`CLAUDE.md`). This group used to be called "
+        "\"generated-emitted\" and was described as transpiler output that a "
+        "regeneration would clear. **Both halves were wrong**, and the error was "
+        "an inference rather than a measurement: membership was decided by "
+        "*not* being in `skip_functions` and *not* being preserve-listed, which "
+        "is not the same as being emitted. Checked against fresh transpiler "
+        "output on 2026-08-05 (Phase 54.10.b), **none of them are emitted** -- "
+        "they are hand-written helpers (`abstractify_endpoint_seqno_map`, "
+        "`lemma_creplycache_get`, the proposer bridge lemmas) that simply live "
+        "in a generated file and appear in no config at all. Regeneration never "
+        "rewrites them, so they are in the same position as the preserved group: "
+        "the only compliant fix is to teach the transpiler to generate the "
+        "function. `scripts/classify_trigger_notes.py --fresh-dir` now verifies "
+        "this rather than assuming it.",
     ),
     (
         lambda e: True,
-        "nested-quantifier",
-        "trigger belongs to an inner binder",
-        "The note points at an outer quantifier while the trigger Verus chose "
-        "names a variable bound by a *nested* one, so attaching it to the outer "
-        "binder does not compile (\"cannot find value `p` in this scope\"). "
-        "Removing these needs the expression restructured -- hoisting the inner "
-        "quantifier, or annotating it so the outer note resolves on its own, as "
-        "happened in 54.3 -- not a mechanical annotation.",
+        "unclassified",
+        "outside `src/generated/`, reason not yet measured",
+        "**Measure the chosen trigger before writing this off.** This group used "
+        "to be called \"nested-quantifier\" and carried the reason that the note "
+        "sits on an outer quantifier while Verus picked a term naming an inner "
+        "binder, so it could only be fixed by restructuring the expression. That "
+        "was a catch-all applied to every note outside `src/generated/` without "
+        "checking any of them, and when all 13 were finally checked, **all 13 "
+        "were pinnable** -- the trigger Verus chose mentioned only variables the "
+        "annotated binder actually binds. The group is now empty. Anything "
+        "landing here is a *new* note: read its `trigger 1 of 1` in the log and "
+        "pin it if the term names only the bound variables.",
     ),
 ]
 
@@ -112,7 +229,7 @@ def render(inventory, groups):
         for f, n in sorted(by_file.items(), key=lambda kv: (-kv[1], kv[0])):
             out.append("| `{}` | {} |".format(f, n))
         out.append("")
-        if key != "generated":
+        if not key.startswith("generated"):
             out.append("<details><summary>Individual sites</summary>")
             out.append("")
             for e in sorted(g["entries"], key=lambda e: (e["file"], e["line"])):

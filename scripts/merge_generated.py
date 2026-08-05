@@ -38,22 +38,48 @@ FN_RE = re.compile(
     r"(?:exec\s+|proof\s+|spec\s+)?fn\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)"
 )
 IMPL_RE = re.compile(r"^\s*impl(?:\s*<[^>]*>)?\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)")
-ATTR_RE = re.compile(r"^\s*(#\[|#!\[|///|//!)")
+# Plain `//` too, not just doc comments and attributes: the generated files carry
+# `// TRANSLATE-TODO: explicitly skipped (skip_functions)` directly above each
+# skipped function, and a merge that drops it loses the only marker saying why
+# that body is hand-written (Phase 42.8.c.2.iv.J.3.d).
+ATTR_RE = re.compile(r"^\s*(#\[|#!\[|//)")
 IMPORT_RE = re.compile(r"^\s*(pub\s+)?use\s+")
 
 
 def _block_end(lines, start):
-    """Index of the line closing the brace-delimited block opened at `start`."""
-    depth = 0
+    """Index of the line closing the brace-delimited block opened at `start`.
+
+    Parens and brackets are tracked too, not just braces. A spec body can have
+    its braces balance while a parenthesised expression is still open --
+
+        RemoveAllSatisfiedRequestsInSequence(s.push(x), r) =~= (
+            ...
+        )
+
+    -- and closing the block there truncates the body mid-expression, so the
+    merged file does not parse.
+    """
+    depth = {"{": 0, "(": 0, "[": 0}
+    close = {"}": "{", ")": "(", "]": "["}
     seen = False
     for i in range(start, len(lines)):
         line = lines[i]
-        # Strip line comments so a `{` in a comment does not shift the depth.
+        # Strip line comments so a bracket in a comment does not shift the depth.
         code = re.sub(r"//.*$", "", line)
-        depth += code.count("{") - code.count("}")
-        if "{" in code:
-            seen = True
-        if seen and depth <= 0:
+        for ch in code:
+            if ch in depth:
+                # The body-opening brace is the only `{` that appears outside any
+                # parenthesis or bracket. Everything in a contract is nested:
+                # `UpperBound::UpperBoundFinite{n: ..}` sits inside a call, and an
+                # `if { .. } else { .. }` inside `=~= ( .. )` sits inside parens.
+                # Counting either as the body truncates the function to its
+                # signature, and the merge then carries a fragment.
+                if ch == "{" and depth["("] == 0 and depth["["] == 0:
+                    seen = True
+                depth[ch] += 1
+            elif ch in close:
+                depth[close[ch]] -= 1
+        if seen and all(d <= 0 for d in depth.values()):
             return i
     return len(lines) - 1
 
@@ -81,8 +107,21 @@ def parse_items(text):
     while i < len(lines):
         line = lines[i]
         if IMPORT_RE.match(line):
-            imports.append(line.strip())
-            i += 1
+            # A rustfmt-wrapped import spans several lines:
+            #     use crate::x::{
+            #         a, b,
+            #     };
+            # Capturing only the first line yields `use crate::x::{` on its own,
+            # which is an unclosed delimiter -- the merged file then does not
+            # parse at all, so rustc and rustfmt fail before any real
+            # signature mismatch is even reached.
+            stmt = [line.rstrip()]
+            j = i
+            while not stmt[-1].rstrip().endswith(";") and j + 1 < len(lines):
+                j += 1
+                stmt.append(lines[j].rstrip())
+            imports.append("\n".join(stmt).strip())
+            i = j + 1
             continue
 
         impl_m = IMPL_RE.match(line)
@@ -115,40 +154,139 @@ def parse_items(text):
     return free_fns, impls, imports
 
 
-def plan_merge(fresh_text, existing_text):
+def plan_merge(fresh_text, existing_text, preserve=()):
     """What would be carried over from `existing` into `fresh`."""
     f_free, f_impls, f_imports = parse_items(fresh_text)
     e_free, e_impls, e_imports = parse_items(existing_text)
 
-    carried_free = [n for n in e_free if n not in f_free]
+    # Phase 42.8.c.2.iv.J. The `&mut self` conversion moves a function from a
+    # free function to an impl method. Comparing free-function names only makes
+    # the existing free form look absent from fresh, so it gets carried over and
+    # the merged file ends up holding *both* -- the pre-migration free function
+    # and fresh's method, under one name. That is what put replica's merged
+    # `assume(false)` count at 0 -> 18: the existing real bodies stayed and
+    # fresh's stubs were added beside them.
+    #
+    # A free function that fresh emits as a method is a completed migration, so
+    # fresh's form wins and the existing one is dropped. It is reported
+    # separately rather than silently: dropping a body is exactly the class of
+    # change this script exists to make visible.
+    fresh_methods = {m for ms in f_impls.values() for m in ms}
+    migrated = [n for n in e_free if n not in f_free and n in fresh_methods]
+    carried_free = [n for n in e_free if n not in f_free and n not in fresh_methods]
     carried_methods = OrderedDict()
     for impl_name, methods in e_impls.items():
         missing = [m for m in methods if m not in f_impls.get(impl_name, {})]
         if missing:
             carried_methods[impl_name] = missing
+    # Phase 42.8.c: named free functions the *existing* file wins on, even though
+    # fresh emits them. The transpiler synthesises helpers such as
+    # `filter_clearnerstate` naively (a `for` loop over `m.iter()`), while the
+    # checked-in file holds a hand-verified `while` loop with invariants.
+    # Without this, merging silently replaces verified code with code that does
+    # not verify -- which is most of learner's 183-line merge diff.
+    # Preserve resolves against free functions *and* impl methods. The RSL
+    # protocol actions are `&mut self` methods, and free-functions-only meant the
+    # 17 of them that fresh emits as `assume(false)` stubs could not be protected
+    # at all (Phase 42.8.c.2.iv.F).
+    overridden = [name for name in preserve if name in e_free]
+    overridden_methods = {}
+    for impl_name, methods in e_impls.items():
+        for method in methods:
+            if method in preserve or f"{impl_name}::{method}" in preserve:
+                overridden_methods.setdefault(impl_name, []).append(method)
+    resolved = set(overridden) | {
+        m for ms in overridden_methods.values() for m in ms
+    } | {
+        f"{i}::{m}" for i, ms in overridden_methods.items() for m in ms
+    }
+    missing = sorted(set(preserve) - resolved)
+    if missing:
+        raise ValueError(
+            "--preserve names not found as a free function or impl method in the "
+            "existing file: " + ", ".join(missing)
+        )
+
+    # An import whose module path fresh already imports must not be emitted again:
+    # `use X::{a, b}` from fresh plus `use X::{b, a, c}` carried over is a
+    # duplicate-name error, not two imports. Merge the member sets instead.
+    fresh_by_path = {}
+    for imp in f_imports:
+        path = _module_path(imp)
+        if path:
+            fresh_by_path.setdefault(path, set()).update(_members(imp))
+    merged_imports = {}
+    for imp in e_imports:
+        path = _module_path(imp)
+        if path and path in fresh_by_path:
+            extra = set(_members(imp)) - fresh_by_path[path]
+            if extra:
+                merged_imports[path] = fresh_by_path[path] | set(_members(imp))
+
     carried_imports = [
         imp
         for imp in e_imports
-        if imp not in f_imports and _import_path(imp) not in map(_import_path, f_imports)
+        if imp not in f_imports
+        and _import_path(imp) not in map(_import_path, f_imports)
+        and _module_path(imp) not in fresh_by_path
     ]
     dropped_impls = [n for n in carried_methods if n not in f_impls]
     return OrderedDict(
         [
             ("carried_free_fns", carried_free),
+            ("migrated_to_method", migrated),
             ("carried_methods", carried_methods),
             ("carried_imports", carried_imports),
+            ("overridden_free_fns", overridden),
+            ("overridden_methods", overridden_methods),
+            ("merged_imports", merged_imports),
             ("impls_absent_from_fresh", dropped_impls),
         ]
     )
 
 
+def _module_path(imp):
+    """The module prefix, for both `use A::B::{c, d};` and `use A::B::c;`.
+
+    Treating a single-name import as having no module path meant
+    `use X::LtUpperBound;` and `use X::{LtUpperBound, ..}` were not seen as
+    overlapping, and both got emitted -- E0252.
+    """
+    flat = re.sub(r"\s+", "", imp).rstrip(";")
+    if "{" in flat:
+        return flat.split("{", 1)[0]
+    if "::" in flat:
+        return flat.rsplit("::", 1)[0] + "::"
+    return None
+
+
+def _members(imp):
+    flat = re.sub(r"\s+", "", imp).rstrip(";")
+    m = re.match(r"^.*?\{(.*)\}$", flat)
+    if m:
+        return [x for x in m.group(1).split(",") if x]
+    return [flat.rsplit("::", 1)[1]] if "::" in flat else []
+
+
 def _import_path(imp):
-    return re.sub(r"\s+", "", imp).rstrip(";")
+    """Normalise an import for identity comparison.
+
+    A wrapped import and its single-line form denote the same thing, so
+    whitespace is stripped and the brace-list is sorted -- otherwise a fresh
+    `use x::{a, b};` and a preserved `use x::{\n b, a,\n};` look distinct and
+    both get emitted.
+    """
+    flat = re.sub(r"\s+", "", imp).rstrip(";")
+    m = re.match(r"^(.*?\{)(.*)\}$", flat)
+    if m:
+        items = sorted(x for x in m.group(2).split(",") if x)
+        return m.group(1) + ",".join(items) + "}"
+    return flat
 
 
-def merge(fresh_text, existing_text):
+def merge(fresh_text, existing_text, preserve=()):
     """Fresh output with the existing file's unemitted items spliced back."""
-    plan = plan_merge(fresh_text, existing_text)
+    plan = plan_merge(fresh_text, existing_text, preserve)
     if plan["impls_absent_from_fresh"]:
         raise ValueError(
             "cannot place preserved methods: fresh output has no impl block for "
@@ -156,6 +294,45 @@ def merge(fresh_text, existing_text):
         )
 
     e_free, e_impls, _ = parse_items(existing_text)
+
+    # Swap fresh's version of each overridden free function for the existing one.
+    for name in plan["overridden_free_fns"]:
+        f_free, _, _ = parse_items(fresh_text)
+        if name in f_free:
+            fresh_text = fresh_text.replace(f_free[name], e_free[name], 1)
+
+    # Same for impl methods.
+    for impl_name, methods in plan.get("overridden_methods", {}).items():
+        for method in methods:
+            _, f_impls_now, _ = parse_items(fresh_text)
+            fresh_body = f_impls_now.get(impl_name, {}).get(method)
+            if fresh_body is not None:
+                fresh_text = fresh_text.replace(
+                    fresh_body, e_impls[impl_name][method], 1
+                )
+
+    # Widen fresh's import to cover members only the existing file had, rather
+    # than emitting a second `use` for the same module path (a duplicate-name
+    # error). Phase 42.8.c.2.iv.D.
+    for path, members in plan.get("merged_imports", {}).items():
+        # `path` comes from the whitespace-stripped form, so it already begins
+        # with "use"; re-insert the space rather than prefixing a second one.
+        widened = "{}{{{}}};".format(
+            path.replace("use", "use ", 1), ", ".join(sorted(members))
+        )
+        # Fresh may import the same module on several lines
+        # (`use X::a;` and `use X::b;`). Widen the first and drop the rest, or
+        # the widened import duplicates every name the siblings brought.
+        siblings = [
+            line
+            for line in fresh_text.split("\n")
+            if line.strip().startswith("use ") and _module_path(line) == path
+        ]
+        if siblings:
+            fresh_text = fresh_text.replace(siblings[0], widened, 1)
+            for extra in siblings[1:]:
+                fresh_text = fresh_text.replace("\n" + extra, "", 1)
+
     lines = fresh_text.split("\n")
 
     # Methods go at the end of the impl block they came from, innermost-last so
@@ -207,6 +384,12 @@ def render_report(plan, fresh, existing):
             ", ".join(plan["carried_free_fns"]) or "(none)"
         )
     )
+    if plan.get("migrated_to_method"):
+        out.append(
+            "  free fn -> impl method      : {} (existing free form dropped)".format(
+                ", ".join(plan["migrated_to_method"])
+            )
+        )
     for impl_name, methods in plan["carried_methods"].items():
         out.append("  methods carried into impl {}: {}".format(impl_name, ", ".join(methods)))
     out.append(
@@ -226,17 +409,32 @@ def main(argv=None):
     p.add_argument("existing")
     p.add_argument("-o", "--out")
     p.add_argument("--report", action="store_true", help="describe the merge only")
+    p.add_argument(
+        "--preserve",
+        action="append",
+        default=[],
+        metavar="FN",
+        help="keep the EXISTING file's version of this free function even though "
+        "fresh emits one (repeatable). For helpers the transpiler synthesises "
+        "naively but which were hand-verified in place.",
+    )
     args = p.parse_args(argv)
 
     fresh_text = open(args.fresh).read()
     existing_text = open(args.existing).read()
 
     if args.report:
-        print(render_report(plan_merge(fresh_text, existing_text), args.fresh, args.existing))
+        print(
+            render_report(
+                plan_merge(fresh_text, existing_text, args.preserve),
+                args.fresh,
+                args.existing,
+            )
+        )
         return 0
 
     try:
-        merged = merge(fresh_text, existing_text)
+        merged = merge(fresh_text, existing_text, args.preserve)
     except ValueError as e:
         sys.stderr.write("error: {}\n".format(e))
         return 1

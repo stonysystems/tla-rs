@@ -107,6 +107,13 @@ pub struct CleanSubsetReport {
     /// because "flatten the network" is the one decision to make, not one
     /// decision per read.
     pub network_near_miss: Option<String>,
+    /// Rules that are implemented but did **not** run on this module, with the
+    /// reason. C1/C2/C3 all need a node set, and return early without one, so a
+    /// spec the linter understands *less* runs fewer rules, reports fewer
+    /// findings, and scores as *cleaner* than one it understands well. The
+    /// count alone cannot distinguish "nothing wrong" from "nothing checked";
+    /// this field is what makes that difference visible to a reader or a script.
+    pub skipped_rules: Vec<(CleanRule, String)>,
 }
 
 impl CleanSubsetReport {
@@ -551,7 +558,9 @@ impl<'a> LintContext<'a> {
 
         match candidates.len() {
             1 => {
-                report.network_variable = Some(candidates[0].clone());
+                let net = candidates[0].clone();
+                self.check_message_addressing(&net, report);
+                report.network_variable = Some(net);
                 return;
             }
             n if n > 1 => {
@@ -714,6 +723,168 @@ impl<'a> LintContext<'a> {
         walk_children(expr, &mut |child| self.collect_updates_of(child, var, out));
     }
 
+    /// Every message sent into the network must say who it is for.
+    ///
+    /// The addressing field is **inferred, not named**: it is whichever field
+    /// the receive guard tests, since that is what the framework routes on
+    /// (`docs/clean_tla_subset.md`, C4: receive is "guarded on `m` being
+    /// addressed to `self`"). Hardcoding `dst` reported four clean corpus specs
+    /// as violations -- Raft, EPaxos, dining philosophers and Jetpack all use
+    /// the Raft-lineage `mdest`, and the name is not the point.
+    ///
+    /// If no receive guard tests any field of the message, the network is never
+    /// addressed at all, which is the same defect stated at the other end.
+    fn check_message_addressing(&self, net: &str, report: &mut CleanSubsetReport) {
+        let mut fields: BTreeSet<String> = BTreeSet::new();
+        for op in &self.module.operators {
+            self.collect_addressing_fields(&op.body, net, &mut fields);
+        }
+        // More than one candidate means the guard tests several fields; any of
+        // them routes, so requiring all would be wrong. Requiring *some* is the
+        // honest weakening.
+        if fields.is_empty() {
+            return;
+        }
+
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for op in &self.module.operators {
+            let mut sends = Vec::new();
+            self.collect_sends_into(&op.body, net, &mut sends);
+            for send in sends {
+                let mut messages = Vec::new();
+                self.collect_sent_messages(&send, &mut messages);
+                for (present, shown) in messages {
+                    if present.iter().any(|f| fields.contains(f)) || !seen.insert(shown.clone()) {
+                        continue;
+                    }
+                    let wanted = fields.iter().cloned().collect::<Vec<_>>().join("` or `");
+                    report.findings.push(self.finding(
+                        CleanRule::C4,
+                        Some(op),
+                        format!(
+                            "the message `{shown}` sent into `{net}` carries no `{wanted}`, \
+                             which is the field the receive guard routes on, so the \
+                             framework cannot deliver it. Every message must say who it is \
+                             for: the projection replaces `{net}` with framework \
+                             send/receive."
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Fields of a message tested by a receive guard: the `f` in
+    /// `\E m \in net : .. m.f = self ..`.
+    fn collect_addressing_fields(&self, expr: &TlaExpr, net: &str, out: &mut BTreeSet<String>) {
+        if let TlaExpr::Exists { vars, body } = expr {
+            let bound: Vec<&str> = vars
+                .iter()
+                .filter(|b| b.set.as_ref().map(|s| self.show(s)).as_deref() == Some(net))
+                .map(|b| b.var.as_str())
+                .collect();
+            if !bound.is_empty() {
+                self.collect_guarded_fields(body, &bound, out);
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_addressing_fields(child, net, out)
+        });
+    }
+
+    /// `m.f = x` / `x = m.f` for a message variable `m`.
+    fn collect_guarded_fields(&self, expr: &TlaExpr, msg: &[&str], out: &mut BTreeSet<String>) {
+        if let TlaExpr::BinOp {
+            op: TlaBinOp::Eq,
+            left,
+            right,
+        } = expr
+        {
+            for side in [left, right] {
+                if let TlaExpr::RecordAccess { record, field } = &**side {
+                    if matches!(&**record, TlaExpr::Ident(v) if msg.contains(&v.as_str())) {
+                        out.insert(field.clone());
+                    }
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_guarded_fields(child, msg, out)
+        });
+    }
+
+    /// The right-hand sides of `net' = net \cup <expr>`, which are the sends.
+    fn collect_sends_into(&self, expr: &TlaExpr, net: &str, out: &mut Vec<TlaExpr>) {
+        if let TlaExpr::BinOp {
+            op: TlaBinOp::Eq,
+            left,
+            right,
+        } = expr
+        {
+            if matches!(&**left, TlaExpr::Prime(inner)
+                if matches!(&**inner, TlaExpr::Ident(v) if v == net))
+            {
+                self.collect_union_operands(right, net, out);
+            }
+        }
+        walk_children(expr, &mut |child| self.collect_sends_into(child, net, out));
+    }
+
+    /// Operands of a `\cup` chain other than the network itself: the new
+    /// messages. `net \ {m}` is a discard and contributes nothing.
+    fn collect_union_operands(&self, expr: &TlaExpr, net: &str, out: &mut Vec<TlaExpr>) {
+        match expr {
+            TlaExpr::BinOp {
+                op: TlaBinOp::Cup,
+                left,
+                right,
+            } => {
+                self.collect_union_operands(left, net, out);
+                self.collect_union_operands(right, net, out);
+            }
+            TlaExpr::Ident(v) if v == net => {}
+            other => out.push(other.clone()),
+        }
+    }
+
+    /// Message records sent into `net`, as (record fields, how it was written).
+    ///
+    /// The contract requires each message to "carry enough addressing to say who
+    /// it is for" (`docs/clean_tla_subset.md`, C4). A record with no destination
+    /// field cannot be routed once P3 rewrites the network away, because the
+    /// framework delivers by address and there is none.
+    ///
+    /// One level of indirection is resolved, because that is how the corpus
+    /// writes messages: `msgs' = msgs \cup {Prepared(s, d)}` with
+    /// `Prepared(s, d) == [type |-> "Prepared", src |-> s, dst |-> d]`. Anything
+    /// deeper is left alone rather than guessed at.
+    fn collect_sent_messages(&self, expr: &TlaExpr, out: &mut Vec<(Vec<String>, String)>) {
+        match expr {
+            TlaExpr::Record(fields) => {
+                out.push((
+                    fields.iter().map(|(n, _)| n.clone()).collect(),
+                    self.show(expr),
+                ));
+            }
+            // `Prepared(s, d)` -- resolve the operator and read its record body.
+            TlaExpr::OpApply { op, .. } => {
+                if let TlaExpr::Ident(name) = &**op {
+                    if let Some(target) = self.operator(name) {
+                        if let TlaExpr::Record(fields) = &target.body {
+                            out.push((
+                                fields.iter().map(|(n, _)| n.clone()).collect(),
+                                format!("{}(..)", name),
+                            ));
+                            return;
+                        }
+                    }
+                }
+                walk_children(expr, &mut |child| self.collect_sent_messages(child, out));
+            }
+            other => walk_children(other, &mut |child| self.collect_sent_messages(child, out)),
+        }
+    }
+
     /// Whether `expr` is `var` modified only by `\cup` / `\` (set difference),
     /// possibly nested: `(net \cup {m}) \ {old}`.
     fn is_set_delta_of(&self, expr: &TlaExpr, var: &str) -> bool {
@@ -745,6 +916,12 @@ impl<'a> LintContext<'a> {
     /// would maintain state the protocol never consults.
     fn check_c3(&self, report: &mut CleanSubsetReport) {
         let Some(node_set) = report.node_set.clone() else {
+            report.skipped_rules.push((
+                CleanRule::C3,
+                "no node set was identified, so there is nothing to state \
+                 per-node updates against"
+                    .to_string(),
+            ));
             return;
         };
         let per_node: BTreeSet<&str> = report
@@ -866,8 +1043,24 @@ impl<'a> LintContext<'a> {
     fn check_c2(&self, report: &mut CleanSubsetReport) {
         if report.node_set.is_none() || report.per_node_variables.is_empty() {
             // Nothing to state the rule against; C5/C1 have said why.
+            report.skipped_rules.push((
+                CleanRule::C2,
+                if report.node_set.is_none() {
+                    "no node set was identified, so cross-node reads cannot be \
+                     recognised"
+                        .to_string()
+                } else {
+                    "no per-node variables were identified, so there is nothing \
+                     a cross-node read could read"
+                        .to_string()
+                },
+            ));
             return;
         }
+        let node_set_name = report
+            .node_set
+            .clone()
+            .expect("guarded above: C2 returns early without a node set");
         // The network is exempt: reading messages other nodes sent is what a
         // network is for, and a malformed one is C4's single decision, not one
         // C2 finding per read of it.
@@ -885,6 +1078,40 @@ impl<'a> LintContext<'a> {
             let Some(op) = self.operator(&op_name) else {
                 continue;
             };
+            let mut writes = Vec::new();
+            self.collect_whole_array_writes(&op.body, &per_node, &node_set_name, &mut writes);
+            let _ = &node_set_name;
+            writes.sort();
+            writes.dedup();
+            for var in writes {
+                report.findings.push(self.finding(
+                    CleanRule::C2,
+                    Some(op),
+                    format!(
+                        "assigns `{var}` as a whole array -- one step that updates every \
+                         node at once. A node taking this step can only write \
+                         `{var}[{node_param}]`. Only `Init` may build the whole function."
+                    ),
+                ));
+            }
+
+            let mut whole = Vec::new();
+            self.collect_whole_array_reads(&op.body, &per_node, &mut whole);
+            whole.sort();
+            whole.dedup();
+            for var in whole {
+                report.findings.push(self.finding(
+                    CleanRule::C2,
+                    Some(op),
+                    format!(
+                        "reads `{var}` as a whole array -- every node's state at once, \
+                         with no index. A node taking this step can only read \
+                         `{var}[{node_param}]`. Aggregate it the way the algorithm \
+                         actually learns it: a message per node, and a local tally."
+                    ),
+                ));
+            }
+
             let mut reads = Vec::new();
             self.collect_foreign_reads(&op.body, &node_param, &per_node, &mut reads);
             for (var, index) in reads {
@@ -897,6 +1124,68 @@ impl<'a> LintContext<'a> {
                          `{var}[{node_param}]`. Decide which message carries \
                          `{var}` from that node, who sends it and when, and what \
                          this action does with a stale copy."
+                    ),
+                ));
+            }
+        }
+
+        let owned: Vec<String> = per_node.iter().map(|v| v.to_string()).collect();
+        drop(per_node);
+        self.check_parameterless_disjuncts(&owned, report);
+    }
+
+    /// A `Next` disjunct that is a bare name -- `\/ Terminating` -- is permitted
+    /// as an environment action the framework performs. C5 accepted it without
+    /// looking inside, which is the unchecked prose a linter exists to replace.
+    ///
+    /// A parameterless action has no `self`, so **no** index into per-node state
+    /// is the legitimate one: `\A i \in Proc : pc[i] = "Done"` asks every node
+    /// at once, and no single node can evaluate it. Frame conditions are exempt
+    /// as everywhere else, which is what keeps `UNCHANGED <<..>>` clean.
+    fn check_parameterless_disjuncts(
+        &self,
+        per_node_owned: &[String],
+        report: &mut CleanSubsetReport,
+    ) {
+        let per_node: BTreeSet<&str> = per_node_owned.iter().map(|v| v.as_str()).collect();
+        let per_node = &per_node;
+        let Some(next) = self.next_relation() else {
+            return;
+        };
+        let expanded = self.expand_action_groups(&next.body);
+        for disjunct in flatten_disjunction(&expanded) {
+            let TlaExpr::Ident(name) = disjunct else {
+                continue;
+            };
+            let Some(op) = self.operator(name) else {
+                continue;
+            };
+            if !op.params.is_empty() {
+                continue;
+            }
+            let mut touched = Vec::new();
+            self.collect_whole_array_reads(&op.body, per_node, &mut touched);
+            let mut indexed = Vec::new();
+            // No parameter names a node here, so every index is foreign.
+            self.collect_foreign_reads(&op.body, "", per_node, &mut indexed);
+            touched.extend(
+                indexed
+                    .into_iter()
+                    .map(|(var, index)| format!("{var}[{index}]")),
+            );
+            touched.sort();
+            touched.dedup();
+            for what in touched {
+                report.findings.push(self.finding(
+                    CleanRule::C2,
+                    Some(op),
+                    format!(
+                        "`{name}` is a `Next` disjunct with no node parameter, so the \
+                         framework performs it -- but it reads `{what}`, which is some \
+                         node's state. There is no `self` here for the read to be about, \
+                         and no single node can evaluate it. Either give the action a node \
+                         parameter, or state the condition in something a node can observe \
+                         locally."
                     ),
                 ));
             }
@@ -999,6 +1288,152 @@ impl<'a> LintContext<'a> {
     }
 
     /// Collect `x[e]` reads of per-node variables where `e` is not the node.
+    /// Per-node variables assigned as a whole array: `x' = [i \in Node |-> ..]`.
+    ///
+    /// The contract allows this only in `Init` (`docs/clean_tla_subset.md`, C2:
+    /// "Writing the whole array is out ... a step that updates every node. Only
+    /// `Init` may do it"). Scanning only the operators reachable from `Next` is
+    /// what exempts `Init`, so the exemption needs no special case.
+    ///
+    /// The constructor must be the **direct** right-hand side. A constructor
+    /// over the node set nested inside an `EXCEPT` updates one node's inner
+    /// table -- Lamport-mutex's `[sendSeq EXCEPT ![s] = [d \in Proc |-> ..]]`
+    /// advances every *destination* counter within node `s`, which is a
+    /// single-node step.
+    ///
+    /// Known limit: a spec that hides the constructor behind a helper
+    /// (`x' = BuildAll(s)`) is not caught. Following returned values would need
+    /// the value analysis C2's indexed branch also lacks; not flagging is the
+    /// safe direction, and this comment is the record that it is a gap rather
+    /// than a decision.
+    fn collect_whole_array_writes(
+        &self,
+        expr: &TlaExpr,
+        per_node: &BTreeSet<&str>,
+        node_set: &str,
+        out: &mut Vec<String>,
+    ) {
+        if let TlaExpr::BinOp { op, left, right } = expr {
+            if matches!(op, TlaBinOp::Eq) {
+                if let TlaExpr::Prime(inner) = &**left {
+                    if let TlaExpr::Ident(v) = &**inner {
+                        if per_node.contains(v.as_str()) {
+                            if let TlaExpr::FnConstruct { domain, .. } = &**right {
+                                if self.show(domain) == node_set {
+                                    out.push(v.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_whole_array_writes(child, per_node, node_set, out)
+        });
+    }
+
+    /// Per-node variables read *as a whole array* -- named without an index.
+    ///
+    /// `Cardinality(state)` observes every node at once, which the contract
+    /// calls a cross-node read even though no index appears
+    /// (`docs/clean_tla_subset.md`, C2: "Reading the whole array is a cross-node
+    /// read, even without an index").
+    ///
+    /// Frame conditions are exempt, and that exemption is the whole difficulty:
+    /// `x' = x` names `x` bare but carries no information across nodes, and P5
+    /// regenerates it anyway. So the right-hand side of an equality whose left
+    /// side is that same variable primed is not a read, and neither is anything
+    /// under `UNCHANGED`.
+    fn collect_whole_array_reads(
+        &self,
+        expr: &TlaExpr,
+        per_node: &BTreeSet<&str>,
+        out: &mut Vec<String>,
+    ) {
+        match expr {
+            // `x' = x` and `x' = [x EXCEPT ..]`: the frame/update form. The
+            // left side is not a read at all, and a bare mention of the same
+            // variable on the right is the frame condition.
+            TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                left,
+                right,
+            } => {
+                if let TlaExpr::Prime(inner) = &**left {
+                    if let TlaExpr::Ident(v) = &**inner {
+                        self.collect_whole_array_reads_skipping(right, per_node, v, out);
+                        return;
+                    }
+                }
+                self.collect_whole_array_reads(left, per_node, out);
+                self.collect_whole_array_reads(right, per_node, out);
+            }
+            // `f[i]` reads one element; C2's indexed check owns it. Descend into
+            // the index but not into the function position, or every indexed
+            // read would also count as a whole-array read.
+            TlaExpr::FnApply { func, arg } => {
+                if !matches!(
+                    Self::index_base(func),
+                    Some(TlaExpr::Ident(v)) if per_node.contains(v.as_str())
+                ) {
+                    self.collect_whole_array_reads(func, per_node, out);
+                }
+                self.collect_whole_array_reads(arg, per_node, out);
+            }
+            // `[f EXCEPT ![i] = v]` names `f` bare but touches exactly entry
+            // `i`; it is the ordinary per-node update, not a whole-array read.
+            // Counting the base flagged three of Lamport-mutex's helpers
+            // (`AdvanceAll`, `AdvanceOne`, `Accept`) on a spec that is clean.
+            // The forbidden whole-array *write* is a function constructor over
+            // the node set, `x' = [i \in Node |-> ..]`, which is a different
+            // shape and is not this.
+            TlaExpr::FnExcept { func, updates } => {
+                if !matches!(&**func, TlaExpr::Ident(v) if per_node.contains(v.as_str())) {
+                    self.collect_whole_array_reads(func, per_node, out);
+                }
+                for update in updates {
+                    for step in &update.path {
+                        if let crate::tla::ast::TlaExceptPath::Index(idx) = step {
+                            self.collect_whole_array_reads(idx, per_node, out);
+                        }
+                    }
+                    self.collect_whole_array_reads(&update.value, per_node, out);
+                }
+            }
+            TlaExpr::Unchanged(_) => {}
+            TlaExpr::Ident(v) if per_node.contains(v.as_str()) => out.push(v.clone()),
+            other => walk_children(other, &mut |child| {
+                self.collect_whole_array_reads(child, per_node, out)
+            }),
+        }
+    }
+
+    /// As above, but `skip` names the variable whose bare mention is this
+    /// expression's frame condition.
+    fn collect_whole_array_reads_skipping(
+        &self,
+        expr: &TlaExpr,
+        per_node: &BTreeSet<&str>,
+        skip: &str,
+        out: &mut Vec<String>,
+    ) {
+        if matches!(expr, TlaExpr::Ident(v) if v == skip) {
+            return;
+        }
+        let mut found = Vec::new();
+        self.collect_whole_array_reads(expr, per_node, &mut found);
+        out.extend(found.into_iter().filter(|v| v != skip));
+    }
+
+    /// The variable a function application indexes into, unpriming it.
+    fn index_base(func: &TlaExpr) -> Option<&TlaExpr> {
+        match func {
+            TlaExpr::Prime(inner) => Some(inner),
+            other => Some(other),
+        }
+    }
+
     fn collect_foreign_reads(
         &self,
         expr: &TlaExpr,
@@ -1037,6 +1472,12 @@ impl<'a> LintContext<'a> {
         let Some(node_set) = report.node_set.clone() else {
             // Without a node set from C5 there is nothing to compare domains
             // against; C5 has already reported the reason.
+            report.skipped_rules.push((
+                CleanRule::C1,
+                "no node set was identified, so variable domains cannot be \
+                 compared against it"
+                    .to_string(),
+            ));
             return;
         };
 
@@ -1336,9 +1777,30 @@ pub fn report_to_json(report: &CleanSubsetReport) -> String {
         .map(|r| format!(r#""{}""#, r.as_str()))
         .collect::<Vec<_>>()
         .join(",");
+    // Implemented but not run on this module. Without this a reader cannot tell
+    // a low violation count that means "clean" from one that means "barely
+    // anything executed".
+    let rules_skipped = report
+        .skipped_rules
+        .iter()
+        .map(|(r, why)| {
+            format!(
+                r#"{{"rule":"{}","reason":"{}"}}"#,
+                r.as_str(),
+                escape_json(why)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let rules_executed = RULES_CHECKED
+        .iter()
+        .filter(|r| !report.skipped_rules.iter().any(|(s, _)| s == *r))
+        .map(|r| format!(r#""{}""#, r.as_str()))
+        .collect::<Vec<_>>()
+        .join(",");
 
     format!(
-        r#"{{"clean":{},"violations":{},"rules_checked":[{rules_checked}],"rules_not_implemented":[{rules_unchecked}],"node_set":{},"network_variable":{},"per_node_variables":[{}],"global_variables":[{}],"findings":[{}]}}"#,
+        r#"{{"clean":{},"violations":{},"rules_checked":[{rules_checked}],"rules_executed":[{rules_executed}],"rules_skipped":[{rules_skipped}],"rules_not_implemented":[{rules_unchecked}],"node_set":{},"network_variable":{},"per_node_variables":[{}],"global_variables":[{}],"findings":[{}]}}"#,
         report.is_clean(),
         report.violations(),
         quoted(&report.node_set),
@@ -1411,6 +1873,391 @@ mod tests {
 
     fn rules(report: &CleanSubsetReport) -> Vec<CleanRule> {
         report.findings.iter().map(|f| f.rule).collect()
+    }
+
+    /// Phase 52: `clean_distance` degraded to silence. C1, C2 and C3 all need a
+    /// node set and return early without one, so a spec the linter understands
+    /// *less* ran fewer rules, reported fewer findings, and scored as *cleaner*.
+    /// Jetpack's original reports 2 violations with three rules never executed --
+    /// reading that as "nearly clean" is precisely the mistake.
+    #[test]
+    fn records_which_rules_did_not_run_when_the_node_set_is_unknown() {
+        let source = r#"---- MODULE Test ----
+VARIABLES clock
+Init == clock = 0
+Next == clock' = clock + 1
+===="#;
+        let report = lint(source);
+        let skipped: Vec<CleanRule> = report.skipped_rules.iter().map(|(r, _)| *r).collect();
+        assert!(
+            skipped.contains(&CleanRule::C1)
+                && skipped.contains(&CleanRule::C2)
+                && skipped.contains(&CleanRule::C3),
+            "C1/C2/C3 all need a node set and must say they did not run: {:?}",
+            report.skipped_rules
+        );
+        for (rule, why) in &report.skipped_rules {
+            assert!(
+                !why.is_empty(),
+                "{} must say *why* it did not run",
+                rule.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn a_fully_understood_spec_skips_nothing() {
+        let source = r#"---- MODULE Test ----
+VARIABLES clock
+TypeOK == clock \in [Proc -> Nat]
+Step(p) == clock' = [clock EXCEPT ![p] = clock[p] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            report.skipped_rules.is_empty(),
+            "with a node set every rule runs: {:?}",
+            report.skipped_rules
+        );
+        assert!(report.is_clean(), "got {:?}", report.findings);
+    }
+
+    #[test]
+    fn json_separates_rules_that_ran_from_rules_that_did_not() {
+        let source = r#"---- MODULE Test ----
+VARIABLES clock
+Init == clock = 0
+Next == clock' = clock + 1
+===="#;
+        let json = report_to_json(&lint(source));
+        assert!(json.contains(r#""rules_executed""#), "{json}");
+        assert!(json.contains(r#""rules_skipped""#), "{json}");
+        // a consumer reading only `violations` cannot tell the difference; the
+        // two lists are what make the number interpretable
+        assert!(json.contains(r#""rule":"C1","reason":"#), "{json}");
+    }
+
+    /// Phase 52: a bare-`Ident` disjunct in `Next` was whitelisted with no
+    /// inspection of its body. That is what blessed `t0_01_simple`'s
+    /// `Terminating`, whose guard `\A i \in Proc : pc[i] = "Done"` reads every
+    /// node's `pc` -- and whose own golden header already documented it as *"one
+    /// node cannot observe that, so the guard is not projectable"*. Unchecked
+    /// prose is exactly what a linter exists to replace.
+    #[test]
+    fn rejects_a_parameterless_disjunct_that_reads_node_state() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES pc
+TypeOK == pc \in [Proc -> Nat]
+Step(p) == pc' = [pc EXCEPT ![p] = 1]
+Terminating == /\ \A i \in Proc : pc[i] = 1
+               /\ UNCHANGED <<pc>>
+Next == \/ \E p \in Proc : Step(p)
+        \/ Terminating
+===="#;
+        let report = lint(source);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C2 && f.message.contains("no node parameter")),
+            "a parameterless disjunct reading node state must be reported: {:?}",
+            report.findings
+        );
+    }
+
+    /// The same disjunct guarded on its own node is projectable, which is the
+    /// rewrite `t0_01_simple/clean.tla` now carries. Behaviour is unchanged:
+    /// `[][Next]_vars` already permits stuttering.
+    #[test]
+    fn a_per_node_stuttering_action_is_fine() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES pc
+TypeOK == pc \in [Proc -> Nat]
+Step(p) == pc' = [pc EXCEPT ![p] = 1]
+Terminating(self) == /\ pc[self] = 1
+                     /\ UNCHANGED <<pc>>
+Next == \E p \in Proc : Step(p) \/ Terminating(p)
+===="#;
+        let report = lint(source);
+        assert!(report.is_clean(), "got {:?}", report.findings);
+    }
+
+    /// A genuine environment action -- one the framework performs, touching no
+    /// node state -- must stay permitted. Rejecting these would break the
+    /// contract's own allowance for message delivery, loss and crash.
+    #[test]
+    fn a_parameterless_action_touching_no_node_state_stays_permitted() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES pc, msgs
+TypeOK == pc \in [Proc -> Nat]
+Step(p) == /\ pc' = [pc EXCEPT ![p] = 1]
+           /\ msgs' = msgs \cup {[dst |-> p]}
+Recv(p) == \E m \in msgs : m.dst = p /\ msgs' = msgs \ {m} /\ UNCHANGED <<pc>>
+DropMessage == \E m \in msgs : msgs' = msgs \ {m} /\ UNCHANGED <<pc>>
+Next == \/ \E p \in Proc : Step(p) \/ Recv(p)
+        \/ DropMessage
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("no node parameter")),
+            "message loss touches only the network: {:?}",
+            report.findings
+        );
+    }
+
+    /// Phase 52: "each message carries enough addressing to say who it is for"
+    /// (`docs/clean_tla_subset.md`, C4). A message with no destination cannot be
+    /// routed once P3 replaces the network with framework send/receive.
+    #[test]
+    fn rejects_a_message_with_no_addressing_field() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES msgs, state
+TypeOK == state \in [Proc -> Nat]
+Ping(s) == [kind |-> "ping", src |-> s]
+Send(s) == msgs' = msgs \cup {Ping(s)}
+Recv(p) == \E m \in msgs : /\ m.dst = p
+                           /\ state' = [state EXCEPT ![p] = 1]
+                           /\ msgs' = msgs \ {m}
+Next == \E p \in Proc : Send(p) \/ Recv(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C4 && f.message.contains("carries no")),
+            "an unaddressed message must be C4: {:?}",
+            report.findings
+        );
+    }
+
+    /// The addressing field is inferred from the receive guard, not named.
+    /// Hardcoding `dst` reported four clean corpus specs as violations: Raft,
+    /// EPaxos, dining philosophers and Jetpack all use the Raft-lineage
+    /// `mdest`, and the name was never the point.
+    #[test]
+    fn the_addressing_field_is_whatever_the_receive_guard_routes_on() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES msgs, state
+TypeOK == state \in [Proc -> Nat]
+Req(s, d) == [mtype |-> "req", msource |-> s, mdest |-> d]
+Send(s) == \E d \in Proc : msgs' = msgs \cup {Req(s, d)}
+Recv(p) == \E m \in msgs : /\ m.mdest = p
+                           /\ state' = [state EXCEPT ![p] = 1]
+                           /\ msgs' = msgs \ {m}
+Next == \E p \in Proc : Send(p) \/ Recv(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("carries no")),
+            "`mdest` addresses the message just as well as `dst`: {:?}",
+            report.findings
+        );
+    }
+
+    /// A spec whose receive guard tests no field of the message gives nothing to
+    /// infer from. Staying silent is the honest answer -- guessing a field name
+    /// is what produced the false positives above.
+    #[test]
+    fn no_receive_guard_means_no_addressing_claim() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES msgs, state
+TypeOK == state \in [Proc -> Nat]
+Send(s) == msgs' = msgs \cup {[kind |-> "ping"]}
+Recv(p) == \E m \in msgs : /\ state' = [state EXCEPT ![p] = 1]
+                           /\ msgs' = msgs \ {m}
+Next == \E p \in Proc : Send(p) \/ Recv(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("carries no")),
+            "nothing to infer from, so no claim: {:?}",
+            report.findings
+        );
+    }
+
+    /// Phase 52: "Writing the whole array is out ... a step that updates every
+    /// node. Only `Init` may do it" (`docs/clean_tla_subset.md`, C2).
+    #[test]
+    fn rejects_assigning_a_per_node_variable_as_a_whole_array() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES state
+TypeOK == state \in [Proc -> Nat]
+Step(p) == state' = [i \in Proc |-> state[i] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C2 && f.message.contains("assigns")),
+            "a whole-array write must be C2: {:?}",
+            report.findings
+        );
+    }
+
+    /// `Init` builds the whole function by definition, and must stay clean. The
+    /// exemption is structural rather than special-cased: C2 only walks the
+    /// operators reachable from `Next`.
+    #[test]
+    fn init_may_build_the_whole_array() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES state
+TypeOK == state \in [Proc -> Nat]
+Init == state = [i \in Proc |-> 0]
+Step(p) == state' = [state EXCEPT ![p] = state[p] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("assigns")),
+            "Init is where the whole function is built: {:?}",
+            report.findings
+        );
+    }
+
+    /// The exemption that keeps the rule usable, and the reason it keys on the
+    /// *direct* right-hand side: a constructor over the node set nested inside
+    /// an `EXCEPT` updates one node's inner table. Lamport-mutex's `AdvanceAll`
+    /// advances every destination counter within node `s` -- a single-node step.
+    #[test]
+    fn a_constructor_nested_in_an_except_is_not_a_whole_array_write() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES sendSeq
+TypeOK == sendSeq \in [Proc -> [Proc -> Nat]]
+Step(s) == sendSeq' = [sendSeq EXCEPT ![s] = [d \in Proc |-> sendSeq[s][d] + 1]]
+Next == \E s \in Proc : Step(s)
+===="#;
+        let report = lint(source);
+        assert!(
+            report.is_clean(),
+            "updating one node's inner table is a single-node step: {:?}",
+            report.findings
+        );
+    }
+
+    /// Phase 52: "Reading the whole array is a cross-node read, even without an
+    /// index" (`docs/clean_tla_subset.md`, C2). `Cardinality(state)` observes
+    /// every node at once. The contract stated this; the linter did not check it.
+    #[test]
+    fn rejects_reading_a_per_node_variable_as_a_whole_array() {
+        let source = r#"---- MODULE Test ----
+EXTENDS FiniteSets, Naturals
+VARIABLES state
+TypeOK == state \in [Proc -> Nat]
+Step(p) == /\ Cardinality(state) > 0
+           /\ state' = [state EXCEPT ![p] = state[p] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            rules(&report).contains(&CleanRule::C2),
+            "a whole-array read must be C2: {:?}",
+            report.findings
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("whole array")),
+            "the message should say which shape was found: {:?}",
+            report.findings
+        );
+    }
+
+    /// The exemption that makes the rule usable. `[f EXCEPT ![i] = v]` names `f`
+    /// bare but touches exactly entry `i` -- it is the ordinary per-node update.
+    /// Counting the base flagged three of Lamport-mutex's helpers on a spec that
+    /// is clean, which is how this was caught.
+    #[test]
+    fn an_except_base_is_not_a_whole_array_read() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES sendSeq
+TypeOK == sendSeq \in [Proc -> Nat]
+Advance(s) == [sendSeq EXCEPT ![s] = sendSeq[s] + 1]
+Step(p) == sendSeq' = Advance(p)
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("whole array")),
+            "an EXCEPT base is an update of one entry, not a whole-array read: {:?}",
+            report.findings
+        );
+    }
+
+    /// The other exemption the contract names: "Frame conditions are exempt.
+    /// `x' = x` ... carries no information across nodes".
+    #[test]
+    fn a_frame_condition_is_not_a_whole_array_read() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES clock, flag
+TypeOK == /\ clock \in [Proc -> Nat]
+          /\ flag \in [Proc -> Nat]
+Step(p) == /\ clock' = [clock EXCEPT ![p] = clock[p] + 1]
+           /\ flag' = flag
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("whole array")),
+            "`flag' = flag` is a frame condition: {:?}",
+            report.findings
+        );
+    }
+
+    /// An indexed read is C2's *other* branch; it must not also be counted as a
+    /// whole-array read, or every cross-node read would report twice.
+    #[test]
+    fn an_indexed_read_is_not_also_reported_as_a_whole_array_read() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES clock
+TypeOK == clock \in [Proc -> Nat]
+Step(p) == \E q \in Proc : clock' = [clock EXCEPT ![p] = clock[q]]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        let whole = report
+            .findings
+            .iter()
+            .filter(|f| f.message.contains("whole array"))
+            .count();
+        assert_eq!(
+            whole, 0,
+            "indexed reads belong to the other branch: {:?}",
+            report.findings
+        );
     }
 
     #[test]

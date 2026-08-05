@@ -1,0 +1,81 @@
+# Helpers whose EXISTING body must survive a merge, per RSL module.
+#
+# Phase 42.8.c.2.iv.A. The transpiler synthesises some helpers naively -- a `for`
+# loop over `m.iter()` -- where the checked-in file holds a hand-verified `while`
+# loop with invariants and `broadcast use`. Merging without protection replaces
+# the verified body with one that does not verify, and nothing catches it:
+# `regenerate_rsl.sh`'s parity check compares `pub exec fn` *names*, so a body
+# swap on a private `fn` is invisible to it.
+#
+# Consumed by `scripts/regenerate_rsl.sh`, which turns each line into a
+# `merge_generated.py --preserve <fn>` flag. `merge_generated.py` errors on a
+# name it cannot find, so a stale entry here fails loudly rather than silently
+# doing nothing.
+#
+# Format: <module> <free-function-name>, one per line. `#` comments allowed.
+
+learner filter_clearnerstate
+
+# Phase 42.8.c.2.iv.C. Found by scripts/check_merge_body_drift.py: without these,
+# a merge replaces verified code with something strictly worse.
+#
+# Fresh emits an `assume(false)` stub; the checked-in body is a real proof:
+executor CExecutorInit
+election CElectionStateInit
+proposer CProposerInit
+# replica CReplicaInit / CSchedulerInit are no longer needed here: Phase
+# 42.8.c.2.iv.J.3.d moved LReplicaInit into replica's skip_functions, so fresh
+# does not emit it at all and the merge carries the existing body by default.
+#
+# Fresh emits `#[verifier(external_body)] { r.clone() }` -- trusted; the
+# checked-in body is a verified per-variant match:
+executor clone_next_op_to_execute
+proposer clone_incomplete_batch_timer
+#
+# Fresh verifies too, but with *weaker* contracts -- the checked-in bodies carry
+# `requires ... valid()` plus `ensures result@[i].valid()/abstractable()` that
+# fresh drops, so merging would silently remove postconditions callers rely on:
+election CRemoveExecutedRequestBatch
+election CRemoveAllSatisfiedRequestsInSequence
+#
+# Reviewed and taking the transpiler's version. Marked rather than left silent so
+# the drift report stays empty -- a check that always prints the same four items
+# stops being read, which is how the original body swap slipped through.
+#   The three clone_* differ from fresh by a single doc-comment line, nothing else.
+proposer clone_request_queue accept-fresh
+election clone_requests_received_this_epoch accept-fresh
+election clone_requests_received_prev_epochs accept-fresh
+#   CReplicaNumActions: `result as int == LReplicaNumActions()` (fresh) versus
+#   `result@ == ...` (existing) -- equivalent, and fresh is the more explicit form.
+replica CReplicaNumActions accept-fresh
+
+# Phase 42.8.c.2.iv.F. `&mut self` protocol actions. Fresh emits an
+# `assume(false)` proof-fallback stub for every one of these; the checked-in
+# bodies are the real implementations. These were invisible until the drift
+# check learned to look at impl methods -- it compared only free functions, so
+# an entire module's actions went unchecked.
+executor CExecutorGetDecision
+executor CExecutorProcessAppStateRequest
+executor CExecutorProcessAppStateSupply
+executor CExecutorProcessRequest
+executor CExecutorProcessStartingPhase2
+election CElectionStateCheckForQuorumOfViewSuspicions
+election CElectionStateCheckForViewTimeout
+election CElectionStateProcessHeartbeat
+election CElectionStateReflectExecutedRequestBatch
+proposer CProposerCheckForQuorumOfViewSuspicions
+proposer CProposerCheckForViewTimeout
+proposer CProposerMaybeEnterNewViewAndSend1a
+proposer CProposerMaybeEnterPhase2
+proposer CProposerProcess1b
+proposer CProposerProcessHeartbeat
+proposer CProposerProcessRequest
+proposer CProposerResetViewTimerDueToExecution
+
+# Phase 54.7.e. The three map-abstraction lemmas whose `assert forall` now carries
+# explicit triggers. Taking fresh is the whole point of the change -- the triggers
+# pinned are exactly the ones Verus was already choosing, so the instantiation is
+# unchanged and only the note disappears.
+learner lemma_abstractify_clearnerstate_insert accept-fresh
+learner lemma_abstractify_clearnerstate_remove accept-fresh
+learner lemma_abstractify_singleton_clearnerstate accept-fresh

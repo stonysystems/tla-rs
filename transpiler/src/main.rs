@@ -752,6 +752,26 @@ fn collect_called_functions_from_spec_file(spec_file: &Path) -> HashSet<String> 
     called
 }
 
+/// Whether a function signature line declares a `self` receiver.
+///
+/// Conservative: a signature whose parameter list wraps onto the next line reads
+/// as "no receiver", so no `method_calls` entry is inferred. Not inferring is
+/// safe -- the call stays a free function call; inferring wrongly emits a method
+/// call on whatever happens to be the first argument.
+fn takes_self_receiver(line: &str) -> bool {
+    let Some(idx) = line.find("fn ") else {
+        return false;
+    };
+    let Some(open) = line[idx..].find('(') else {
+        return false;
+    };
+    let params = line[idx + open + 1..].trim_start();
+    params.starts_with("self")
+        || params.starts_with("&self")
+        || params.starts_with("&mut self")
+        || params.starts_with("mut self")
+}
+
 fn extract_c_function_name(line: &str) -> Option<String> {
     let idx = line.find("fn C")?;
     let rest = &line[idx + 3..];
@@ -1181,7 +1201,15 @@ fn collect_implementation_method_symbols(
                 }
             }
 
-            if let Some(method_name) = extract_c_function_name(code) {
+            // An associated function is not a method: `impl CReplica {
+            // pub fn CReplicaInit(c: CReplicaConstants) -> Self }` takes no
+            // receiver, so inferring a `method_calls` entry for it emitted
+            // `c.CReplicaInit()` against `c: &CReplicaConstants` -- a method that
+            // does not exist, on the wrong type (Phase 42.8.c.2.iv.J.3.c).
+            // Matching on the name alone cannot tell the two apart.
+            if let Some(method_name) =
+                extract_c_function_name(code).filter(|_| takes_self_receiver(code))
+            {
                 let current_impl = impl_stack
                     .iter()
                     .rev()
@@ -6090,7 +6118,24 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     .iter()
                     .map(|r| r.as_str())
                     .collect::<Vec<_>>();
-                if unchecked.is_empty() {
+                // A rule that is implemented but did not run makes "clean"
+                // mean less than it looks. Say so on the same line as the
+                // verdict, not in a footnote.
+                if !report.skipped_rules.is_empty() {
+                    println!(
+                        "{}: clean with respect to the rules that ran, but {} did not run",
+                        input.display(),
+                        report
+                            .skipped_rules
+                            .iter()
+                            .map(|(r, _)| r.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                    for (rule, why) in &report.skipped_rules {
+                        println!("  {} skipped: {}", rule.as_str(), why);
+                    }
+                } else if unchecked.is_empty() {
                     println!("{}: clean", input.display());
                 } else {
                     println!(
@@ -6132,6 +6177,21 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     input.display(),
                     report.violations()
                 );
+                // The misleading case: a spec the linter understands less runs
+                // fewer rules and so scores *lower*. Jetpack's original reports
+                // 2, but C1/C2/C3 never ran -- reading that as "nearly clean"
+                // is the mistake this line exists to prevent.
+                if !report.skipped_rules.is_empty() {
+                    println!(
+                        "  note: {} of {} implemented rules did not run, so this count is a \
+                         lower bound, not a distance to clean:",
+                        report.skipped_rules.len(),
+                        verus_transpiler::tla::clean_subset::RULES_CHECKED.len()
+                    );
+                    for (rule, why) in &report.skipped_rules {
+                        println!("    {} skipped: {}", rule.as_str(), why);
+                    }
+                }
                 std::process::exit(1);
             }
 
@@ -6807,6 +6867,7 @@ fn convert_file_config(
                 .map(|(k, v)| (k.clone(), v.iter().cloned().collect()))
                 .collect(),
             mut_self_types: file_config.mut_self_types.iter().cloned().collect(),
+            mut_self_helpers: file_config.mut_self_helpers.iter().cloned().collect(),
             method_names: HashSet::new(),
         },
         custom_imports: file_config.output.custom_imports,
@@ -6838,6 +6899,30 @@ fn convert_file_config(
 
 #[cfg(test)]
 mod tests {
+    /// Phase 42.8.c.2.iv.J.3.c. An associated function inside an `impl` block is
+    /// not a method. `impl CReplica { pub fn CReplicaInit(c: CReplicaConstants) }`
+    /// takes no receiver, and inferring a `method_calls` entry for it emitted
+    /// `c.CReplicaInit()` -- a method that does not exist, on the wrong type.
+    #[test]
+    fn test_takes_self_receiver_distinguishes_methods_from_associated_fns() {
+        assert!(takes_self_receiver(
+            "    pub fn act(&mut self, p: &CPacket) -> u64"
+        ));
+        assert!(takes_self_receiver("    pub fn view(&self) -> u64"));
+        assert!(takes_self_receiver("    pub fn into_inner(self) -> u64"));
+        // the case that caused the bug: an associated function
+        assert!(!takes_self_receiver(
+            "    pub fn CReplicaInit(c: CReplicaConstants) -> (result: Self)"
+        ));
+        assert!(!takes_self_receiver(
+            "    pub fn helper(a: u64, b: u64) -> u64"
+        ));
+        // a wrapped signature reads as "no receiver", which is the safe answer:
+        // no entry is inferred and the call stays a free function call.
+        assert!(!takes_self_receiver("    pub fn act("));
+        assert!(!takes_self_receiver("not a function at all"));
+    }
+
     use super::*;
 
     #[test]

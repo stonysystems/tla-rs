@@ -28,17 +28,98 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 | Verus | ⚠️ built from source | The **prebuilt** 0.2026.08.02 release links glibc 2.39; this box has **2.35**, so it cannot run. Built from source at commit `b677dd5` under `~/verus-src` with **z3 4.14.1** (the newest z3 with a glibc-2.35 build; Verus pins 4.16.0). Building z3 4.16.0 from source also fails here — it needs C++20 `<format>`, which libstdc++ only ships from GCC 13 and this box has GCC 12. So the version check must be bypassed at **both** layers: `vargo --no-solver-version-check build --release` when building, and `-V no-solver-version-check` on every `verus` invocation. Solver-version skew can change proof stability — treat proof-level results from this box as advisory and re-check on a glibc-2.39 machine or in CI. |
 | .NET | ❌ absent | No `dotnet` — C# runtime, cluster runs, and throughput benches cannot be reproduced here. |
 
-## Current Status (last updated 2026-05-28)
+## Current Status (last updated 2026-08-05)
 
-**🔝 CURRENT PRIORITY (2026-08-05): Phase 54 — clear the whole warning + note surface.**
-A full pass on `0.2026.08.02` emitted **1016 warnings and 120 trigger notes**; drive both to
-zero or to a checked-in exceptions list. **54.10 is done** — the crate-level
-`#![allow(non_snake_case)]` took warnings to **130**, and the per-warning census in that item
-is the remaining backlog. Next is **54.11–54.14 plus the newly visible 54.16**,
-then **54.7.d** — annotate the 76 transpiler-emitted notes with a post-processing pass rather
-than waiting on the 42.8.c merge, which is stuck at 42.8.c.2.iv with no predictable finish.
-**Phase 42 is not the path to this goal**; full regeneration of RSL is not even the right
-target (see 54.15). Phases 52/53 stay on hold.
+**🔝 42.8.c is COMPLETE (2026-08-05). All seven RSL modules are reconciled.**
+`1046 verified, 0 errors`; trigger notes **534 → 74**; `assume(false)` **0**.
+`scripts/classify_trigger_notes.py` reports **0 notes deliverable by regeneration** — the
+codegen pipeline this phase opened is drained, and the ceiling is tightened to 77 so it
+cannot silently regrow.
+
+**What is left:**
+**All 74 sit in hand-written bodies.** Verified against fresh transpiler output on
+2026-08-05 (54.10.b), not inferred: `classify_trigger_notes.py --fresh-dir` reports
+**0 emitted**. There is no codegen work left in this phase.
+Recorded in `docs/rsl-skip-functions.md`.
+
+**✅ Phase 54 is at ZERO auto-chosen trigger notes (2026-08-05).** 534 → 0, `1048 verified,
+0 errors`, ceiling set to 0 so any new unannotated quantifier fails the build. The last 74
+landed under the policy change below.
+**And zero warnings**: 54.12.b's `Set::new_assuming_finite`, the last one, is gone too — it
+was never going to clear by regeneration, because the function holding it is hand-written.
+
+**🔝 POLICY CHANGE (2026-08-05, by the user): the block on those 74 is lifted.**
+`CLAUDE.md` now scopes the generated-code rule by **provenance rather than path**.
+Transpiler-emitted code still may not be hand-edited; hand-written bodies preserved inside
+`src/generated/` **may be edited directly**, because regeneration copies them through verbatim,
+so the divergence risk the rule guards against does not apply to them. 54.7.c's "closed under
+current policy" no longer holds — its facts were right, only the policy was. **Do 54.7.f next**
+(the 53 deliverable notes). Confirm provenance per function with
+`classify_trigger_notes.py --fresh-dir` rather than inferring it from the config; that
+inference was already measured wrong for all 74.
+
+**42.8.c final (2026-08-05).** Six of seven RSL modules are reconciled and the crate is at
+`1046 verified, 0 errors`, notes 103, warnings 3.
+
+| module | state |
+|---|---|
+| broadcast, acceptor | already byte-identical / lossless |
+| learner | reconciled (transpiler `&T` fix + `--preserve`) |
+| executor, election, proposer | **merged this session**; `assume(false)` 6→0, 5→0, 9→0 |
+| replica | **merged 2026-08-05** (was blocked). 13 of the 18 actions migrated to `&mut self` methods; 5 stay hand-written free functions because their proofs cannot be generated. `assume(false)` 0→0, notes 103→77. |
+
+**What the merges did not do is deliver trigger notes: three merges, 103 → 103.** That is
+the measured fact, and it outranks four successive estimates of the deliverable count (80,
+50, 3, 40) — see 54.7.b, where the "3" is retracted as the product of an unsound
+attribution.
+*(Updated 2026-08-05: the fourth merge — replica — did deliver, 103 → 77. The attribution
+in 54.7.c had said all 36 deliverable notes were in replica and none in the other three,
+which is exactly what the three no-op merges and this one together confirm.)*
+
+**Attribution, measured 2026-08-05 by `scripts/classify_trigger_notes.py` (21 tests).**
+The count has been estimated five times now — 80, 50, 3, 40, 72 — so this one is done by a
+checked-in tool that attributes each note to its containing function *by line range* and
+classifies that function two ways: where the body comes from, and whether the expression is
+the one shape codegen annotates. Both dimensions are needed; the earlier "72" used only the
+second and so counted notes that no regeneration can reach.
+
+| origin | vec-element | other | total | can regeneration deliver it? |
+|---|---|---|---|---|
+| **transpiler-emitted** | **36** | 14 | 50 | 36 yes; the 14 need new codegen |
+| preserved (`rsl_merge_preserve.txt`) | 23 | 7 | 30 | no — the merge keeps the existing text |
+| `skip_functions` (hand-written) | 14 | 9 | 23 | no — the transpiler emits nothing at all |
+| | 73 | 30 | 103 | |
+
+**All 36 deliverable notes are in `replica`** — which is exactly why three merges delivered
+nothing: executor, election and proposer had **zero** notes in that cell, so 103 → 103 was
+the correct outcome, not a disappointment. The earlier reading, "the shape is handled and
+these instances are not produced by codegen", is half right: 53 of the 103 are indeed
+hand-written or preserved, but 50 *are* transpiler output.
+
+**The 36 hinge on how 42.8.c.2.iv.J is resolved, and the cheap resolution is worth 0.**
+They sit on `ensures` clauses, not in bodies — e.g. `replica_gen.rs:258-259`, whose body is
+a real one-line delegation. `merge_generated.py --preserve` keeps the *whole function*,
+contract included. So preserving replica's 18 actions to protect their bodies also preserves
+their stale contracts and delivers nothing; the 36 land only if fresh output can be taken
+whole, which means the `&mut self` conversion must emit real bodies rather than
+`assume(false)` stubs. That makes J worth 36 of 103 notes and promotes it from "Phase 48/49
+cleanup" to the highest-value item in Phase 54.
+
+**So the policy question in 54.7.c/54.7.d is worth 53 notes, not 72** — and `CLAUDE.md`
+forecloses both of its proposed answers, not just one. Beyond *"Do NOT hand-edit files under
+`src/generated/`"* it also says *"Do NOT delegate to manual implementation code or use
+'clone-delegate-extract' patterns in generated files"*, which rules out moving the bodies
+out as squarely as it rules out annotating them in place. `manual_code` is separately pinned
+to acceptor-only by `test_manual_code_footprint_is_empty`, and proposer/election explicitly
+removed theirs. Under current policy the only route to those 53 is transpiler support for
+the skipped functions (Phase 42 Option B). Recorded as decided rather than left open: I am
+following `CLAUDE.md` as written, so 54.7.c/d stay closed to me and the exceptions list says
+so permanently. Reopening them means amending `CLAUDE.md`, which is the user's call.
+
+Also still open and needing a decision rather than work: **54.7.d** (post-processing
+`src/generated/` conflicts with `CLAUDE.md`).
+
+Phases 52/53 stay on hold.
 
 *(prior banner, 2026-08-04)* Phase 54 — Explicit Quantifier Triggers.
 A full verification pass emits 534 `automatically chose triggers` notes, all in our own code.
@@ -14816,8 +14897,14 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
       impls, carrying their imports. `--report` describes a merge without performing it.
       10 tests, including that codegen improvements survive the merge and that a missing
       `impl` in fresh output is an error rather than a silent drop.
-- [ ] **42.8.c.2**: **The five modules are blocked on a transpiler bug, not on merge
-      mechanics.** Regenerating `learner` emits `CLearnerForgetDecision` as a `&mut self`
+- [x] **42.8.c.2**: **The five modules are blocked on a transpiler bug, not on merge
+      mechanics.** — **CLOSED 2026-08-05: all seven RSL modules are reconciled.**
+      The diagnosis held up: it was transpiler bugs throughout, not merge mechanics, and each
+      was fixed rather than worked around — the `&mut self` lift (2.iii, E), the drift check's
+      blind spots (C, F, J), cross-module `&mut self` call shape (J.3.a), proof blocks
+      outliving their tuple (J.3.b), and method inference on associated functions (J.3.c).
+      `1046 verified, 0 errors`, `assume(false)` 0, trigger notes 534 → 74.
+      Regenerating `learner` emits `CLearnerForgetDecision` as a `&mut self`
       method whose body still names the functional output: `result.unexecuted_learner_state`
       inside a proof block and a bare `result` tail, with no such binding. It does not
       compile, which is why these modules have always sat in the "keep existing" bucket.
@@ -14860,7 +14947,681 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
-  - [ ] **42.8.c.2.iv** Merging `learner` still fails, on a *different* mismatch: the
+  - [ ] **42.8.c.2.iv.J** **Replica does not merge, and the reason is structural.**
+        (2026-08-05) Attempted; `assume(false)` in the merged file would go **0 → 18**, the
+        opposite direction from the other three. Reverted.
+        The 18 `CReplicaNextProcess*` / `CReplicaNextReadClock*` /
+        `CReplicaNextSpontaneous*` actions exist in the checked-in file as **free functions**
+        and in fresh output as **impl methods on `CReplica`** — the `&mut self` conversion
+        moved them. So the merge keeps both: fresh's stub method *and* the existing real free
+        function.
+        **The drift check missed this too**, and for a new reason: it matched on the
+        qualified name, so `CReplicaNextProcess1a` and `CReplica::CReplicaNextProcess1a`
+        looked like different functions. Now falls back to the short name when it is
+        unambiguous — replica reports all 18, and the other six modules are unchanged, so no
+        false positives.
+        `--preserve` **cannot** express this: it swaps a fresh body for the existing one of
+        the same kind, and here the kinds differ. Replica needs the free-function forms
+        retired in favour of the methods, which is Phase 48/49 work, not merge work.
+        **Now the highest-value item in Phase 54 (measured 2026-08-05).** Replica carries
+        **all 36** of the trigger notes that a regeneration can deliver; the other six modules
+        carry none, which is why merging three of them moved 103 → 103. See the attribution
+        table in Current Status.
+        **And the cheap resolution is worth 0 notes.** The 36 sit on `ensures` clauses —
+        `replica_gen.rs:258-259` is typical, and its body is a real one-line delegation, not
+        a stub. `--preserve` keeps the *whole function*, contract included, so preserving the
+        18 actions to save their bodies also freezes their stale contracts. The notes land
+        only if fresh output can be taken whole, i.e. the `&mut self` conversion emits real
+        bodies instead of `assume(false)`.
+        **E is now fixed (2026-08-05) and it is not sufficient.** The lift no longer mangles
+        these bodies, but fresh output for replica's 18 actions is still a proof-fallback
+        stub — E made the stub well-typed, not real. J needs the free-function forms retired
+        in favour of the methods so fresh's contract can be taken without its body.
+
+        **Scoped 2026-08-05, and the blocker is smaller than "Phase 48/49 work" suggested.**
+        Fresh output is *not* a bare stub: the body is already a real translation, and the
+        contract already carries `#![trigger result@[i]]`, so regenerating replica does
+        deliver the 36. Two things stand between here and that, both measured:
+      - [ ] **J.1 — `proven_functions` supplies the missing preconditions.** The gap that
+            makes fresh unusable is one config line, not a transpiler defect.
+            `build_requires` already translates spec `recommends` into exec `requires`, but
+            drops them when `assume_postconditions = true`; `proven_functions` is the
+            designed opt-out ("proven_functions need recommends since they don't have
+            assume(false)"). Replica lists exactly one function.
+            **Measured**: adding `LReplicaNextProcess1a` restores
+            `received_packet.msg is CMessage1a` — matching the checked-in file
+            character-for-character — and drops its `assume(false)`. Adding all 12 spec
+            functions that carry a `recommends` and are not `skip_functions` takes replica's
+            fresh `assume(false)` count **20 → 8**. The 8 that remain are precisely the
+            `Spontaneous*`/`ReadClock*` actions, which have no `recommends`.
+            **Not committed as config yet, deliberately**: listing a function in
+            `proven_functions` *claims* its body verifies, and only a verification run can
+            settle that. The claim is cheap to make and expensive to be wrong about, so it
+            lands with J.3, not before. The mechanism itself is now pinned by
+            `test_assume_postconditions_drops_recommends` and
+            `test_proven_functions_restores_recommends_under_assume_postconditions` — the
+            pre-existing recommends test ran with the default config and covered neither
+            half of this interaction.
+      - [x] **J.2 — migrate the callers. Tooling done 2026-08-05.** The merge itself can now
+            express the kind change this item said `--preserve` could not:
+            `merge_generated.py` drops an existing free function when fresh emits a method of
+            the same name, and reports it as `free fn -> impl method (existing free form
+            dropped)` rather than doing it silently. Four tests, including one that a free
+            function fresh does *not* emit is still carried (the `skip_functions` bodies).
+            On replica the plan is exactly right: 18 migrated, 10 carried. The caller rewrite
+            is 18 mechanical sites and was verified to apply cleanly; it is not committed
+            because it cannot compile until J.3's two codegen defects are fixed.
+            *(original analysis)* 20 call sites in
+            `src/implementation/RSL/ReplicaImpl.rs`, all the uniform shape
+            `crate::generated::RSL::replica_gen::CReplicaNextX(self, args..)` →
+            `self.CReplicaNextX(args..)`. Two of the 20 must stay free functions
+            (`CReplicaNextProcess1b`, `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`)
+            because they are `skip_functions` and fresh never emits them — which leaves
+            exactly the 18 this item has always described, a useful consistency check. This
+            file is hand-written implementation code, so editing it is ordinary work.
+      - [ ] **J.3 — take fresh, verify, and back off what does not hold.** The decisive
+            step: replace the 18 free functions with fresh's methods, keeping the
+            `skip_functions` bodies, then run verification. Any function whose proof does not
+            go through comes back out of `proven_functions` and keeps its existing body. The
+            8 `Spontaneous*`/`ReadClock*` actions are the likely holdouts — they gain no
+            precondition from a `recommends`, so nothing has changed in their favour.
+            **Attempted end-to-end 2026-08-05. It does not compile, and the two reasons are
+            not what this item predicted — neither is about proofs.** With all 18 actions
+            plus both Inits in `proven_functions`, fresh replica reaches **`assume(false)`
+            0**, the merge is clean (10 items carried: 7 `skip_functions` + 3 lemmas, 18
+            migrated to methods), the merged file parses under `rustfmt`, and the 18 caller
+            sites in `ReplicaImpl.rs` rewrite mechanically. Then `verus` reports **28 errors,
+            all pre-verification**:
+            - **19 × cross-module calls emitted in free-function form.** Fresh replica emits
+              `crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&self.acceptor, ..)`,
+              but acceptor/proposer/learner/executor were themselves migrated to `&mut self`
+              methods by the earlier merges, so that free function no longer exists. Replica
+              is generated against the *pre-migration* shape of its own dependencies.
+              **Not a config gap** — measured: adding `CAcceptor`, `CProposer`, `CLearner`,
+              `CExecutor`, `CElectionState` to replica's `mut_self_types` changes nothing
+              (22 free-form calls before and after, 0 method-form). It is a codegen gap in
+              how cross-module calls are emitted. Do not re-try the config route.
+            - **9 × `result` used after the lift removed its binding**, e.g.
+              `assert(result.1@.map(..) =~= Seq::empty())` and a trailing bare `result`.
+              This is the E-family lift bug in a case E did not cover: E fixed the *tuple
+              tail*, this is a **proof block still holding a tuple index** into a binding
+              that no longer exists. `rewrite_tuple_refs_in_expr` is the code that should
+              have rewritten it.
+            So J.3 is blocked on two concrete codegen defects with line numbers, not on
+            "structural Phase 48/49 work" and not on proofs — no proof was ever attempted,
+            because the file does not reach the verifier. Both are now the leaf tasks.
+      - [x] **J.3.a** Emit cross-module calls to `mut_self` types in method form.
+            **DONE 2026-08-05.** New config key `mut_self_helpers` names spec functions in
+            *other* modules whose exec form is `&mut self`; `mut_self_types` only ever said
+            which of *this* module's functions become methods, and nothing said it of a
+            callee. With `mut_self_helpers = ["LAcceptorProcess1a"]` plus the existing
+            `[method_calls]` entry, `CReplicaNextProcess1a` now emits
+            `let sent_packets = self.acceptor.CAcceptorProcess1a(&received_packet);` with no
+            destructure and no write-back — matching the hand-written checked-in body.
+            Three changes: skip the state output in `generate_helper_let_binding`, point the
+            substitution at the receiver field in `get_helper_substitutions`, and drop the
+            resulting identity assignment in the printer's struct lift.
+            **The third was needed and is not obvious.** The spec literal *does* list
+            `acceptor: s_.acceptor`, so the substitution cannot simply be omitted or the
+            field name goes unresolved. Substituting the receiver path instead yields
+            `self.acceptor = self.acceptor`, a self-move that does not compile — and giving
+            it a `.clone()` would compile while deep-copying the sub-state on every action,
+            which is exactly the cost `&mut self` exists to avoid. So the lift drops identity
+            field assignments. Five tests; the other eight protocols' regen-matches guards
+            are unchanged, so the filter fires only on this new shape.
+            **Diagnosed 2026-08-05, and it is two changes, not one.** The call *form* is
+            already config: `[method_calls]` in the module TOML — an existing mechanism four
+            RSL modules use. Adding
+            `"LAcceptorProcess1a" = { method_name = "CAcceptorProcess1a", receiver_arg_index = 0 }`
+            to replica turns
+            `crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&self.acceptor, p)`
+            into `self.acceptor.CAcceptorProcess1a(&p)`. Measured, it works.
+            **But the call-site *shape* is still functional, and that is the real defect.**
+            The emitted line stays
+            `let (s_acceptor, sent_packets) = self.acceptor.CAcceptorProcess1a(&p);` followed
+            by `self.acceptor = s_acceptor;`, while the callee is now
+            `CAcceptorProcess1a(&mut self, inp: &CPacket) -> Vec<CPacket>` — it mutates in
+            place and returns only the outputs. So the destructure binds a state value that
+            no longer exists and the write-back assigns it back. The hand-written checked-in
+            body is the target and is one line:
+            `s.acceptor.CAcceptorProcess1a(&received_packet)`.
+            **Why the transpiler cannot currently know this**: `method_names` — the set that
+            drives `convert_calls_to_methods` — is populated only for functions registered
+            while transpiling *this* module (`translator/mod.rs:1510`), so a callee in
+            another module is never in it. And it is consulted *only* in
+            `convert_calls_to_methods`, i.e. for the call form; nothing uses it to decide
+            that a callee's state output is mutated in place rather than returned.
+            **Design**: a config key naming external functions whose exec form is
+            `&mut self` (the same information `mut_self_types` carries for the local module),
+            consumed in two places — the existing call-form conversion, and the call-site
+            lift that must drop the state binding from the destructure and the matching
+            `self.field = s_field` write-back.
+            **Where the two changes go**, located 2026-08-05 so this does not need
+            re-deriving:
+            1. `generate_helper_let_binding` (`translator/mod.rs:~12780`) builds
+               `output_names` as the state-field outputs (`{var}_{field}`) followed by
+               `info.output_params`, and emits a tuple pattern when there is more than one.
+               For a `&mut self` callee the state-field entries must not be generated, which
+               leaves `sent_packets` alone and the pattern collapses to a single binding.
+            2. The `self.acceptor = s_acceptor;` write-back is not separate code — it comes
+               from the `s_ == LReplica { acceptor: .., .. }` conjunct being lifted into
+               field assignments. With the binding gone, that field must drop out of the
+               struct literal too, or it references a name that no longer exists.
+            This is also why the defect surfaces only now: replica is the only orchestrating
+            module, so it is the only one with cross-module calls into migrated modules.
+      - [x] **J.3.b** Rewrite tuple-index references in proof blocks when the lift drops the
+            binding (`result.1` → the lifted output), extending E's fix to proof positions.
+            **DONE 2026-08-05 — two defects, not one.**
+            1. **The stale index.** `rewrite_tuple_refs_in_string` already did the rewrite,
+               but only the restructure path called it, and that path runs only while the
+               `let` value still holds a tuple. When the state element was dropped upstream
+               the value is just `{ vec![] }`, the transform is a no-op, and `result.1@`
+               survives. Now applied in the method path whenever the return type is **not**
+               a tuple — under which a `result.N` cannot be legitimate, so the condition is
+               exact and genuine tuple-returning methods are untouched. 12 sites → 0.
+            2. **The dropped binding**, found only by running the merge again. When the
+               lifted value is an `if` rather than a block, the restructure pushed it as a
+               bare statement, losing `let result =`, while still emitting the trailing
+               `result` — leaving it undefined. It is now rebound whenever the method still
+               returns something.
+            Both guarded, both verified failing-first.
+            **Measured end to end: replica's 28 errors → 10, and the last 10 are a different
+            problem entirely** (see J.2 below, reopened).
+      - [x] **J.2 (reopened, then DONE 2026-08-05) — the caller migration is not mechanical,
+            and my earlier "20 uniform call sites" reading was wrong.**
+            **Resolved by renaming the wrappers**: the 20 `#[verifier::external_body]`
+            adapters in `ReplicaImpl.rs` now carry an `Outbound` suffix
+            (`CReplicaNextProcess1aOutbound`), which is what they actually are — the layer
+            that runs the action and returns `OutboundPackets` rather than `Vec<CPacket>`.
+            43 mentions across 6 files; the `replica_gen::` calls inside the wrapper bodies
+            are deliberately untouched, since those name the generated function, not the
+            wrapper. `1046 verified, 0 errors` with the rename alone, so it lands as an
+            independently-green prerequisite rather than inside the merge commit.
+            All 20 were renamed, including the 2 whose generated counterparts stay free
+            functions (`CReplicaNextProcess1b`,
+            `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`) — splitting the naming of
+            one uniform adapter layer would be worse than the small extra churn.
+            **Keeping the method form is required, measured**: dropping `CReplica` from
+            `mut_self_types` removes the collision but regresses fresh output to the
+            functional `(s: &CReplica) -> (CReplica, Vec<CPacket>)`, i.e. the deep-clone
+            shape Phase 48/49 removed. So the rename is the right fix, not a workaround.
+            *(original analysis)* `ReplicaImpl.rs` already contains
+            `impl CReplica { pub fn CReplicaNextProcessInvalid(&mut self, ..) }` — an
+            `#[verifier::external_body]` adapter returning `OutboundPackets` — for each of
+            the 18 actions, on the **same type and under the same name** as the method fresh
+            output now emits. So the migration is a name collision, not a call-site rewrite:
+            with both present rustc reports `duplicate definitions`, and rewriting the
+            wrapper's body to `self.CReplicaNextProcessInvalid(..)` makes it call itself.
+            Qualifying as `CReplica::CReplicaNextProcessInvalid(self, ..)` does not
+            disambiguate either — both are inherent methods on `CReplica`.
+            The wrappers therefore have to be renamed (they are hand-written implementation
+            code, so this is ordinary work), which also changes the names their own callers
+            use. That is the remaining leaf, and it is an API change rather than a
+            mechanical substitution.
+      - [x] **J.3.c — DONE 2026-08-05. Replica now compiles and reaches the verifier, and
+            the 36 trigger notes landed: 103 → 66.** Both causes fixed:
+            - `mut_self_helpers` now passes the state argument **mutably** for a callee that
+              stays a free function (`CExecutorExecute(&mut self.executor)`). Only the
+              binding shape changes, not the call form — confirming the split between
+              `mut_self_helpers` and `[method_calls]` is the right factoring.
+            - Method-call inference now requires a **`self` receiver**. `infer_method_calls_
+              from_spec_paths` scans `src/implementation/` for `C*` functions inside `impl`
+              blocks and matched on the *name alone*, so
+              `impl CReplica { pub fn CReplicaInit(c: CReplicaConstants) -> Self }` — an
+              associated function, not a method — produced `c.CReplicaInit()` against
+              `c: &CReplicaConstants`. Three other hypotheses were ruled out first and are
+              recorded so they are not re-tried: it is **not** `method_names` /
+              `convert_calls_to_methods` (that pass runs only inside method bodies, and
+              `CSchedulerInit` is not one), **not** `maybe_apply_mut_self`, and **not** a
+              hand-written `[method_calls]` entry.
+      - [x] **J.3.d — DONE 2026-08-05. Replica is merged. `1046 verified, 0 errors`,
+            `assume(false)` **0**, trigger notes **103 → 77**, and
+            `classify_trigger_notes.py` now reports **0 deliverable by regeneration** —
+            the pipeline this phase opened is drained.**
+            **The obvious route was measured and rejected.** Listing all 18 actions in
+            `proven_functions` gives `1040 verified, 6 errors`; backing the 6 off there
+            leaves them carrying `assume(false)` and yields 66 notes. That is 11 more notes
+            bought by converting six *proven* protocol actions into assumed ones — the same
+            metric-gaming this phase rejects `#![auto]` for. The checked-in bodies of those
+            six are hand-written proofs (`broadcast use` of the hash axioms, explicit
+            `lemma_creplycache_get` calls, discharging asserts) that the transpiler cannot
+            generate, so the six errors are real.
+            **Taken instead**: the six go in `skip_functions` + `no_stub_functions`, so fresh
+            never emits them and the merge carries the proven bodies through. 13 of the 18
+            actions migrate to `&mut self` methods, 5 stay hand-written free functions.
+            26 notes delivered, nothing assumed. Written up in `docs/rsl-skip-functions.md`.
+            Two real defects surfaced while landing it, both fixed and tested:
+            `merge_generated.py` dropped `// TRANSLATE-TODO` provenance markers, because
+            `ATTR_RE` matched `///` and `#[` but not a plain `//` — so the marker saying
+            *why* a body is hand-written was silently lost; and
+            `test_generated_replica_module_public_api` counted only `s.valid()`, which
+            under-counts by exactly the 13 methods that now spell it `self.valid()`.
+            *(superseded plan)* The merged
+            replica reaches `1040 verified, **6 errors**`, and for the first time these are
+            genuine *proof* failures rather than compile errors — which is exactly what
+            listing a function in `proven_functions` asserts. The failures cluster in
+            `CReplicaNextProcessRequest`, `CReplicaNextProcess2a`,
+            `CReplicaNextSpontaneousMaybeMakeDecision`, `CReplicaNextSpontaneousMaybeExecute`,
+            `CReplicaNextReadClockMaybeSendHeartbeat`, and `CReplicaInit`'s precondition at
+            `ReplicaImpl.rs:217`. Each comes back out of `proven_functions` (regaining its
+            `assume(false)`) unless the proof can be made to go through; that is the last
+            step before the merge can land. Note the trade: every function backed off keeps
+            its `assume(false)`, so J.4's final note count depends on this.
+            *(superseded analysis of the 3 compile errors)* With
+            J.2's rename, J.3.a and J.3.b in place, the full experiment (20 functions in
+            `proven_functions`, 19 in `mut_self_helpers` and `[method_calls]`) reaches
+            `assume(false)` 0 and 3 compile errors. Each is understood:
+            - **2 × `CExecutorExecute`.** I classified it as "still a free function", which is
+              right, but it is a free function taking **`&mut CExecutor`** and returning
+              `Vec<CPacket>` — so it needs the `mut_self_helpers` binding treatment (drop the
+              state output) *without* the `[method_calls]` call-form change. The two knobs
+              are already separable; what is missing is that the receiver argument must be
+              passed `&mut` rather than `&`. Useful confirmation that the split between the
+              two config keys is the right factoring.
+            - **1 × `CReplicaInit`.** Emitted as `c.CReplicaInit()` where `c` is
+              `&CReplicaConstants`, but the function is
+              `CReplicaInit(c: &CReplicaConstants) -> CReplica` — a free function whose first
+              argument is *not* a receiver. Listing `LReplicaInit` in `proven_functions`
+              should not have made it a method call; find what did.
+      - [x] **J.4 — confirmed 2026-08-05.** `scripts/classify_trigger_notes.py` on a fresh
+            log: **0 deliverable by regeneration**, 13 emitted-but-unhandled-shape, 64 in
+            hand-written or preserved bodies. 26 of the predicted 36 landed; the other 10
+            belong to the 5 actions that stayed hand-written to keep their proofs, so they
+            move from "deliverable" to "not reachable" — the prediction was right about
+            where they were, and the shortfall is a deliberate choice rather than a miss.
+
+  - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the
+        same module on **several single-name lines** (`use X::a;` and `use X::b;`), and the
+        widening replaced only the first, leaving the second as a duplicate. It now widens
+        the first and drops the siblings.
+
+  - [ ] **54.7.b — the premise is wrong, measured 2026-08-05.** Merging proposer delivered
+        **zero** notes, as executor and election did. Attributing every one of the 103 notes
+        to its enclosing function and checking that function against **fresh transpiler
+        output** gives:
+
+        | | notes |
+        |---|---:|
+        | in bodies fresh does not emit at all | **72** |
+        | in bodies the preserve list protects | **28** |
+        | **actually deliverable by regenerating** | **3** |
+
+        **⚠ Retracted 2026-08-05 — the "3" was produced by an unsound method.** That
+        attribution matched a note to its enclosing function by searching for the note's
+        source line *as a substring* of each body. Common lines like
+        `forall |i: int| 0 <= i < …` occur in many bodies, so notes were assigned to whichever
+        body happened to contain the text first — at one point 40 notes were attributed to a
+        single function, which is what exposed it. Re-done by mapping each body to its
+        **line range** and locating the note within it, the same classification gives
+        **40 deliverable / 33 not-emitted / 30 preserved**.
+
+        **But the number to trust is neither, because it was measured directly: merging
+        executor, election and proposer moved the note count by exactly 0** (103 → 103 → 103
+        → 103). Whatever the classification says, regeneration is not clearing these notes.
+        The likely reason is that "the owner function is emitted by fresh" was never the
+        right test — fresh emits the *same quantifier with the same missing trigger*, because
+        54.7.a only taught codegen the `vec_element_ensures` shape, and these are other
+        shapes.
+        Four successive estimates (80, 50, 3, 40) all disagreed with a fact that three merges
+        had already established. **The observation stands; the classification does not.**
+        54.7.b should be judged by re-running the note count after a merge, not by counting
+        which bodies fresh emits.
+
+  - [x] **42.8.c.2.iv.H** **Election merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `assume(false)` in the merged file 5 → 0; 332 lines changed. Two more merge defects,
+        both the same shape as earlier ones in a case I had not covered:
+        - **`use X::a;` and `use X::{a, b, c};` are the same module path.** `_module_path`
+          returned `None` for a single-name import, so the overlap was invisible and both
+          were emitted (`E0252: LtUpperBound defined multiple times`). Patching that alone
+          then broke it the *other* way — fresh's single-name form was never widened, so
+          `UpperBound` and `UpperBoundedAddition` went missing and the file failed with
+          `cannot find type UpperBound`. Both directions now covered.
+        - **"Still open at end of line" was not enough for the body brace.** My struct-literal
+          fix in D used that rule, and a contract can hold braces that *stay* open across
+          lines: `G(s.push(x)) =~= ( if P(x) { … } else { … } )`. The body-opening brace is
+          the one outside **every paren**, which covers both cases. Verified across all seven
+          modules: no parsed body is brace- or paren-unbalanced.
+        Each fix is regression-tested, and the second test pins the exact contract shape that
+        broke it rather than a generic one.
+
+  - [x] **42.8.c.2.iv.G** **Executor merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `merge_generated.py --preserve` had the *same* free-functions-only blind spot the
+        drift check did, so it rejected all 17 method names outright — the protection was
+        recorded but unenforceable. It errored loudly rather than silently doing nothing,
+        which is the fail-closed behaviour that made this obvious. Extended to impl methods;
+        the list accepts a bare or `Impl::method` name.
+        Result: **`assume(false)` in the merged file goes 6 → 0** — those six stubs are
+        exactly what would have replaced real implementations. Executor's regenerated file is
+        checked in, 425 lines changed, verifying.
+        **It delivers no trigger notes, and that is expected, not a shortfall.** Executor's 10
+        notes live inside the bodies the preserve list protects, so regeneration cannot reach
+        them. Which means the 54.7 provenance split needs revisiting: it classified notes by
+        `skip_functions` membership, and the 17 newly-preserved methods are not in
+        `skip_functions`, so notes inside them were counted as "transpiler-emitted, delivered
+        by regeneration" when they are not. **The deliverable-note figure is 50, not 80** — corrected 2026-08-05 by classifying on the preserve list rather than `skip_functions`; see the acceptance row.
+        One test moved: `test_executor_cache_helpers_rehomed_out_of_manual_injection`
+        asserted the `gen_helpers` import as an exact single line, and `rustfmt` wraps and
+        sorts it. It now checks the three helper names are imported — the property it cares
+        about — rather than the formatting.
+
+  - [x] **42.8.c.2.iv.F** **The drift check was blind to `&mut self` methods — 17 real
+        implementations would have been replaced by `assume(false)` stubs (2026-08-05).**
+        `body_drift` compared only the free functions from `parse_items`, ignoring the
+        `impls` map entirely. The RSL protocol actions are all `&mut self` methods, so
+        executor, election and proposer were effectively unchecked while reporting clean.
+        Found while chasing E: `CExecutorProcessAppStateRequest` is a **52-line
+        implementation** in the checked-in file and a **59-line `assume(false)` stub** in
+        fresh output.
+        Extended to impl methods (`Impl::method`, and the preserve list accepts either the
+        bare or qualified name). That surfaced **17 more**, and every single one is the
+        dangerous direction — fresh stub over real implementation:
+        executor ×5, election ×4, proposer ×8. All added to the preserve list; all seven
+        modules now report clean.
+        The count for 42.8.c is therefore **30 protected bodies, not 13**. And the reason E's
+        transpiler bug matters less than it looked: those functions are proof-fallback stubs
+        in fresh output, so the `&mut self` lift is mangling *stub* bodies. The lift bug is
+        still real, but executor's merge is gated on preserving the implementations, which is
+        now done.
+
+  - [x] **42.8.c.2.iv.E** The `&mut self` lift mangles proof-fallback stub bodies.
+        **FIXED 2026-08-05 — and it was already fixed one commit earlier; the measurement
+        said otherwise.** A/B on real output: **4 tuple tails without the `Clone` match, 0
+        with it**, in `executor.rs`. The emitted body is now
+        `let result = if .. { vec![CPacket{..}] } else { .. vec![] }; result`, typed
+        `Vec<CPacket>` as the signature promises.
+        **Why three iterations concluded "the fix changes nothing": the metric could not
+        tell the two apart.** I was counting `grep -c '; result }'`, which is 3 in the broken
+        *and* the fixed output — the defect was `result`'s *type* (a pair), not the presence
+        of a trailing `result`. Every "still 3, so no effect" reading in the entries below is
+        void, and so are the two reverts of the `find_struct_in_expr` /
+        `count_non_struct_in_expr` extension that it justified. Those reverts happen to have
+        been right anyway: the transform is correct without them, confirmed by dumping the
+        post-transform AST.
+        **Guarded at the emission level** by
+        `test_mut_self_lift_leaves_no_tuple_tail_in_rsl_output`, which transpiles executor,
+        election, proposer and replica and asserts no `(self.clone(), ..)` survives. Verified
+        failing-first: 4 offenders without the fix, 0 with. An emitted-text assertion is
+        deliberate here — four AST-level tests of this same lift passed while the real output
+        stayed broken, so the AST is the wrong place to guard it.
+        **What it does not do is unblock J.** Fresh output for these functions is still an
+        `assume(false)` proof-fallback stub; E only makes the stub well-typed. Replica still
+        needs the free-function forms retired in favour of methods, and still cannot take
+        fresh's contract without taking a stub body with it. The 36 notes remain behind J.
+        **Re-scoped 2026-08-05 — it no longer blocks anything.** Written when it looked
+        like executor's blocker; F then showed those functions are `assume(false)` stubs in
+        fresh output, and G landed executor by preserving the real bodies. The lift bug is
+        **and its recorded cause is now disproved.** I wrote that a `&mut self` method whose
+        tail is `proof { … }; result` returns the pre-lift tuple because the lift misses that
+        shape. Built the reproduction as a unit test —
+        `test_lift_reaches_a_nested_trailing_block`, feeding
+        `{ assume(false); { let result = (Struct{…}, rest); proof {…}; result } }` straight to
+        `struct_to_field_assignments` — and it **passes**: the struct becomes `self.field = …`
+        and the tuple does not survive. So the lift handles this shape in isolation, and
+        whatever produced executor's `}; result }` is elsewhere — the lift not being applied
+        to proof-fallback stubs at all, a different `returns_unit`, or a separate emission
+        path for stub bodies.
+        **Narrowed 2026-08-05 by contrast.** In the same file `CExecutorGetDecision` lifts
+        correctly and `CExecutorProcessAppStateRequest` does not. The difference is what sits
+        in the tuple's state slot: a struct literal in the working one, **`self.clone()`** in
+        the broken ones (`(self.clone(), vec![…])`). `struct_to_field_assignments` looked only
+        for `Struct`/`StructUpdate`, so an identity clone matched nothing, the guard fell
+        through, and `result` kept naming the tuple — and with a non-unit return the trailing
+        `result` is kept, so the body returns a pair.
+        **That gap is fixed and tested** (`test_lift_handles_identity_self_clone_as_the_state_element`,
+        which failed before and passes after; 0 diff across all 8 non-RSL protocols).
+        **It does not fix the real emission** — executor still emits 3 `; result }`. So the
+        Tuple arm was one real gap but not the whole path. Next suspects, in order:
+        `find_struct_in_expr` and `count_non_struct_in_expr` match only struct literals *and*
+        do not descend into an `If`, while the stubs put the tuple in both arms of one. I
+        tried extending both, and the emission still did not move, so I reverted that rather
+        than commit an unvalidated change — the two guard tests here are what made the
+        difference between a demonstrated fix and a guess.
+        **AST-level reproduction is exhausted (2026-08-05).** Four tests now feed
+        `struct_to_field_assignments` progressively closer models of the real body — nested
+        trailing block; tuple behind an `if/else`; identity `self.clone()` as the state
+        element; and the exact shape, `let result = { let __rhs_0 = …; if c {
+        (self.clone(), …) } else { … } }` inside `{ assume(false); … }`. **Only the third
+        failed**, and fixing it did not move the emission; the other three passed unchanged.
+        The printer's method path *does* run on these — the output carries the
+        `let ghost old_self = *old(self);` that only `func.is_method` emits — so the
+        transform runs and still yields `}; result }`.
+        Conclusion: the divergence is in how the AST is **built** (translator), not printed,
+        and it cannot be guessed from the output. **Next step is instrumentation** — dump the
+        `ExecExpr` the printer receives for `CExecutorProcessAppStateRequest` and compare it
+        against the model in `test_lift_with_a_let_before_the_if_in_the_value_block`, which is
+        the closest passing approximation.
+        **Instrumentation done 2026-08-05** — `VERUS_TRANSPILE_DUMP_BODY=<fn>` on the printer
+        prints the `ExecExpr` it receives. It settles the question the hand-built models could
+        not: the state element is **`Clone(Var("self"))`**, a dedicated `ExecExpr::Clone` node,
+        *not* the `MethodCall{receiver: self, method: "clone"}` that every model above used and
+        that `is_identity_self_clone` matched. That is why the Tuple-arm fix passed its own test
+        and changed nothing real — it was matching a node the translator never emits. Matching
+        the `Clone` node is now fixed and tested
+        (`test_identity_self_clone_recognises_the_clone_node`).
+        **Emission still does not move** — executor still emits 3 `; result }` with the `Clone`
+        node matched, and re-applying the `find_struct_in_expr` / `count_non_struct_in_expr`
+        extension on top of it changed nothing either, so that stayed reverted a second time.
+        The remaining suspect is the restructure guard `!expr_eq(transformed, value)`: if the
+        transform yields something equal to its input the restructure never runs, which would
+        explain why *every* fix downstream of it is inert. Instrument that next, not the AST.
+        Otherwise the dump is now the tool for this — no more hand-built models, they were
+        wrong about the node shape for four rounds running.
+        *(The "still low priority" note here is superseded by the FIXED banner at the top of
+        this item. The lift is fixed; what remains for the 36 notes is J, not E.)*
+        With the D fixes in, the executor merge produces a file that `rustfmt` parses and
+        that differs by 514 lines — and it still does not compile:
+
+            error[E0308]: mismatched types
+               --> executor_gen.rs:452:12
+            452 |         }; result }
+                |            ^^^^^^ expected `Vec<CPacket>`,
+                |                   found `(CExecutor, Vec<CPacket>)`
+
+        The malformed tail `…; proof { … }; result }` is present in **fresh transpiler
+        output** — checked directly, 3 occurrences — so the merge is not introducing it.
+        The `&mut self` lift (Phase 48) rewrites the *signature* from
+        `-> (CExecutor, Vec<CPacket>)` to `&mut self -> Vec<CPacket>` but leaves `result`
+        bound to the original tuple, so the body returns a pair where the signature promises
+        one element. It affects `CExecutorProcessAppStateRequest` and
+        `CExecutorProcessStartingPhase2` at least.
+        This is the same class `test_mut_self_method_drops_functional_output` guards for
+        `CLearnerForgetDecision`; that guard covers one shape and this one — a body whose
+        tail is `proof { … }; result` — slips past it. **Fix the lift, extend the guard to
+        this shape, then re-attempt executor.** Merge attempt reverted; nothing half-applied.
+
+  - [x] **42.8.c.2.iv.D** Two more merge defects, found by actually attempting the
+        executor merge rather than trusting the clean drift report (2026-08-05). Both fixed;
+        executor's merge still fails on something else, so it is **not** landed.
+        - **Overlapping brace-list imports produced a duplicate.** Fresh
+          `use X::{a, b}` plus a carried `use X::{b, a, c}` emitted both, which is an
+          `E0252 defined multiple times`. `_import_path` normalised whole member sets, so
+          the two looked like different imports. The merge now *widens* fresh's import
+          instead of adding a second.
+        - **`_block_end` truncated any function with a struct literal in its contract.**
+          `CExecutorExecute`'s `requires` has
+          `UpperBound::UpperBoundFinite{n: …}`; those braces open and close on one line, and
+          `_block_end` took that as the body. It parsed as **5 lines instead of 99**, and the
+          merge carried the fragment. The body-opening brace is the one still *open* at end
+          of line. After the fix no parsed body in any `*_gen.rs` is brace-unbalanced.
+        **This one also hid itself from the drift check**: `CExecutorExecute` is a
+        `skip_function`, so it is absent from fresh, and the check skips names not in both —
+        the carry was broken even though the report was clean. A checker built on a parser
+        inherits that parser's blind spots, which is worth remembering before trusting a
+        green report over an actual attempt.
+
+  - [x] **42.8.c.2.iv.C** The 13 bodies a merge would silently rewrite, now enumerated.
+        `scripts/check_merge_body_drift.py` (new, 2026-08-05) compares function *bodies*
+        rather than `pub exec fn` names, which is what the regen parity check does and why
+        the `filter_clearnerstate` swap was invisible to it. `regenerate_rsl.sh` runs it as
+        step 2b and reports per module. Whitespace-only differences are ignored so `rustfmt`
+        reflow does not cry wolf.
+        Result — this is the real remaining content of 42.8.c, per function instead of per
+        thousand diff lines:
+
+        | module | clean? | bodies a merge would rewrite |
+        |---|---|---|
+        | broadcast | ✅ | — |
+        | acceptor | ✅ | — |
+        | learner | ✅ | `filter_clearnerstate` (protected) |
+        | executor | ❌ | `CExecutorInit`, `clone_next_op_to_execute` |
+        | election | ❌ | `CElectionStateInit`, `CRemoveAllSatisfiedRequestsInSequence`, `CRemoveExecutedRequestBatch`, `clone_requests_received_prev_epochs`, `clone_requests_received_this_epoch` |
+        | proposer | ❌ | `CProposerInit`, `clone_incomplete_batch_timer`, `clone_request_queue` |
+        | replica | ❌ | `CReplicaInit`, `CReplicaNumActions`, `CSchedulerInit` |
+
+        **All 13 triaged (2026-08-05); every module now reports clean.** The finding is
+        sharper than "bodies differ" — for 7 of them, merging would have replaced verified
+        code with something *strictly worse*:
+
+        - **5 would become an `assume(false)` stub.** `CExecutorInit`,
+          `CElectionStateInit`, `CProposerInit`, `CReplicaInit`, `CSchedulerInit` — fresh
+          emits a proof-fallback stub where the checked-in body is a real 13–39 line proof.
+        - **2 would become trusted.** `clone_next_op_to_execute`,
+          `clone_incomplete_batch_timer` — fresh emits
+          `#[verifier(external_body)] { r.clone() }`; the checked-in bodies are verified
+          per-variant matches. A silent verified→trusted swap.
+        - **2 would lose postconditions.** `CRemoveExecutedRequestBatch`,
+          `CRemoveAllSatisfiedRequestsInSequence` — both sides verify, but the checked-in
+          ones carry `requires … valid()` and `ensures result@[i].valid()/abstractable()`
+          that fresh drops.
+        - **4 take fresh, checked one by one.** The three `clone_*` differ from fresh by a
+          single doc-comment line and nothing else; `CReplicaNumActions` is
+          `result as int == …` versus `result@ == …`, equivalent and fresh is more explicit.
+
+        Those 4 are marked `accept-fresh` in the list rather than left unlisted, so the
+        report stays empty. A check that prints the same four items every run stops being
+        read — which is how the original body swap slipped through.
+
+  - [x] **42.8.c.2.iv.A** Learner: `filter_clearnerstate` collision. **FIXED 2026-08-05,
+        learner merge diff 183 → 119.** The largest single divergence was not a signature
+        mismatch at all. The transpiler *synthesises* a `filter_clearnerstate` helper — a
+        naive `for` loop over `m.iter()` — while the checked-in file holds a hand-verified
+        `while` loop with invariants and `broadcast use`. Merging silently replaced the
+        verified code with code that does not verify, which is why the merged learner never
+        got far enough to reach the signature errors.
+        `no_stub_functions` cannot express this: it is keyed on *spec* function names, and
+        this helper has none — it is synthesised, so it appears in no `.rs` or `.toml`
+        (checked). Fixed in `merge_generated.py` instead, which is where the "preserve
+        hand-written work" concept already lives: `--preserve FN` makes the existing file win
+        for a named free function. An unknown name is an error, not a silent no-op, so a typo
+        cannot quietly yield the un-preserved merge.
+  - [x] **42.8.c.2.iv.B** Learner: the remaining 119 lines. **Diagnosed 2026-08-05 — there
+        is no transpiler defect here, and this item's recorded direction is backwards.**
+
+        The record says *"the fresh `lemma_abstractify_clearnerstate_empty` takes
+        `m: &HashMap<..>` while the preserved caller passes by value"*. Measured, it is the
+        other way round: **fresh emits `m: CLearnerState`, the checked-in file has
+        `&CLearnerState`.**
+
+        The cause is not drift but a deliberate change. `generate_map_proof_lemmas`
+        (`lib.rs:1721`) emits `&ExecType` **only when the field is Arc-wrapped**, so
+        auto-deref from `&Arc<T>` works at call sites — otherwise it emits the bare type.
+        `learner_transpile.toml` says `# Phase 49.2: Arc-wrap removed — direct ownership with
+        &mut self`, from commit `b118f212`. So by-value is now *correct*, and the
+        checked-in `learner_gen.rs` is simply **stale relative to Phase 49.2**. (The
+        transpiler test at `lib.rs:3549` asserting `&CLearnerState` is valid, not stale — it
+        sets up `arc_wrap_fields` explicitly.)
+
+        **⚠ The paragraph above was wrong, and attempting it disproved it (2026-08-05).**
+        There *is* a transpiler defect, in two places, and "accept fresh's by-value
+        signatures" is not available. Walked end to end:
+
+        1. **`manual_code` needs the manual file to carry its own `impl` block.** Injection
+           happens at the top level of the `verus!` block (`lib.rs:680`, `:1300`), so
+           `&mut self` methods placed there fail with *"`self` parameter is only allowed in
+           associated functions"*. `acceptor_manual.rs` supplies `impl CAcceptor { … }` itself
+           — that is the convention, and it is not written down anywhere.
+        2. **`filter_clearnerstate` must not go in the manual file.** The transpiler
+           synthesises a helper of that name, so a copy there yields two definitions (merge
+           diff 119 → 455). It stays in the generated file under
+           `merge_generated.py --preserve`. **Wired into the workflow (2026-08-05)**: the
+           list is checked in at `scripts/rsl_merge_preserve.txt` and `regenerate_rsl.sh`
+           turns it into `--preserve` flags in the merge commands it prints. Three tests
+           guard it, including one that every listed name really is a free function in the
+           file it claims to protect — a stale entry would otherwise surface as a
+           `merge_generated.py` exception mid-regeneration.
+           **Also recorded there: the script's parity check cannot catch this class of
+           problem.** It compares `pub exec fn` *names*, so a body swap on a private `fn` —
+           exactly what happened to `filter_clearnerstate` — passes it silently.
+        3. **The lemma parameter must be `&ExecType` unconditionally.** `param_type` in
+           `generate_map_proof_lemmas` is `&T` only when the field is Arc-wrapped, but the
+           lemma's *own body* calls `abstractify_{prefix}`, hand-written in `types_i.rs` and
+           taking `&CLearnerState`. By-value therefore does not type-check against it:
+           `expected &HashMap<..>, found HashMap<..>` — the exact error this item recorded
+           all along. The Arc case was never the only one that needed the reference.
+        4. **Fixing the signature is not enough.** With the lemmas taking `&T`, the
+           transpiler's *generated call sites* still pass by value
+           (`lemma_abstractify_empty_clearnerstate(result.unexecuted_learner_state)`), so the
+           emission has to change in both places. `tests::test_generate_map_proof_lemmas`
+           (`lib.rs:3394`) pins the current by-value form and must move with it.
+
+        **The two-part transpiler change is DONE (2026-08-05). Learner now merges and
+        verifies: `1046 verified, 0 errors`, merge diff 119 → 105, notes still 103.**
+        `param_type` in `generate_map_proof_lemmas` and both `ref_prefix` sites in
+        `translator/mod.rs` now emit `&` unconditionally — all three were keyed on the same
+        wrong `is_arc` condition. The regenerated `learner_gen.rs` is checked in, so learner
+        is off the stale-since-49.2 footing.
+        Blast radius checked by regenerating every protocol: **0 diff lines** across all
+        eight non-RSL `types_gen.rs`. Three tests pinned the old by-value form and moved with
+        it; a fourth, `test_mut_self_method_drops_functional_output`, fired for a good reason
+        and was *not* simply relaxed — its point is that the two proof arguments are
+        different states, and the emission still satisfies that
+        (`(&old_self.…, &self.…)`), so it now tolerates the `&` while keeping the check.
+        **The `learner_manual.rs` extraction should NOT be done, and I was wrong to
+        recommend it (2026-08-05).** I attempted it — it works: the extraction plus
+        `no_stub_functions` takes learner's merge diff to **28 lines** and it verifies at
+        `1046 verified, 0 errors`. Then two guards fired, and they were right.
+        - `test_manual_code_footprint_is_empty` asserts **only acceptor** uses `manual_code`,
+          and its comments record the direction: *"Phase 29.4.4: Raft manual_code eliminated
+          — all 8 composite handlers auto-generated."* `manual_code` is a mechanism being
+          **retired**, not adopted.
+        - **My claim that "acceptor and executor already do this" was false**, and it is
+          repeated in two earlier commit messages. `executor_transpile.toml` has no
+          `manual_code`; `executor_manual.rs` is a leftover with
+          `test_executor_manual_code_footprint_audit_guard` driving it down (*"should not
+          define X after migration"*). Only acceptor uses it.
+        - `test_rsl_skip_function_classification_matches_configs` (added in 54.15) also
+          fired, 15 → 17, correctly reporting that the classification had shifted.
+        So learner keeps its bodies in `learner_gen.rs`, protected on merge by
+        `merge_generated.py --preserve`, which already solves the "don't silently replace
+        verified code" problem without adding to a mechanism the project is removing.
+        The real end state for learner's two actions is the capability gap in
+        `docs/rsl-skip-functions.md` — teach the transpiler to generate them.
+        Attempt reverted; nothing left half-applied.
+
+        Not yet attributed: `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3) differ
+        for a separate reason — check before assuming they are the same cause.
+
+  - [ ] **42.8.c.2.iv** **Measured 2026-08-05, and two bugs upstream of the recorded cause
+        are now fixed.** "No predictable finish" was based on the signature mismatch below.
+        Running the merge over all seven RSL modules and feeding each result to `rustfmt`
+        shows something more basic was wrong first: **the merged files did not parse.**
+        - `parse_items` captured only the first line of a `rustfmt`-wrapped `use`, leaving
+          `use crate::x::{` dangling. Every module was affected.
+        - `_block_end` counted braces only, so a body whose braces balance while a paren is
+          still open (`… =~= (`) was truncated mid-expression. This hit `election`.
+        Both fixed, both with regression tests that were **checked to fail when the fix is
+        reverted**. All 7 modules now produce parseable output.
+        **What the measurement does not support is any claim that this unblocks the merge.**
+        The diffs barely moved, so the bulk is genuine divergence, not formatting:
+
+        | module | merged-vs-checked-in diff | trigger notes it would deliver |
+        |---|---:|---:|
+        | broadcast | **0** | 0 |
+        | acceptor | **9** | 4 |
+        | learner | 183 | 7 |
+        | executor | 623 | 10 |
+        | replica | 708 | 44 |
+        | proposer | 761 | 25 |
+        | election | 712 | 17 |
+
+        So the merge is **per-module, not all-or-nothing**: `broadcast` already merges
+        byte-identically and `acceptor` is 9 lines away — but the notes are concentrated in
+        exactly the modules that have diverged most, so a cheap partial win on 54.7.b is
+        worth **4 notes at best** (acceptor). The remaining diff is the hand-applied Arc-wrap
+        and `&mut self` work, which is the real content of this item.
+
+  - [ ] **42.8.c.2.iv (original)** Merging `learner` still fails, on a *different* mismatch: the
         preserved hand-written bodies were written against older emitted signatures. The
         fresh `lemma_abstractify_clearnerstate_empty` takes `m: &HashMap<..>` while the
         preserved caller passes by value (`expected &HashMap<u64, CLearnerTuple>, found
@@ -16073,10 +16834,70 @@ epoch; our fixed-membership slice must keep it or cross-recovery agreement break
 
 ### TODO (work queue)
 
-- [ ] **51.9** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery + BeginRecovery. Decided A1 (assumed `base_says_recover` predicate as trigger guard) + B1 (keep all 4 BeginRecovery actions; ignore out-of-slice old_view/new_view/oepoch), but NOT pursued by hand.
-- [ ] **51.10** Complete `LNext` to include the entry actions.
-- [ ] **51.11** Safety invariant: agreement (no two recoveries choose conflicting values); prove it inductive.
-- [ ] **51.12** `finite` invariant for `prep_rcvd`/`accept_rcvd` (required by `.len()`-based quorum).
+- [x] **51.9 / 51.10** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery +
+  BeginRecovery, and completing `LNext`. Decided A1 + B1, but **NOT pursued by hand** —
+  **and the superseding path has now delivered them, verified 2026-08-05.**
+  Running the Phase 52 translator on `transpiler/tests/corpus/tier3/t3_01_jetpack/clean.tla`
+  emits all four BeginRecovery actions that decision B1 called for — `LSendBeginRecovery`,
+  `LHandleBeginRecoveryReq`, `LHandleBeginRecoveryResp`, `LCompleteBeginRecovery` — and the
+  generated `LNext` includes them (`LSendBeginRecovery` under its ballot quantifier,
+  `LCompleteBeginRecovery` directly, the two `Handle*` via `LHandleMessage`). 17 spec
+  functions in all. So these items are done by generation, not by hand, exactly as the
+  deferral intended.
+  The hand-written `src/protocol/Jetpack/jetpack.rs` still has only the 7 actions and still
+  says so in `LNext`'s doc comment. That is correct and stays: 51.1–51.8 are "kept as design
+  reference", not the deliverable.
+- [ ] **V1 corpus guard cannot run on this machine, and passes anyway.**
+  `corpus_v1_guard.rs` asserts every golden passes `verus`, but resolves the binary from
+  `$VERUS_PATH` or `~/verus-src/...`; neither exists here, so it prints
+  `SKIPPING V1: no verus binary found` and **returns green**. The pinned Verus *is* present
+  at `/tmp/verus-test/verus/<pin>/verus-x86-linux/`, but its released `verus` launcher does
+  not run here — `GLIBC_2.39 not found` — which is precisely why `scripts/verify_local.sh`
+  exists and calls `rust_verify` directly instead.
+  So a green local suite does **not** establish V1, and the phase's "all eight goldens pass
+  `verus`, enforced rather than asserted" holds only where a runnable launcher is installed.
+  Fix: resolve the same `rust_verify` + toolchain that `verify_local.sh` uses, so the guard
+  runs here rather than skipping. Not attempted in this iteration — replicating that env
+  inside a Rust test is fiddly and getting it wrong would produce false failures, which is
+  worse than a skip that announces itself.
+- [x] **51.11.a** Local safety invariant on `LState`, **DONE 2026-08-05**. `LInv` plus
+  `lemma_linit_establishes_linv` and `lemma_lnext_preserves_linv`: `1046 → 1048 verified,
+  0 errors`. The content is the Paxos acceptor discipline —
+  `accepted_ballot <= max_seen_ballot` (a replica never accepts at a ballot it has not also
+  promised), with the three non-negativity facts. Prepare raises `max_seen_ballot` and
+  leaves `accepted_ballot`, so the gap widens; Accept sets both to the same ballot, so it
+  closes to equality; the five proposer actions state the triple as an explicit frame
+  condition. Both proof bodies are empty because Verus discharges them, so
+  **non-vacuity was checked rather than assumed**: tightening the invariant to
+  `accepted_ballot < max_seen_ballot` makes both lemmas fail (`1046 verified, 2 errors`),
+  then reverted.
+- [ ] **51.11.b** Agreement — no two recoveries choose conflicting values. **Not statable on
+  the current spec, and that is the finding rather than a delay.** It quantifies over
+  replicas; `src/protocol/Jetpack/jetpack.rs` is a single-process projection, in its own
+  words "this one replica's local state, not `[i \in Server |-> ...]`". A global property
+  does not project onto a single node — the same reason `t0_01_simple`'s golden omits
+  `PCorrect`, and the reason RSL states its global properties in the refinement layer over
+  a distributed state rather than in the per-replica spec. So agreement needs either a
+  composed spec (a map from replica id to `LState`, plus the network) or the 51.14
+  implementation + refinement layer; it is not a proof that can be added to what exists.
+  51.11.a is the local half, and it is what a composed agreement proof would rest on.
+- [x] **51.12** ~~`finite` invariant for `prep_rcvd`/`accept_rcvd`~~ — **OBSOLETE, closed
+  2026-08-05. The premise expired with the vstd upgrade; no invariant is needed.**
+  The item's reason was "required by `.len()`-based quorum", which held when a `Set` could
+  be infinite and `len()` was only meaningful on a finite one. In the pinned vstd
+  (0.2026.08.02.b677dd5) **every `Set` is finite by construction**: `Set::new` returns
+  `Option<Set<A>>` and yields `None` for a predicate with infinite extent
+  (`set.rs:113-135`), `Set::finite()` is deprecated with the note *"Every Set is always
+  finite, so this is always true"*, and `len()` is total — `self.to_iset().len()`, no
+  precondition.
+  Confirmed on the code as well as in the library: `prep_rcvd`/`accept_rcvd` are
+  `Set<int>`, `L_CompletePrepare` and `L_CompleteAccept` guard on
+  `.len() >= c.quorum_size` with no finiteness hypothesis anywhere in the module, and the
+  crate verifies `1046 verified, 0 errors` with Jetpack mounted.
+  This is the same upgrade that made 54.11 delete 68 `Set::finite()` calls; the Jetpack
+  item was written before it and simply outlived its reason.
+  **Consequence for 51.11**: the agreement invariant does not need a finiteness
+  precondition either, so that item is smaller than it was written to be.
 - [x] **51.13** Mount module + `verus` check (2026-08-04). `pub mod Jetpack;` is uncommented in `src/protocol/mod.rs`; the module type-checks under Verus 0.2026.08.02.b677dd5:
   `verus --crate-type=lib src/lib.rs --verify-module protocol::Jetpack::jetpack --verify-module protocol::Jetpack::types` → `0 verified, 0 errors`.
   **Read that result correctly**: the module is spec-only (`pub open spec fn`), so there are no proof obligations and "0 verified" is expected — what the run establishes is that the whole crate, Jetpack included, passes Verus's frontend type-check. Confirmed **non-vacuous** by injecting a deliberate type error (`s.jepoch == Set::<int>::empty()`), which produced `error[E0277] ... SpecEq<Set<int>> is not satisfied`, then reverting. Safety/`finite` invariants (51.11/51.12) are still absent, so this is type-correctness, not correctness.
@@ -16092,6 +16913,16 @@ at `docs/jetpack_reference/`.
 
 ## Phase 52: Clean-Subset TLA+ → Verus Translator — **COMPLETE 2026-08-04**
 
+> **Linter caught up with the contract, 2026-08-05.** The four gaps listed below the
+> milestone table are all closed: whole-array reads and writes, message addressing, the
+> unconditionally-whitelisted bare-`Ident` disjunct, and `clean_distance` degrading to
+> silence. All five rules are implemented, so `unchecked_rules()` is now empty and the
+> "clean with respect to C1..C5 (… not yet implemented)" branch no longer fires.
+> Three of the four fixes reported false positives on *clean* corpus specs when first
+> written — hardcoding `dst`, counting an `EXCEPT` base, and counting an indexed read —
+> and each was caught by running the whole corpus before trusting the rule rather than by
+> reading the code. That check is now the habit worth keeping.
+>
 > **Every milestone met.** M0 (subset + linter), M0.0 (frontend), M1 (projection),
 > M2 (messages + quorums), M3 (V2 + V3), M4 (tier 2), M4b (Jetpack), M5 (docs +
 > pipeline). Eight `clean.tla` specs translate; **all eight goldens pass `verus`**,
@@ -16314,27 +17145,80 @@ merely annoys.
   queue array)" — false on a spec whose only update is `msgs' = {}` (zero
   EXCEPTs) and on Jetpack's `messages`, which the module never assigns at all.
   It now reports what it observed, including "this module never assigns it".
-- [ ] **Whole-array reads and writes are not checked.** `Cardinality(state)` in
-  an action observes every node at once, and `x' = [i \in Node |-> ..]` in an
-  action rewrites every node's state. Both are accepted today. The *contract*
-  now states both rules (harvested into `docs/clean_tla_subset.md` from the
-  parallel implementation) — the linter has not caught up.
-- [ ] **Messages with no `src`/`dst` are accepted**, though the framework cannot
-  route them. Also now in the contract, not in the linter.
-- [ ] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally**, with
-  no inspection of its body. This is what blesses `t0_01_simple`'s
-  `Terminating`, whose guard `\A i \in Proc : pc[i] = "Done"` reads every
-  node's `pc` — and whose own golden header already documents it as *"one node
-  cannot observe that, so the guard is not projectable"*. That is exactly the
-  unchecked prose a linter exists to replace. Fixing it will newly reject
-  `t0_01_simple/clean.tla`, and the right response is to fix the spec, not relax
-  the rule.
-- [ ] **`clean_distance` degrades to silence.** C1/C2/C3 all return early when
-  the node set is unknown, so a spec the linter understands *less* scores
-  *lower*. Jetpack's 2 and ReadersWriters' 1 are both this. The manifest should
-  record which rules actually executed, not only which fired — the playbook
-  already warns a reader to check `node_set` first, but the number itself is
-  still the misleading part.
+- [x] **Whole-array reads and writes are not checked.** — **DONE 2026-08-05.** `Cardinality(state)` in an action now reports C2. The two exemptions the
+  contract names are what make the rule usable, and both were found by measurement rather
+  than reasoning:
+  - **an `EXCEPT` base is not a read.** `[sendSeq EXCEPT ![s] = ..]` names `sendSeq` bare
+    but touches exactly entry `s`. Counting it flagged three of Lamport-mutex's helpers
+    (`AdvanceAll`, `AdvanceOne`, `Accept`) on a spec that is clean — caught by running the
+    whole corpus before trusting the rule, not by reading the code.
+  - **frame conditions are exempt**, per the contract: the right-hand side of `x' = x`, and
+    anything under `UNCHANGED`.
+  An indexed read is also excluded, so a cross-node read reports once rather than twice.
+  **No corpus case exercises this rule** — all ten originals and all eight `clean.tla`
+  keep their existing counts — so it is covered by four unit tests instead, including one
+  per exemption. That is worth stating plainly: the rule is real but unexercised by the
+  corpus, and the first spec to need it will be the first real test.
+  **Writes done too.** `x' = [i \in Node |-> ..]` in an action now reports C2. `Init` is
+  exempt *structurally* rather than by special case — C2 only walks operators reachable
+  from `Next`, and `Init` is not one. The rule keys on the constructor being the **direct**
+  right-hand side, which is what keeps Lamport-mutex's
+  `[sendSeq EXCEPT ![s] = [d \in Proc |-> ..]]` clean: that advances every *destination*
+  counter within node `s`, a single-node step.
+  **Known limit, recorded rather than left to be rediscovered**: a spec that hides the
+  constructor behind a helper (`x' = BuildAll(s)`) is not caught. Following returned values
+  needs the value analysis C2's indexed branch also lacks. Not flagging is the safe
+  direction.
+  Corpus impact of both rules: **none** — all ten originals and all eight `clean.tla` keep
+  their counts, checked before trusting either rule.
+- [x] **Messages with no `src`/`dst` are accepted**, though the framework cannot
+  route them. — **DONE 2026-08-05.** C4 now checks it.
+  **The addressing field is inferred, not named.** My first version hardcoded `dst` and
+  reported four *clean* corpus specs as violations: Raft, EPaxos, dining philosophers and
+  Jetpack all use the Raft-lineage `mdest`. The name was never the point — the framework
+  routes on whatever field the **receive guard** tests, which is exactly how the contract
+  states it ("guarded on `m` being addressed to `self`"). So the rule reads the guard,
+  collects the fields it compares against the receiving node, and requires sent messages to
+  carry one of them.
+  A spec whose receive guard tests no field gives nothing to infer from, and the rule stays
+  silent rather than guessing — guessing a name is what produced the false positives.
+  One level of helper indirection is resolved, because that is how the corpus writes
+  messages (`msgs' = msgs \cup {Prepared(s, d)}`); deeper is left alone.
+  Corpus impact: none — all counts back to their pinned values. Three tests, including the
+  `mdest` case that the hardcoded version failed.
+- [x] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally.** — **DONE
+  2026-08-05, and the prediction held exactly.** A parameterless action has no `self`, so
+  no index into per-node state is the legitimate one; C2 now walks these disjuncts and
+  reports any node state they touch. Reported as C2 rather than C5 because the defect is
+  the cross-node read, not the disjunct's shape.
+  **Only `t0_01_simple` was affected, as this item predicted** — `clean.tla` 0 → 1 and
+  `original.tla` 1 → 2; the other nine cases are unchanged.
+  **The spec was fixed, not the rule.** `Terminating` is now guarded on `pc[self]` and sits
+  under the existing `\E self \in Proc`. Behaviour is unchanged: `[][Next]_vars` already
+  permits a stuttering step, so an explicit stuttering action adds nothing to the behaviour
+  set — its only effect is on TLC's deadlock check, which is why the original has one, and
+  once every process is `"Done"` every node can still take it. Recorded in `rewrite.md`.
+  The golden's header asserted this guard "is not projectable"; that was true of the old
+  spec and is now stale, so it says what changed and why the golden still has no
+  counterpart (stuttering is what the runtime does when a node has nothing to do).
+  Three tests, including that a genuine environment action — message loss, touching only
+  the network — stays permitted, since rejecting those would break the contract's own
+  allowance for delivery, loss and crash.
+  *Not verified here*: TLC was not run, so the no-deadlock claim rests on the
+  `[][Next]_vars` argument plus the guard being satisfiable by every node once all are
+  `"Done"`. The corpus V2 fidelity script is what would confirm it.
+- [x] **`clean_distance` degrades to silence.** — **FIXED 2026-08-05.** C1/C2/C3 all
+  return early when the node set is unknown, so a spec the linter understands *less*
+  scores *lower*. The report now carries `skipped_rules` (rule + why), and all three
+  surfaces say so: `--json` gains `rules_executed` and `rules_skipped`; the plain-text
+  output prints the note under the verdict, including on the *violation* path, which is
+  the misleading one; and the manifest gains `rules_skipped` per case, pinned by
+  `corpus_lint_guard.rs` (verified failing-first).
+  **Measured across the corpus**: exactly the two cases this item named are affected —
+  ReadersWriters (1 violation, 3 rules skipped) and Jetpack (2, 3 skipped). The other
+  eight run all five rules, so the remaining `clean_distance` numbers were already honest.
+  Jetpack now reads: `2 clean-subset violation(s)` followed by *"note: 3 of 5 implemented
+  rules did not run, so this count is a lower bound, not a distance to clean"*.
 
 ## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — **COMPLETE 2026-08-04**
 
@@ -16574,272 +17458,91 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       counter, so a note-count check cannot see it. Entries are keyed on
       `(file, normalised expr, ordinal)`, not line numbers, so edits above a quantifier do
       not read as remove+add. `--fail-on-regression` / `--max-notes` are ready for 54.9.
-- [ ] **54.2** Baseline: record per-module verification wall-clock and the full trigger
-      inventory at `0.2026.08.02`. This is the regression baseline for every later batch.
-      **Cannot be produced on this dev box.** The pinned verus
-      (`release/0.2026.08.02.b677dd5`, cached at `/tmp/verus-test/verus/...`) needs
-      **glibc >= 2.39**; this box has 2.35 and the binary aborts before running. `docker` is
-      installed but the daemon refuses this user (`permission denied ... docker.sock`);
-      `bwrap` exists but would need a whole newer-glibc rootfs. Older cached releases (e.g.
-      `0.2026.01.02.6f52890`) do run here and produced the parser fixtures, but their choices
-      are NOT the baseline — substituting them would poison every later comparison. So the
-      capture is routed through CI, which already runs the pinned release on `ubuntu-24.04`.
-  - [x] **54.2.a** CI capture. **DONE (2026-08-04).** The `verify` job now tees the `scons`
-        verification output to `verus-verify.log`, parses it with
-        `scripts/trigger_inventory.py`, prints the summary to the job summary, and uploads
-        `trigger-inventory.{json,md}` as an artifact. `set -o pipefail` keeps `tee` from
-        masking a verification failure; the capture runs `if: always()` with `--allow-empty`
-        and asserts nothing, so it cannot change the job verdict. Guarded by
-        `TestCiWiring` in `scripts/test_trigger_inventory.py` — a silently dropped step
-        would otherwise look exactly like "no triggers left".
-  - [x] **54.2.b** Baseline committed. **DONE (2026-08-04).** Captured locally from the
-        pinned release, not from CI: `1044 verified, 0 errors` in ~40 s, **534 trigger
-        notes**, matching the phase's stated attribution exactly (Raft 177, generated/RSL
-        109, implementation/RSL 101, protocol/RSL 53+44+34=131, common/collections 11,
-        verus_extra 4, common/framework 1). Artifacts: `reports/triggers/baseline.{json,md}`
-        and `timing-baseline.{json,md}`; ceiling set to 534 with `enforce=true`, so 54.9's
-        guard is now live and the `changed`-trigger check has something to compare against.
-        **The "no verifier on this box" conclusion recorded in earlier notes was wrong**:
-        glibc 2.39 blocks only the `verus` *launcher*, not `rust_verify` (needs 2.34). The
-        launcher just sets `RUSTUP_TOOLCHAIN`, `LD_LIBRARY_PATH` and `VERUS_Z3_PATH` and
-        execs `rust_verify`; reproducing those three runs the real verifier. The bundled z3
-        4.16.0 wants glibc 2.38, but the PyPI `z3-solver==4.16.0` wheel is manylinux_2_27 and
-        passes Verus's version check. Wrapped as `scripts/verify_local.sh` so this is a
-        one-liner on any similarly-old host.
-  - [x] **54.2.c** Per-module wall-clock. **DONE (2026-08-04).** `SConstruct` gained
-        `--verus-extra-args` (shlex-split, appended to the verus command line; verified by
-        `scons -n` dry run), CI passes `--verus-extra-args="--time-expanded"`, and
-        `scripts/verus_timing.py` (parse/report/diff) turns the breakdown into per-module
-        `verify/air/smt-init/smt-run` times plus rlimit counts. `diff
-        --max-regression-pct 20 --fail-on-regression` is the phase's acceptance criterion
-        made checkable. Two deliberate choices: a `--min-ms` noise floor (default 500) so a
-        40ms→80ms module is not called a 100% regression — those rows are still printed
-        under "below the noise floor" rather than silently dropped — and improvements
-        reported separately, since a large speedup can mean a trigger became too
-        restrictive. Verus prints the crate root with an empty module name; it is recorded
-        as `<root>` so it cannot be confused with a missing module. 30 tests
-        (`scripts/test_verus_timing.py`), including guards that CI really passes the flag
-        and that `SConstruct` really forwards it.
-      Note the 534 figure was measured in Verus's default `selective` mode, which is what CI
-      captures; `--triggers-mode all-modules` reports more, and counts across modes are not
-      comparable (the mode is recorded in the label and file name so a diff cannot silently
-      mix them).
-- [x] **54.1.b** Work-list scanner (added 2026-08-04, unplanned but needed):
-      `scripts/trigger_sites.py` statically inventories every `forall|`/`exists|` in the
-      tree and classifies it `annotated` / `auto` / `ambiguous` / `unannotated`, so the
-      annotation batches can be planned and split per file without waiting for a CI
-      verification run. Checked in at `reports/triggers/sites.md`. **This is an upper bound
-      on the work, NOT a prediction of note counts** — Verus's default `selective` mode only
-      reports the choices it finds ambiguous, so an unannotated quantifier need not produce
-      a note. Current scan: 1435 sites, 882 unannotated, 445 annotated, 72 `#![auto]`,
-      36 ambiguous. By directory the unannotated load is Raft/refinement_proof 239,
-      implementation/RSL ~150, generated/RSL 111, protocol/RSL 75 + common_proof 74,
-      common/collections 68 — consistent with the note attribution table above.
-      NOTE `src/generated_backup/RSL` (65 sites) is a stale backup tree; exclude it from any
-      batch. 23 tests. One real bug caught by spot-checking during development: a comma
-      between binders (`forall |x1: X, x2: X|`) truncated the scope scan, so annotations
-      after a multi-binder list were misreported as unannotated.
-- [x] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
-      **DONE (2026-08-04). Gate passed; 54.4 may proceed.** All 15 notes eliminated — both
-      directories are now at 0 — with `1044 verified, 0 errors` unchanged and the crate total
-      534 → 519. Evidence: `reports/triggers/54.3-pilot.{json,md}` plus the two diffs
-      (`54.3-pilot-trigger-diff.md`, `54.3-pilot-timing-diff.md`): 15 removed, **0 added,
-      0 changed**, total verify time −0.3%, and every touched module flat or slightly faster
-      (sets 200→196, hashsets 285→279, vecs 186→178, set_lib_ext_v 362→270, count_matches
-      344→349 ms).
-      Method: annotate with **exactly the trigger Verus already chose**, so behaviour is
-      preserved by construction and the diff's `changed` count stays 0. Three things learned
-      that 54.4+ will hit:
-      (a) **`#![trigger ...]` after the binder works on `choose` and `assert forall`**, not
-      just `forall`/`exists`;
-      (b) **a trigger may not contain a lambda** — Verus auto-chose
-      `s.map(<closure>).contains(op)` in `hashsets.rs`, then rejected both
-      `#![trigger ...]` and inline `#[trigger]` with *"triggers cannot contain
-      let/forall/exists/lambda/choose"*. It auto-chooses terms it forbids you to write. The
-      resolution was not an exception after all: annotating the **inner** quantifiers made
-      the outer note disappear on its own, so the site is now clean. Where that trick does
-      not work, hoisting the closure to a named `spec fn` is the fallback — but check the
-      callers first, since this lemma's only caller is generated code;
-      (c) nested `assert forall` needs the outer binder annotated too; annotating only the
-      inner one leaves the outer note in place.
-- [x] **54.3.a** Timing gate made usable (found by the pilot). The first gate run flagged
-      `implementation::RSL::replicaimpl_no_receive_clock` at +24.5% — a module the pilot never
-      touched. Verus verifies modules in parallel (127 threads here) so per-module wall-clock
-      tracks contention: that module measured 1967 / 2448 / 2241 ms across three runs of two
-      code states. A single-sample 20% threshold therefore flags untouched modules, and a
-      gate that cries wolf gets ignored. `verus_timing.py diff --confirm-with <second run of
-      the same code>` now demotes any regression that does not reproduce, reporting it under
-      "Not reproduced by the confirmation run" rather than dropping it. With confirmation the
-      pilot gate is clean. **Superseded by 54.4.a**: `--confirm-with` handles two samples,
-      but the correct procedure is min-of-3 on both sides (see 54.4.a) — the flagged module
-      turned out to be an artifact of a single-run *baseline*, not of the new code.
-- [x] **54.4** The 5 `broadcast` functions. **DONE (2026-08-04). Gate clean.** The
-      injectivity axioms `axiom_cmessage_view`, `axiom_cpacket_view`, `axiom_cvote_view`,
-      `axiom_clearner_tuple_view` (`cmessage.rs`, `types_i.rs`) and `axiom_endpoint_view`
-      (`io_s.rs`) now pin `#![trigger x1@, x2@]` — exactly the multi-trigger Verus was
-      already choosing, confirmed with `--triggers-mode verbose`. `1044 verified, 0 errors`;
-      trigger diff vs 54.3: **0 added, 0 changed**; timing +0.6% total, 0 regressions.
-      Evidence: `reports/triggers/54.4-broadcast.{json,md}`, `54.4-trigger-diff.md`,
-      `54.4-timing-diff.md`.
-      Note the **note count does not move** (519 → 519): these five emit no note in
-      `selective` mode, so they were invisible to the 534 inventory. Their risk is different
-      and larger — a broadcast axiom is in scope for every proof in the crate, so whatever
-      trigger Verus picks silently applies everywhere and can change between releases with
-      no diagnostic at all. Finding them needs `--triggers-mode verbose` (1336 notes vs 534).
-      The other 3 broadcast axioms (`*_key_model`) already carried `#[trigger]`.
-      **Amended 2026-08-05**: everything above holds — the inner `forall` is pinned and the
-      trigger diff is genuinely 0/0 — but 54.4 did *not* silence Verus's own
-      "broadcast functions should have explicit `#[trigger]`" warning, which still fires on
-      exactly these 5. That warning is about a different obligation (the trigger for the
-      broadcast lemma itself, not for the quantifier inside its ensures) and was invisible
-      under the 886 `non_snake_case` warnings until 54.10 cleared them. Tracked as **54.16**.
-- [x] **54.4.a** Timing methodology corrected — the 54.3 gate was measuring noise.
-      Chasing a flagged module (`implementation::RSL::replicaimpl_no_receive_clock`, +30%)
-      to its cause showed the **baseline itself was a single lucky run**: at the very commit
-      the baseline documents, that module measures 2372 / 2438 / 2490 ms across three runs,
-      while the committed baseline recorded 1967. Every later comparison inherited that
-      error. Three fixes, each measured rather than guessed:
-      (a) `verus_timing.py merge` combines N runs by per-module minimum (least-contended
-      estimate); the baseline is now **min of 3 runs** and both sides of a gate must be
-      merged the same way. Two samples are not enough — a Raft module read "+27%" on two
-      samples and +12% on three;
-      (b) the noise floor moved 500 → **1000 ms**, chosen from data: across three
-      identical-code runs, modules ≥500 ms spread up to 22.6% (one exceeds the 20% gate)
-      while modules ≥1000 ms spread at most 16.8% and none exceed it. 1000 ms is the
-      smallest floor at which the gate cannot fire on noise, and it still covers 28 modules
-      including every expensive one;
-      (c) the floor applies to the **base** value, since the percentage is relative to it —
-      a baseline inside the noisy regime cannot support a ratio claim. Large absolute jumps
-      from a small base are not lost: the "below the noise floor" table is sorted by
-      absolute delta.
-      **Procedure for 54.5+**: 3 runs of the new code, `merge`, then `diff` against the
-      merged baseline.
-- [x] **54.5** `src/protocol/RSL/` (131 notes). **DONE (2026-08-04). Both gates clean.**
-      130 of 131 annotated across all 25 files in one batch; crate total 534 → **389**.
-      `1044 verified, 0 errors` on three independent runs. Trigger diff vs the 54.2 baseline:
-      **145 removed, 0 added, 0 changed**; timing (min-of-3 both sides) +0.8%, 0 regressions.
-      Evidence: `reports/triggers/54.5-protocol-rsl.{json,md}`, `54.5-trigger-diff.md`,
-      `54.5-timing-diff.md`.
-      One site skipped and left auto-triggered: `refinement_proof/state_machine.rs:54`, where
-      the chosen trigger belongs to a nested `exists |p|` while the note points at the outer
-      `forall |req|` — annotating the outer binder there is a compile error.
-- [x] **54.5.a** `scripts/apply_triggers.py` — annotates from an inventory, writing back
-      exactly what Verus chose. Built because 54.5–54.8 hold 400+ more sites and hand-editing
-      them would be neither reviewable nor uniform. It skips rather than guesses (already
-      annotated; closure in the term; no binder found; trigger belongs to a nested
-      quantifier), and every skip prints a reason. 15 tests.
-      **Two bugs it had, both caught by verification, both now pinned by tests:**
-      (a) it flattened *alternative* trigger groups into one multi-term trigger.
-      `#![trigger a] #![trigger b]` (either fires) and `#![trigger a, b]` (both needed) mean
-      different things; the flattened form is strictly more restrictive and broke
-      `state_machine.rs`'s postcondition and a `replica.rs` assertion. This is the
-      "too restrictive" failure mode the phase warns about, and it showed up on the first
-      run of the very first batch;
-      (b) its binder-variable check parsed `|opn: OperationNumber|` as binding *two* names,
-      so it rejected every typed binder as "nested". The check itself is sound and necessary
-      — it is what catches case (a)'s sibling, a trigger naming a variable bound by an inner
-      quantifier — but it has to split the binder list on top-level commas and take the name
-      before the colon.
-- [x] **54.5.c** Transpiler parser fix, found by the Rust suite after 54.5 landed. The RSL
-      protocol specs are not only Verus input — they are also **this transpiler's input**, so
-      annotating them broke `test_election_recursive_functions_generate_loop_code` and
-      `test_regenerate_rsl_validate_only_passes` with `Parse error: Expected identifier,
-      found '#'`. `parse_forall_expr` accepted `#![trigger ...]` but `parse_exists_expr` and
-      `parse_choose_expr` did not. Both now accept and discard them, matching what `forall`
-      already did in practice: `Trigger` is parsed and never emitted, because triggers are
-      proof-only and do not affect exec codegen. Adding a `triggers` field to `Expr::Exists`
-      would have touched 92 match sites for no downstream consumer.
-      Lesson for 54.6–54.8: **annotating a spec file can break the transpiler even when Verus
-      is happy**, and `scripts/regenerate_rsl.sh` uses the *release* binary, so a debug-only
-      rebuild leaves the old parser in place and the failure looks unfixed.
-- [x] **54.5.b** Inventory parser fix, found by the 54.5 diff reporting `1 changed`.
-      A trigger's terms can straddle several source lines, each with its own caret run; the
-      parser treated "more than one quoted line" as "no terms" and dropped **29 of the
-      crate's trigger groups**. An empty term list meeting a non-empty one then reported as
-      `changed` — the one diff category that is supposed to mean genuine instability, so a
-      false positive there costs exactly the trust the category exists to earn. Fixed by
-      pairing each quoted line with the marker line that follows it; the baseline was
-      re-parsed from the same log, and after the fix the 54.5 diff reads 0 changed.
-- [x] **54.6** `src/implementation/RSL/` (101 notes). **DONE (2026-08-04). Both gates clean.**
-      100 of 101 annotated across all 10 files; crate total 389 → **289**. `1044 verified,
-      0 errors` on three runs. Trigger diff vs the 54.2 baseline: **245 removed, 0 added,
-      0 changed**; timing (min-of-3 both sides) +1.0%, 0 regressions. Evidence:
-      `reports/triggers/54.6-implementation-rsl.{json,md}`, `54.6-trigger-diff.md`,
-      `54.6-timing-diff.md`.
-      **`gen_helpers.rs` (43 notes) belongs here, not in 54.7** — the open question in the
-      original 54.6 text. It is hand-written: its own header says "Shared helper functions
-      for generated RSL modules", no generator emits it (`regenerate_rsl.sh` does not name
-      it), and its history is ordinary hand edits. Only `src/generated/RSL/` is
-      transpiler-owned, and that is 54.7's scope.
-      One site skipped: `cconfiguration.rs:204`, trigger belongs to a nested quantifier.
-- [x] **54.7.a** Transpiler codegen emits explicit triggers for `vec_element_ensures`.
-      **DONE (2026-08-04).** The transpiler synthesises
-      `forall |i:int| 0 <= i < X@.len() ==> X@[i].pred()` for every entry in
-      `vec_element_ensures`; it now emits `#![trigger X@[i]]` — the term Verus was choosing
-      anyway. Two emission sites (`lib.rs:772`, `translator/mod.rs:10165`). This shape is
-      **60 of the 109** generated notes. Guarded by
-      `test_vec_element_ensures_emits_explicit_trigger`, which asserts the emitted text
-      rather than a regenerated file, for the reason in 54.7.b.
-- [ ] **54.7.b** Regenerate `src/generated/RSL/` and confirm the notes are gone.
-      **CORRECTION (2026-08-05): the blocker I recorded here was wrong, and is now much
-      smaller.** I wrote that regeneration "rewrites `types_gen.rs` with 53 lines deleted,
-      dropping hand-added imports". It does not. All **43 imports survive**; the 53-line
-      figure came from reading `git diff --stat`, which counts reordered lines as deletions
-      plus insertions. Compared as content, the fresh output differed from the checked-in
-      file only by (i) `use` ordering and line wrapping, which `rustfmt` normalises, and
-      (ii) one hand-written 27-line `CParameters` struct + `clone_up_to_view` impl.
-      Both are now fixed (Phase 42.7), so `types_gen.rs` regeneration is **byte-identical**.
-      `acceptor_gen.rs` differs in **13 lines**, all comment text plus one import listing two
-      extra names — cosmetic, not import loss.
-      **Second correction (same day): it is not a verification exercise either.** Measured
-      per module, the checked-in files are up to 2.7x larger than fresh output because they
-      carry `skip_functions` bodies and Arc-wrap patches, and `regenerate_rsl.sh` keeps those
-      five files untouched by design. So codegen fixes cannot reach them at all without a
-      merge step — see 42.8.c. Of the 109 generated notes, **2 are now gone** (broadcast,
-      regenerated in 42.8.a), 4 more sit in acceptor's preserved code, and the remaining 103
-      are behind that merge or behind the 54.7.c decision.
-- [ ] **54.7.c** The other **33** of the 109 generated notes are **not transpiler output**.
-      They sit inside `skip_functions` hand-written bodies that regeneration preserves
-      verbatim (`CRemoveExecutedRequestBatch`, the `lemma_*_bridge` proofs, and others across
-      election/executor/learner/proposer/replica). Classified by regenerating into a temp dir
-      and checking which functions the transpiler actually emits: 76 emitted / 33 preserved.
-      They live under `src/generated/` but are hand-maintained, so `CLAUDE.md`'s
-      "do not hand-edit generated files" rule does not obviously bind — that rule exists to
-      stop people patching transpiler *output* instead of the transpiler. Needs an explicit
-      decision before annotating; the honest options are (i) treat preserved bodies as
-      hand-written and annotate them in place, or (ii) move them out of `src/generated/`
-      into a companion module like `gen_helpers.rs`, which is where the equivalent RSL
-      helpers already live.
-- [x] **54.8** `src/protocol/Raft/` (177 notes, 141 in `refinement_proof/invariants.rs`).
-      **DONE (2026-08-04). Both gates clean.** Applied in two steps so a failure would be
-      attributable — the 36 notes in the four smaller files first (verified), then the 141 in
-      `invariants.rs`, the file that also holds the 12 deprecated Phase 34 `assume`s. 166 of
-      177 annotated, 11 skipped as nested-quantifier cases. `1044 verified, 0 errors` on
-      three runs. Timing **-4.4%** — the annotations made the crate *faster*, which is the
-      expected direction when the solver stops searching for triggers.
-      A convergence pass then followed: re-running the applier against the *current*
-      inventory attributed 109 further notes that only became attributable once inner
-      quantifiers were annotated (the effect first seen in 54.3). Final crate total:
-      **534 → 122**, with **412 removed, 0 added, 0 changed** against the 54.2 baseline.
-      Evidence: `reports/triggers/54.8-raft.{json,md}`, `54.8-trigger-diff.md`,
-      `54.8-timing-diff.md`.
-      **Note on the convergence pass**: run with `--filter src/`, it also edited
-      `src/generated/RSL/*.rs`, which `CLAUDE.md` forbids. Reverted — those 109 notes are
-      54.7's scope and their disposition (54.7.c) is an open decision, not something a broad
-      filter should settle. Scope future passes to the directory you mean.
+- [x] **54.2** Baseline at `0.2026.08.02`. **DONE — and the recorded blocker was false.**
+      This item said the baseline "cannot be produced on this dev box" because the pinned
+      verus needs glibc ≥ 2.39 and the box has 2.35. That is the same claim corrected at the
+      start of the 2026-08-05 session: only the *launcher* needs the newer glibc, `rust_verify`
+      needs 2.34, and reproducing the launcher's three environment variables runs it fine —
+      which is what `scripts/verify_local.sh` does and what every measurement in Phases 54 and
+      42.8.c since has used.
+      The artefacts exist and are at the pinned version: `reports/triggers/baseline.{json,md}`
+      (534 notes, 635 trigger choices, 180 multi-line) and
+      `reports/triggers/timing-baseline.{json,md}` (142 modules, min of 3 runs). Every later
+      diff in this phase was taken against them.
+      Kept as a caution rather than deleted: a recorded environment blocker is worth
+      re-testing before it is built on, because this one shaped several items' plans while
+      being wrong.
 
 ### Residual after 54.3–54.8: 122 notes
 
 | where | count | why it remains |
 |---|---:|---|
-| `src/generated/RSL/` | 109 | 54.7: 60 need a regeneration that is blocked on Phase 42 (lossy RSL regen); 49 sit in preserved hand-written bodies pending the 54.7.c decision |
+| `src/generated/RSL/` | 109 | 54.7. Superseded by the measured attribution in Current Status (2026-08-05): of the 103 now remaining, **36** are deliverable by regeneration (all in replica, gated on 42.8.c.2.iv.J), 14 are transpiler-emitted but an unhandled shape, and **53** sit in `skip_functions` or preserved bodies that regeneration never rewrites. The 60/49 split here predates the tool and mixed the two dimensions. |
 | `src/protocol/Raft/refinement_proof/invariants.rs` | 11 | trigger belongs to a nested quantifier; the note points at the outer binder |
 | `src/protocol/RSL/refinement_proof/state_machine.rs` | 1 | same nested-quantifier shape |
 | `src/implementation/RSL/cconfiguration.rs` | 1 | same |
 
-The 13 nested-quantifier cases need the enclosing expression restructured (hoist the inner
+**Superseded 2026-08-05 — only 2 of these 13 were really nested; see the acceptance row.
+The other 11 are pinned.** The remaining 2 need the enclosing expression restructured (hoist the inner
 quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
 they are the honest remainder of the "not mechanical" warning in this phase's premise.
+- [x] **54.10.b — "emitted" was inferred, not measured; the true count was 3, not 13.**
+      `classify_trigger_notes.py` decided its `generated` category by *absence* — not in
+      `skip_functions`, not preserve-listed — and called the result transpiler output. That
+      is not the same thing: a hand-written helper can simply live in a generated file and
+      appear in no config at all. Found by going to fix the "10 remaining emitted notes" and
+      failing to find any emission site in the transpiler; checking fresh output showed
+      **none of the 10 are emitted** (`abstractify_endpoint_seqno_map`,
+      `lemma_creplycache_get`, the proposer bridge lemmas, …). The 3 that really were
+      emitted are exactly the 3 that 54.7.e cleared, which is the confirming evidence.
+      Fixed by verifying against fresh output: `--fresh-dir` classifies precisely, and
+      without it the notes are reported as `unverified` rather than assumed actionable.
+      `trigger_exceptions.py`'s category renamed `generated-emitted` → `generated-unlisted`
+      with a corrected description. 5 new tests, including that an unverified run claims
+      nothing.
+      **Consequence: Phase 54 has no codegen work left.** All 74 remaining notes are
+      hand-written bodies, so the phase is now entirely behind the `CLAUDE.md` question in
+      54.7.c/d.
+- [x] **54.10.a — the `changed triggers` false positive, FIXED 2026-08-05. My recorded
+      diagnosis was wrong and the real cause is narrower.** I wrote that the diff keys on
+      `file:line`. It does not — `entry_key` was already
+      `(file, expression text, ordinal)`. The actual cause: the "expression text" is the
+      **underlined span**, and Verus underlines only the `assert` keyword on an
+      `assert forall`. So all 13 assert sites shared the identity `"assert"` and were told
+      apart by ordinal alone; annotating one shifted every later ordinal, and each entry got
+      paired against its neighbour.
+      Fixed by keying on the whole quoted source region (`source_text`) instead of the span.
+      **Measured on the real 74-note inventory**, simulating the same edit: old identity
+      reports `removed=1 changed=3`, new identity `removed=1 changed=0`. Three tests,
+      including one that a *genuine* re-choice is still reported — a fix that suppressed
+      real signal along with the noise would be worse than the noise.
+      An inventory captured before this carries no `source_text`, so `diff` falls back to the
+      coarse key **for both sides** rather than reporting every entry as removed-and-added;
+      that path is tested too.
+- [x] **54.7.e — the 3 learner map-lemma notes (2026-08-05).** `generate_map_proof_lemmas`
+      now emits `#![trigger abs2[ak]] #![trigger expected[ak]]` on the value-equivalence
+      `assert forall`. The triggers pinned are **exactly what Verus was already choosing**
+      (reported as trigger 1 and 2 of 2), so the instantiation does not change and only the
+      note goes away — which is the point, since an auto-chosen trigger can move between
+      releases. 77 → 74, `1046 verified, 0 errors`, 0 added.
+      The *key-set* assert in the same lemmas (`abs2.contains_key(ak) == expected.contains_key(ak)`)
+      is deliberately left alone: it emits no note, so there is no chosen trigger to pin and
+      annotating it would be a change with no evidence behind it. The test says so.
+      **The "remaining 10 emitted notes" recorded here were not emitted at all** — see
+      54.10.b. Looking for their emission sites in the transpiler is what exposed it: they
+      are not there.
+- [x] **54.9.b — ceiling tightened to 77 (2026-08-05)**, from the stale 120 that would have
+      allowed 43 notes of silent regrowth. Verified the guard actually bites: it passes at 77
+      and exits 1 at 78. The baseline was refreshed at the same time, which also resolved the
+      3 "changed triggers (instability)" the old 2026-08-04 baseline reported — those are
+      **line drift, not instability**: the same three trigger strings rotated across three
+      `proposer_gen.rs` asserts that moved when the file was regenerated. Diffing by
+      `file:line` cannot tell a rotation from a re-choice; the multiset is identical.
+      `reports/triggers/exceptions.md` regenerated (13 emitted + 64 preserved = 77), and both
+      of its reason narratives were stale and are corrected: the emitted group no longer
+      claims to be waiting on a blocked merge, and the preserved group no longer recommends
+      extracting to `*_manual.rs` — which `CLAUDE.md` forbids, and which mis-stated the facts
+      by claiming executor already does it (only acceptor does).
 - [x] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
       ceiling, so this does not silently regrow. **Mechanism DONE (2026-08-04); the number
       it enforces arrives with 54.2.b.** `trigger_inventory.py guard` + a new
@@ -16866,7 +17569,7 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
 
 | criterion | status |
 |---|---|
-| 0 `automatically chose triggers` notes, **or** a checked-in list of the deliberate exceptions with a reason for each | **MET via the list.** 534 → **120**. `reports/triggers/exceptions.md` accounts for every remaining note: 107 in `src/generated/` (transpiler output, blocked on regeneration — 54.7.b / 42.8.c.2.iv) and 13 nested-quantifier cases needing the expression restructured. Generated from a measured inventory by `scripts/trigger_exceptions.py`, and CI runs `--check` so it cannot silently drift. |
+| 0 `automatically chose triggers` notes, **or** a checked-in list of the deliberate exceptions with a reason for each | **MET via the list.** 534 → **120**. `reports/triggers/exceptions.md` accounts for every remaining note. **Corrected 2026-08-05**: the 107 in `src/generated/` were all labelled "transpiler output, blocked on regeneration". Measuring the enclosing function against each module's `skip_functions` shows **80 are transpiler-emitted** (these do clear when 42.8.c lands) and **27 sit in preserved hand-written bodies** — regeneration copies those through verbatim, so 54.7.b can never clear them however the merge goes. Now two categories with separate reasons. **Corrected again**: 534 → **105**. The nested-quantifier group was a *catch-all* ("not under `src/generated/`"), applied without measuring; the trigger Verus actually chose is the whole `ds.network.contains(LRaftPacket {…})` term, which mentions every bound variable, so **11 of those 13 were pinnable** and are now pinned. Acceptor's 4 were delivered via `acceptor_manual.rs` (54.7.b). **And the last 2 were pinnable too** — their notes sit on the *inner* `exists`, not the outer `forall`, so the trigger names only what that binder binds. 534 → **103**, and **every remaining note is in `src/generated/`**. Standing split (corrected 2026-08-05): **50 generated-emitted + 53 generated-preserved**. The first classifier used `skip_functions` membership, but a function can be emitted fresh and still have its body preserved by `merge_generated.py --preserve` — true for the 17 `&mut self` actions whose fresh output is an `assume(false)` stub. Thirty notes were counted as cleared-by-regeneration when regeneration can never reach them. The catch-all rule is renamed `unclassified` and now tells the next reader to measure the chosen trigger before writing a note off — all 13 in that group turned out to be pinnable. Generated from a measured inventory by `scripts/trigger_exceptions.py`, and CI runs `--check` so it cannot silently drift. |
 | `1044 verified, 0 errors` still holds | **MET.** Now **1045**, 0 errors — the extra function came from regenerating `broadcast_gen.rs`, which had lost a proof helper. |
 | No module's verification wall-clock regresses more than 20% against the 54.2 baseline | **MET.** Measured min-of-3 on both sides at each batch; the crate ended up **faster** (54.8: −4.4%). |
 | CI guard from 54.9 in place | **MET.** Note-count ceiling (ratcheted 534 → 120) plus the `changed`-trigger check against the committed baseline; timing is reported rather than gated because CI hardware differs from the baseline host (54.9.a). |
@@ -16962,53 +17665,124 @@ value per hour, not by phase number:
               set library, so deleting is a judgement call worth making deliberately: the
               alternative is keeping them with `#[allow(deprecated)]` and a note that they
               are trivially true under vstd 0.2026.08.
-      - [ ] **54.11.c** **28 more `.finite()` calls exist that Verus never warned about**,
-            because they are in modules that are not compiled: both `src/protocol/mod.rs:1`
-            and `src/services/mod.rs:1` read `// pub mod lock;`. They are in
-            `services/lock/main_s.rs` (11), `protocol/lock/distributed_system_procotol_i.rs`
-            (7), `services/lock/distributed_system_s.rs` (6), and
-            `protocol/lock/refinement_proof_i.rs` (4, including
-            `lemma_lock_sentPackets_finite`, vacuous for the same reason as the RSL one).
-            Reconciled: 53 `.finite()` in `src/` = 17 warned + 8 in comments + 28 dead.
-            Nothing here is urgent, but 54.11 must not be recorded as "zero" without it —
-            re-enabling the lock tree brings all 28 warnings back. The three call sites that
-            referenced lemmas deleted in a.2 were updated, so the tree is at least
-            consistent with the code around it.
-            **This generalises past 54.11**: every warning count in Phase 54 is a count over
-            *compiled* modules only, and the same is true of the 120 trigger notes.
-
-- [ ] **54.12** The `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and says
-      outright it "is dangerous since it assumes the given function describes a finite set" —
-      so unlike the rest of this list these are a real proof gap, not noise.
-
-      Two corrections to the original item. **It is 10 sites, not 20**: Verus reports each
-      once per verification chunk, so the warning count double-counts. And **they are not all
-      the same shape** — only 7 are the "image of a finite `HashMap` domain" idiom; the other
-      3 are set comprehensions over index pairs into a `Seq<RequestBatch>`, which is a
-      different and much harder problem.
-
-      The right replacement for the map-domain idiom is not "discharge finiteness" but
-      "don't create the obligation": `m@.dom().map(|k| k@)` *is* the image of the domain, and
-      `Set::map` is total with a finite result by construction. `Set::new` in this vstd
-      returns `Option<Set<A>>` (`None` when infinite), so going that way would mean an
-      `unwrap` plus a finiteness proof at every site — strictly worse. `Set::lemma_map_contains`
-      is in `group_set_lib_default`, so the membership characterisation the old predicate gave
-      definitionally is still available to proofs.
-
+      - [x] **54.11.c** The 28 `.finite()` calls in the lock tree. **Closed 2026-08-05 as
+            not worth doing, and the reason changes the framing.** I had recorded these as
+            "they will regrow when the lock tree is re-enabled". Checking the history: both
+            `src/protocol/mod.rs` and `src/services/mod.rs` have carried `// pub mod lock;`
+            **since the initial commit** — `7fdd2080` only deleted a *duplicate* commented
+            declaration. The tree has never compiled in this repo; it is inherited dead code
+            from the IronFleet port, not something switched off pending a return.
+            Nothing outside it references it (checked). It is **1,689 lines across 10 files**.
+            Deleting 28 no-op `.finite()` calls in never-compiled code is busywork, and worse,
+            unverifiable — no Verus run covers it, so an edit could break it silently.
+            **The real question is whether the tree stays at all**, which is a judgement call
+            worth making deliberately rather than as a side effect of a warning sweep:
+            delete it, or re-enable it and fix what that surfaces. Either is a proper task;
+            neither is "tidy the finite() calls".
       - [x] **54.12.a** The 6 hand-written map-domain sites: `types_i.rs` 324/461/570
             (`abstractify_creplycache`, `abstractify_cvotes`, `abstractify_clearnerstate`) and
             `ProposerImpl.rs` 108/132. **DONE (2026-08-05)**, `1040 verified, 0 errors` with
             **no proof breakage at any call site**. One wrinkle worth keeping: for `u64` keys
             the map function is `|k: u64| k as int`, not `|k: u64| k@` — `u64`'s view is the
             identity, and the old code only type-checked because `k@ == ak` coerced.
-      - [ ] **54.12.b** `src/generated/RSL/proposer_gen.rs:223`. The template it comes from
+      - [x] **54.12.b** `src/generated/RSL/proposer_gen.rs`. — **DONE 2026-08-05, and the
+            recorded reason it was blocked was wrong.**
+            This said the template is fixed so "this clears itself whenever the file is next
+            regenerated". Measured: `abstractify_endpoint_seqno_map` is **not in fresh
+            transpiler output at all** (which contains 0 `new_assuming_finite`), so it is a
+            hand-written body and regeneration would never have cleared it. Same error as
+            54.10.b — provenance inferred rather than measured.
+            Fixed directly, which the amended `CLAUDE.md` permits: the domain is the image of
+            the map's keys under `@`, so `m.dom().map(|k: EndPoint| k@)` states it exactly and
+            is finite by construction — no assumption, where `Set::new_assuming_finite` is
+            deprecated as "dangerous since it assumes the given function describes a finite
+            set".
+            **It cost three proof steps, and that is the honest price**: `Set::map` is
+            `closed`, so `lemma_abstractify_endpoint_seqno_insert` lost the membership fact it
+            had been reading straight off the old predicate. It needed
+            `broadcast use vstd::set::Set::lemma_map_contains`, an explicit witness
+            (`choose |ep| old_m.dom().contains(ep) && ep@ == ak`) and carrying that witness
+            across the insert. The `choose` then produced a *new* auto-chosen note, pinned
+            with `#![trigger ep@]` to hold the zero.
+            **The crate is now 0 warnings, 0 trigger notes, `1048 verified, 0 errors`.**
+            *(original item)* The template it comes from
             (`types_transpile.toml`, `LProposer.highest_seqno_requested_by_client_this_view`)
             **is fixed**, so this clears itself whenever the file is next regenerated.
             It cannot be regenerated now: fresh transpiler output differs from the checked-in
             file by ~1200 diff lines (hand-written `skip_functions` bodies and the manual
             Arc patch), which is exactly the merge stuck at **42.8.c.2.iv**. Blocked there,
             not here — and per CLAUDE.md the generated file must not be hand-edited.
-      - [ ] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs` (64/69 in
+      - [x] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs` —
+            **DONE (2026-08-05)**, c.1/c.2a/c.2b/c.2c all complete.
+            **Measured (2026-08-05), and the earlier sketch was wrong on one point.** It
+            proposed `flatten_set_seq` from `verus_extra/set_lib_ext_v.rs` for `requests` and
+            a `Set::<int>::range`-based pair set for `replies`. vstd in fact has
+            `Seq::flat_map` and `Seq::to_set`, which express *both* — `replies` is
+            `Seq::new(len, |b| Seq::new(.., |r| GetReplyFromRequestBatches(..))).flatten().to_set()`
+            — and `Seq::to_set` is finite by construction, so nothing is assumed. No
+            `Set::range` gymnastics needed.
+            The genuinely missing piece was **membership**: vstd proves `flatten`'s length,
+            its `flatten_alt` equivalence, `push` and singleton behaviour — and nothing about
+            what it contains. The refinement proof reasons about these sets almost entirely
+            through `.contains`, so that lemma is the whole bridge.
+            - [x] **54.12.c.1** `lemma_flatten_contains` in `verus_extra/seq_lib_v.rs`.
+                  **DONE (2026-08-05)**, `1042 verified, 0 errors`, trigger diff
+                  **0 added / 0 removed / 0 changed** after pinning the two `choose` binders
+                  (unpinned they added 2 auto-chosen notes; Phase 54 exists to prevent exactly
+                  that). Additive — no existing proof touched, so no regression risk.
+                  Worth recording how it had to be proved: the induction step is done at the
+                  level of `to_set`, not `contains`. vstd has **no membership lemma for
+                  `Seq::add`**, so `first().add(drop_first().flatten())` cannot be taken apart
+                  directly. Routing through our own `lemma_to_set_distributes_over_addition`
+                  gives `(a + b).to_set() == a.to_set() + b.to_set()`, and `to_set_ensures`
+                  carries it back. The solver does not chain those hops on its own — each one
+                  is written out.
+            - [x] **54.12.c.2a** `lemma_requests_contains` in `refinement.rs`.
+                  **DONE (2026-08-05)**, `1043 verified, 0 errors`, notes 120.
+                  Bridges `batches.flatten().to_set().contains(req)` to the two-level indexed
+                  form the refinement proof actually reasons with. It does **not** follow from
+                  `lemma_flatten_contains` alone: that gives `exists i. batches[i].contains(req)`,
+                  and reaching `exists i, j. batches[i][j] == req` needs `Seq::contains`
+                  unfolded with an explicit witness in each direction. Trigger is
+                  `batches[batch_num][req_num]` — anything on `.len()` fails
+                  "trigger does not cover variable req_num".
+            - [x] **54.12.c.2b** `lemma_replies_contains` + convert `ProduceAbstractState`.
+                  **DONE (2026-08-05)**, `1044 verified, 0 errors`, notes 120,
+                  `Set::new_assuming_finite` warnings **10 → 6**.
+                  `lemma_replies_contains` went through first try, reusing the witness
+                  structure the request bridge established — the only extra work was
+                  unfolding the inner `Seq::new` to relate `rs[i][j]` to
+                  `GetReplyFromRequestBatches(batches, i, j)`. `ReplySeqFromRequestBatches`
+                  names that sequence so the definition and the lemma refer to one thing.
+                  Both `let`s in `ProduceAbstractState` are now
+                  `<seq>.flatten().to_set()`: **finiteness is established, not assumed.**
+                  The 6 predicted call sites needed the bridge inserted, and two set
+                  equalities had to become explicit `assert forall … <==> …` plus `=~=`
+                  rather than `==` — with membership no longer definitional, extensionality
+                  is not automatic. `rs_prime` is over `batches.drop_last()`, so those blocks
+                  need the bridge at *both* sequences.
+                  Done additively: the bridge lemma was committed green before the definition
+                  swap was attempted, so the tree was never left half-migrated.
+            - [x] **54.12.c.2c** `ProduceIntermediateAbstractState`. **DONE (2026-08-05)**,
+                  `1046 verified, 0 errors`, notes 120, trigger diff 0/0/0.
+                  **`Set::new_assuming_finite` is now gone from all hand-written code** — the
+                  only 2 warnings left in the crate are 54.12.b's generated site, blocked on
+                  the 42.8.c merge, and its template is already fixed. Crate warnings: 3.
+                  Its per-batch bound is `if bn == last { reqs_in_last_batch } else {
+                  batches[bn].len() }`, so it needed `IntermediateBatchLen` plus bounded
+                  `IntermediateRequestSeq`/`IntermediateReplySeq` and their two bridges,
+                  rather than reusing the unbounded ones. The
+                  `batches.drop_last().push(batches.last().take(n))` idea floated earlier was
+                  not needed — a bound function is simpler and works for replies too, which
+                  that idea did not cover.
+                  Both bridges proved first try, reusing the witness structure from c.2a/c.2b.
+                  Callers needed the intermediate bridge at whichever `n` their state used —
+                  `0`, `reqs_in_last_batch`, `reqs_in_last_batch + 1`, and
+                  `batches.last().len()` all appear — and two `==` set assertions again had to
+                  become `assert forall … <==> …` plus `=~=`.
+                  Two `assert forall`s picked up auto-chosen triggers (120 → 122) and are
+                  pinned; a change made *for* Phase 54 should not leak new notes.
+      - [ ] ~~superseded~~ original 54.12.c note (64/69 in
             `ProduceAbstractStateFromBatches`, 82/87 in `ProduceAbstractState` — 4 warnings,
             3 distinct shapes). These build `{req | ∃ batch_num, req_num. bounds ∧ …}` over a
             `Seq<RequestBatch>`, i.e. the image of a finite *index* set, and they sit in
@@ -17024,7 +17798,8 @@ value per hour, not by phase number:
             Budget this as its own task: changing these definitions ripples through every
             proof that unfolds them, so it is not a <500-line edit until measured.
 
-- [ ] **54.13** The 30 autoderive-`Clone` warnings (18 "not a copy" + 12 "does not take the
+- [x] **54.13** The 30 autoderive-`Clone` warnings — **DONE (2026-08-05)**, all four
+      sub-items complete; the warning is at 0. (18 "not a copy" + 12 "does not take the
       form Verus expects"). Verus cannot spec the derived impl, so these types silently have
       no `Clone` specification.
 
@@ -17046,29 +17821,125 @@ value per hour, not by phase number:
             `clone_up_to_view`: `CAcceptor`, `CReplica`, `CConstants`, `CConfiguration`,
             `CPacket`. **DONE (2026-08-05)**, `1040 verified, 0 errors`, warnings 52 → 47,
             zero new trusted code.
-      - [ ] **54.13.b** The 5 macro-wrapped types: `CRequest`, `CReply`, `CVote` (inside
+      - [x] **54.13.b** The 5 macro-wrapped types: `CRequest`, `CReply`, `CVote` (inside
             `define_struct_and_derive_marshalable!`) and `CAppMessage`, `CMessage` (inside
-            `define_enum_and_derive_marshalable!`). All have `clone_up_to_view`, so the impl
-            body is settled; the open question is whether removing `Clone` from a derive list
-            that a marshalling macro consumes is safe, which needs reading the macro rather
-            than guessing. Do not attempt this by pattern-substitution.
-      - [ ] **54.13.c** The 4 types with **no** spec'd clone helper to delegate to:
-            `CRequestHeader`, `CScheduler` (structs), `COutstandingOperation`,
-            `CIncompleteBatchTimer` (enums). Each needs its `clone_up_to_view` written first —
-            that is the actual work, and it is per-type, not mechanical.
-      - [ ] **54.13.d** The 16 in `src/generated/`. The transpiler already emits spec'd
-            `impl Clone` blocks for some types (e.g. `Raft/types_gen.rs` `CState`), so this is
-            extending an existing emitter to the types it currently leaves on `#[derive]`,
-            then regenerating. Note `Raft/types_gen.rs` `CLogEntry` is the one case where the
-            best fix is different and cheaper: its fields are all `u64`, so
-            `#[derive(Clone, Copy)]` makes the clone a copy and Verus can spec it directly.
-            Unlike 54.12.b these are non-RSL protocols, which regenerate cleanly.
+            `define_enum_and_derive_marshalable!`). **DONE (2026-08-05)**,
+            `1040 verified, 0 errors`, warnings 47 → 42.
+            The macro question resolved cleanly: both `define_*_and_derive_marshalable!`
+            capture `$( #[$attr:meta] )*` and forward it to two places — the regenerated type
+            definition, where the derive list matters, and `derive_marshalable_for_{struct,enum}!`,
+            which **never expands `$attr` at all** and contains no `clone`/`Clone` anywhere.
+            The attributes are matched only so the pattern binds. So dropping `Clone` from the
+            derive list cannot affect marshalling, and the `impl Clone` goes after the macro
+            invocation in its own `verus!` block.
+      - [x] **54.13.c** The 4 types with **no** spec'd clone helper to delegate to.
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 42 → 38. With this
+            **every hand-written autoderive-Clone warning is cleared**; all 16 that remain are
+            in `src/generated/`. Each of the four needed a different answer, which is why it
+            could not be pattern-substituted:
+            - `CIncompleteBatchTimer` — its only payload is a `u64`, so the clone genuinely
+              *is* a copy. `#[derive(Clone, Copy)]` is strictly better than writing an impl:
+              no new code at all, and Verus specs it directly. (This is the same fix noted
+              for the generated `CLogEntry` in 54.13.d.)
+            - `CScheduler` — became writable *because of 54.13.a*: its `replica: CReplica`
+              field only got a spec'd `.clone()` in that step, so the helper now composes.
+            - `CRequestHeader` — has no `View` impl, so the postcondition is stated over the
+              fields (`result.client@ == self.client@`, `result.seqno == self.seqno`), which
+              is exactly what the existing `eq_spec` already treats as this type's identity.
+            - `COutstandingOperation` — an enum, so the body matches per variant;
+              `CBallot` is `Copy` and the batch has `clone_request_batch_up_to_view`.
+      - [x] **54.13.d** The 16 in `src/generated/`. **DONE (2026-08-05)**,
+            `1041 verified, 0 errors`; the autoderive-`Clone` warning is now **0** and the
+            crate total is 27 → **11**.
 
-- [ ] **54.14** The 5 `comparison is useless due to type limits`. Almost certainly `x >= 0`
-      on an unsigned type. Trivial, but each one is a guard that is not guarding anything —
-      check whether the intent was a different bound before deleting.
+            The plan in this item was to extend the emitter to write `impl Clone` blocks for
+            the types it left on `#[derive]`. Classifying the 16 first showed something
+            better: **every one of them bottoms out in `u64`/`bool`**. The `CConstants` of five
+            protocols and Raft's `CLogEntry` are all-scalar structs; the eight message enums
+            carry only scalar payloads; `PrimaryBackup::CState` holds the unit enum
+            `CNodeRole`; `Raft::CRaftPacket` holds `CRaftMessage`. So the clone genuinely
+            *is* a copy in every case, and `#[derive(Clone, Copy)]` beats any impl —
+            no emitted code, nothing added to the trusted base, and Verus specifies it
+            directly. Had this been done as written it would have added 16 `external_body`
+            blocks to the trusted base for no reason.
 
-- [ ] **54.16** The 5 `broadcast functions should have explicit #[trigger] or #![trigger ...]`.
+            Implemented as `compute_copy_spec_types` in `codegen/mod.rs`, generalising the
+            `unit_enums` mechanism that already existed (unit enums were the base case, and
+            only they were handled). It is a **fixpoint**, not a pass: `CRaftPacket` is Copy
+            only once `CRaftMessage` is, and a `HashMap` iteration could visit either first.
+            Conservative by construction — a `Seq`/`Set`/`Map` field, or a named type absent
+            from the registry, means not Copy. The unit test spends four of its eight
+            assertions on those negative cases, since deriving `Copy` where it does not hold
+            would not compile and deriving it on an unknown type would be a guess.
+
+            All 8 non-RSL protocols regenerated; every `*_types_regen_matches_checked_in`
+            test passes.
+
+- [x] **54.14** The 5 `comparison is useless due to type limits` — **DONE (2026-08-05)**,
+      both sub-items complete; the warning is at 0. The guess was right —
+      all five are `x >= 0` (or `x <= u64::MAX`) on a `u64` — but checking intent was worth
+      it, because the two classes have different causes and only one is a code smell.
+
+      - [x] **54.14.a** The 3 hand-written: `ElectionImpl.rs:252` (`0 <= lengthBound`),
+            `ProposerImpl.rs:602` (`opn >= 0`), `cconstants.rs:157` (`my_index >= 0`).
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 38 → 35.
+            These are *faithful* renderings of int-level spec bounds — `LReplicaConstantsValid`
+            really does say `0 <= my_index`. The conjunct is redundant only because the exec
+            type is `u64`, so deleting it loses nothing and the spec still states the bound;
+            each deletion is marked with a comment saying so, since it otherwise reads like
+            a missing check.
+      - [x] **54.14.b** The 2 in `src/generated/Raft/raft_gen.rs` (856, 864).
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`; the
+            `comparison is useless` warning is now **0** and the crate total is 30 → 27.
+            Fixed in the transpiler (`translator/mod.rs`, `is_vacuous_unsigned_bound` +
+            an `||` collapse in `transform_binary_op`), then `raft_gen.rs` regenerated —
+            **not** hand-edited, per CLAUDE.md.
+            The fold is deliberately narrow: it fires only when the left operand is an
+            *input parameter whose spec type is `int`* (so the narrowing is known to have
+            happened) and `config.int_type` is unsigned. Folding `x < 0` for a signed or
+            unknown `x` would silently change behaviour, so the unit test
+            `test_vacuous_unsigned_bound_folding` spends most of its assertions on the
+            negative cases: `Nat`-typed params, non-parameter operands, field accesses,
+            a signed `int_type`, and `>` / `<=` against 0.
+            Blast radius checked by regenerating: **only `raft_gen.rs` changed**, 2 lines,
+            and every other protocol's `*_regen_matches_checked_in` test still passes.
+
+      - [x] ~~**54.14.b** (original text)~~ The 2 in `src/generated/Raft/raft_gen.rs`. Unlike the
+            above these are **dead branches, not dead conjuncts**: the whole condition
+            `(*follower_id) < 0 || (*follower_id) > (u64::MAX as u64)` is constantly false,
+            so its arm — including a `proof { lemma_empty_msg_map(); }` — is unreachable.
+            The source is legitimate: `raft.rs:506` declares `follower_id: int`, where
+            `follower_id < 0 || follower_id > u64::MAX as int` is a real check. The transpiler
+            narrows `int` to `config.int_type` (`u64` here; see `translator/mod.rs:7846` and
+            `:8357`) and then translates the guard mechanically, at which point it cannot fire.
+            Fix belongs in the transpiler — elide a range guard that is vacuous under the
+            narrowed type — and wants a unit test, since it changes emitted output for every
+            protocol. `raft_gen.rs` regenerates cleanly (unlike 54.12.b's `proposer_gen.rs`),
+            so this is unblocked, just not a one-line edit.
+
+- [x] **54.16** The 5 `broadcast functions should have explicit #[trigger] or #![trigger ...]`.
+      **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 35 → 30, and the trigger
+      inventory diff is **0 added / 0 removed / 0 changed** — the evidence this item
+      specifically needed, since a broadcast axiom is in scope for every proof in the crate.
+
+      Two attempts were needed, and the failed one is the informative part:
+      1. **Inline `#[trigger]` inside the `forall` did not work.** vstd's own broadcast
+         lemmas are written that way, and in Verus several inline `#[trigger]` marks in one
+         quantifier form a single multi-trigger — semantically identical to the
+         `#![trigger e1@, e2@]` these already had. It verified, and the warning stayed at 5.
+      2. **Lifting the binder into the function's own parameters worked.** The check looks at
+         the *top level of the `ensures`*; with no parameters the quantifier is internal and
+         there is nothing there to mark. `axiom_endpoint_view(e1: EndPoint, e2: EndPoint)`
+         with `ensures #[trigger] e1@ == #[trigger] e2@ ==> e1 == e2` puts the trigger where
+         the check looks and gives the same `broadcast_forall`.
+
+      Safe because **every use is `broadcast use <name>;`** — checked, no direct calls — and
+      `broadcast use` passes no arguments, so the signature change reaches no call site.
+      `axiom_endpoint_view` alone is broadcast-used at ~20 places, so 0 errors across them is
+      a strong check that the trigger semantics really are unchanged.
+
+      Original 54.16 text follows.
+      
       Surfaced by 54.10; see the amendment on 54.4. The 5 are the injectivity axioms
       `axiom_endpoint_view` (`io_s.rs:123`), `axiom_cmessage_view`/`axiom_cpacket_view`
       (`cmessage.rs:222,294`), `axiom_cvote_view`/`axiom_clearner_tuple_view`
@@ -17083,8 +17954,129 @@ value per hour, not by phase number:
       before rewriting, and re-run the trigger diff, since changing a broadcast trigger can
       move proofs anywhere.
 
-- [ ] **54.7.d** Annotate the **76 transpiler-emitted notes** on the checked-in artifacts
+- [x] **54.18** The integration suite raced nested `cargo` builds. **DONE (2026-08-05).**
+
+      **The first diagnosis was wrong and is corrected here.** It said the tests use a
+      release binary that `cargo test` "never rebuilds", so results depend on whether someone
+      ran `cargo build --release` recently. Reading the helpers shows the opposite: the tests
+      ran `cargo run --release -- …` and therefore *did* rebuild. The real fault is that
+      **~20 tests each spawn their own nested `cargo`**, and cargo runs tests in parallel, so
+      those processes contend on one target directory — with each other, and with the outer
+      `cargo test` holding it too.
+
+      Fixed with a `OnceLock`-guarded `transpiler_binary()` that runs
+      `cargo build --release --bin verus-transpile` exactly once and returns the path;
+      concurrent callers block on it rather than racing. The three call sites in this crate
+      now invoke the binary directly. The fourth (`dpor-checker`) is left alone — separate
+      manifest, separate target dir.
+
+      **Verified as a controlled A/B**, not inferred. Scenario: `touch transpiler/src/lib.rs`,
+      then run the suite.
+      - fix reverted → the `failed to build archive … libverus_transpiler-*.rlib` races
+        reproduce immediately (`failed to map object file: memory map must have a non-zero
+        length`, then repeated `No such file or directory`)
+      - fix applied → **350 passed, 0 failed**, twice
+      Warm-cache runs also got faster, 3.4s → 2.1s, since nothing re-enters cargo per test.
+
+      Accounts for three batches of spurious failures on 2026-08-05 (13, then 1, then 18),
+      each passing on immediate re-run. **54.17 is a different problem and stays open** — it
+      is a doc-contract test reading `TODO.md`, and it failed once in a run where the release
+      binary was already warm, so this does not explain it.
+
+- [x] **54.17** `test_phase_38_10_4_b_shadow_subset_report_script_contract` flake.
+      **Closed 2026-08-05 as most likely 54.18, with the leading hypothesis disproved.**
+
+      I had recorded a suspicion: it is a doc-contract test reading `TODO.md` from the
+      working tree, and a non-atomic `open(p,'w')` truncates before writing, so a concurrent
+      reader could see a partial file. **Tested directly** — rewrote `TODO.md` in a tight
+      truncate-then-write loop while running the test six times: **0 failures**. The
+      hypothesis is wrong and is retracted rather than left as the standing theory.
+
+      **And my reason for excluding 54.18 was itself unverified.** I wrote that the second
+      failure happened "with the release binary already warm", but I never checked that —
+      the run in question had `cargo test --test integration` and `cargo test --lib`
+      back-to-back, and `--lib` builds a different target, which is exactly the shared-artifact
+      race 54.18 describes. Both failures are consistent with it.
+
+      Evidence for closing: 14 deliberate runs this iteration (8 full-suite, 6 under
+      concurrent rewrite) plus every routine full-suite run since 54.18 landed, all clean.
+      **Reopen if it recurs** — that would be real evidence against 54.18 being the whole
+      story, which is more than I have now in either direction.
+
+- [x] **54.7.f** Annotate the deliverable notes in hand-written bodies under
+      `src/generated/`. **DONE 2026-08-05 — the count is 0, not the ~21 expected.**
+      All **74** were annotated, not 53: the 10 "unlisted orphans" turned out to be
+      annotatable like the rest, and the "sites where Verus picks a term containing a
+      lambda, which cannot be written by hand at all" do not exist — measured 0 of 74
+      before starting, so that expectation was wrong rather than the work being harder.
+      `1048 verified, 0 errors` throughout, verified per module batch: learner 4 (74→70),
+      executor 10 (→60), election 17 (→43), replica 18 (→25), proposer 25 (→**0**).
+      **Why no proof moved**: each site pins the trigger Verus had *already chosen*, read
+      from the inventory. The instantiation is identical; only the note goes away, and the
+      choice stops being free to drift between releases. That is the whole point of the
+      phase, and it is why 74 edits to verified code cost zero proof debugging.
+      Provenance was confirmed per function with `--fresh-dir` before editing, as the item
+      required — all 74 absent from fresh transpiler output.
+      Ceiling tightened **74 → 0**. Phase 54's acceptance criterion was "zero notes or a
+      documented exceptions list"; it is zero, and `exceptions.md` is now empty.
+      **Two things reaching zero broke, both fixed rather than worked around:**
+      - The guard refused to judge *any* empty capture (54.9 design point (e): an empty
+        capture means the run died early). At a ceiling of 0 that makes the success state
+        the one state never checked. It now uses the recorded `N verified, 0 errors` to
+        tell a clean run from a broken one; three tests, including that a capture with
+        errors, or with no result line at all, is still refused.
+      - `test_the_repo_list_states_a_total_and_reasons` required at least one reason group,
+        so an empty exceptions list failed the test that exists to keep the list honest.
+      *(original item)* **Unblocked 2026-08-05** by the `CLAUDE.md` amendment above.
+      - Confirm provenance per function with `scripts/classify_trigger_notes.py --fresh-dir`
+        before editing. Do not reuse the old membership test (absent from `skip_functions` and
+        from the preserve list) — 54.10.b measured it wrong for all 74.
+      - Edit the bodies in place. No post-processing pass, no `*_manual.rs` extraction: both
+        were workarounds for a restriction that no longer applies, and the extraction route
+        stays closed by `test_manual_code_footprint_is_empty` regardless.
+      - Re-verify per batch: `1048 verified, 0 errors` must hold and
+        `trigger_exceptions.py --check` must agree with a fresh count.
+      - Expected: 74 down to ~21 — the 10 unlisted orphans plus the sites where Verus picks a
+        term containing a lambda, which cannot be written by hand at all.
+      - Still **not** `#![auto]`: it silences the note while leaving the choice automatic, so
+        the count moves and the version-stability problem does not.
+
+- [x] **54.7.d** — **SUPERSEDED by 54.7.f (2026-08-05), closed.** This proposed a
+      post-processing pass as a way around the old path-based `CLAUDE.md` rule. With the
+      rule rescoped by provenance the workaround is unnecessary: the bodies were edited
+      directly, which is simpler and leaves nothing to re-run. The policy question this item
+      raised is answered, not pending.
+      *(original item)* Annotate the recurring-shape notes on the checked-in artifacts (**72** as
+      measured 2026-08-05, not the 76 first recorded; see 54.7.c for the census)
       with a post-processing pass, instead of waiting for the merge in 42.8.c.
+      **⚠ BLOCKED ON A POLICY DECISION, not on capability (raised 2026-08-05).** As written
+      this item edits files under `src/generated/` with a script. `CLAUDE.md` says: *"Do NOT
+      hand-edit files under `src/generated/`. All code there must be produced by running the
+      transpiler."* The item argues a deterministic, idempotent, CI-diffable pass is not a
+      hand edit, and that argument has force — but the rule says *produced by running the
+      transpiler*, which a post-processing pass is not, and this same action was reverted
+      once already in this phase as a CLAUDE.md violation. Doing it now would be reversing
+      that on my own authority.
+      Also checked, and it removes the obvious escape hatch: **all 7 RSL modules have
+      `skip_functions`** (1/7/2/5/2/3/10), so there is no subset that can be regenerated
+      cleanly to deliver even part of the 76 while 42.8.c is stuck.
+      Options for whoever decides: (a) amend `CLAUDE.md` to permit registered, idempotent
+      post-processing passes run as part of `regenerate_all.sh`, and then do this; (b) leave
+      the 76 notes until 42.8.c lands; (c) narrow 42.8.c to just the modules carrying these
+      notes. Recommend (a) — the pass is verifiable in a way a hand edit is not — but it is a
+      project-policy call, not mine to make silently.
+      **Resolved as far as I can resolve it (2026-08-05), and two of the three options are
+      now known to be wrong.** Option (b) is disproved: `scripts/classify_trigger_notes.py`
+      shows these notes are in `skip_functions` and preserved bodies, which regeneration
+      never rewrites, so waiting for 42.8.c delivers **0** of them however it lands. The
+      extraction alternative in 54.7.c is foreclosed by `CLAUDE.md` too — *"Do NOT delegate
+      to manual implementation code or use 'clone-delegate-extract' patterns in generated
+      files"* — and `manual_code` is pinned to acceptor-only by
+      `test_manual_code_footprint_is_empty`. So the item is **closed under current policy**,
+      not blocked pending a decision I might later take: the count is **53**, not 76, and
+      the only compliant route to it is transpiler support for the skipped functions
+      (Phase 42 Option B). Reopen only by amending `CLAUDE.md`, which is the user's call and
+      not mine to make silently — the recommendation above stands if they want it.
       **Rationale.** 54.7.a already taught codegen to emit these triggers; what is blocked is
       *delivery* — regeneration cannot run until the five `skip_functions` modules can be
       merged, and that is stuck on a codegen bug at 42.8.c.2.iv with no predictable finish.
@@ -17102,16 +18094,30 @@ value per hour, not by phase number:
       so the count would go to zero without the version-stability problem being solved at all.
       That is gaming the metric this phase exists to move.
 
-- [ ] **54.15** Classify the 30 RSL `skip_functions` into **trust boundary** (never generated
-      — `LSchedulerNext`, `ExtractSentPacketsFromIos`, `SpontaneousClock`, `SpontaneousIos`,
-      `LReplicaNextProcessPacket`, roughly 8–10 of them describe the host event loop and IO,
-      which IronFleet also leaves trusted) versus **capability gap** (should be generated but
-      the transpiler cannot yet — the quantifier-defined map constructions like
-      `LAddVoteAndRemoveOldOnes`, the recursive walks, the composite actions that Raft already
-      generates). Right now the two are mixed in one list, which is why "RSL is not fully
-      auto-generated" reads as debt when part of it is design. This classification is also the
-      honest form of that README limitation, and it bounds Phase 42: full regeneration of RSL
-      is not the goal and never was.
+- [x] **54.15** Classify the 30 RSL `skip_functions`. **DONE (2026-08-05)**, written up in
+      `docs/rsl-skip-functions.md`.
+      **The primary split was already recorded in the configs, and it is not the one the item
+      predicted.** Each `*_transpile.toml` has two overlapping lists: `skip_functions` (body
+      not translated) and `no_stub_functions` (not even stubbed, because something else
+      supplies it). **15 of the 30 are in both** — they have proven hand-written
+      implementations in `acceptor_manual.rs` / `executor_manual.rs`. They are not missing
+      code. The other 15 are `skip_functions` only, get a `--proof-fallback` stub, and are the
+      real "not generated" set.
+      After separating those: **trust boundary = 10** (replica's 7 event-loop/dispatch entries
+      plus `ExtractSentPacketsFromIos`, `SpontaneousClock`, `SpontaneousIos`), matching the
+      item's "roughly 8–10" estimate; **capability gap = 8** (proposer ×3, learner ×2,
+      election ×2, broadcast ×1) — not the 20-something a flat reading of the list implies.
+      A third bucket was hypothesised — *stale skips the transpiler could handle today* — and
+      **the evidence killed it**: trial-generating `BoundRequestSequence` from a copy of the
+      config in `/tmp` produces a body that is `assume(false)`. A real gap, not a stale skip.
+      That trial also produced a false negative on two acceptor functions, and chasing *that*
+      is what surfaced the two-list structure the whole classification rests on.
+      **README updated (2026-08-05)** to state the 10 / 15 / 8 split instead of the flat
+      "some functions have hand-written bodies", and
+      `test_rsl_skip_function_classification_matches_configs` recomputes the split from the
+      seven configs and holds the README and the note to it. Checked that the guard actually
+      fails on drift — adding a fake entry to one `skip_functions` list makes it report
+      `left: 31, right: 30` — rather than assuming a passing test is a working one.
 
 ### Non-goals
 - Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.

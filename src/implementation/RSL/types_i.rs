@@ -102,12 +102,28 @@ verus! {
     }
 
     define_struct_and_derive_marshalable!{
-        #[derive(Clone, PartialEq, Eq, Hash)]
+        #[derive(PartialEq, Eq, Hash)]
         pub struct CRequest {
             pub client : EndPoint,
             pub seqno : u64,
             pub request : CAppMessage,
         }
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CRequest {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result == *self,
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl View for CRequest {
@@ -158,12 +174,28 @@ verus! {
     }
 
     define_struct_and_derive_marshalable!{
-        #[derive(Clone, Eq, PartialEq, Hash)]
+        #[derive(Eq, PartialEq, Hash)]
         pub struct CReply {
             pub client : EndPoint,
             pub seqno : u64,
             pub reply : CAppMessage,
         }
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CReply {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result == *self,
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl CReply {
@@ -330,11 +362,27 @@ verus! {
     }
 
     define_struct_and_derive_marshalable!{
-        #[derive(Clone, Eq, PartialEq, Hash)]
+        #[derive(Eq, PartialEq, Hash)]
         pub struct CVote {
             pub max_value_bal : CBallot,
             pub max_val : CRequestBatch,
         }
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CVote {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl CVote{
@@ -374,8 +422,8 @@ verus! {
     /// Vec<CRequest> / CRequest view is injective (EndPoint by axiom, u64 Copy, CAppMessage by ensures).
     /// The only gap is Vec identity ≠ Seq identity in Verus's SMT model.
     #[verifier(external_body)]
-    pub broadcast proof fn axiom_cvote_view()
-        ensures forall |v1: CVote, v2: CVote| #![trigger v1@, v2@] v1@ == v2@ ==> v1 == v2
+    pub broadcast proof fn axiom_cvote_view(v1: CVote, v2: CVote)
+        ensures #[trigger] v1@ == #[trigger] v2@ ==> v1 == v2
     {
     }
 
@@ -547,8 +595,8 @@ verus! {
     /// and CRequest view is injective making abstractify_crequestbatch injective.
     /// The only gap is HashSet/Vec identity ≠ Set/Seq identity in Verus's SMT model.
     #[verifier(external_body)]
-    pub broadcast proof fn axiom_clearner_tuple_view()
-        ensures forall |t1: CLearnerTuple, t2: CLearnerTuple| #![trigger t1@, t2@] t1@ == t2@ ==> t1 == t2
+    pub broadcast proof fn axiom_clearner_tuple_view(t1: CLearnerTuple, t2: CLearnerTuple)
+        ensures #[trigger] t1@ == #[trigger] t2@ ==> t1 == t2
     {
     }
 

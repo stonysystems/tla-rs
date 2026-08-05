@@ -121,7 +121,7 @@ impl View for CExecutor {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CIncompleteBatchTimer {
     CIncompleteBatchTimerOn {
         when: u64,

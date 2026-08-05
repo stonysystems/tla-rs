@@ -14,7 +14,7 @@ use vstd::set_lib::*;
 
 verus! {
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CLogEntry {
     pub term: u64,
     pub value: u64,
@@ -99,7 +99,7 @@ impl View for CState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CRaftPacket {
     pub src: u64,
     pub dst: u64,
@@ -193,7 +193,7 @@ impl View for CServerRole {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CRaftMessage {
     RequestVote {
         term: u64,
@@ -250,3 +250,4 @@ impl View for CRaftMessage {
 }
 
 } // verus!
+

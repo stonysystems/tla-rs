@@ -154,6 +154,20 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub mut_self_types: Vec<String>,
 
+    /// Spec functions in *other* modules whose exec form is a `&mut self` method:
+    /// it mutates the receiver in place and returns only the value outputs.
+    ///
+    /// Phase 42.8.c.2.iv.J.3.a. `mut_self_types` says which of *this* module's
+    /// functions become methods; nothing said which of a *callee's* did. Replica
+    /// calls into acceptor/proposer/learner/executor, all migrated to `&mut self`,
+    /// and kept emitting the pre-migration functional shape --
+    /// `let (s_acceptor, packets) = ..; self.acceptor = s_acceptor;` -- against a
+    /// callee that no longer returns the state. 19 of the 28 errors blocking
+    /// replica's regeneration were this.
+    /// e.g., ["LAcceptorProcess1a", "LProposerProcessRequest"]
+    #[serde(default)]
+    pub mut_self_helpers: Vec<String>,
+
     /// Types to skip during generation (already manually implemented).
     /// These spec type names will be parsed but NOT generated as exec types.
     /// e.g., ["Ballot", "Request", "Reply", "Vote", "LearnerTuple"]
@@ -1619,6 +1633,33 @@ mod tests {
 
         let config = TranspilerConfig::from_toml(toml).unwrap();
         assert!(config.clone_up_to_view_types.is_empty());
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.a. `mut_self_types` names this module's own types;
+    /// `mut_self_helpers` names *callees in other modules* that are already
+    /// `&mut self`, which is what replica needed to stop emitting the
+    /// pre-migration functional call shape against them.
+    #[test]
+    fn test_mut_self_helpers_parsing() {
+        let toml = r#"
+            mut_self_helpers = ["LAcceptorProcess1a", "LProposerProcessRequest"]
+
+            [naming]
+            spec_prefix = "L"
+            exec_prefix = "C"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.mut_self_helpers.len(), 2);
+        assert!(config
+            .mut_self_helpers
+            .contains(&"LAcceptorProcess1a".to_string()));
+    }
+
+    #[test]
+    fn test_mut_self_helpers_default_empty() {
+        let config = TranspilerConfig::from_toml("").unwrap();
+        assert!(config.mut_self_helpers.is_empty());
     }
 
     #[test]

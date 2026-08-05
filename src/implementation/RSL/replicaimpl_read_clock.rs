@@ -15,7 +15,7 @@ verus! {
         requires old(r).valid(), cpacket.valid(), cpacket.msg is CMessageHeartbeat,
     {
         let clock = read_clock(netc);
-        let outpackets = CReplica::CReplicaNextProcessHeartbeat(&mut r.replica, cpacket, clock);
+        let outpackets = CReplica::CReplicaNextProcessHeartbeatOutbound(&mut r.replica, cpacket, clock);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }

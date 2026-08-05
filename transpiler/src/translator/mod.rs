@@ -195,6 +195,10 @@ pub struct TranslatorConfig {
     /// Exec type names whose functions should be emitted as `impl Type { &mut self }` methods.
     /// When the first input param's exec type matches, the function becomes a method.
     pub mut_self_types: HashSet<String>,
+    /// Spec names of *cross-module* helpers whose exec form is `&mut self`.
+    /// Their state output is mutated in place, so the call site must not bind it
+    /// nor write it back (Phase 42.8.c.2.iv.J.3.a).
+    pub mut_self_helpers: HashSet<String>,
     /// Exec names of functions that will be emitted as `&mut self` methods.
     /// Pre-populated by the caller so that internal dispatch calls can be
     /// converted from `CFoo(var, ...)` to `var.CFoo(...)` during body generation.
@@ -243,6 +247,7 @@ impl Default for TranslatorConfig {
             proven_functions: HashSet::new(),
             arc_wrap_fields: HashMap::new(),
             mut_self_types: HashSet::new(),
+            mut_self_helpers: HashSet::new(),
             method_names: HashSet::new(),
         }
     }
@@ -799,11 +804,10 @@ impl ProofNeeds {
                 // Guard with contains_key: the lemma requires m2@ =~= old@.remove(k),
                 // which only holds when the remove actually happened (key was present).
                 // When the field is Arc-wrapped, prefix with & for auto-deref.
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
-                    "&"
-                } else {
-                    ""
-                };
+                // Always by reference: the lemma takes `&ExecType` whether or not the
+                // field is Arc-wrapped (Phase 42.8.c.2.iv.B). `&Arc<T>` auto-derefs.
+                let _ = &arc_wrapped_field_names;
+                let ref_prefix = "&";
                 let lemma_call = ExecExpr::Call {
                     func: format!("lemma_abstractify_{}_remove", prefix),
                     args: vec![
@@ -876,11 +880,10 @@ impl ProofNeeds {
         // Emit lemma_abstractify_empty_{prefix}(result.field) for map_fields with HashMap::new()
         for field_name in &self.map_field_empty_sites {
             if let Some((_exec_type, prefix, _val_type)) = map_fields.get(field_name) {
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
-                    "&"
-                } else {
-                    ""
-                };
+                // Always by reference: the lemma takes `&ExecType` whether or not the
+                // field is Arc-wrapped (Phase 42.8.c.2.iv.B). `&Arc<T>` auto-derefs.
+                let _ = &arc_wrapped_field_names;
+                let ref_prefix = "&";
                 stmts.push(ExecExpr::Call {
                     func: format!("lemma_abstractify_empty_{}", prefix),
                     args: vec![ExecExpr::Var(format!(
@@ -12784,8 +12787,16 @@ impl Translator {
         let mut output_names: Vec<String> = Vec::new();
 
         // Add field outputs: (output_var, field) -> "var_field"
-        for (var, field) in &info.output_fields {
-            output_names.push(format!("{}_{}", var.trim_end_matches('_'), field));
+        //
+        // Phase 42.8.c.2.iv.J.3.a: a `&mut self` callee mutates the receiver in
+        // place and returns only the value outputs, so binding its state output
+        // would destructure a value that is not there. `CAcceptorProcess1a` is
+        // `(&mut self, &CPacket) -> Vec<CPacket>`, and the pattern must be
+        // `sent_packets`, not `(s_acceptor, sent_packets)`.
+        if !self.config.mut_self_helpers.contains(&info.func_name) {
+            for (var, field) in &info.output_fields {
+                output_names.push(format!("{}_{}", var.trim_end_matches('_'), field));
+            }
         }
 
         // Add direct output params
@@ -12828,6 +12839,26 @@ impl Translator {
                     func: self.translate_name(&info.func_name),
                     args: info.input_args.clone(),
                 }
+            }
+        } else if self.config.mut_self_helpers.contains(&info.func_name) {
+            // A `&mut self` callee that stays a *free* function -- `CExecutorExecute`
+            // is `(s: &mut CExecutor) -> Vec<CPacket>`. It needs the state argument
+            // passed mutably; only the call *form* is unchanged, which is why the
+            // two config keys are separate (Phase 42.8.c.2.iv.J.3.c).
+            let mut args = info.input_args.clone();
+            if let Some(first) = args.first_mut() {
+                if let ExecExpr::Unary { op, expr } = first {
+                    if op == "&" {
+                        *first = ExecExpr::Unary {
+                            op: "&mut ".to_string(),
+                            expr: expr.clone(),
+                        };
+                    }
+                }
+            }
+            ExecExpr::Call {
+                func: self.translate_name(&info.func_name),
+                args,
             }
         } else {
             ExecExpr::Call {
@@ -12886,13 +12917,42 @@ impl Translator {
 
     /// Get the substitution map from helper call info
     /// Maps "s_.proposer" style access to variable name "s_proposer"
-    fn get_helper_substitutions(info: &HelperCallInfo) -> HashMap<(String, String), String> {
+    fn get_helper_substitutions(&self, info: &HelperCallInfo) -> HashMap<(String, String), String> {
         let mut map = HashMap::new();
+        let mutates_in_place = self.config.mut_self_helpers.contains(&info.func_name);
         for (var, field) in &info.output_fields {
-            let var_name = format!("{}_{}", var.trim_end_matches('_'), field);
+            // For a `&mut self` callee the post-state *is* the receiver, because
+            // the call already mutated it. Pointing the substitution at the input
+            // field makes the struct literal treat it exactly like an unchanged
+            // field (`acceptor: s.acceptor`), which the `&mut self` lift then
+            // renders as a self-assignment -- correct, and with no dangling
+            // reference to a binding that is no longer generated.
+            let var_name = if mutates_in_place {
+                Self::receiver_field_path(info, field)
+            } else {
+                format!("{}_{}", var.trim_end_matches('_'), field)
+            };
             map.insert((var.clone(), field.clone()), var_name);
         }
         map
+    }
+
+    /// `s.acceptor` for a call whose receiver argument is `&s.acceptor`.
+    ///
+    /// Falls back to the field name alone when the receiver is not a plain field
+    /// access, which keeps the substitution well-formed rather than emitting a
+    /// half-built path.
+    fn receiver_field_path(info: &HelperCallInfo, field: &str) -> String {
+        let receiver = info.input_args.first().map(|a| match a {
+            ExecExpr::Unary { op, expr } if op == "&" => expr.as_ref(),
+            other => other,
+        });
+        if let Some(ExecExpr::Field(base, f)) = receiver {
+            if let ExecExpr::Var(v) = base.as_ref() {
+                return format!("{}.{}", v, f);
+            }
+        }
+        field.to_string()
     }
 
     /// Transform a conditional field assignment pattern
@@ -12944,7 +13004,7 @@ impl Translator {
                 let_bindings.push(let_binding);
 
                 // Add substitutions from this helper call (for field accesses)
-                let subs = Self::get_helper_substitutions(&info);
+                let subs = self.get_helper_substitutions(&info);
                 combined_substitutions.extend(subs);
 
                 // Track which direct outputs were bound
@@ -13769,6 +13829,53 @@ impl Translator {
         (lhs_expr, rhs_expr)
     }
 
+    /// Phase 54.14.b: is this comparison constantly false once the operand is
+    /// narrowed to an unsigned exec type?
+    ///
+    /// A protocol spec legitimately range-checks an `int` parameter before
+    /// casting it -- `follower_id < 0 || follower_id > u64::MAX as int` in
+    /// `Raft/raft.rs`. Once `int` is narrowed to `config.int_type`, both halves
+    /// are vacuous: rustc reports "comparison is useless due to type limits" and
+    /// the branch they guard is unreachable, dead code that still carries proof
+    /// blocks.
+    ///
+    /// Deliberately narrow. It fires only when the left operand is an input
+    /// parameter whose *spec* type is `int`, so the narrowing is known to have
+    /// happened, and only for an unsigned `int_type`. Any operand whose exec
+    /// type cannot be named this way is left alone -- folding `x < 0` for a
+    /// signed or unknown `x` would be wrong.
+    fn is_vacuous_unsigned_bound(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        op: &str,
+        ctx: &TransformContext,
+    ) -> bool {
+        if !self.config.int_type.starts_with('u') {
+            return false;
+        }
+        let narrowed_int_param = match lhs {
+            Expr::Ident(name) => matches!(ctx.input_types.get(name), Some(Type::Int)),
+            _ => false,
+        };
+        if !narrowed_int_param {
+            return false;
+        }
+        // strip a trailing `as int` / `as u64`, which the spec writes on the bound
+        let bound = match rhs {
+            Expr::Cast(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        match op {
+            "<" => matches!(bound, Expr::Literal(Literal::Int(0))),
+            ">" => match bound {
+                Expr::Ident(name) => *name == format!("{}::MAX", self.config.int_type),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     fn transform_binary_op(
         &self,
         lhs: &Expr,
@@ -13776,8 +13883,22 @@ impl Translator {
         op: &str,
         ctx: &TransformContext,
     ) -> TranspileResult<ExecExpr> {
+        if self.is_vacuous_unsigned_bound(lhs, rhs, op, ctx) {
+            return Ok(ExecExpr::Literal("false".to_string()));
+        }
         let lhs_expr = self.transform_expr(lhs, ctx)?;
         let rhs_expr = self.transform_expr(rhs, ctx)?;
+        // Phase 54.14.b: a range guard is two vacuous halves joined by `||`, so
+        // collapse rather than emit `false || false`.
+        if op == "||" {
+            let is_false = |x: &ExecExpr| matches!(x, ExecExpr::Literal(l) if l == "false");
+            match (is_false(&lhs_expr), is_false(&rhs_expr)) {
+                (true, true) => return Ok(ExecExpr::Literal("false".to_string())),
+                (true, false) => return Ok(rhs_expr),
+                (false, true) => return Ok(lhs_expr),
+                (false, false) => {}
+            }
+        }
         let (lhs_expr, rhs_expr) = self.normalize_binary_operands(lhs_expr, rhs_expr, ctx);
         let collection_add_helper = if op == "+" {
             self.collection_add_helper(lhs, rhs, ctx)
@@ -19846,6 +19967,83 @@ mod tests {
         }
     }
 
+    /// Phase 54.14.b. The fold must fire on a genuinely vacuous bound and must
+    /// NOT fire on anything whose exec type we cannot show is unsigned --
+    /// folding `x < 0` for a signed or unknown `x` would silently change
+    /// behaviour, so the negative cases matter more than the positive one.
+    #[test]
+    fn test_vacuous_unsigned_bound_folding() {
+        use crate::ast::{Literal, Type};
+
+        fn ctx_with<'a>(
+            config: &'a TranslatorConfig,
+            name: &str,
+            ty: Type,
+        ) -> TransformContext<'a> {
+            let mut input_types = HashMap::new();
+            input_types.insert(name.to_string(), ty);
+            TransformContext {
+                config,
+                output_params: Vec::new(),
+                input_params: vec![name.to_string()],
+                output_types: HashMap::new(),
+                input_types,
+                field_substitutions: HashMap::new(),
+                temp_var_counter: std::cell::RefCell::new(0),
+                requires: Vec::new(),
+            }
+        }
+
+        let unsigned = TranslatorConfig {
+            int_type: "u64".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let t = Translator::new(unsigned.clone());
+        let ctx = ctx_with(&unsigned, "follower_id", Type::Int);
+
+        let id = Expr::Ident("follower_id".to_string());
+        let zero = Expr::Literal(Literal::Int(0));
+        let max = Expr::Ident("u64::MAX".to_string());
+        let max_as_int = Expr::Cast(Box::new(max.clone()), Type::Int);
+
+        // fires: `x < 0` and `x > u64::MAX`, with or without the `as int` cast
+        assert!(t.is_vacuous_unsigned_bound(&id, &zero, "<", &ctx));
+        assert!(t.is_vacuous_unsigned_bound(&id, &max, ">", &ctx));
+        assert!(t.is_vacuous_unsigned_bound(&id, &max_as_int, ">", &ctx));
+
+        // does not fire: a real bound, or the comparison the other way round
+        assert!(!t.is_vacuous_unsigned_bound(&id, &Expr::Literal(Literal::Int(1)), "<", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, ">", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, "<=", &ctx));
+
+        // does not fire: the operand is not an int-typed input parameter, so we
+        // cannot claim it was narrowed to an unsigned type
+        let nat_ctx = ctx_with(&unsigned, "follower_id", Type::Nat);
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, "<", &nat_ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&Expr::Ident("other".to_string()), &zero, "<", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(
+            &Expr::Field(Box::new(id.clone()), "f".to_string()),
+            &zero,
+            "<",
+            &ctx
+        ));
+
+        // does not fire: a signed int_type, where `x < 0` is a real test
+        let signed = TranslatorConfig {
+            int_type: "i64".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let ts = Translator::new(signed.clone());
+        let signed_ctx = ctx_with(&signed, "follower_id", Type::Int);
+        assert!(!ts.is_vacuous_unsigned_bound(&id, &zero, "<", &signed_ctx));
+        assert!(!ts.is_vacuous_unsigned_bound(
+            &id,
+            &Expr::Ident("i64::MAX".to_string()),
+            ">",
+            &signed_ctx
+        ));
+    }
+
     #[test]
     fn test_translate_type_string_custom_int_nat() {
         // Test with custom int_type and nat_type config
@@ -24819,6 +25017,110 @@ mod tests {
         assert!(requires.iter().any(|r| r == "s.role is CLeader"));
     }
 
+    /// Phase 42.8.c.2.iv.J. `assume_postconditions` drops recommends, because a
+    /// precondition the caller does not establish would break it -- and the body
+    /// is trusted via `assume(false)` anyway. `proven_functions` is the opt-out:
+    /// those bodies really are verified, so they need the precondition back.
+    ///
+    /// This interaction is what gates replica's merge. Fresh output for
+    /// `CReplicaNextProcess1a` was missing `received_packet.msg is CMessage1a`
+    /// and carried `assume(false)`; listing the spec name restores the clause
+    /// character-for-character against the checked-in file and drops the assume.
+    /// The pre-existing recommends test runs with the default config, so neither
+    /// half of this was covered.
+    fn recommends_func() -> AnnotatedFunction {
+        let mut func = make_annotated_func(
+            "LAction",
+            vec![
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            Expr::Literal(Literal::Bool(true)),
+        );
+        func.spec_fn.recommends.push(Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "role".to_string(),
+            )),
+            "Leader".to_string(),
+        ));
+        func
+    }
+
+    fn translator_with(assume_postconditions: bool, proven: &[&str]) -> Translator {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        config.assume_postconditions = assume_postconditions;
+        config.proven_functions = proven.iter().map(|s| s.to_string()).collect();
+        Translator::new(config)
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.c. A `&mut self` callee that stays a *free* function
+    /// -- `CExecutorExecute(s: &mut CExecutor) -> Vec<CPacket>` -- needs its state
+    /// argument passed mutably. Only the binding shape changes, not the call form,
+    /// which is why `mut_self_helpers` and `[method_calls]` are separate keys.
+    #[test]
+    fn test_free_mut_self_helper_gets_a_mutable_receiver_argument() {
+        let mut config = TranslatorConfig::default();
+        config.mut_self_helpers = ["LExecutorExecute".to_string()].into_iter().collect();
+        let translator = Translator::new(config);
+        let info = HelperCallInfo {
+            func_name: "LExecutorExecute".to_string(),
+            input_args: vec![ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("self".to_string())),
+                    "executor".to_string(),
+                )),
+            }],
+            output_fields: vec![("s_".to_string(), "executor".to_string())],
+            output_params: vec!["sent_packets".to_string()],
+        };
+        let binding = translator.generate_helper_let_binding(&info);
+        let rendered = format!("{:?}", binding);
+        assert!(
+            rendered.contains("&mut "),
+            "the state argument must be passed mutably: {}",
+            rendered
+        );
+        // the state output is mutated in place, so only `sent_packets` is bound
+        assert!(
+            rendered.contains("pattern: \"sent_packets\""),
+            "no tuple destructure for a &mut self callee: {}",
+            rendered
+        );
+    }
+
+    #[test]
+    fn test_assume_postconditions_drops_recommends() {
+        let requires = translator_with(true, &[]).build_requires(&recommends_func());
+        assert!(
+            !requires.iter().any(|r| r.contains("is CLeader")),
+            "recommends must not become a requires when the body is trusted via \
+             assume(false); the caller has not been asked to establish it: {:?}",
+            requires
+        );
+    }
+
+    #[test]
+    fn test_proven_functions_restores_recommends_under_assume_postconditions() {
+        let requires = translator_with(true, &["LAction"]).build_requires(&recommends_func());
+        assert!(
+            requires.iter().any(|r| r == "s.role is CLeader"),
+            "a proven function carries no assume(false), so it needs its \
+             precondition back: {:?}",
+            requires
+        );
+    }
+
     #[test]
     fn test_build_requires_full_pipeline() {
         let mut config = TranslatorConfig::default();
@@ -26645,9 +26947,11 @@ mod tests {
                         assert_eq!(args.len(), 1);
                         match &args[0] {
                             ExecExpr::Var(path) => {
-                                assert_eq!(path, "result.cache");
+                                // By reference even with no Arc-wrapped fields: the lemma
+                                // takes `&ExecType` (Phase 42.8.c.2.iv.B).
+                                assert_eq!(path, "&result.cache");
                             }
-                            other => panic!("Expected Var(\"result.cache\"), got {:?}", other),
+                            other => panic!("Expected Var(\"&result.cache\"), got {:?}", other),
                         }
                     }
                     other => panic!("Expected Call, got {:?}", other),

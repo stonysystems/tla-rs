@@ -51,7 +51,7 @@ verus! {
     {
         &&& (forall |p:RslPacket| #![trigger ps.environment.sentPackets.contains(p)] ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.src) && p.msg is RslMessageReply
                 ==> rs.replies.contains(Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply}))
-        &&& (forall |req:Request| rs.requests.contains(req) ==> exists |p:RslPacket| ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.dst) && p.msg is RslMessageRequest
+        &&& (forall |req:Request| rs.requests.contains(req) ==> exists |p:RslPacket| #![trigger ps.environment.sentPackets.contains(p)] ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.dst) && p.msg is RslMessageRequest
                                                 && req == Request{client:p.src, seqno:p.msg->seqno_req, request:p.msg->val})
     }
 

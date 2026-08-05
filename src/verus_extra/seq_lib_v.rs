@@ -245,6 +245,79 @@ pub proof fn lemma_fold_left_append_merge<A, B>(s1: Seq<A>, s2: Seq<A>, f: spec_
   }
 }
 
+/// Membership in a flattened sequence-of-sequences.
+///
+/// vstd proves a good deal about `flatten` -- its length, its relationship to
+/// `flatten_alt`, how it behaves under `push` and on singletons -- but nothing
+/// about *membership*, and membership is the only thing the RSL refinement
+/// proof needs (Phase 54.12.c). Its request and reply sets are currently built
+/// with `Set::new_assuming_finite`, which vstd deprecates precisely because it
+/// assumes rather than establishes finiteness. Expressing them instead as
+/// `<seq>.flatten().to_set()` makes them finite by construction, and this lemma
+/// is what lets the existing `.contains`-based proofs carry over unchanged.
+///
+/// Proved by induction on `s`, unfolding vstd's recursive definition
+/// `flatten() == first().add(drop_first().flatten())`. The step is done at the
+/// level of `to_set` rather than `contains`: vstd has no membership lemma for
+/// `Seq::add`, but `lemma_to_set_distributes_over_addition` gives
+/// `(a + b).to_set() == a.to_set() + b.to_set()`, and `to_set_ensures` carries
+/// that back to `contains` in both directions.
+pub proof fn lemma_flatten_contains<A>(s: Seq<Seq<A>>, x: A)
+  ensures
+    s.flatten().contains(x) <==> exists |i: int| 0 <= i < s.len() && (#[trigger] s[i]).contains(x),
+  decreases s.len(),
+{
+  broadcast use Seq::to_set_ensures;
+  broadcast use vstd::set::group_set_lemmas;
+
+  if s.len() == 0 {
+    assert(s.flatten() =~= Seq::<A>::empty());
+    assert(!s.flatten().contains(x));
+  } else {
+    let rest = s.drop_first();
+    lemma_flatten_contains(rest, x);
+    let head = s.first();
+    let tail = rest.flatten();
+    assert(s.flatten() =~= head + tail);
+    crate::verus_extra::set_lib_ext_v::lemma_to_set_distributes_over_addition(head, tail);
+    assert((head + tail).to_set() == head.to_set() + tail.to_set());
+    // (first + rest.flatten()).to_set() == first.to_set() + rest.flatten().to_set(),
+    // and to_set_ensures carries that back to `contains` in both directions.
+
+    if s.flatten().contains(x) {
+      if s.first().contains(x) {
+        assert(s[0].contains(x));
+        assert(exists |i: int| 0 <= i < s.len() && #[trigger] s[i].contains(x));
+      } else {
+        let j = choose |j: int| #![trigger rest[j]] 0 <= j < rest.len() && rest[j].contains(x);
+        assert(s[j + 1] == rest[j]);
+        assert(s[j + 1].contains(x));
+        assert(exists |i: int| 0 <= i < s.len() && #[trigger] s[i].contains(x));
+      }
+    }
+
+    if exists |i: int| 0 <= i < s.len() && #[trigger] s[i].contains(x) {
+      let i = choose |i: int| #![trigger s[i]] 0 <= i < s.len() && s[i].contains(x);
+      if i == 0 {
+        assert(head == s[0]);
+        assert(head.contains(x));
+      } else {
+        assert(rest[i - 1] == s[i]);
+        assert(rest[i - 1].contains(x));
+        assert(exists |j: int| 0 <= j < rest.len() && #[trigger] rest[j].contains(x));
+        assert(tail.contains(x));
+      }
+      // Spell out every hop: contains -> to_set -> union -> distributed
+      // to_set -> back to contains. The solver does not chain these on its own.
+      assert(head.to_set().contains(x) || tail.to_set().contains(x));
+      assert((head.to_set() + tail.to_set()).contains(x));
+      assert((head + tail).to_set().contains(x));
+      assert((head + tail).contains(x));
+      assert(s.flatten().contains(x));
+    }
+  }
+}
+
 pub proof fn some_differing_index_for_unequal_seqs<A>(s1: Seq<A>, s2: Seq<A>) -> (i: int)
   requires
     s1 != s2,

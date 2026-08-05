@@ -1,11 +1,11 @@
 {
   "schema": "trigger-ceiling/v1",
   "enforce": true,
-  "max_notes": 120,
+  "max_notes": 0,
   "mode": "selective",
-  "set_on": "2026-08-04",
-  "set_by": "Phase 54.2.b",
-  "rationale": "Measured on the pinned release 0.2026.08.02.b677dd5 over the whole crate (1044 verified, 0 errors) in Verus's default `selective` trigger mode: 534 notes. This is the ceiling, not the goal -- Phase 54 drives it to 0 or to a documented list of deliberate exceptions. Raise it only with a stated reason and a new measurement in `history`, never to make a red build green.",
+  "set_on": "2026-08-05",
+  "set_by": "Phase 54.7.f",
+  "rationale": "Zero. Every quantifier in the crate now carries an explicit trigger, measured on the pinned release 0.2026.08.02.b677dd5 over the whole crate (1048 verified, 0 errors) in Verus's default `selective` mode. Phase 54's acceptance criterion was zero notes or a documented exceptions list; it is zero, so the list is empty. Raise it only with a stated reason and a new measurement in `history`, never to make a red build green -- at this ceiling any new unannotated quantifier fails the build, which is the point.",
   "history": [
     {
       "date": "2026-08-04",
@@ -48,6 +48,24 @@
       "max_notes": 120,
       "verus": "0.2026.08.02.b677dd5",
       "note": "42.8.a: broadcast_gen regenerated, 2 generated notes removed via the 54.7.a codegen fix"
+    },
+    {
+      "date": "2026-08-05",
+      "max_notes": 77,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "42.8.c.2.iv.J: replica merged, the last of the seven RSL modules. 26 notes removed vs 103, assume(false) held at 0. Baseline refreshed at the same time: the 3 'changed triggers' the old 2026-08-04 baseline reported against proposer_gen.rs are line drift, not instability -- the same three trigger strings, rotated across three asserts that moved when the file was regenerated. Diffing by file:line cannot tell those apart."
+    },
+    {
+      "date": "2026-08-05",
+      "max_notes": 74,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.7.e: the value-equivalence `assert forall` in the generated map lemmas now carries explicit triggers, pinning exactly what Verus was already choosing (abs2[ak] / expected[ak]). 3 removed, 0 added. The 4 'changed triggers' this diff reported are line drift again -- annotated asserts stop emitting and unrelated ones shift into their line numbers. Second occurrence; see 54.10.a."
+    },
+    {
+      "date": "2026-08-05",
+      "max_notes": 0,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.7.f: the last 74 notes annotated in hand-written bodies under src/generated/, unblocked by the CLAUDE.md provenance amendment. Each site pins the trigger Verus had already chosen, so no instantiation changes and no proof moved: 1048 verified, 0 errors throughout, verified per module batch (learner 4, executor 10, election 17, replica 18, proposer 25)."
     }
   ]
 }

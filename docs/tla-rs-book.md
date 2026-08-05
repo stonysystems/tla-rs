@@ -285,7 +285,7 @@ promise that unrelated future releases will behave identically.
 | Rust for that Verus release | `1.97.1` |
 | Rust for the transpiler | A recent stable toolchain |
 | .NET SDK | 6.0.x, needed only for the integrated services |
-| Python and SCons | Needed only for the integrated build; install SCons with `pip install scons` |
+| Python and SCons | Needed only for the integrated build; on Ubuntu 24.04 use `sudo apt install scons` because system `pip` is PEP 668-managed |
 
 The pinned Verus Linux binary links against glibc 2.39, which is why the CI
 verification job uses Ubuntu 24.04. Download the matching Verus release, make

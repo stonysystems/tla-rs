@@ -556,5 +556,109 @@ class TestCli(unittest.TestCase):
             self.assertIn("expected schema", result.stderr)
 
 
+class AssertOrdinalDrift(unittest.TestCase):
+    """Phase 54.10.a. Verus underlines only the `assert` keyword on an
+    `assert forall`, so keying entries on the underlined span gave every assert
+    in a file the identity "assert", told apart by ordinal alone. Annotating one
+    site removed its note, shifted every later ordinal, and the diff reported the
+    rest as `changed triggers (instability)` -- the one signal Phase 54 depends
+    on. Seen twice for real: 3 sites in proposer_gen.rs, 4 in learner_gen.rs."""
+
+    def _block(self, line, cond, trigger):
+        """One note whose trigger caret run sits under `trigger` exactly."""
+        src = "    assert forall |ak: int| {} implies q(ak) by {{".format(cond)
+        gutter = "{} |".format(line)
+        col = src.index(trigger)
+        return (
+            "note: automatically chose triggers for this expression:\n"
+            "   --> src/generated/RSL/m_gen.rs:{}:5\n".format(line)
+            + "    |\n"
+            + "{}{}\n".format(gutter, src)
+            + "    |     ^^^^^^\n"
+            "\n"
+            "note:   trigger 1 of 1:\n"
+            "   --> src/generated/RSL/m_gen.rs:{}:{}\n".format(line, col)
+            + "    |\n"
+            + "{}{}\n".format(gutter, src)
+            + "    |"
+            + " " * (len(gutter) - 4 + col)
+            + "^" * len(trigger)
+            + "\n"
+        )
+
+    def _log(self, asserts):
+        return "\n".join(self._block(ln, cond, cond) for ln, cond in asserts)
+
+    def test_removing_the_first_assert_does_not_report_the_rest_as_changed(self):
+        base = ti.build_inventory(
+            self._log([(10, "a[ak]"), (20, "b[ak]")])
+        )
+        # the first site is annotated, so its note disappears; the second is
+        # untouched but now sits at a different line and a different ordinal
+        new = ti.build_inventory(self._log([(22, "b[ak]")]))
+        d = ti.diff_inventories(base, new)
+        self.assertEqual(d["removed_count"], 1)
+        self.assertEqual(d["added_count"], 0)
+        self.assertEqual(
+            d["changed_count"],
+            0,
+            "line/ordinal drift must not be reported as instability: {}".format(
+                d["changed"]
+            ),
+        )
+
+    def test_a_real_trigger_change_is_still_reported(self):
+        # identical expression, and the solver really did pick a different term
+        base = ti.build_inventory(self._block(10, "a[ak]", "a[ak]"))
+        new = ti.build_inventory(self._block(10, "a[ak]", "q(ak)"))
+        d = ti.diff_inventories(base, new)
+        self.assertEqual(
+            d["changed_count"], 1, "a genuine re-choice must still surface"
+        )
+        self.assertEqual((d["added_count"], d["removed_count"]), (0, 0))
+
+    def test_falls_back_when_a_baseline_predates_source_text(self):
+        base = ti.build_inventory(self._log([(10, "a[ak]"), (20, "b[ak]")]))
+        for e in base["entries"]:
+            del e["source_text"]  # an inventory captured before 54.10.a
+        new = ti.build_inventory(self._log([(10, "a[ak]"), (20, "b[ak]")]))
+        d = ti.diff_inventories(base, new)
+        self.assertEqual((d["added_count"], d["removed_count"]), (0, 0))
+
+
+class ZeroNotesIsASuccessState(unittest.TestCase):
+    """Phase 54.7.f drove the count to 0, at which point an empty capture stopped
+    meaning "the run died early". The guard refused to judge any empty capture,
+    which would make a ceiling of 0 unenforceable -- the success state would be
+    the one state never checked. It now uses the recorded
+    `N verified, 0 errors` to tell the two apart."""
+
+    CLEAN_LOG = "verification results:: 1048 verified, 0 errors\n"
+    BROKEN_LOG = "error: aborting due to 3 previous errors\n"
+
+    def test_a_clean_empty_capture_is_judged(self):
+        inv = ti.build_inventory(self.CLEAN_LOG)
+        self.assertEqual(inv["total_notes"], 0)
+        self.assertEqual((inv["verified"], inv["errors"]), (1048, 0))
+        code, out = ti.guard(inv, {"enforce": True, "max_notes": 0, "mode": "selective"},
+                             "selective")
+        self.assertEqual(code, 0)
+        self.assertIn("ceiling: 0", out)
+
+    def test_an_empty_capture_with_no_result_line_is_still_refused(self):
+        inv = ti.build_inventory(self.BROKEN_LOG)
+        self.assertIsNone(inv["verified"])
+        code, out = ti.guard(inv, {"enforce": True, "max_notes": 0, "mode": "selective"},
+                             "selective")
+        self.assertEqual(code, 0)
+        self.assertIn("probably failed early", out)
+
+    def test_a_capture_with_errors_is_refused(self):
+        inv = ti.build_inventory("verification results:: 900 verified, 2 errors\n")
+        code, out = ti.guard(inv, {"enforce": True, "max_notes": 0, "mode": "selective"},
+                             "selective")
+        self.assertIn("probably failed early", out)
+
+
 if __name__ == "__main__":
     unittest.main()

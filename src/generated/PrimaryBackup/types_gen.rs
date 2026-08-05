@@ -7,7 +7,7 @@ use vstd::prelude::*;
 
 verus! {
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CState {
     pub role: CNodeRole,
     pub log_length: u64,
@@ -46,7 +46,7 @@ impl View for CState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CConstants {
     pub max_log_len: u64,
 }
@@ -96,7 +96,7 @@ impl View for CNodeRole {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CPBMessage {
     Replicate {
         val: u64,
@@ -130,3 +130,4 @@ impl View for CPBMessage {
 }
 
 } // verus!
+

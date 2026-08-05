@@ -154,7 +154,8 @@ impl CReplicaConstants {
         requires self.valid(),
         ensures res == LReplicaConstantsValid(self@)
     {
-        self.my_index >= 0 && self.my_index < self.all.config.replica_ids.len() as u64
+        // my_index: u64, so the spec's `0 <= my_index` is automatic
+        self.my_index < self.all.config.replica_ids.len() as u64
     }
 }
 
