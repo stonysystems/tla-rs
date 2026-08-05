@@ -14767,19 +14767,38 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
       10 tests, including that codegen improvements survive the merge and that a missing
       `impl` in fresh output is an error rather than a silent drop.
 - [ ] **42.8.c.2**: **The five modules are blocked on a transpiler bug, not on merge
-      mechanics.** Proving the tool on `learner` (the smallest: 10 emitted functions,
-      7 preserved) produced a file that does not compile — and the fault is in the *fresh
-      output*, not the splice. `verus-transpile` emits `CLearnerForgetDecision` under the
-      `&mut self` convention while its body still references `result`
-      (`result.unexecuted_learner_state`, then a bare `result` as the tail expression) with
-      no such binding anywhere in the function. Verified by inspecting the fresh file
-      directly: `grep -c "let result\|-> (result"` over that function returns 0.
-      This is the same class as Phase 50's Bug C — the `&mut self` body transform cannot lift
-      an intermediate functional state — and it explains why these modules have always sat in
-      the "keep existing" bucket: regenerating them has never produced compiling code, so the
-      hand-written file was the only thing that worked.
-      Sequence: fix the `&mut self` body transform for the affected functions → merge with
-      42.8.c.1 → regenerate → re-measure the 103 remaining generated trigger notes.
+      mechanics.** Regenerating `learner` emits `CLearnerForgetDecision` as a `&mut self`
+      method whose body still names the functional output: `result.unexecuted_learner_state`
+      inside a proof block and a bare `result` tail, with no such binding. It does not
+      compile, which is why these modules have always sat in the "keep existing" bucket.
+  - [x] **42.8.c.2.i** Mechanism located (2026-08-05). The lift already exists and mostly
+        works: `Printer::struct_to_field_assignments`
+        (`transpiler/src/printer/mod.rs:191`) recognises
+        `let result = Struct{..}; ..proofs..; result` and rewrites the struct into field
+        assignments on `self`. Three residues defeat it for this function, all inside that
+        same transform:
+        (a) **the trailing var is re-pushed unconditionally** (`// Keep trailing var for
+        return`, line ~247) even when the method's return type collapsed to `()`;
+        (b) **proof statements are only index-rewritten**, by
+        `rewrite_tuple_refs_in_expr`, so `result.field` survives where it should now read
+        `self.field`;
+        (c) when the `let` value is an **`if`/`else`** rather than a plain struct, the
+        branches lift asymmetrically: the then-branch becomes assignments (type `()`), the
+        else-branch stays `self.clone_up_to_view()` (type `Self`), so even fixing (a) and (b)
+        leaves a branch-type mismatch. The identity-clone branch has to become a no-op.
+  - [x] **42.8.c.2.ii** One approach tried and rejected (2026-08-05): renaming `result` →
+        `self` and dropping the tail *upstream*, in `translate_predicate` after
+        `maybe_apply_mut_self`. **Do not repeat this.** It looks right and is wrong twice
+        over: the printer's lift keys on finding a `Let` whose pattern equals the *tail
+        variable*, so removing the tail disables the lift entirely; and renaming while the
+        `let result = ..` binding still exists makes the proof block read the **old** state
+        instead of the new value. The fix belongs in the printer transform, which is the
+        only place that knows the struct was lifted into `self`'s fields.
+  - [ ] **42.8.c.2.iii** Implement (a)+(b)+(c) in `struct_to_field_assignments`. It needs to
+        know the method returns `()`; that is not currently threaded into the printer at that
+        point, so the first step is deciding how to pass it (a flag on `ExecFunction`, or
+        performing the lift in the translator where `return_type` is in scope).
+
 
 
 #### 42.7 Lossless `types_gen.rs` regeneration (2026-08-05)
