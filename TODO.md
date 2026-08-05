@@ -38,7 +38,7 @@ they cover (53) are unreachable by regeneration by construction.
 | broadcast, acceptor | already byte-identical / lossless |
 | learner | reconciled (transpiler `&T` fix + `--preserve`) |
 | executor, election, proposer | **merged this session**; `assume(false)` 6→0, 5→0, 9→0 |
-| replica | **blocked**: 18 actions are free functions in the checked-in file and impl methods in fresh output, so a merge keeps both and `assume(false)` goes 0→18. `--preserve` cannot express a change of *kind*; this is Phase 48/49 work. |
+| replica | **merged 2026-08-05** (was blocked). 13 of the 18 actions migrated to `&mut self` methods; 5 stay hand-written free functions because their proofs cannot be generated. `assume(false)` 0→0, notes 103→77. |
 
 **What the merges did not do is deliver trigger notes: three merges, 103 → 103.** That is
 the measured fact, and it outranks four successive estimates of the deliverable count (80,
@@ -15137,7 +15137,29 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
               `convert_calls_to_methods` (that pass runs only inside method bodies, and
               `CSchedulerInit` is not one), **not** `maybe_apply_mut_self`, and **not** a
               hand-written `[method_calls]` entry.
-      - [ ] **J.3.d — back off the `proven_functions` claims that do not hold.** The merged
+      - [x] **J.3.d — DONE 2026-08-05. Replica is merged. `1046 verified, 0 errors`,
+            `assume(false)` **0**, trigger notes **103 → 77**, and
+            `classify_trigger_notes.py` now reports **0 deliverable by regeneration** —
+            the pipeline this phase opened is drained.**
+            **The obvious route was measured and rejected.** Listing all 18 actions in
+            `proven_functions` gives `1040 verified, 6 errors`; backing the 6 off there
+            leaves them carrying `assume(false)` and yields 66 notes. That is 11 more notes
+            bought by converting six *proven* protocol actions into assumed ones — the same
+            metric-gaming this phase rejects `#![auto]` for. The checked-in bodies of those
+            six are hand-written proofs (`broadcast use` of the hash axioms, explicit
+            `lemma_creplycache_get` calls, discharging asserts) that the transpiler cannot
+            generate, so the six errors are real.
+            **Taken instead**: the six go in `skip_functions` + `no_stub_functions`, so fresh
+            never emits them and the merge carries the proven bodies through. 13 of the 18
+            actions migrate to `&mut self` methods, 5 stay hand-written free functions.
+            26 notes delivered, nothing assumed. Written up in `docs/rsl-skip-functions.md`.
+            Two real defects surfaced while landing it, both fixed and tested:
+            `merge_generated.py` dropped `// TRANSLATE-TODO` provenance markers, because
+            `ATTR_RE` matched `///` and `#[` but not a plain `//` — so the marker saying
+            *why* a body is hand-written was silently lost; and
+            `test_generated_replica_module_public_api` counted only `s.valid()`, which
+            under-counts by exactly the 13 methods that now spell it `self.valid()`.
+            *(superseded plan)* The merged
             replica reaches `1040 verified, **6 errors**`, and for the first time these are
             genuine *proof* failures rather than compile errors — which is exactly what
             listing a function in `proven_functions` asserts. The failures cluster in
@@ -15164,8 +15186,12 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
               `CReplicaInit(c: &CReplicaConstants) -> CReplica` — a free function whose first
               argument is *not* a receiver. Listing `LReplicaInit` in `proven_functions`
               should not have made it a method call; find what did.
-      - [ ] **J.4 — confirm the 36 notes land**, with
-            `scripts/classify_trigger_notes.py` on a fresh verification log.
+      - [x] **J.4 — confirmed 2026-08-05.** `scripts/classify_trigger_notes.py` on a fresh
+            log: **0 deliverable by regeneration**, 13 emitted-but-unhandled-shape, 64 in
+            hand-written or preserved bodies. 26 of the predicted 36 landed; the other 10
+            belong to the 5 actions that stayed hand-written to keep their proofs, so they
+            move from "deliverable" to "not reachable" — the prediction was right about
+            where they were, and the shortfall is a deliberate choice rather than a miss.
 
   - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
         `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the

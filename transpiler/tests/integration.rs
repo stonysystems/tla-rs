@@ -1118,9 +1118,13 @@ fn test_rsl_skip_function_classification_matches_configs() {
     }
     let stub_emitted = total - hand_implemented;
 
-    assert_eq!(total, 30, "RSL skip_functions count changed");
+    // Phase 42.8.c.2.iv.J.3.d added 6 replica entries: actions whose checked-in
+    // bodies are hand-written proofs (`broadcast use` plus explicit lemma calls)
+    // that the transpiler cannot generate. Skipping them is what lets replica
+    // regenerate without trading those proofs for `assume(false)`.
+    assert_eq!(total, 36, "RSL skip_functions count changed");
     assert_eq!(
-        hand_implemented, 15,
+        hand_implemented, 21,
         "skip ∩ no_stub changed -- these have hand-written implementations, not gaps"
     );
     assert_eq!(stub_emitted, 15, "stub-emitted skip_functions changed");
@@ -2693,11 +2697,15 @@ fn test_generated_replica_module_public_api() {
         "Replica functions should take &mut CReplica"
     );
 
-    // Verify result validity ensures (Phase 48.6.b: s.valid() in ensures)
-    let validity_count = source.matches("s.valid()").count();
+    // Verify result validity ensures (Phase 48.6.b: s.valid() in ensures).
+    // Phase 42.8.c.2.iv.J.3.d: 13 of the actions are now `&mut self` methods and
+    // spell this `self.valid()`, so counting only the free-function form under-
+    // counts by exactly those. Both spellings are the same obligation.
+    let validity_count =
+        source.matches("s.valid()").count() + source.matches("self.valid()").count();
     assert!(
         validity_count >= 10,
-        "replica_gen.rs should have >= 10 s.valid() ensures, found {}",
+        "replica_gen.rs should have >= 10 validity ensures, found {}",
         validity_count
     );
 

@@ -476,5 +476,34 @@ class FreeFunctionMigratedToMethod(unittest.TestCase):
         self.assertIn("dropped", report)
 
 
+class ProvenanceCommentsAreCarried(unittest.TestCase):
+    """Phase 42.8.c.2.iv.J.3.d. The generated files mark each skipped function with
+    `// TRANSLATE-TODO: explicitly skipped (skip_functions)`. ATTR_RE matched `///`
+    and `#[` but not a plain `//`, so the merge carried the body and dropped the
+    only marker saying why it is hand-written."""
+
+    FRESH = "verus! {\npub exec fn other() {\n    x();\n}\n} // verus!\n"
+    EXISTING = (
+        "verus! {\n"
+        "// TRANSLATE-TODO: explicitly skipped (skip_functions)\n"
+        "#[verifier(external_body)]\n"
+        "pub exec fn skipped() {\n    unimplemented!()\n}\n"
+        "} // verus!\n"
+    )
+
+    def test_the_marker_survives_the_merge(self):
+        merged = mg.merge(self.FRESH, self.EXISTING)
+        self.assertIn("TRANSLATE-TODO: explicitly skipped", merged)
+        self.assertIn("#[verifier(external_body)]", merged)
+        self.assertIn("unimplemented!()", merged)
+
+    def test_marker_stays_attached_above_its_function(self):
+        merged = mg.merge(self.FRESH, self.EXISTING)
+        marker = merged.index("TRANSLATE-TODO")
+        fn = merged.index("pub exec fn skipped")
+        self.assertLess(marker, fn)
+        self.assertNotIn("\n\n", merged[marker:fn])
+
+
 if __name__ == "__main__":
     unittest.main()

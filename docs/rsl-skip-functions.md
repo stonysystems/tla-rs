@@ -93,3 +93,35 @@ hand-implemented half is separated out first.
   dispatch are trusted, as in IronFleet; a further 8 protocol actions are hand-written
   because the transpiler cannot yet generate quantifier-defined map constructions,
   recursive sequence walks, or composite send-actions in this shape.*
+
+## Phase 42.8.c.2.iv.J.3.d — replica actions with hand-written proofs (6)
+
+Added 2026-08-05 so replica can regenerate. These are **not** translation gaps:
+each has a complete, verified body in `src/generated/RSL/replica_gen.rs`. What
+the transpiler cannot reproduce is the *proof* — the bodies carry
+`broadcast use vstd::std_specs::hash::group_hash_axioms, ...` and explicit lemma
+calls such as `lemma_creplycache_get`, followed by several `assert`s that
+discharge the postcondition.
+
+Listing them in `skip_functions` (and `no_stub_functions`, so no
+`unimplemented!()` stub is emitted) means fresh output omits them and the merge
+carries the proven bodies through untouched.
+
+| function | why the generated proof fails |
+|---|---|
+| `LReplicaNextProcessRequest` | reply-cache reasoning needs `lemma_creplycache_get` and a `broadcast use` of the hash axioms |
+| `LReplicaNextProcess2a` | same shape, over the acceptor's vote state |
+| `LReplicaNextSpontaneousMaybeMakeDecision` | learner-state lemmas |
+| `LReplicaNextSpontaneousMaybeExecute` | executor-state lemmas |
+| `LReplicaNextReadClockMaybeSendHeartbeat` | timing/ballot reasoning |
+| `LReplicaInit` | its `recommends` becomes a `requires` the caller in `ReplicaImpl.rs` does not establish |
+
+**The alternative was measured and rejected.** Listing all 18 actions in
+`proven_functions` instead makes replica reach `1040 verified, 6 errors`; backing
+the 6 off *there* leaves them carrying `assume(false)`, which buys 11 more
+trigger notes (66 vs 77) by converting six proven actions into assumed ones.
+Trading verification strength for a trigger-note count is the same
+metric-gaming that Phase 54 rejects `#![auto]` for, so the notes stay.
+
+Removing an entry from this list requires teaching the transpiler to emit those
+proofs — which is the route `CLAUDE.md` prescribes.

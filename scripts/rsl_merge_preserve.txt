@@ -23,8 +23,9 @@ learner filter_clearnerstate
 executor CExecutorInit
 election CElectionStateInit
 proposer CProposerInit
-replica CReplicaInit
-replica CSchedulerInit
+# replica CReplicaInit / CSchedulerInit are no longer needed here: Phase
+# 42.8.c.2.iv.J.3.d moved LReplicaInit into replica's skip_functions, so fresh
+# does not emit it at all and the merge carries the existing body by default.
 #
 # Fresh emits `#[verifier(external_body)] { r.clone() }` -- trusted; the
 # checked-in body is a verified per-variant match:

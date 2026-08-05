@@ -38,7 +38,11 @@ FN_RE = re.compile(
     r"(?:exec\s+|proof\s+|spec\s+)?fn\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)"
 )
 IMPL_RE = re.compile(r"^\s*impl(?:\s*<[^>]*>)?\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)")
-ATTR_RE = re.compile(r"^\s*(#\[|#!\[|///|//!)")
+# Plain `//` too, not just doc comments and attributes: the generated files carry
+# `// TRANSLATE-TODO: explicitly skipped (skip_functions)` directly above each
+# skipped function, and a merge that drops it loses the only marker saying why
+# that body is hand-written (Phase 42.8.c.2.iv.J.3.d).
+ATTR_RE = re.compile(r"^\s*(#\[|#!\[|//)")
 IMPORT_RE = re.compile(r"^\s*(pub\s+)?use\s+")
 
 

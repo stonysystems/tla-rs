@@ -2,6 +2,28 @@
 
 # Emit &mut self calling convention for CReplica methods (Phase 48)
 mut_self_types = ["CReplica"]
+mut_self_helpers = [
+    "LAcceptorProcess1a",
+    "LAcceptorProcess2a",
+    "LAcceptorProcessHeartbeat",
+    "LExecutorGetDecision",
+    "LExecutorProcessAppStateRequest",
+    "LExecutorProcessAppStateSupply",
+    "LExecutorProcessRequest",
+    "LExecutorProcessStartingPhase2",
+    "LLearnerForgetDecision",
+    "LLearnerForgetOperationsBefore",
+    "LLearnerProcess2b",
+    "LProposerCheckForQuorumOfViewSuspicions",
+    "LProposerCheckForViewTimeout",
+    "LProposerMaybeEnterNewViewAndSend1a",
+    "LProposerMaybeEnterPhase2",
+    "LProposerMaybeNominateValueAndSend2a",
+    "LProposerProcessHeartbeat",
+    "LProposerProcessRequest",
+    "LProposerResetViewTimerDueToExecution",
+    "LExecutorExecute",
+]
 
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive
@@ -45,11 +67,26 @@ skip_functions = [
     # Spec uses `exists |opn|` existential with complex branching — transpiler cannot
     # resolve the existential witness. Hand-written body in replica_gen.rs.
     "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
+    "LReplicaNextProcessRequest",
+    "LReplicaNextProcess2a",
+    "LReplicaNextSpontaneousMaybeMakeDecision",
+    "LReplicaNextSpontaneousMaybeExecute",
+    "LReplicaNextReadClockMaybeSendHeartbeat",
+    "LReplicaInit",
 ]
 
 # Functions that should NOT generate stubs even with proof_fallback
 # (they have manual implementations in replica_manual.rs or are spec-only)
 no_stub_functions = [
+    # Phase 42.8.c.2.iv.J.3.d: hand-written proofs the transpiler cannot generate
+    # (broadcast use + explicit lemma calls). Skipped so regeneration keeps the
+    # proven bodies instead of replacing them with `assume(false)` stubs.
+    "LReplicaNextProcessRequest",
+    "LReplicaNextProcess2a",
+    "LReplicaNextSpontaneousMaybeMakeDecision",
+    "LReplicaNextSpontaneousMaybeExecute",
+    "LReplicaNextReadClockMaybeSendHeartbeat",
+    "LReplicaInit",
     # Non-spec helpers provided by shared implementation helpers
     "ExtractSentPacketsFromIos",
     # Spec-only predicates (no exec implementation needed)
@@ -78,6 +115,25 @@ spec_only_functions = [
 [method_calls]
 "LMinQuorumSize" = { method_name = "CMinQuorumSize", receiver_arg_index = 0 }
 "LReplicaConstantsValid" = { method_name = "CReplicaConstantsValid", receiver_arg_index = 0 }
+"LAcceptorProcess1a" = { method_name = "CAcceptorProcess1a", receiver_arg_index = 0 }
+"LAcceptorProcess2a" = { method_name = "CAcceptorProcess2a", receiver_arg_index = 0 }
+"LAcceptorProcessHeartbeat" = { method_name = "CAcceptorProcessHeartbeat", receiver_arg_index = 0 }
+"LExecutorGetDecision" = { method_name = "CExecutorGetDecision", receiver_arg_index = 0 }
+"LExecutorProcessAppStateRequest" = { method_name = "CExecutorProcessAppStateRequest", receiver_arg_index = 0 }
+"LExecutorProcessAppStateSupply" = { method_name = "CExecutorProcessAppStateSupply", receiver_arg_index = 0 }
+"LExecutorProcessRequest" = { method_name = "CExecutorProcessRequest", receiver_arg_index = 0 }
+"LExecutorProcessStartingPhase2" = { method_name = "CExecutorProcessStartingPhase2", receiver_arg_index = 0 }
+"LLearnerForgetDecision" = { method_name = "CLearnerForgetDecision", receiver_arg_index = 0 }
+"LLearnerForgetOperationsBefore" = { method_name = "CLearnerForgetOperationsBefore", receiver_arg_index = 0 }
+"LLearnerProcess2b" = { method_name = "CLearnerProcess2b", receiver_arg_index = 0 }
+"LProposerCheckForQuorumOfViewSuspicions" = { method_name = "CProposerCheckForQuorumOfViewSuspicions", receiver_arg_index = 0 }
+"LProposerCheckForViewTimeout" = { method_name = "CProposerCheckForViewTimeout", receiver_arg_index = 0 }
+"LProposerMaybeEnterNewViewAndSend1a" = { method_name = "CProposerMaybeEnterNewViewAndSend1a", receiver_arg_index = 0 }
+"LProposerMaybeEnterPhase2" = { method_name = "CProposerMaybeEnterPhase2", receiver_arg_index = 0 }
+"LProposerMaybeNominateValueAndSend2a" = { method_name = "CProposerMaybeNominateValueAndSend2a", receiver_arg_index = 0 }
+"LProposerProcessHeartbeat" = { method_name = "CProposerProcessHeartbeat", receiver_arg_index = 0 }
+"LProposerProcessRequest" = { method_name = "CProposerProcessRequest", receiver_arg_index = 0 }
+"LProposerResetViewTimerDueToExecution" = { method_name = "CProposerResetViewTimerDueToExecution", receiver_arg_index = 0 }
 
 [naming]
 spec_prefix = "L"
@@ -168,6 +224,20 @@ generate_proofs = true
 assume_postconditions = true
 proven_functions = [
     "LReplicaNumActions",
+    "LReplicaNextProcessInvalid",
+    "LReplicaNextProcess1a",
+    "LReplicaNextProcessStartingPhase2",
+    "LReplicaNextProcess2b",
+    "LReplicaNextProcessReply",
+    "LReplicaNextProcessAppStateSupply",
+    "LReplicaNextProcessAppStateRequest",
+    "LReplicaNextProcessHeartbeat",
+    "LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a",
+    "LReplicaNextSpontaneousMaybeEnterPhase2",
+    "LReplicaNextReadClockMaybeNominateValueAndSend2a",
+    "LReplicaNextReadClockCheckForViewTimeout",
+    "LReplicaNextReadClockCheckForQuorumOfViewSuspicions",
+    "LSchedulerInit",
 ]
 # Types are defined in types_gen.rs; do not duplicate here
 generate_inline_types = false

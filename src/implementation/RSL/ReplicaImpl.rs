@@ -235,7 +235,7 @@ impl CReplica {
         ensures self.valid(), res.valid(),
             LReplicaNextProcessInvalid(old(self)@, self@, received_packet@, res@)
     {
-        let _ = crate::generated::RSL::replica_gen::CReplicaNextProcessInvalid(self, &received_packet);
+        let _ = self.CReplicaNextProcessInvalid(&received_packet);
         OutboundPackets::PacketSequence { s: vec![] }
     }
 
@@ -257,7 +257,7 @@ impl CReplica {
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcess1a(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcess1a(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcess1a(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -279,7 +279,7 @@ impl CReplica {
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessStartingPhase2(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessStartingPhase2(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcessStartingPhase2(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -301,7 +301,7 @@ impl CReplica {
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcess2b(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcess2b(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcess2b(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -311,7 +311,7 @@ impl CReplica {
         ensures self.valid(), res.valid(),
             LReplicaNextProcessReply(old(self)@, self@, received_packet@, res@)
     {
-        let _ = crate::generated::RSL::replica_gen::CReplicaNextProcessReply(self, &received_packet);
+        let _ = self.CReplicaNextProcessReply(&received_packet);
         OutboundPackets::PacketSequence { s: vec![] }
     }
 
@@ -322,7 +322,7 @@ impl CReplica {
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessAppStateSupply(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessAppStateSupply(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcessAppStateSupply(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -333,7 +333,7 @@ impl CReplica {
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessAppStateRequest(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessAppStateRequest(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcessAppStateRequest(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -344,7 +344,7 @@ impl CReplica {
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessHeartbeat(old(self)@, self@, received_packet@, clock as int, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessHeartbeat(self, &received_packet, &clock);
+        let sent_packets = self.CReplicaNextProcessHeartbeat(&received_packet, &clock);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -355,7 +355,7 @@ impl CReplica {
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
             LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(old(self)@, self@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(self);
+        let sent_packets = self.CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a();
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -366,7 +366,7 @@ impl CReplica {
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
             LReplicaNextSpontaneousMaybeEnterPhase2(old(self)@, self@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextSpontaneousMaybeEnterPhase2(self);
+        let sent_packets = self.CReplicaNextSpontaneousMaybeEnterPhase2();
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -412,7 +412,7 @@ impl CReplica {
     {
         use crate::generated::RSL::types_gen::CClockReading;
         let c = CClockReading { t: clock };
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextReadClockCheckForViewTimeout(self, &c);
+        let sent_packets = self.CReplicaNextReadClockCheckForViewTimeout(&c);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -424,7 +424,7 @@ impl CReplica {
     {
         use crate::generated::RSL::types_gen::CClockReading;
         let c = CClockReading { t: clock };
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextReadClockCheckForQuorumOfViewSuspicions(self, &c);
+        let sent_packets = self.CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&c);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
@@ -447,7 +447,7 @@ impl CReplica {
     {
         use crate::generated::RSL::types_gen::CClockReading;
         let c = CClockReading { t: clock };
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextReadClockMaybeNominateValueAndSend2a(self, &c);
+        let sent_packets = self.CReplicaNextReadClockMaybeNominateValueAndSend2a(&c);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
