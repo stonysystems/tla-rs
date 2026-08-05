@@ -29,6 +29,7 @@ struct ManifestCase {
     role: String,
     clean_distance: String,
     expected_rules: Vec<String>,
+    rules_skipped: Vec<String>,
 }
 
 /// Parse the manifest's case table. A hand-rolled reader keeps the corpus
@@ -62,6 +63,15 @@ fn manifest_cases() -> Vec<ManifestCase> {
             case.role = rest.trim().trim_matches('"').to_string();
         } else if let Some(rest) = line.strip_prefix("clean_distance = ") {
             case.clean_distance = rest.trim().trim_matches('"').to_string();
+        } else if let Some(rest) = line.strip_prefix("rules_skipped = ") {
+            case.rules_skipped = rest
+                .trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|r| r.trim().trim_matches('"').to_string())
+                .filter(|r| !r.is_empty())
+                .collect();
         } else if let Some(rest) = line.strip_prefix("expected_rules = ") {
             case.expected_rules = rest
                 .trim()
@@ -124,6 +134,24 @@ fn linter_verdicts_match_the_manifest() {
                     .map(|f| format!("{} {}", f.rule.as_str(), f.definition))
                     .collect::<Vec<_>>()
                     .join("; ")
+            ));
+            continue;
+        }
+
+        // A rule that did not run cannot have found anything, so a low
+        // clean_distance next to a non-empty skip list is a lower bound rather
+        // than a near-clean spec. Pinning it keeps that distinction honest:
+        // ReadersWriters reports 1 and Jetpack 2, both with C1/C2/C3 skipped.
+        let skipped: BTreeSet<String> = report
+            .skipped_rules
+            .iter()
+            .map(|(r, _)| r.as_str().to_string())
+            .collect();
+        let expected_skipped: BTreeSet<String> = case.rules_skipped.iter().cloned().collect();
+        if skipped != expected_skipped {
+            mismatches.push(format!(
+                "{}: rules_skipped says {:?}, linter skipped {:?}",
+                case.id, expected_skipped, skipped
             ));
             continue;
         }

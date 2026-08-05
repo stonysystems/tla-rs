@@ -6118,7 +6118,24 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     .iter()
                     .map(|r| r.as_str())
                     .collect::<Vec<_>>();
-                if unchecked.is_empty() {
+                // A rule that is implemented but did not run makes "clean"
+                // mean less than it looks. Say so on the same line as the
+                // verdict, not in a footnote.
+                if !report.skipped_rules.is_empty() {
+                    println!(
+                        "{}: clean with respect to the rules that ran, but {} did not run",
+                        input.display(),
+                        report
+                            .skipped_rules
+                            .iter()
+                            .map(|(r, _)| r.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                    for (rule, why) in &report.skipped_rules {
+                        println!("  {} skipped: {}", rule.as_str(), why);
+                    }
+                } else if unchecked.is_empty() {
                     println!("{}: clean", input.display());
                 } else {
                     println!(
@@ -6160,6 +6177,21 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     input.display(),
                     report.violations()
                 );
+                // The misleading case: a spec the linter understands less runs
+                // fewer rules and so scores *lower*. Jetpack's original reports
+                // 2, but C1/C2/C3 never ran -- reading that as "nearly clean"
+                // is the mistake this line exists to prevent.
+                if !report.skipped_rules.is_empty() {
+                    println!(
+                        "  note: {} of {} implemented rules did not run, so this count is a \
+                         lower bound, not a distance to clean:",
+                        report.skipped_rules.len(),
+                        verus_transpiler::tla::clean_subset::RULES_CHECKED.len()
+                    );
+                    for (rule, why) in &report.skipped_rules {
+                        println!("    {} skipped: {}", rule.as_str(), why);
+                    }
+                }
                 std::process::exit(1);
             }
 

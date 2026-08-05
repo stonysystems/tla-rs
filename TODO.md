@@ -14877,8 +14877,14 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
       impls, carrying their imports. `--report` describes a merge without performing it.
       10 tests, including that codegen improvements survive the merge and that a missing
       `impl` in fresh output is an error rather than a silent drop.
-- [ ] **42.8.c.2**: **The five modules are blocked on a transpiler bug, not on merge
-      mechanics.** Regenerating `learner` emits `CLearnerForgetDecision` as a `&mut self`
+- [x] **42.8.c.2**: **The five modules are blocked on a transpiler bug, not on merge
+      mechanics.** — **CLOSED 2026-08-05: all seven RSL modules are reconciled.**
+      The diagnosis held up: it was transpiler bugs throughout, not merge mechanics, and each
+      was fixed rather than worked around — the `&mut self` lift (2.iii, E), the drift check's
+      blind spots (C, F, J), cross-module `&mut self` call shape (J.3.a), proof blocks
+      outliving their tuple (J.3.b), and method inference on associated functions (J.3.c).
+      `1046 verified, 0 errors`, `assume(false)` 0, trigger notes 534 → 74.
+      Regenerating `learner` emits `CLearnerForgetDecision` as a `&mut self`
       method whose body still names the functional output: `result.unexecuted_learner_state`
       inside a proof block and a bare `result` tail, with no such binding. It does not
       compile, which is why these modules have always sat in the "keep existing" bucket.
@@ -17064,12 +17070,18 @@ merely annoys.
   unchecked prose a linter exists to replace. Fixing it will newly reject
   `t0_01_simple/clean.tla`, and the right response is to fix the spec, not relax
   the rule.
-- [ ] **`clean_distance` degrades to silence.** C1/C2/C3 all return early when
-  the node set is unknown, so a spec the linter understands *less* scores
-  *lower*. Jetpack's 2 and ReadersWriters' 1 are both this. The manifest should
-  record which rules actually executed, not only which fired — the playbook
-  already warns a reader to check `node_set` first, but the number itself is
-  still the misleading part.
+- [x] **`clean_distance` degrades to silence.** — **FIXED 2026-08-05.** C1/C2/C3 all
+  return early when the node set is unknown, so a spec the linter understands *less*
+  scores *lower*. The report now carries `skipped_rules` (rule + why), and all three
+  surfaces say so: `--json` gains `rules_executed` and `rules_skipped`; the plain-text
+  output prints the note under the verdict, including on the *violation* path, which is
+  the misleading one; and the manifest gains `rules_skipped` per case, pinned by
+  `corpus_lint_guard.rs` (verified failing-first).
+  **Measured across the corpus**: exactly the two cases this item named are affected —
+  ReadersWriters (1 violation, 3 rules skipped) and Jetpack (2, 3 skipped). The other
+  eight run all five rules, so the remaining `clean_distance` numbers were already honest.
+  Jetpack now reads: `2 clean-subset violation(s)` followed by *"note: 3 of 5 implemented
+  rules did not run, so this count is a lower bound, not a distance to clean"*.
 
 ## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — **COMPLETE 2026-08-04**
 

@@ -107,6 +107,13 @@ pub struct CleanSubsetReport {
     /// because "flatten the network" is the one decision to make, not one
     /// decision per read.
     pub network_near_miss: Option<String>,
+    /// Rules that are implemented but did **not** run on this module, with the
+    /// reason. C1/C2/C3 all need a node set, and return early without one, so a
+    /// spec the linter understands *less* runs fewer rules, reports fewer
+    /// findings, and scores as *cleaner* than one it understands well. The
+    /// count alone cannot distinguish "nothing wrong" from "nothing checked";
+    /// this field is what makes that difference visible to a reader or a script.
+    pub skipped_rules: Vec<(CleanRule, String)>,
 }
 
 impl CleanSubsetReport {
@@ -745,6 +752,12 @@ impl<'a> LintContext<'a> {
     /// would maintain state the protocol never consults.
     fn check_c3(&self, report: &mut CleanSubsetReport) {
         let Some(node_set) = report.node_set.clone() else {
+            report.skipped_rules.push((
+                CleanRule::C3,
+                "no node set was identified, so there is nothing to state \
+                 per-node updates against"
+                    .to_string(),
+            ));
             return;
         };
         let per_node: BTreeSet<&str> = report
@@ -866,6 +879,18 @@ impl<'a> LintContext<'a> {
     fn check_c2(&self, report: &mut CleanSubsetReport) {
         if report.node_set.is_none() || report.per_node_variables.is_empty() {
             // Nothing to state the rule against; C5/C1 have said why.
+            report.skipped_rules.push((
+                CleanRule::C2,
+                if report.node_set.is_none() {
+                    "no node set was identified, so cross-node reads cannot be \
+                     recognised"
+                        .to_string()
+                } else {
+                    "no per-node variables were identified, so there is nothing \
+                     a cross-node read could read"
+                        .to_string()
+                },
+            ));
             return;
         }
         // The network is exempt: reading messages other nodes sent is what a
@@ -1037,6 +1062,12 @@ impl<'a> LintContext<'a> {
         let Some(node_set) = report.node_set.clone() else {
             // Without a node set from C5 there is nothing to compare domains
             // against; C5 has already reported the reason.
+            report.skipped_rules.push((
+                CleanRule::C1,
+                "no node set was identified, so variable domains cannot be \
+                 compared against it"
+                    .to_string(),
+            ));
             return;
         };
 
@@ -1336,9 +1367,30 @@ pub fn report_to_json(report: &CleanSubsetReport) -> String {
         .map(|r| format!(r#""{}""#, r.as_str()))
         .collect::<Vec<_>>()
         .join(",");
+    // Implemented but not run on this module. Without this a reader cannot tell
+    // a low violation count that means "clean" from one that means "barely
+    // anything executed".
+    let rules_skipped = report
+        .skipped_rules
+        .iter()
+        .map(|(r, why)| {
+            format!(
+                r#"{{"rule":"{}","reason":"{}"}}"#,
+                r.as_str(),
+                escape_json(why)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let rules_executed = RULES_CHECKED
+        .iter()
+        .filter(|r| !report.skipped_rules.iter().any(|(s, _)| s == *r))
+        .map(|r| format!(r#""{}""#, r.as_str()))
+        .collect::<Vec<_>>()
+        .join(",");
 
     format!(
-        r#"{{"clean":{},"violations":{},"rules_checked":[{rules_checked}],"rules_not_implemented":[{rules_unchecked}],"node_set":{},"network_variable":{},"per_node_variables":[{}],"global_variables":[{}],"findings":[{}]}}"#,
+        r#"{{"clean":{},"violations":{},"rules_checked":[{rules_checked}],"rules_executed":[{rules_executed}],"rules_skipped":[{rules_skipped}],"rules_not_implemented":[{rules_unchecked}],"node_set":{},"network_variable":{},"per_node_variables":[{}],"global_variables":[{}],"findings":[{}]}}"#,
         report.is_clean(),
         report.violations(),
         quoted(&report.node_set),
@@ -1411,6 +1463,68 @@ mod tests {
 
     fn rules(report: &CleanSubsetReport) -> Vec<CleanRule> {
         report.findings.iter().map(|f| f.rule).collect()
+    }
+
+    /// Phase 52: `clean_distance` degraded to silence. C1, C2 and C3 all need a
+    /// node set and return early without one, so a spec the linter understands
+    /// *less* ran fewer rules, reported fewer findings, and scored as *cleaner*.
+    /// Jetpack's original reports 2 violations with three rules never executed --
+    /// reading that as "nearly clean" is precisely the mistake.
+    #[test]
+    fn records_which_rules_did_not_run_when_the_node_set_is_unknown() {
+        let source = r#"---- MODULE Test ----
+VARIABLES clock
+Init == clock = 0
+Next == clock' = clock + 1
+===="#;
+        let report = lint(source);
+        let skipped: Vec<CleanRule> = report.skipped_rules.iter().map(|(r, _)| *r).collect();
+        assert!(
+            skipped.contains(&CleanRule::C1)
+                && skipped.contains(&CleanRule::C2)
+                && skipped.contains(&CleanRule::C3),
+            "C1/C2/C3 all need a node set and must say they did not run: {:?}",
+            report.skipped_rules
+        );
+        for (rule, why) in &report.skipped_rules {
+            assert!(
+                !why.is_empty(),
+                "{} must say *why* it did not run",
+                rule.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn a_fully_understood_spec_skips_nothing() {
+        let source = r#"---- MODULE Test ----
+VARIABLES clock
+TypeOK == clock \in [Proc -> Nat]
+Step(p) == clock' = [clock EXCEPT ![p] = clock[p] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            report.skipped_rules.is_empty(),
+            "with a node set every rule runs: {:?}",
+            report.skipped_rules
+        );
+        assert!(report.is_clean(), "got {:?}", report.findings);
+    }
+
+    #[test]
+    fn json_separates_rules_that_ran_from_rules_that_did_not() {
+        let source = r#"---- MODULE Test ----
+VARIABLES clock
+Init == clock = 0
+Next == clock' = clock + 1
+===="#;
+        let json = report_to_json(&lint(source));
+        assert!(json.contains(r#""rules_executed""#), "{json}");
+        assert!(json.contains(r#""rules_skipped""#), "{json}");
+        // a consumer reading only `violations` cannot tell the difference; the
+        // two lists are what make the number interpretable
+        assert!(json.contains(r#""rule":"C1","reason":"#), "{json}");
     }
 
     #[test]
