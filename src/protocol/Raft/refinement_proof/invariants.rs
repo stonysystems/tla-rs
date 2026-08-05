@@ -707,6 +707,134 @@ verus! {
         );
     }
 
+    /// Step 3, stable half: under Stable membership over the whole server set,
+    /// no divergent Configuration can exist.
+    ///
+    /// If the entry at `j` is certified under a Stable-full phase, the bridge
+    /// makes it a legacy fixed-majority commitment, and inherited Leader
+    /// Completeness then forces a higher-term leader to hold exactly that
+    /// entry. So a leader carrying a Configuration at `j` means the committer
+    /// carries the same Configuration there — never a Data entry.
+    ///
+    /// The joint-consensus half is out of reach by this route: a joint quorum
+    /// need not meet the fixed-majority threshold the bridge requires.
+    pub proof fn lemma_no_divergent_configuration_under_stable_membership(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        j: int,
+        config: Set<int>,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LeaderCompleteness(ds),
+            LogCommitCertificatesValid(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            0 <= j < index,
+            j < ds.server_states[leader_id].log.len(),
+            ds.server_states[leader_id].log[j].payload is Configuration,
+            // The entry at `j` is certified under Stable-full membership.
+            ds.log_commit_certificates.dom().contains(j),
+            ds.log_commit_certificates[j].governing_phase
+                == (MembershipPhase::Stable { config: config }),
+            config.len() == ds.num_servers,
+            ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[j].entry.term,
+        ensures
+            ds.server_states[
+                ds.configuration_commit_certificates[index].committer
+            ].log[j].payload is Configuration,
+    {
+        let committer = ds.configuration_commit_certificates[index].committer;
+
+        // Inherited Leader Completeness pins the leader's entry at `j`.
+        lemma_legacy_leader_completeness_covers_stable_log_certificate(
+            ds, j, config, leader_id);
+        assert(ds.server_states[leader_id].log[j]
+            == ds.log_commit_certificates[j].entry);
+
+        // The committer has `j` committed, so its entry there is the same
+        // unique all-entry certificate entry.
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(j < ds.server_states[committer].commit_index);
+        assert(j < ds.server_states[committer].log.len());
+        assert(CommittedEntriesHaveLogCertificates(ds));
+        assert(ds.log_commit_certificates[j].entry
+            == ds.server_states[committer].log[j]);
+    }
+
+    /// Step 2b: every server shares one universe of server identities. This is
+    /// already pinned by `WellFormedRaftDistributed`, which fixes each server's
+    /// `servers` set to `{0, .., num_servers-1}`.
+    pub proof fn lemma_all_servers_share_server_universe(
+        ds: RaftDistributedState,
+        left: int,
+        right: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            0 <= left < ds.num_servers,
+            0 <= right < ds.num_servers,
+        ensures
+            ds.server_constants[left].servers
+                == ds.server_constants[right].servers,
+    {
+        assert(WellFormedRaftDistributed(ds));
+    }
+
+    /// Step 2a: certified boundary terms increase with their log position.
+    ///
+    /// The certificate at `index` has a committer holding the whole prefix
+    /// below `index` committed, so both boundaries sit in that one log, and
+    /// log terms are monotonic. Consequently a leader whose term exceeds the
+    /// boundary at `index` also exceeds every certified boundary below it —
+    /// which is exactly the term hypothesis the index induction carries.
+    pub proof fn lemma_certified_boundary_terms_are_monotonic(
+        ds: RaftDistributedState,
+        index: int,
+        m: int,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            LogTermsMonotonic(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            ds.configuration_commit_certificates.dom().contains(m),
+            0 <= m < index,
+        ensures
+            ds.configuration_commit_certificates[m].entry.term
+                <= ds.configuration_commit_certificates[index].entry.term,
+    {
+        let committer = ds.configuration_commit_certificates[index].committer;
+
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(index < ds.server_states[committer].log.len());
+        assert(ds.server_states[committer].log[index]
+            == ds.configuration_commit_certificates[index].entry);
+
+        // The lower boundary sits in the same committed prefix.
+        assert(m < ds.server_states[committer].commit_index);
+        assert(m < ds.server_states[committer].log.len());
+        lemma_certified_boundary_agrees_with_committed_server(
+            ds, m, committer);
+
+        assert(LogTermsMonotonic(ds));
+    }
+
     /// The single remaining obligation of Milestone B, isolated as a state
     /// predicate: no server carries a Configuration entry at a position where
     /// a certificate's committer carries a Data entry.
