@@ -2425,6 +2425,85 @@ verus! {
         }
     }
 
+    /// Strong induction over certificate positions for an *existing* leader.
+    ///
+    /// Counterpart of `lemma_certified_boundaries_present_below`, which needs
+    /// the leader's saved phase to be its latest-log phase and so only applies
+    /// at promotion. This version measures the saved phase at the election
+    /// snapshot instead, which is what `LeaderElectionSnapshotRecorded`
+    /// provides for every leader at any time.
+    ///
+    /// Each step splits on whether the boundary is already below the leader's
+    /// commit index — committed agreement settles it — or above, where the
+    /// unconditional existing-leader theorem applies with the induction
+    /// hypothesis supplying minimality.
+    pub proof fn lemma_existing_leader_holds_certified_boundaries_below(
+        ds: RaftDistributedState,
+        leader_id: int,
+        bound: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            ElectionLogLenBounded(ds),
+            ElectionLogLenEntryTermBound(ds),
+            LeaderElectionSnapshotRecorded(ds),
+            LogTermsMonotonic(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            0 <= bound <= ds.server_states[leader_id].log.len(),
+            forall |a: int, e: int|
+                #![trigger ds.server_constants[a], ds.server_constants[e]]
+                0 <= a < ds.num_servers && 0 <= e < ds.num_servers
+                ==> ds.server_constants[a].servers
+                    == ds.server_constants[e].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].current_term
+                    > ds.configuration_commit_certificates[m].entry.term,
+        ensures
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+        decreases bound,
+    {
+        if bound > 0 {
+            let m = bound - 1;
+
+            lemma_existing_leader_holds_certified_boundaries_below(
+                ds, leader_id, m);
+
+            if ds.configuration_commit_certificates.dom().contains(m) {
+                assert(CommitIndexBounded(ds));
+                assert(m < ds.server_states[leader_id].log.len());
+
+                if m < ds.server_states[leader_id].commit_index {
+                    lemma_certified_boundary_agrees_with_committed_server(
+                        ds, m, leader_id);
+                } else {
+                    lemma_existing_leader_holds_certified_boundary_unconditionally(
+                        ds, m, leader_id);
+                }
+            }
+        }
+    }
+
     /// The stale-leader direction. Quorum overlap is symmetric, so a leader
     /// elected under a phase that the certificate's governing phase legally
     /// progresses *from* is covered just as well as one that progresses *to*
