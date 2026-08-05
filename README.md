@@ -101,12 +101,45 @@ and verifies, compiles, and runs this example.
 
 ## Requirements
 
-- **Verus**: 0.2026.08.02.b677dd5 (latest stable tested; rolling is the same commit).
-  The release binaries link against glibc 2.39, so verification needs Ubuntu 24.04 or newer.
-- **Rust**: 1.97.1 for Verus; a recent stable toolchain for the transpiler
-- **.NET 6.0 SDK**: https://dotnet.microsoft.com/download
-- **scons**: `pip install scons`
-- **Python 3**: For running scons
+These are what `CI / Verus Verification` installs on a clean `ubuntu-24.04`, so the sequence
+below is known to work from nothing:
+
+- **rustup**, with toolchain **1.97.1**. It must be rustup — the `verus` launcher shells out to
+  it and exits with *"verus needs a rustup installation"* if it is absent, even when a matching
+  `rustc` is on `PATH`.
+
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  rustup toolchain install 1.97.1
+  ```
+
+- **Verus 0.2026.08.02.b677dd5** (latest stable tested; rolling points at the same commit).
+  The zip does not preserve the executable bit, so `chmod +x` is required:
+
+  ```bash
+  V=0.2026.08.02.b677dd5
+  wget https://github.com/verus-lang/verus/releases/download/release/$V/verus-$V-x86-linux.zip
+  unzip -q verus-$V-x86-linux.zip -d ~/ && mv ~/verus-x86-linux ~/verus
+  chmod +x ~/verus/verus
+  export VERUS_PATH=~/verus/verus
+  ```
+
+  The release binaries link against **glibc 2.39**, so verification needs Ubuntu 24.04 or
+  newer. On an older distribution, build Verus from source instead — it will link against
+  whatever glibc you have.
+
+- **scons**. `pip install scons` fails on Ubuntu 24.04 and Debian 12 with
+  `error: externally-managed-environment` (PEP 668). Use one of:
+
+  ```bash
+  sudo apt install scons                  # simplest
+  pipx install scons
+  python3 -m venv ~/.venvs/scons && ~/.venvs/scons/bin/pip install scons
+  ```
+
+- **Python 3** — for scons, and for the trigger-inventory scripts under `scripts/`.
+- **.NET 6.0 SDK** — only to build and run the services. Verification does not need it; pass
+  `--skip-dotnet`.
 
 ## Verification
 
@@ -121,10 +154,12 @@ protocol's spec, refinement proof, transpiler-generated implementation, and serv
 point. Expect:
 
 ```
-verification results:: 1044 verified, 0 errors
+verification results:: 1048 verified, 0 errors
 ```
 
-This takes about 2 minutes on CI hardware.
+with no warnings and no `automatically chose triggers` notes — every quantifier in the tree
+carries an explicit trigger, so a future Verus release cannot silently change which
+instantiations fire. This takes about 3 minutes on CI hardware.
 The same pass runs on every push (`CI / Verus Verification`).
 
 ## Building
