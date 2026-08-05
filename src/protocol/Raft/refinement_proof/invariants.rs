@@ -707,6 +707,141 @@ verus! {
         );
     }
 
+    /// Step 2d: a leader whose log stops short of a certified boundary is
+    /// impossible.
+    ///
+    /// Any Configuration the committer holds between the leader's log end and
+    /// the boundary would itself be certified, hence held by the leader — which
+    /// its log length forbids. So that stretch is Configuration-free, the
+    /// leader's election phase is exactly the certificate's governing phase,
+    /// and quorum overlap forces the leader to hold the boundary after all,
+    /// contradicting the short log.
+    pub proof fn lemma_certified_boundary_forbids_short_leader_log(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            ds.server_constants[leader_id].servers
+                == ds.server_constants[
+                    ds.configuration_commit_certificates[index].committer
+                ].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < index
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            // The leader's log stops before the boundary.
+            ds.server_states[leader_id].log.len() < index,
+            // No Configuration the committer lacks, below the leader's log end.
+            forall |j: int|
+                #![trigger ds.server_states[leader_id].log[j]]
+                0 <= j < ds.server_states[leader_id].log.len()
+                && ds.server_states[leader_id].log[j].payload is Configuration
+                ==> ds.server_states[
+                        ds.configuration_commit_certificates[index].committer
+                    ].log[j].payload is Configuration,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_membership_phase_for_state(
+                    ds.server_states[leader_id],
+                    ds.server_constants[leader_id],
+                )),
+        ensures
+            false,
+    {
+        let leader = ds.server_states[leader_id];
+        let constants = ds.server_constants[leader_id];
+        let committer = ds.configuration_commit_certificates[index].committer;
+        let leader_len = leader.log.len() as int;
+        let initial_phase = MembershipPhase::Stable {
+            config: constants.servers,
+        };
+
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(index <= ds.server_states[committer].log.len());
+
+        // The committer holds no Configuration between the leader's log end
+        // and the boundary: such an entry would be certified, hence held.
+        assert forall |p: int| leader_len <= p < index
+        implies !(ds.server_states[committer].log[p].payload is Configuration)
+        by {
+            if ds.server_states[committer].log[p].payload is Configuration {
+                lemma_committer_prefix_configurations_are_certified(
+                    ds, index, p);
+                assert(ds.server_states[leader_id].log.len() > p);
+            }
+        };
+
+        // So the governing phase is already fixed by the committer's prefix of
+        // the leader's own length.
+        lemma_configuration_free_interval_preserves_active_phase(
+            ds.server_states[committer].log,
+            leader_len,
+            index,
+            initial_phase,
+        );
+
+        // Both logs carry the same Configurations below that length.
+        assert forall |j: int| 0 <= j < leader_len implies
+            ((ds.server_states[leader_id].log[j].payload is Configuration)
+                == (ds.server_states[committer].log[j].payload
+                    is Configuration))
+        by {
+            if ds.server_states[committer].log[j].payload is Configuration {
+                lemma_minimal_missing_leader_matches_committer_configurations(
+                    ds, index, leader_id, j);
+            }
+        };
+
+        assert forall |j: int|
+            0 <= j < leader_len
+            && ds.server_states[leader_id].log[j].payload is Configuration
+        implies ds.server_states[leader_id].log[j]
+            == ds.server_states[committer].log[j]
+        by {
+            lemma_minimal_missing_leader_matches_committer_configurations(
+                ds, index, leader_id, j);
+        };
+
+        lemma_logs_with_same_configurations_have_same_active_phase(
+            ds.server_states[leader_id].log,
+            ds.server_states[committer].log,
+            leader_len,
+            initial_phase,
+        );
+
+        // The leader's election phase reads its whole log, which is that same
+        // prefix — so it equals the governing phase, and overlap applies.
+        lemma_configuration_commit_certificate_valid_for_replica(
+            ds, index, committer);
+        lemma_certified_boundary_present_when_phases_are_related(
+            ds,
+            index,
+            leader_id,
+            election_membership_phase_for_state(leader, constants),
+        );
+    }
+
     /// Step 3, stable half: under Stable membership over the whole server set,
     /// no divergent Configuration can exist.
     ///
