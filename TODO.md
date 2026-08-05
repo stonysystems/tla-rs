@@ -83,7 +83,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
-- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
+- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. **38.11 is closed (verified 2026-08-05)**: all ten acceptance criteria are met and each has a guard test — `cargo test --test integration phase_38_11` runs 10 tests, all passing. The previously recorded "4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19)" **no longer reproduce**: `scripts/detect_stub_specs.py` reports "no degenerate stub specs detected in corpus" and none of those four cases contains an `arbitrary::` constructor. The corpus is gitignored and regenerated (CI runs `regenerate_corpus.sh`), so that finding came from a stale local copy. Phase 38's remaining leaves — 38.20.3, 38.21.C, 38.21.H, 38.22.2.b.iii — are all marked blocked, multi-week, case-specific or deferred, so the phase has no small actionable leaf right now.
 
 **Next steps (priority order, updated 2026-08-04):**
 
@@ -95,7 +95,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
 
-1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Remaining leaf tasks: 38.20.3 (blocked on solver ceilings), 38.21.C (Source DPOR, multi-week), 38.21.H (bit-pack, case-specific), 38.22.2.b.iii (NamedFields indexed Vec, deferred). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — `38.11` acceptance criteria are **closed** (10/10, each with a passing guard test, verified 2026-08-05). What remains is `38.18` / `38.22` performance work, and every open leaf is blocked or deferred (see below), so this phase is not currently actionable in small steps. Remaining leaf tasks: 38.20.3 (blocked on solver ceilings), 38.21.C (Source DPOR, multi-week), 38.21.H (bit-pack, case-specific), 38.22.2.b.iii (NamedFields indexed Vec, deferred). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
 5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler to translate value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. Concrete target: eliminate `raft_manual.rs` (369 LOC).
@@ -12117,6 +12117,21 @@ stub detector clean and the run script reporting 0 vacuous passes.
     `tests/reports/shadow_parity_subset_latest.json`, checks markdown contract
     fragments in `tests/reports/shadow_parity_subset_latest.md`, and fails on
     missing required keys (for example `summary.parity_failures`).
+
+### 38.11 status verification (2026-08-05)
+
+All ten criteria below are met **and each has a passing guard test** —
+`cargo test --test integration phase_38_11` runs 10 tests, 10 pass. Verified rather than
+assumed, because two adjacent status claims had gone stale:
+
+- "Remaining DPOR work is acceptance-criteria closure in 38.11" — it is not; 38.11 is closed.
+- "Structural detector reports 4 `arbitrary::<...>()` findings (cases 14/15/16/19)" — it does
+  not. `scripts/detect_stub_specs.py` reports "no degenerate stub specs detected in corpus",
+  and none of those four cases contains an `arbitrary::` constructor. The corpus is
+  gitignored and regenerated, so the finding came from a stale local copy. That detector had
+  **no guard test**, which is exactly how the claim drifted; it now has one
+  (`test_dpor_corpus_has_no_degenerate_stub_specs`), which skips cleanly when the corpus has
+  not been generated rather than failing for the wrong reason.
 
 ### 38.11 Acceptance criteria
 
