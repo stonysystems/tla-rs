@@ -17026,13 +17026,34 @@ value per hour, not by phase number:
                   gives `(a + b).to_set() == a.to_set() + b.to_set()`, and `to_set_ensures`
                   carries it back. The solver does not chain those hops on its own — each one
                   is written out.
-            - [ ] **54.12.c.2** Rewrite the 4 sites over the new lemma and re-verify. This is
-                  the part that carries risk: `ProduceAbstractState` and
-                  `ProduceAbstractStateFromBatches` are `pub open spec fn`s that ~500 lines of
-                  refinement proof unfold. Note `ProduceAbstractStateFromBatches` is exactly
+            - [x] **54.12.c.2a** `lemma_requests_contains` in `refinement.rs`.
+                  **DONE (2026-08-05)**, `1043 verified, 0 errors`, notes 120.
+                  Bridges `batches.flatten().to_set().contains(req)` to the two-level indexed
+                  form the refinement proof actually reasons with. It does **not** follow from
+                  `lemma_flatten_contains` alone: that gives `exists i. batches[i].contains(req)`,
+                  and reaching `exists i, j. batches[i][j] == req` needs `Seq::contains`
+                  unfolded with an explicit witness in each direction. Trigger is
+                  `batches[batch_num][req_num]` — anything on `.len()` fails
+                  "trigger does not cover variable req_num".
+            - [ ] **54.12.c.2b** The rest. **Cost now measured rather than guessed** — this is
+                  what the earlier "budget this as its own task" note asked for. Converting
+                  both `let`s in `ProduceAbstractState` to `flatten().to_set()` breaks
+                  **exactly 3 proof functions at 6 assertion sites**: `refinement.rs` 126, 138
+                  (a precondition of `lemma_DecidedRequestWasSentByClient`), 196, 211, 261,
+                  263. That is much smaller than "~500 lines of proof unfold these" suggested,
+                  so the conversion is tractable — it was the *bridge lemmas*, not the call
+                  sites, that took the work.
+                  Remaining: (i) `lemma_replies_contains` over a
+                  `ReplySeqFromRequestBatches(batches) = Seq::new(len, |b| Seq::new(..))`
+                  helper — harder than the request one because the inner `Seq::new` has to be
+                  unfolded to relate `rs[i][j]` to `GetReplyFromRequestBatches(batches,i,j)`;
+                  (ii) insert the two lemmas at the 6 sites; (iii) the same for
+                  `ProduceAbstractStateFromBatches`, which is plausibly just
                   `ProduceAbstractState` over
-                  `batches.drop_last().push(batches.last().take(reqs_in_last_batch))`, so the
-                  two may collapse into one definition — check before assuming.
+                  `batches.drop_last().push(batches.last().take(reqs_in_last_batch))` —
+                  check before assuming.
+                  The conversion was written, measured, and then **reverted** rather than
+                  left half-migrated; only the proved bridge is committed.
 
       - [ ] ~~superseded~~ original 54.12.c note (64/69 in
             `ProduceAbstractStateFromBatches`, 82/87 in `ProduceAbstractState` — 4 warnings,

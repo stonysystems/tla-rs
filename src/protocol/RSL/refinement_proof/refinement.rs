@@ -77,6 +77,44 @@ verus! {
         RSLSystemState{server_addresses:server_addresses, app:app_states_during_batch[reqs_in_last_batch], requests:requests, replies:replies}
     }
 
+    /// Membership in the request set, in the two-level indexed form the
+    /// refinement proof reasons with. `Set::new_assuming_finite` gave this
+    /// definitionally; with the set built by `flatten().to_set()` it has to be
+    /// proved, which is what `lemma_flatten_contains` is for.
+    pub proof fn lemma_requests_contains(batches: Seq<RequestBatch>, req: Request)
+        ensures
+            batches.flatten().to_set().contains(req) <==> exists |batch_num: int, req_num: int|
+                0 <= batch_num < batches.len()
+                && 0 <= req_num < batches[batch_num].len()
+                && #[trigger] batches[batch_num][req_num] == req,
+    {
+        broadcast use Seq::to_set_ensures;
+        crate::verus_extra::seq_lib_v::lemma_flatten_contains(batches, req);
+        // `lemma_flatten_contains` gives `exists i. batches[i].contains(req)`;
+        // getting to the two-level index form means unfolding `Seq::contains`
+        // with an explicit witness in each direction.
+        if batches.flatten().to_set().contains(req) {
+            let i = choose |i: int| #![trigger batches[i]]
+                0 <= i < batches.len() && batches[i].contains(req);
+            let j = choose |j: int| #![trigger batches[i][j]]
+                0 <= j < batches[i].len() && batches[i][j] == req;
+            assert(0 <= i < batches.len() && 0 <= j < batches[i].len()
+                && batches[i][j] == req);
+        }
+        if exists |batch_num: int, req_num: int|
+            0 <= batch_num < batches.len()
+            && 0 <= req_num < batches[batch_num].len()
+            && #[trigger] batches[batch_num][req_num] == req
+        {
+            let (i, j): (int, int) = choose |bn: int, rn: int|
+                0 <= bn < batches.len() && 0 <= rn < batches[bn].len()
+                && #[trigger] batches[bn][rn] == req;
+            assert(batches[i].contains(req));
+            assert(exists |k: int| #![trigger batches[k]]
+                0 <= k < batches.len() && batches[k].contains(req));
+        }
+    }
+
     pub open spec fn ProduceAbstractState(server_addresses:Set<AbstractEndPoint>, batches:Seq<RequestBatch>) -> RSLSystemState
     {
         let requests = Set::new_assuming_finite(|req:Request| exists |batch_num:int, req_num:int|
