@@ -15029,6 +15029,20 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         tried extending both, and the emission still did not move, so I reverted that rather
         than commit an unvalidated change — the two guard tests here are what made the
         difference between a demonstrated fix and a guess.
+        **AST-level reproduction is exhausted (2026-08-05).** Four tests now feed
+        `struct_to_field_assignments` progressively closer models of the real body — nested
+        trailing block; tuple behind an `if/else`; identity `self.clone()` as the state
+        element; and the exact shape, `let result = { let __rhs_0 = …; if c {
+        (self.clone(), …) } else { … } }` inside `{ assume(false); … }`. **Only the third
+        failed**, and fixing it did not move the emission; the other three passed unchanged.
+        The printer's method path *does* run on these — the output carries the
+        `let ghost old_self = *old(self);` that only `func.is_method` emits — so the
+        transform runs and still yields `}; result }`.
+        Conclusion: the divergence is in how the AST is **built** (translator), not printed,
+        and it cannot be guessed from the output. **Next step is instrumentation** — dump the
+        `ExecExpr` the printer receives for `CExecutorProcessAppStateRequest` and compare it
+        against the model in `test_lift_with_a_let_before_the_if_in_the_value_block`, which is
+        the closest passing approximation.
         Still low priority: it only damages stub bodies the preserve list replaces.
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:

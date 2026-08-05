@@ -2346,6 +2346,60 @@ mod tests {
         );
     }
 
+    /// Phase 42.8.c.2.iv.E, the real shape. Same as the if/else case but with a
+    /// `let` *before* the `if` inside the value block, which is what executor
+    /// actually emits: `let result = { let __rhs_0 = ..; if c { (self.clone(), ..) }
+    /// else { (self.clone(), ..) } };`
+    #[test]
+    fn test_lift_with_a_let_before_the_if_in_the_value_block() {
+        let tup = || {
+            ExecExpr::Tuple(vec![
+                ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("self".to_string())),
+                    method: "clone".to_string(),
+                    args: vec![],
+                },
+                ExecExpr::Var("packets".to_string()),
+            ])
+        };
+        let value = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "__rhs_0".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Var("cond_part".to_string())),
+            },
+            ExecExpr::If {
+                cond: Box::new(ExecExpr::Var("__rhs_0".to_string())),
+                then_branch: Box::new(tup()),
+                else_branch: Some(Box::new(tup())),
+            },
+        ]);
+        let body = ExecExpr::Block(vec![
+            ExecExpr::Assume(Box::new(ExecExpr::Literal("false".to_string()))),
+            ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "result".to_string(),
+                    ty: None,
+                    value: Box::new(value),
+                },
+                ExecExpr::ProofBlock {
+                    stmts: vec![ExecExpr::Call {
+                        func: "lemma_empty_seq_map".to_string(),
+                        args: vec![],
+                    }],
+                },
+                ExecExpr::Var("result".to_string()),
+            ]),
+        ]);
+
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            !rendered.contains("Tuple"),
+            "`result` still names the pre-lift tuple:\n{rendered}"
+        );
+    }
+
     fn test_method_body_struct_to_field_assignments() {
         // A method whose body is a struct construction should emit field assignments
         let func = ExecFunction {
