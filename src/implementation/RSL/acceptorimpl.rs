@@ -8,7 +8,6 @@ use crate::implementation::RSL::types_i::*;
 use crate::protocol::RSL::{acceptor::*, types::*};
 
 verus! {
-    #[derive(Clone)]
     pub struct CAcceptor {
         pub constants: CReplicaConstants,
         pub max_bal: CBallot,
@@ -16,6 +15,20 @@ verus! {
         pub last_checkpointed_operation: Vec<COperationNumber>,
         pub log_truncation_point: COperationNumber,
         pub min_vote_opn: COperationNumber,
+    }
+
+    // Verus cannot attach a specification to a derived Clone for a type whose
+    // clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+    // proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+    // without adding any trusted code.
+    impl Clone for CAcceptor {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+        {
+            self.clone_up_to_view()
+        }
     }
 
     impl CAcceptor{

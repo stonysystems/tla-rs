@@ -29,7 +29,6 @@ use vstd::{map::*, map_lib::*, prelude::*, seq::*};
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
 
-#[derive(Clone)]
 pub struct CReplica {
     pub constants: CReplicaConstants,
     pub nextHeartbeatTime: u64,
@@ -37,6 +36,20 @@ pub struct CReplica {
     pub acceptor: CAcceptor,
     pub learner: CLearner,
     pub executor: CExecutor,
+}
+
+// Verus cannot attach a specification to a derived Clone for a type whose
+// clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+// proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+// without adding any trusted code.
+impl Clone for CReplica {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        self.clone_up_to_view()
+    }
 }
 
 impl CReplica{

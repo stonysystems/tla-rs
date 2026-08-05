@@ -17020,8 +17020,43 @@ value per hour, not by phase number:
 
 - [ ] **54.13** The 30 autoderive-`Clone` warnings (18 "not a copy" + 12 "does not take the
       form Verus expects"). Verus cannot spec the derived impl, so these types silently have
-      no `Clone` specification. Either write the impls by hand or accept and document.
-      Assess before doing: this one may be load-bearing rather than cosmetic.
+      no `Clone` specification.
+
+      Assessed. Findings that change what should be done:
+      - The two warnings are **one phenomenon split by shape**: every "does not take the form
+        Verus expects" is an `enum`, every "not a copy" is a `struct` that derives `Clone`
+        without `Copy`. Not two problems.
+      - **Verus's suggested fix is the wrong one here.** It offers
+        `#[verifier::allow(autoderive_clone_without_spec)]`, which silences the warning and
+        keeps the gap. This codebase already has a better, established answer: a hand-written
+        `impl Clone` whose body is `self.clone_up_to_view()`, carrying that helper's
+        postcondition. It is **not** `external_body` — it adds no trusted code and gives
+        `.clone()` a real specification (`CElectionState`, `CLearnerTuple`, `CExecutor`
+        already do exactly this).
+      - So the honest fix is to *write the impls*, not to suppress — but only where a spec'd
+        clone helper already exists to delegate to, which is where the work divides.
+
+      - [x] **54.13.a** The 5 types with a plain `#[derive(Clone)]` **and** an existing
+            `clone_up_to_view`: `CAcceptor`, `CReplica`, `CConstants`, `CConfiguration`,
+            `CPacket`. **DONE (2026-08-05)**, `1040 verified, 0 errors`, warnings 52 → 47,
+            zero new trusted code.
+      - [ ] **54.13.b** The 5 macro-wrapped types: `CRequest`, `CReply`, `CVote` (inside
+            `define_struct_and_derive_marshalable!`) and `CAppMessage`, `CMessage` (inside
+            `define_enum_and_derive_marshalable!`). All have `clone_up_to_view`, so the impl
+            body is settled; the open question is whether removing `Clone` from a derive list
+            that a marshalling macro consumes is safe, which needs reading the macro rather
+            than guessing. Do not attempt this by pattern-substitution.
+      - [ ] **54.13.c** The 4 types with **no** spec'd clone helper to delegate to:
+            `CRequestHeader`, `CScheduler` (structs), `COutstandingOperation`,
+            `CIncompleteBatchTimer` (enums). Each needs its `clone_up_to_view` written first —
+            that is the actual work, and it is per-type, not mechanical.
+      - [ ] **54.13.d** The 16 in `src/generated/`. The transpiler already emits spec'd
+            `impl Clone` blocks for some types (e.g. `Raft/types_gen.rs` `CState`), so this is
+            extending an existing emitter to the types it currently leaves on `#[derive]`,
+            then regenerating. Note `Raft/types_gen.rs` `CLogEntry` is the one case where the
+            best fix is different and cheaper: its fields are all `u64`, so
+            `#[derive(Clone, Copy)]` makes the clone a copy and Verus can spec it directly.
+            Unlike 54.12.b these are non-RSL protocols, which regenerate cleanly.
 
 - [ ] **54.14** The 5 `comparison is useless due to type limits`. Almost certainly `x >= 0`
       on an unsigned type. Trivial, but each one is a guard that is not guarding anything —

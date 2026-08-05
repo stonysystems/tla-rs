@@ -232,12 +232,27 @@ verus! {
     }
 
 
-    #[derive(Clone, Eq, Hash, PartialEq)]
+    #[derive(Eq, Hash, PartialEq)]
     #[verus::trusted]
     pub struct CPacket{
         pub dst: EndPoint,
         pub src: EndPoint,
         pub msg: CMessage,
+    }
+
+    // Verus cannot attach a specification to a derived Clone for a type whose
+    // clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+    // proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+    // without adding any trusted code.
+    impl Clone for CPacket {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+            result.abstractable() == self.abstractable(),
+        {
+            self.clone_up_to_view()
+        }
     }
 
     impl CPacket{

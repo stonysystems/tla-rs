@@ -5,9 +5,23 @@ use crate::protocol::RSL::configuration::*;
 use vstd::prelude::*;
 
 verus! {
-#[derive(Clone)]
 pub struct CConfiguration {
     pub replica_ids: Vec<EndPoint>,
+}
+
+// Verus cannot attach a specification to a derived Clone for a type whose
+// clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+// proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+// without adding any trusted code.
+impl Clone for CConfiguration {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+        self.replica_ids.len() == result.replica_ids.len(),
+    {
+        self.clone_up_to_view()
+    }
 }
 
 impl CConfiguration {
