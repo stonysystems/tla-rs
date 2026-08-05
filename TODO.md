@@ -24,7 +24,16 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 
 ## Current Status (last updated 2026-05-28)
 
-**🔝 CURRENT PRIORITY (2026-08-04): Phase 54 — Explicit Quantifier Triggers.**
+**🔝 CURRENT PRIORITY (2026-08-05): Phase 54 — clear the whole warning + note surface.**
+A full pass on `0.2026.08.02` emits **881 warnings and 120 trigger notes**; drive both to zero
+or to a checked-in exceptions list. Start at **54.10** (one `#![allow(non_snake_case)]` removes
+876 of the 881 warnings, and until it lands the five that matter are buried), then 54.11–54.14,
+then **54.7.d** — annotate the 76 transpiler-emitted notes with a post-processing pass rather
+than waiting on the 42.8.c merge, which is stuck at 42.8.c.2.iv with no predictable finish.
+**Phase 42 is not the path to this goal**; full regeneration of RSL is not even the right
+target (see 54.15). Phases 52/53 stay on hold.
+
+*(prior banner, 2026-08-04)* Phase 54 — Explicit Quantifier Triggers.
 A full verification pass emits 534 `automatically chose triggers` notes, all in our own code.
 The Verus team raised this while evaluating tla-rs as a compatibility test target: an
 auto-chosen trigger can change between Verus releases, so a proof that verifies today can
@@ -16853,6 +16862,71 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
 trigger work: the 107 generated notes wait on RSL regeneration (Phase 42/21), and the 13
 nested cases wait on expression restructuring, both tracked in their own phases.
 
+
+### Priority (2026-08-05): clear the whole warning+note surface first
+
+A full pass on `0.2026.08.02` currently emits **881 warnings and 120 trigger notes**. The
+goal is to get both to zero, or to a checked-in list of deliberate exceptions. Ordered by
+value per hour, not by phase number:
+
+- [ ] **54.10** One crate-level `#![allow(non_snake_case)]` in `src/lib.rs`. Kills **876 of
+      the 881 warnings** — 690 function + 99 method + 45 module + 30 variable + 12 field.
+      Do not rename: `LAcceptorProcess1a`, `CMessage`, `LReplicaConstants` deliberately mirror
+      the IronFleet Dafny identifiers, and that correspondence is what makes the port
+      auditable against the original. Ten minutes, and it is the precondition for everything
+      below — the five warnings that actually matter are currently buried under 876 that do not.
+
+- [ ] **54.11** The 68 `use of deprecated method: Every Set is always finite, so this is
+      always true` warnings. These are `.finite()` calls that the `0.2026.08` `Set` change
+      turned into no-ops. Delete them. Mechanical, zero risk, but re-verify: removing a
+      no-op can still change what the solver has in scope.
+
+- [ ] **54.12** The 20 `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and
+      says outright it "is dangerous since it assumes the given function describes a finite
+      set" — so unlike the rest of this list these are a real proof gap, not noise. All 20 are
+      the same shape: `Set::new(|x| exists |k| map.contains_key(k) && k@ == x)`, i.e. the image
+      of a finite `HashMap` domain. Discharge finiteness from `map@.dom().finite()` rather than
+      assuming it. One of them comes from `types_transpile.toml:201`, so it is baked into
+      codegen and will regrow on every regeneration until that template changes.
+
+- [ ] **54.13** The 30 autoderive-`Clone` warnings (18 "not a copy" + 12 "does not take the
+      form Verus expects"). Verus cannot spec the derived impl, so these types silently have
+      no `Clone` specification. Either write the impls by hand or accept and document.
+      Assess before doing: this one may be load-bearing rather than cosmetic.
+
+- [ ] **54.14** The 5 `comparison is useless due to type limits`. Almost certainly `x >= 0`
+      on an unsigned type. Trivial, but each one is a guard that is not guarding anything —
+      check whether the intent was a different bound before deleting.
+
+- [ ] **54.7.d** Annotate the **76 transpiler-emitted notes** on the checked-in artifacts
+      with a post-processing pass, instead of waiting for the merge in 42.8.c.
+      **Rationale.** 54.7.a already taught codegen to emit these triggers; what is blocked is
+      *delivery* — regeneration cannot run until the five `skip_functions` modules can be
+      merged, and that is stuck on a codegen bug at 42.8.c.2.iv with no predictable finish.
+      The shapes do not need that work: **76 of the 107 are one pattern**,
+      `forall |i:int| 0 <= i < X@.len() ==> X@[i].valid()/abstractable()`, whose trigger is
+      plainly `X@[i]`.
+      A deterministic pass run as a step of `regenerate_all.sh` is not a hand edit — same
+      input, same output, and CI can re-run it and diff, exactly as
+      `check_readme_quickstart.sh` does for the quickstart. It also sidesteps the merge
+      entirely by operating on output rather than on generation.
+      **Must be idempotent**: once 42.8.c lands, regeneration will already emit these triggers,
+      so the pass has to recognise an annotated site and leave it alone rather than double-insert.
+      Expected: 120 notes down to ~44.
+      **Do not use `#![auto]` for this.** It silences the note while still letting Verus choose,
+      so the count would go to zero without the version-stability problem being solved at all.
+      That is gaming the metric this phase exists to move.
+
+- [ ] **54.15** Classify the 30 RSL `skip_functions` into **trust boundary** (never generated
+      — `LSchedulerNext`, `ExtractSentPacketsFromIos`, `SpontaneousClock`, `SpontaneousIos`,
+      `LReplicaNextProcessPacket`, roughly 8–10 of them describe the host event loop and IO,
+      which IronFleet also leaves trusted) versus **capability gap** (should be generated but
+      the transpiler cannot yet — the quantifier-defined map constructions like
+      `LAddVoteAndRemoveOldOnes`, the recursive walks, the composite actions that Raft already
+      generates). Right now the two are mixed in one list, which is why "RSL is not fully
+      auto-generated" reads as debt when part of it is design. This classification is also the
+      honest form of that README limitation, and it bounds Phase 42: full regeneration of RSL
+      is not the goal and never was.
 
 ### Non-goals
 - Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.
