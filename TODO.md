@@ -14928,7 +14928,15 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         2. **`filter_clearnerstate` must not go in the manual file.** The transpiler
            synthesises a helper of that name, so a copy there yields two definitions (merge
            diff 119 → 455). It stays in the generated file under
-           `merge_generated.py --preserve`.
+           `merge_generated.py --preserve`. **Wired into the workflow (2026-08-05)**: the
+           list is checked in at `scripts/rsl_merge_preserve.txt` and `regenerate_rsl.sh`
+           turns it into `--preserve` flags in the merge commands it prints. Three tests
+           guard it, including one that every listed name really is a free function in the
+           file it claims to protect — a stale entry would otherwise surface as a
+           `merge_generated.py` exception mid-regeneration.
+           **Also recorded there: the script's parity check cannot catch this class of
+           problem.** It compares `pub exec fn` *names*, so a body swap on a private `fn` —
+           exactly what happened to `filter_clearnerstate` — passes it silently.
         3. **The lemma parameter must be `&ExecType` unconditionally.** `param_type` in
            `generate_map_proof_lemmas` is `&T` only when the field is Arc-wrapped, but the
            lemma's *own body* calls `abstractify_{prefix}`, hand-written in `types_i.rs` and
