@@ -22,17 +22,49 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 | Verus | ⚠️ built from source | The **prebuilt** 0.2026.08.02 release links glibc 2.39; this box has **2.35**, so it cannot run. Built from source at commit `b677dd5` under `~/verus-src` with **z3 4.14.1** (the newest z3 with a glibc-2.35 build; Verus pins 4.16.0). Building z3 4.16.0 from source also fails here — it needs C++20 `<format>`, which libstdc++ only ships from GCC 13 and this box has GCC 12. So the version check must be bypassed at **both** layers: `vargo --no-solver-version-check build --release` when building, and `-V no-solver-version-check` on every `verus` invocation. Solver-version skew can change proof stability — treat proof-level results from this box as advisory and re-check on a glibc-2.39 machine or in CI. |
 | .NET | ❌ absent | No `dotnet` — C# runtime, cluster runs, and throughput benches cannot be reproduced here. |
 
-## Current Status (last updated 2026-05-28)
+## Current Status (last updated 2026-08-05)
 
-**🔝 CURRENT PRIORITY (2026-08-05): Phase 54 — clear the whole warning + note surface.**
-A full pass on `0.2026.08.02` emitted **1016 warnings and 120 trigger notes**; drive both to
-zero or to a checked-in exceptions list. **54.10 is done** — the crate-level
-`#![allow(non_snake_case)]` took warnings to **130**, and the per-warning census in that item
-is the remaining backlog. Next is **54.11–54.14 plus the newly visible 54.16**,
-then **54.7.d** — annotate the 76 transpiler-emitted notes with a post-processing pass rather
-than waiting on the 42.8.c merge, which is stuck at 42.8.c.2.iv with no predictable finish.
-**Phase 42 is not the path to this goal**; full regeneration of RSL is not even the right
-target (see 54.15). Phases 52/53 stay on hold.
+**🔝 CURRENT PRIORITY: Phase 42.8.c — reconcile the RSL merge.** Phase 54 is done to the
+limit of what is reachable without it.
+
+**Phase 54 final (2026-08-05): `1046 verified, 0 errors`.**
+Warnings **1016 → 3**; trigger notes **534 → 103**. Both remaining warnings are **one site** — the `Set::new_assuming_finite` at
+`proposer_gen.rs:223`, which Verus reports once per verification chunk; its template is
+already fixed, so it clears with the merge. And
+**every remaining note is in `src/generated/`** — no hand-written file has an
+unpinned trigger left. `reports/triggers/exceptions.md` splits them 80 transpiler-emitted
++ 23 preserved-hand-written, and CI `--check`s it.
+
+Two counting errors were corrected along the way, both from labels applied without
+measuring: 27 notes filed as "transpiler output, blocked on regeneration" are in preserved
+hand-written bodies that regeneration copies verbatim, and all 13 filed as
+"nested-quantifier" were in fact pinnable. The catch-all is now called `unclassified` and
+says to measure before writing a note off.
+
+**Why 42.8.c is next.** It is the only thing gating the rest: 54.7.b (80 emitted notes),
+54.7.c/54.12.b, and the `&mut self`/Arc work all wait on it. It is also better understood
+than "no predictable finish" suggested — the merge is **per-module**:
+
+| module | merge diff | notes it would deliver |
+|---|---:|---:|
+| broadcast | **0** (byte-identical) | 0 |
+| acceptor | **0** (delivered 2026-08-05 via `acceptor_manual.rs`) | 4 ✔ |
+| learner | 183 | 3 |
+| executor | 623 | 8 |
+| replica | 702 | 37 |
+| election | 708 | 15 |
+| proposer | 749 | 17 |
+
+Start with **learner**: its 183 lines attribute to 13 functions, concentrated in
+`filter_clearnerstate` (54), `CLearnerForgetDecision` (18) and four `learnerstate_*`
+helpers. That is per-function signature reconciliation, as 42.8.c.2.iv records, but bounded
+and countable rather than open-ended.
+
+**Blocked on a decision, not on work:** 54.7.d proposes post-processing `src/generated/`,
+which conflicts with `CLAUDE.md`'s "produced by running the transpiler". Options are
+recorded in that item; it needs a project-policy call.
+
+Phases 52/53 stay on hold.
 
 *(prior banner, 2026-08-04)* Phase 54 — Explicit Quantifier Triggers.
 A full verification pass emits 534 `automatically chose triggers` notes, all in our own code.
