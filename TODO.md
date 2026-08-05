@@ -16833,6 +16833,16 @@ at `docs/jetpack_reference/`.
 
 ## Phase 52: Clean-Subset TLA+ → Verus Translator — **COMPLETE 2026-08-04**
 
+> **Linter caught up with the contract, 2026-08-05.** The four gaps listed below the
+> milestone table are all closed: whole-array reads and writes, message addressing, the
+> unconditionally-whitelisted bare-`Ident` disjunct, and `clean_distance` degrading to
+> silence. All five rules are implemented, so `unchecked_rules()` is now empty and the
+> "clean with respect to C1..C5 (… not yet implemented)" branch no longer fires.
+> Three of the four fixes reported false positives on *clean* corpus specs when first
+> written — hardcoding `dst`, counting an `EXCEPT` base, and counting an indexed read —
+> and each was caught by running the whole corpus before trusting the rule rather than by
+> reading the code. That check is now the habit worth keeping.
+>
 > **Every milestone met.** M0 (subset + linter), M0.0 (frontend), M1 (projection),
 > M2 (messages + quorums), M3 (V2 + V3), M4 (tier 2), M4b (Jetpack), M5 (docs +
 > pipeline). Eight `clean.tla` specs translate; **all eight goldens pass `verus`**,

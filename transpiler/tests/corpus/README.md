@@ -165,11 +165,11 @@ the **exact** count rather than "at least one": a linter that reports more than 
 spec actually violates is as broken as one that reports fewer, and the count is
 what publishes rewrite effort.
 
-Measured tier-0 distances (2026-08-04):
+Measured tier-0 distances (2026-08-04; `t0_01_simple` re-measured 2026-08-05):
 
 | Case | Distance | Rules | What the human has to decide |
 |---|---:|---|---|
-| `t0_01_simple` | 1 | C2 | which message carries the neighbour's `x` |
+| `t0_01_simple` | 2 | C2 | which message carries the neighbour's `x`, and how `Terminating` observes that everyone is done |
 | `t0_02_bakery` | 3 | C2 | how the doorway reads of `num`/`flag` become messages |
 | `t0_03_dining_philosophers` | 6 | C2 | how fork state is exchanged between neighbours |
 | `t0_04_readers_writers` | 1 | C5 | it has no per-node state at all — re-model per node first |
