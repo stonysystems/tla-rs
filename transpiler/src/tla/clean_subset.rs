@@ -558,7 +558,9 @@ impl<'a> LintContext<'a> {
 
         match candidates.len() {
             1 => {
-                report.network_variable = Some(candidates[0].clone());
+                let net = candidates[0].clone();
+                self.check_message_addressing(&net, report);
+                report.network_variable = Some(net);
                 return;
             }
             n if n > 1 => {
@@ -719,6 +721,168 @@ impl<'a> LintContext<'a> {
             }
         }
         walk_children(expr, &mut |child| self.collect_updates_of(child, var, out));
+    }
+
+    /// Every message sent into the network must say who it is for.
+    ///
+    /// The addressing field is **inferred, not named**: it is whichever field
+    /// the receive guard tests, since that is what the framework routes on
+    /// (`docs/clean_tla_subset.md`, C4: receive is "guarded on `m` being
+    /// addressed to `self`"). Hardcoding `dst` reported four clean corpus specs
+    /// as violations -- Raft, EPaxos, dining philosophers and Jetpack all use
+    /// the Raft-lineage `mdest`, and the name is not the point.
+    ///
+    /// If no receive guard tests any field of the message, the network is never
+    /// addressed at all, which is the same defect stated at the other end.
+    fn check_message_addressing(&self, net: &str, report: &mut CleanSubsetReport) {
+        let mut fields: BTreeSet<String> = BTreeSet::new();
+        for op in &self.module.operators {
+            self.collect_addressing_fields(&op.body, net, &mut fields);
+        }
+        // More than one candidate means the guard tests several fields; any of
+        // them routes, so requiring all would be wrong. Requiring *some* is the
+        // honest weakening.
+        if fields.is_empty() {
+            return;
+        }
+
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for op in &self.module.operators {
+            let mut sends = Vec::new();
+            self.collect_sends_into(&op.body, net, &mut sends);
+            for send in sends {
+                let mut messages = Vec::new();
+                self.collect_sent_messages(&send, &mut messages);
+                for (present, shown) in messages {
+                    if present.iter().any(|f| fields.contains(f)) || !seen.insert(shown.clone()) {
+                        continue;
+                    }
+                    let wanted = fields.iter().cloned().collect::<Vec<_>>().join("` or `");
+                    report.findings.push(self.finding(
+                        CleanRule::C4,
+                        Some(op),
+                        format!(
+                            "the message `{shown}` sent into `{net}` carries no `{wanted}`, \
+                             which is the field the receive guard routes on, so the \
+                             framework cannot deliver it. Every message must say who it is \
+                             for: the projection replaces `{net}` with framework \
+                             send/receive."
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Fields of a message tested by a receive guard: the `f` in
+    /// `\E m \in net : .. m.f = self ..`.
+    fn collect_addressing_fields(&self, expr: &TlaExpr, net: &str, out: &mut BTreeSet<String>) {
+        if let TlaExpr::Exists { vars, body } = expr {
+            let bound: Vec<&str> = vars
+                .iter()
+                .filter(|b| b.set.as_ref().map(|s| self.show(s)).as_deref() == Some(net))
+                .map(|b| b.var.as_str())
+                .collect();
+            if !bound.is_empty() {
+                self.collect_guarded_fields(body, &bound, out);
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_addressing_fields(child, net, out)
+        });
+    }
+
+    /// `m.f = x` / `x = m.f` for a message variable `m`.
+    fn collect_guarded_fields(&self, expr: &TlaExpr, msg: &[&str], out: &mut BTreeSet<String>) {
+        if let TlaExpr::BinOp {
+            op: TlaBinOp::Eq,
+            left,
+            right,
+        } = expr
+        {
+            for side in [left, right] {
+                if let TlaExpr::RecordAccess { record, field } = &**side {
+                    if matches!(&**record, TlaExpr::Ident(v) if msg.contains(&v.as_str())) {
+                        out.insert(field.clone());
+                    }
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_guarded_fields(child, msg, out)
+        });
+    }
+
+    /// The right-hand sides of `net' = net \cup <expr>`, which are the sends.
+    fn collect_sends_into(&self, expr: &TlaExpr, net: &str, out: &mut Vec<TlaExpr>) {
+        if let TlaExpr::BinOp {
+            op: TlaBinOp::Eq,
+            left,
+            right,
+        } = expr
+        {
+            if matches!(&**left, TlaExpr::Prime(inner)
+                if matches!(&**inner, TlaExpr::Ident(v) if v == net))
+            {
+                self.collect_union_operands(right, net, out);
+            }
+        }
+        walk_children(expr, &mut |child| self.collect_sends_into(child, net, out));
+    }
+
+    /// Operands of a `\cup` chain other than the network itself: the new
+    /// messages. `net \ {m}` is a discard and contributes nothing.
+    fn collect_union_operands(&self, expr: &TlaExpr, net: &str, out: &mut Vec<TlaExpr>) {
+        match expr {
+            TlaExpr::BinOp {
+                op: TlaBinOp::Cup,
+                left,
+                right,
+            } => {
+                self.collect_union_operands(left, net, out);
+                self.collect_union_operands(right, net, out);
+            }
+            TlaExpr::Ident(v) if v == net => {}
+            other => out.push(other.clone()),
+        }
+    }
+
+    /// Message records sent into `net`, as (record fields, how it was written).
+    ///
+    /// The contract requires each message to "carry enough addressing to say who
+    /// it is for" (`docs/clean_tla_subset.md`, C4). A record with no destination
+    /// field cannot be routed once P3 rewrites the network away, because the
+    /// framework delivers by address and there is none.
+    ///
+    /// One level of indirection is resolved, because that is how the corpus
+    /// writes messages: `msgs' = msgs \cup {Prepared(s, d)}` with
+    /// `Prepared(s, d) == [type |-> "Prepared", src |-> s, dst |-> d]`. Anything
+    /// deeper is left alone rather than guessed at.
+    fn collect_sent_messages(&self, expr: &TlaExpr, out: &mut Vec<(Vec<String>, String)>) {
+        match expr {
+            TlaExpr::Record(fields) => {
+                out.push((
+                    fields.iter().map(|(n, _)| n.clone()).collect(),
+                    self.show(expr),
+                ));
+            }
+            // `Prepared(s, d)` -- resolve the operator and read its record body.
+            TlaExpr::OpApply { op, .. } => {
+                if let TlaExpr::Ident(name) = &**op {
+                    if let Some(target) = self.operator(name) {
+                        if let TlaExpr::Record(fields) = &target.body {
+                            out.push((
+                                fields.iter().map(|(n, _)| n.clone()).collect(),
+                                format!("{}(..)", name),
+                            ));
+                            return;
+                        }
+                    }
+                }
+                walk_children(expr, &mut |child| self.collect_sent_messages(child, out));
+            }
+            other => walk_children(other, &mut |child| self.collect_sent_messages(child, out)),
+        }
     }
 
     /// Whether `expr` is `var` modified only by `\cup` / `\` (set difference),
@@ -1704,6 +1868,86 @@ Next == clock' = clock + 1
         // a consumer reading only `violations` cannot tell the difference; the
         // two lists are what make the number interpretable
         assert!(json.contains(r#""rule":"C1","reason":"#), "{json}");
+    }
+
+    /// Phase 52: "each message carries enough addressing to say who it is for"
+    /// (`docs/clean_tla_subset.md`, C4). A message with no destination cannot be
+    /// routed once P3 replaces the network with framework send/receive.
+    #[test]
+    fn rejects_a_message_with_no_addressing_field() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES msgs, state
+TypeOK == state \in [Proc -> Nat]
+Ping(s) == [kind |-> "ping", src |-> s]
+Send(s) == msgs' = msgs \cup {Ping(s)}
+Recv(p) == \E m \in msgs : /\ m.dst = p
+                           /\ state' = [state EXCEPT ![p] = 1]
+                           /\ msgs' = msgs \ {m}
+Next == \E p \in Proc : Send(p) \/ Recv(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C4 && f.message.contains("carries no")),
+            "an unaddressed message must be C4: {:?}",
+            report.findings
+        );
+    }
+
+    /// The addressing field is inferred from the receive guard, not named.
+    /// Hardcoding `dst` reported four clean corpus specs as violations: Raft,
+    /// EPaxos, dining philosophers and Jetpack all use the Raft-lineage
+    /// `mdest`, and the name was never the point.
+    #[test]
+    fn the_addressing_field_is_whatever_the_receive_guard_routes_on() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES msgs, state
+TypeOK == state \in [Proc -> Nat]
+Req(s, d) == [mtype |-> "req", msource |-> s, mdest |-> d]
+Send(s) == \E d \in Proc : msgs' = msgs \cup {Req(s, d)}
+Recv(p) == \E m \in msgs : /\ m.mdest = p
+                           /\ state' = [state EXCEPT ![p] = 1]
+                           /\ msgs' = msgs \ {m}
+Next == \E p \in Proc : Send(p) \/ Recv(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("carries no")),
+            "`mdest` addresses the message just as well as `dst`: {:?}",
+            report.findings
+        );
+    }
+
+    /// A spec whose receive guard tests no field of the message gives nothing to
+    /// infer from. Staying silent is the honest answer -- guessing a field name
+    /// is what produced the false positives above.
+    #[test]
+    fn no_receive_guard_means_no_addressing_claim() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES msgs, state
+TypeOK == state \in [Proc -> Nat]
+Send(s) == msgs' = msgs \cup {[kind |-> "ping"]}
+Recv(p) == \E m \in msgs : /\ state' = [state EXCEPT ![p] = 1]
+                           /\ msgs' = msgs \ {m}
+Next == \E p \in Proc : Send(p) \/ Recv(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("carries no")),
+            "nothing to infer from, so no claim: {:?}",
+            report.findings
+        );
     }
 
     /// Phase 52: "Writing the whole array is out ... a step that updates every

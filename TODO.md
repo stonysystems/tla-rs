@@ -17081,8 +17081,21 @@ merely annoys.
   direction.
   Corpus impact of both rules: **none** — all ten originals and all eight `clean.tla` keep
   their counts, checked before trusting either rule.
-- [ ] **Messages with no `src`/`dst` are accepted**, though the framework cannot
-  route them. Also now in the contract, not in the linter.
+- [x] **Messages with no `src`/`dst` are accepted**, though the framework cannot
+  route them. — **DONE 2026-08-05.** C4 now checks it.
+  **The addressing field is inferred, not named.** My first version hardcoded `dst` and
+  reported four *clean* corpus specs as violations: Raft, EPaxos, dining philosophers and
+  Jetpack all use the Raft-lineage `mdest`. The name was never the point — the framework
+  routes on whatever field the **receive guard** tests, which is exactly how the contract
+  states it ("guarded on `m` being addressed to `self`"). So the rule reads the guard,
+  collects the fields it compares against the receiving node, and requires sent messages to
+  carry one of them.
+  A spec whose receive guard tests no field gives nothing to infer from, and the rule stays
+  silent rather than guessing — guessing a name is what produced the false positives.
+  One level of helper indirection is resolved, because that is how the corpus writes
+  messages (`msgs' = msgs \cup {Prepared(s, d)}`); deeper is left alone.
+  Corpus impact: none — all counts back to their pinned values. Three tests, including the
+  `mdest` case that the hardcoded version failed.
 - [ ] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally**, with
   no inspection of its body. This is what blesses `t0_01_simple`'s
   `Terminating`, whose guard `\A i \in Proc : pc[i] = "Done"` reads every
