@@ -42,6 +42,22 @@ the measured fact, and it outranks four successive estimates of the deliverable 
 50, 3, 40) — see 54.7.b, where the "3" is retracted as the product of an unsound
 attribution. Notes are not going to fall out of regeneration.
 
+**Shape census (2026-08-05), which sharpens the decision.** Of the 103 notes, **72 are the
+single shape `forall |i: int| 0 <= i < X@.len() ==> X@[i].valid()/abstractable()`** — the
+exact `vec_element_ensures` pattern **54.7.a already taught codegen to annotate**, whose
+trigger is plainly `X@[i]`. They are: replica 40, election 13, proposer 11, executor 8.
+The remaining 31 spread over 22 shapes, none more than 3.
+
+That closes the loop on why three merges delivered nothing: **the shape is handled; these
+instances are not produced by codegen.** They are hand-written bodies that happen to live in
+`src/generated/`, so regeneration never rewrites them and the codegen fix cannot reach them.
+
+It also puts a number on the decision: **72 one-line annotations**, all the same mechanical
+edit, all deterministic — which is precisely what 54.7.d proposed doing with a registered
+idempotent pass, and what `scripts/apply_triggers.py` already knows how to emit. Whether
+that is permitted is the `CLAUDE.md` question in 54.7.d; whether the code should be there at
+all is 54.7.c. Both are the same call, and it is worth 72 of the 103 notes.
+
 **So 54.7.c is the live question**: ~70 of the 103 notes sit in hand-written bodies that
 merely *live* inside `src/generated/`. Either that code moves out (and becomes editable
 under the normal rules), or the notes stay and the exceptions list says so permanently.
