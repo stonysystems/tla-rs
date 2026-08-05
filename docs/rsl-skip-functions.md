@@ -1,11 +1,15 @@
-# The 30 RSL `skip_functions`, classified
+# The 36 RSL `skip_functions`, classified
 
 *Phase 54.15. Written 2026-08-05.*
 
 "RSL is not fully auto-generated" is the standing limitation in the README, and the
-30 entries in the RSL `skip_functions` lists are what backs it. Read as one list they
-look like 30 units of debt. They are not, and this note records what they actually are
+36 entries in the RSL `skip_functions` lists are what backs it. Read as one list they
+look like 36 units of debt. They are not, and this note records what they actually are
 so that Phase 42 can be bounded honestly.
+
+The classification below was written against the 30 entries that existed when Phase
+54.15 ran. Phase 42.8.c.2.iv.J.3.d then added 6 more, all hand-implemented; they have
+their own section at the end. Totals throughout are stated for all 36.
 
 ## The classification is in the config, not in intent
 
@@ -20,21 +24,22 @@ Each `*_transpile.toml` has two lists that overlap:
 - `no_stub_functions` — the transpiler does not even emit a stub, because something
   else supplies the function.
 
-**15 of the 30 are in both.** For those, a proven hand-written implementation already
+**21 of the 36 are in both** (15 classified below, plus the 6 added later). For those, a proven hand-written implementation already
 exists, in `src/protocol/RSL/acceptor_manual.rs` and
 `src/protocol/RSL/executor_manual.rs` (`manual_code = …` in the acceptor config points
 at the first). These are not missing code. They are code that exists and is verified,
 written by hand rather than generated.
 
 **15 are in `skip_functions` only.** For those a stub *is* emitted and discharged via
-`--proof-fallback`. These are the real "not generated" set.
+`--proof-fallback`. These are the real "not generated" set, and this half did not
+change when the 6 were added.
 
 That distinction matters because it halves the apparent debt, and because the two
 halves need completely different work: bucket A needs nothing unless one wants to
 *replace* working proven code with generated code; bucket B is where generation is
 genuinely absent.
 
-## Bucket A — hand-implemented (`skip_functions` ∩ `no_stub_functions`), 15
+## Bucket A — hand-implemented (`skip_functions` ∩ `no_stub_functions`), 15 of 21
 
 | module | function |
 |---|---|
@@ -85,8 +90,8 @@ hand-implemented half is separated out first.
 
 ## What this bounds
 
-- Full regeneration of RSL is **not** the goal and never was: 10 of the 30 are a
-  deliberate trust boundary and 15 already have verified hand-written
+- Full regeneration of RSL is **not** the goal and never was: 10 of the 36 are a
+  deliberate trust boundary and 21 already have verified hand-written
   implementations.
 - The genuine transpiler backlog RSL implies is **8 functions**, in four modules.
 - The README limitation is more accurately stated as: *the RSL host event loop and IO

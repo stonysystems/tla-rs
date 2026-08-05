@@ -452,7 +452,7 @@ Cases 13, 17, 18, 20 use hand-authored "small" TLA+ files that are themselves
 stubs. The translator faithfully translates them; the translation is correct,
 the **input is broken**.
 
-- **17_paxos_small** ([Paxos.tla:38](../tests/tla/17_paxos_small/Paxos.tla)):
+- **17_paxos_small** ([Paxos.tla:38](tests/tla/17_paxos_small/Paxos.tla)):
   ```tla
   Next == msgs' = msgs /\ maxBal' = maxBal /\ maxVBal' = maxVBal /\ maxVal' = maxVal
   TypeOK == msgs = msgs /\ maxBal = maxBal
@@ -461,7 +461,7 @@ the **input is broken**.
   actions are defined but never invoked. `Acceptor`, `Quorum`, `Value` constants
   are declared but never referenced.
 
-- **20_raft_small** ([Raft.tla:38-41](../tests/tla/20_raft_small/Raft.tla)):
+- **20_raft_small** ([Raft.tla:38-41](tests/tla/20_raft_small/Raft.tla)):
   ```tla
   Next == BecomeCandidate \/ BecomeLeader \/ StepDown
   AtMostOneLeader == state = Leader => votesGranted = votesGranted
@@ -471,10 +471,10 @@ the **input is broken**.
   `Server` constant is declared but never referenced. There is no log, no
   AppendEntries, no commitIndex — none of Raft is modeled.
 
-- **13_twophase_small** ([TwoPhase.tla:19](../tests/tla/13_twophase_small/TwoPhase.tla)):
+- **13_twophase_small** ([TwoPhase.tla:19](tests/tla/13_twophase_small/TwoPhase.tla)):
   `Next == TMCommit \/ TMAbort` — drops `TMRcvPrepared(r)`. No safety invariant.
 
-- **18_pbft_small** ([PBFT.tla:54](../tests/tla/18_pbft_small/PBFT.tla)):
+- **18_pbft_small** ([PBFT.tla:54](tests/tla/18_pbft_small/PBFT.tla)):
   `Next == EnterCommit \/ ExecuteAndReply \/ ViewChange` — drops the three
   parameterized `Send*` actions, leaving prepareCount/commitCount permanently
   zero, which makes Prepared/Committed/EnterCommit/ExecuteAndReply unreachable.
@@ -488,7 +488,7 @@ trivially small — and trivially uninteresting.
 #### Bug B — Verus → TLA+ → spec roundtrip degradation
 
 Cases 14, 15, 16, 19 use auto-generated TLA+ from `verus2tla`. The source TLA+
-files are real and meaningful (e.g., [Election.tla:111-127](../tests/tla/14_leader_election_small/Election.tla)
+files are real and meaningful (e.g., [Election.tla:111-127](tests/tla/14_leader_election_small/Election.tla)
 has 7 actions and 3 honest safety invariants), but the **TLA+ → spec
 roundtrip** then collapses them into garbage. Diagnostic fingerprint of every
 Bug B case (verified by `detect_stub_specs.py`):
@@ -517,7 +517,7 @@ Even given Bugs A and B, the suite would have caught the vacuous passes if
 the run script had been honest. Three enablers let "ok" propagate as PASS:
 
 1. **No invariant flag for protocol cases.** All 8 protocol cases have
-   `expected_property = ""` in `manifest.toml`, so [run_full_suite.sh:137-139](../scripts/run_full_suite.sh)
+   `expected_property = ""` in `manifest.toml`, so [run_full_suite.sh:137-139](scripts/run_full_suite.sh)
    never adds `--invariant` to the model-check invocation. Combined with
    `[properties] invariants = []` and `check_deadlock = false` in every
    per-case `model_configs/*.toml`, **the model checker is asked to check

@@ -1,322 +1,163 @@
 # Efficient Emit Strategies for Generated Code
 
-## Problem
+> **Status:** Current design guidance plus a historical performance record. Audited on
+> 2026-08-05 at commit `189b227a`. The source and tests define actual behavior; see
+> [*The tla-rs Book*](../../docs/tla-rs-book.md), Chapters 18, 19, and 25, for configuration,
+> generated-artifact, and benchmarking guidance.
 
-The transpiler emits pure-functional state transitions: every `ProcessXxx`
-takes `&State` and returns a fresh `State`, rebuilding the entire top-level
-struct even when only one sub-component changes.
+The transpiler supports two ownership and calling-convention strategies. Neither is a
+universal performance switch: the correct choice depends on whether the action can be lowered
+soundly, whether its proof closes, and whether a controlled benchmark shows a real benefit.
 
-**Concrete example** (RSL `replica_gen.rs:214-221`):
-```rust
-let r = (CReplica {
-    constants: s.constants.clone(),
-    proposer: s_proposer,                   // actual delta
-    acceptor: s.acceptor.clone_up_to_view(), // unchanged — full clone
-    learner: s.learner.clone_up_to_view(),   // unchanged — full clone
-    executor: s.executor.clone_up_to_view(), // unchanged — full clone
-}, vec![]);
-```
+## Current calling conventions
 
-**Impact**: gdb sampling on the RSL leader (zoo-002, 32 client threads)
-shows ~35% of active CPU in `clone_up_to_view` + `drop` + `malloc`.
-Clone cost is O(n) per HashMap/Vec element, producing measurable
-throughput decay (16.5K → 10.5K ops/s across two 30-s trials).
+| Convention | Selection | Generated shape | Appropriate use |
+|---|---|---|---|
+| Functional | Default; `mut_self_types` is empty for the type | Takes `&CState` and returns a new state | General fallback, including actions that compute an intermediate whole state |
+| Mutable receiver | Add an eligible concrete type to `mut_self_types` | Emits an `impl` method taking `&mut self`; the receiver-typed output becomes `self` | Hot action paths whose generated body and proof both support the mutable rewrite |
 
-**Scale**: 790 `clone`/`clone_up_to_view` call sites across 19 generated
-files spanning all 10 protocols.
-
-## Candidate Strategies
-
-### A. `Arc<T>` wrapping for unchanged sub-components
-
-**Approach**: Wrap each sub-component field in the top-level protocol
-state struct with `Arc<T>`. Unchanged fields get `Arc::clone()` (refcount
-bump, O(1)) instead of deep clone. Fields that change get `Arc::new(new_value)`.
-
-**Type-level change** (transpiler emits):
-```rust
-pub struct CReplica {
-    pub constants: Arc<CConstants>,
-    pub proposer: Arc<CProposer>,
-    pub acceptor: Arc<CAcceptor>,
-    pub learner: Arc<CLearner>,
-    pub executor: Arc<CExecutor>,
-    pub nextHeartbeatTime: i64,  // scalars stay bare
-}
-```
-
-**Rebuild site after change**:
-```rust
-let r = (CReplica {
-    constants: s.constants.clone(),  // Arc::clone — O(1)
-    proposer: Arc::new(s_proposer),  // wrap new value
-    acceptor: s.acceptor.clone(),    // Arc::clone — O(1)
-    learner: s.learner.clone(),      // Arc::clone — O(1)
-    executor: s.executor.clone(),    // Arc::clone — O(1)
-    nextHeartbeatTime: s.nextHeartbeatTime,
-}, vec![]);
-```
-
-**Verus compatibility**: vstd already provides `impl View for Arc<A>`
-where `type V = A::V` (`vstd/view.rs:81-88`). This means `Arc<CProposer>@`
-= `LProposer` — all existing spec-level proofs work without change.
-Field access works via autoderef (`s.proposer.field` works through Arc).
-
-**Estimated reach**: Kills ~30% CPU on RSL (the entire
-`clone_up_to_view` family). Applies uniformly to all 10 protocols.
-
-**Complexity**: Low — single rule in the type generator. No proof template
-changes (View delegation is handled by vstd). `clone_up_to_view()` calls
-become `Arc::clone()` calls (or just `.clone()` which Rust dispatches to
-Arc::clone for `Arc<T>`).
-
-**Risks**:
-- Cache miss from Arc indirection (very low — single pointer + 16-byte
-  header; prefetcher handles)
-- `Arc::make_mut` needed for in-place mutation patterns (see below)
-
-### B. Persistent data structures (`im::HashMap`, `im::Vec`)
-
-**Approach**: Replace `HashMap`/`Vec` with structurally-shared persistent
-types from the `im` crate. Clone becomes O(1) (shared tree nodes);
-mutation is O(log n).
-
-**Targets**: The hottest HashMap fields per gdb profile:
-- `CProposer.highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>`
-- `CExecutor.reply_cache: HashMap<EndPoint, CReply>`
-- `CLearner.unexecuted_ops: HashMap<COperationNumber, …>`
-- `CState.log: Vec<CLogEntry>` (Raft — worst-case, append-only)
-
-**Verus compatibility**: Requires a new Verus adapter with
-`View == Map<K,V>` (vstd's abstract type). Not currently available.
-
-**Estimated reach**: Eliminates the *remaining* decay after Arc-wrapping
-(the sub-component that *does* change still deep-clones its internals).
-
-**Complexity**: Medium — needs adapter crate, Verus verification of
-adapter, per-field TOML configuration.
-
-**Risks**:
-- O(log n) mutation overhead may partially offset clone savings
-- No existing Verus adapter; needs new trusted code
-
-### C. Mutation analysis emitting `&mut self`
-
-**Approach**: Analyze spec transitions to detect `s_.f == s.f` (unchanged)
-vs `s_.f == expr(s, …)` (changed), then emit in-place mutation via
-`&mut self` instead of functional rebuild.
-
-**Example emitted code**:
-```rust
-fn CReplicaNextProcess1a(s: &mut CReplica, pkt: &CPacket) -> Vec<CPacket> {
-    // only acceptor changes
-    let (s_acceptor, sent) = CAcceptorProcess1a(&s.acceptor, pkt);
-    s.acceptor = s_acceptor;
-    sent
-}
-```
-
-**Estimated reach**: Highest peak speedup — eliminates both structural
-clone AND container clone. Matches hand-written `&mut self` patterns.
-
-**Complexity**: Very high — requires:
-1. Field-level mutation analysis in the transpiler
-2. A second codegen path (functional vs mutational)
-3. New proof templates (the current spec comparison `s@ == expected`
-   becomes a pre/post pattern with `old(s)`)
-4. Handling of the "returned state" vs "mutated state" semantic gap
-
-**Risks**:
-- Most ad-hoc of all approaches
-- Doubles codegen complexity
-- Proof template changes affect all 10 protocols
-- Edge cases in nested mutation (`s_.proposer.queue.push(x)`)
-
-### D. Do nothing — let users hand-optimize hot paths
-
-**Approach**: Accept the current functional-clone overhead. Users who need
-peak performance write hand-optimized `&mut self` implementations (the
-current wasiq model).
-
-**Estimated reach**: None (baseline).
-
-**Complexity**: None.
-
-**Risks**:
-- Permanent 2× gap to hand-tuned implementations
-- Per-protocol hand-optimization effort
-- Defeats the purpose of auto-generation for performance-sensitive uses
-
-## Recommendation
-
-**Path A (Arc-wrapping) as the primary fix**, with **Path B (persistent
-containers) as a conditional follow-up** only if post-Arc benchmarks show
-persistent throughput decay from mutated sub-component clones.
-
-**Path C is rejected** as too ad-hoc: it doubles the codegen complexity,
-requires new proof templates, and the incremental benefit over A+B is
-marginal (A+B already eliminate the structural overhead; C's remaining
-benefit is avoiding `Arc::new` allocation for the one changed field).
-
-**Path D is the fallback** if A doesn't pan out, but evidence strongly
-suggests it will (Arc::clone is a single atomic increment, well under 1 ns
-per call).
-
-## Comparison Matrix
-
-| Strategy | Clone cost | Mutation cost | Verus support | Impl effort | Risk |
-|----------|-----------|--------------|---------------|-------------|------|
-| A. Arc   | O(1) refcount bump | O(1) Arc::new | Built-in (vstd) | Low | Low |
-| B. im    | O(1) structural share | O(log n) | Needs adapter | Medium | Medium |
-| C. &mut  | None | In-place | New proof templates | Very high | High |
-| D. None  | O(n) deep clone | N/A | N/A | None | None |
-
-## Post-Implementation Results (Phase 40 + Phase 41)
-
-### Phase 40: Struct-level Arc-wrapping (completed, no benefit)
-Arc-wrapped sub-component structs (`proposer: Arc<CProposer>`, etc.) for 7 small
-protocols + Raft. **No measured benefit** on any benchable protocol.
-
-**Phase 43 comprehensive bench results (HEAD vs c097da0 pre-Arc baseline):**
-
-| Protocol | Nodes | HEAD ops/s | Baseline ops/s | Delta | Notes |
-|----------|-------|-----------|---------------|-------|-------|
-| RSL | 3 | 32,663 | 16,341 | +100% | Field-level Arc (Phase 41), not struct-level |
-| Raft | 3 | 3,613 | 3,612 | +0.03% | Within noise |
-| EPaxos | 3 | 4,066 | 4,680 | **-13%** | Arc adds overhead; small state, high mutation |
-| PrimaryBackup | 2 | 32,769 | 32,186 | +1.8% | Within noise (±15% variance) |
-| PBFT | 4 | <1 | N/A | N/A | Too slow for comparison (3-phase consensus) |
-
-**Conclusion**: Struct-level Arc provides no benefit on any protocol. EPaxos shows
-13% regression from Arc refcounting overhead on its small, frequently-mutated state.
-RSL's +100% gain comes entirely from field-level Arc (Phase 41), not struct-level.
-The original "+24% RSL / +12% Raft" claims were noise. RSL struct-level wrapping
-(40.3.g) was deferred and is now **WONTFIX**.
-
-### Phase 41: Field-level Arc-wrapping (complete, measured)
-
-Arc-wrapping individual **collection fields** (HashMap, HashSet, Vec) inside
-sub-component structs proved far more effective than struct-level wrapping.
-
-**Five fields Arc-wrapped in RSL (Phase 41.1.b):**
-
-| Struct | Field | Type |
-|--------|-------|------|
-| `CProposer` | `highest_seqno_requested_by_client_this_view` | `Arc<HashMap<EndPoint, u64>>` |
-| `CProposer` | `request_queue` | `Arc<Vec<CRequest>>` |
-| `CProposer` | `received_1b_packets` | `Arc<HashSet<CPacket>>` |
-| `CExecutor` | `reply_cache` | `Arc<HashMap<EndPoint, CReply>>` |
-| `CLearner` | `unexecuted_learner_state` | `Arc<HashMap<COperationNumber, CLearnerTuple>>` |
-
-**Measured result (2026-05-24, 32 threads x 30s x 2 trials):**
-- Trial 1: **33,503 ops/s**, 1.12 ms latency
-- Trial 2: **31,823 ops/s**, 1.13 ms latency
-- Average: **32,663 ops/s** (exceeds 28K target by 16.7%)
-- Decay: 5.0% (vs 36% pre-Arc)
-- vs pre-Arc baseline (16,341): **+100%** (2x throughput)
-- vs wasiq hand-tuned (28,449): **+14.8%**
-
-**Why field-level works but struct-level doesn't:**
-Struct-level Arc (`proposer: Arc<CProposer>`) saves the clone of CProposer's
-scalars but still deep-clones its internal collections when constructing the
-new CProposer value. The hot fields (HashMaps with hundreds of entries,
-HashSets with accumulated packets) dominate clone time. Field-level Arc
-(`received_1b_packets: Arc<HashSet<CPacket>>`) wraps exactly those hot
-collections, making unchanged-path clone O(1) at the granularity that matters.
-
-### Transpiler support (Phase 41.2)
-
-The transpiler fully supports field-level Arc-wrapping via TOML config:
+For example:
 
 ```toml
-# In <module>_transpile.toml
-arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view", "request_queue", "received_1b_packets"] }
-```
-
-**What the transpiler handles automatically:**
-- Struct field declarations: `pub field: Arc<T>` (codegen/mod.rs)
-- Construction sites: new values wrapped with `Arc::new(value)` (translator/mod.rs)
-- Unchanged clone sites: `field: field.clone()` dispatches to `Arc::clone` (O(1))
-- Proof lemma signatures: `m: &T` instead of `m: T` for auto-deref through `Arc<T>`
-- Proof lemma call sites: `&s.field` for auto-deref (translator/mod.rs build_proof_block)
-- `use std::sync::Arc;` import injection
-
-**What must be hand-written (in `*Impl.rs` files):**
-- Struct definition with `Arc<T>` field type
-- `Clone` impl using `Arc::clone` for wrapped fields
-- `View` impl using `abstractify_*(&self.field)` (auto-deref through Arc)
-- `valid()`/`abstractable()` predicates using `&self.field` (auto-deref)
-- `clone_arc_*` helper for proof-compatible Arc cloning
-
-**Pattern for mutation sites:**
-The transpiler uses a clone-mutate-wrap pattern rather than `Arc::make_mut`:
-```rust
-// Generated code for a mutation site:
-let mut __field = clone_field(&s.field);  // deep clone the inner T
-__field.insert(key, value);               // mutate
-CStruct { field: Arc::new(__field), ..s.clone() }  // wrap new value
-```
-This is simpler than `Arc::make_mut` and works with Verus verification because
-the clone function has `ensures res@ == m@`.
-
-### Conclusion
-
-**Strategy A (struct-level Arc) has no measured benefit.** The actual win comes from
-**field-level Arc-wrapping of hot collection fields** (a variant of Strategy B's
-insight — structural sharing — applied via Arc instead of persistent data structures).
-The transpiler automates this via `arc_wrap_fields` TOML config, achieving 2x RSL
-throughput improvement over the baseline.
-
-### Phase 47/48: `&mut self` calling convention (supersedes Arc)
-
-Phase 47 manually rewrote ~35 hot-path RSL functions to use `&mut self` instead
-of functional rebuild. Phase 48 automated this as a transpiler feature via
-`mut_self_types` TOML config.
-
-**Result**: 1.44x speedup over Sushant's hand-tuned implementation. This
-eliminates the structural clone problem entirely — the outer struct is never
-rebuilt, so there is nothing to Arc-wrap.
-
-**`mut_self_types` config**:
-```toml
-# In <module>_transpile.toml
 mut_self_types = ["CProposer"]
 ```
 
-When `mut_self_types` is set, the transpiler transforms the first parameter of
-each function from `&CProposer` to `&mut self`, emitting in-place field
-assignment instead of struct reconstruction.
+This setting is opt-in and type-specific. It applies only to functionalizable predicate/action
+functions whose first input has the selected receiver type. Initializers, value-returning
+helpers, skipped functions, and functions that do not match that shape remain free or
+functional functions.
 
-### Phase 49: Arc removal (post `&mut self`)
+The mutable path rewrites a tail-position state construction into assignments and changes the
+contract from a relation over `s@` and `result@` to one over `old(self)@` and `self@`. It is not
+general mutation analysis. In particular, it does not currently support every intermediate
+whole-state pattern; Raft's `s_mid = step_down_if_needed(...)` flow is a concrete reason Raft
+uses the functional convention.
 
-With `&mut self` calling convention, Arc-wrapping becomes pure overhead:
-- The hot path no longer clones the outer struct, so Arc's O(1) clone is unused
-- Arc adds 16 bytes per field + pointer indirection + atomic refcount ops
-- Profiling confirmed zero Arc symbols in the hot path
+Review mutable lowering carefully when one assigned field's expression reads another field
+that was assigned earlier. The emitted assignments are sequential, while a functional struct
+construction conceptually evaluates from one pre-state. Current structural tests do not prove
+that every such cross-field dependency is safe.
 
-Phase 49 removed Arc from all 5 RSL collection fields. Benchmarks confirmed
-zero measurable impact (as predicted — the fields were never cloned on the hot
-path after Phase 47).
+## Arc wrapping in functional mode
 
-### Arc vs Direct Ownership Decision Matrix
+Functional transitions may rebuild a state and clone unchanged collections. The transpiler can
+wrap selected generated fields in `Arc<T>` so unchanged paths use a shallow clone:
 
-| Calling convention | Clone pattern | Recommended field wrapping |
-|---|---|---|
-| Functional (`&State` -> `State`) | Entire struct rebuilt each call | `arc_wrap_fields` for hot collection fields |
-| `&mut self` (`mut_self_types`) | No struct rebuild; fields mutated in-place | Direct ownership (no Arc) |
+```toml
+arc_wrap_types = ["CState"]
+arc_wrap_fields = { CState = ["log", "votes_granted"] }
+```
 
-**Transpiler enforcement**: When `mut_self_types` is non-empty, the transpiler
-automatically clears `arc_wrap_fields` and `arc_wrap_types` with a warning.
-These configurations conflict — Arc adds overhead without benefit under `&mut self`.
+`arc_wrap_types` enables generated type changes. A matching `arc_wrap_fields` entry narrows the
+wrapping to named fields; without a field list, the type generator wraps recognized non-copy
+fields. A field list alone does not change an ordinary generated struct into an Arc-backed one;
+it is useful only when the matching type is already Arc-backed elsewhere.
 
-**Migration path**: If a protocol transitions from functional to `&mut self`:
-1. Add `mut_self_types = ["CState"]` to the TOML
-2. Remove or comment out `arc_wrap_fields` (transpiler will clear it anyway)
-3. Remove `Arc::new`/`Arc::get_mut` helpers from generated and manual code
-4. Replace `Arc<T>` field types with `T` in manual impl files
+Arc wrapping is not proof-neutral. Generated Arc-backed structs use specialized helpers and a
+trusted `#[verifier::external_body]` clone implementation. Mutation lowering is also limited to
+recognized collection operations such as `insert`, `remove`, and `push`; it deep-clones the
+inner collection before mutation and re-wraps the result.
 
-## Implementation Plan
+Any nonempty `mut_self_types` setting currently clears **all** `arc_wrap_types` and
+`arc_wrap_fields` entries in that file configuration, even for disjoint types. The CLI warns
+when this occurs. Do not combine the two strategies in one configuration and assume both are
+active.
 
-See TODO.md Phase 40.2 for struct-level Arc steps (dormant), Phase 41 for
-field-level Arc steps (complete), Phase 47-48 for `&mut self` calling convention
-(active — recommended for all protocols).
+## Effective repository configuration
+
+At the audit revision, the checked-in protocols use:
+
+| Effective strategy | Protocols |
+|---|---|
+| Functional with selected Arc-backed fields | Chain Replication, Leader Election, Paxos, Raft, Vertical Paxos |
+| Functional with direct ownership | Primary-Backup |
+| Mutable receiver with direct ownership | Two-Phase Commit, EPaxos, PBFT |
+| Mixed by function shape | RSL: selected acceptor, election, executor, learner, proposer, and replica actions are mutable; ineligible helpers, initializers, and other functions remain free/functional |
+
+Some mutable-protocol TOML files still contain Arc settings, but configuration resolution clears
+them. Treat the generated source and resolved configuration—not the presence of an isolated TOML
+key—as the effective behavior.
+
+## Current recommendation
+
+1. Start with functional generation because it has the broadest semantic and proof coverage.
+2. Profile a representative, reproducible workload before changing ownership strategy.
+3. For a functional hot path dominated by unchanged collection clones, consider narrowly
+   targeted Arc fields and account for the additional trusted clone boundary.
+4. Use `mut_self_types` only when the action shape is supported, deterministic regeneration
+   passes, the full Verus build closes, and a fresh compiled artifact runs correctly.
+5. Benchmark the candidate against the functional form under identical conditions before
+   calling it an optimization.
+
+Do not hand-edit `src/generated/`. Change the specification, annotation, configuration, or
+transpiler; regenerate; then verify and benchmark. This policy is defined in
+[`AGENTS.md`](../../AGENTS.md).
+
+Persistent collections such as the `im` crate were considered historically but have no current
+implementation or verified adapter in this project. They are not an available emit strategy.
+
+## Historical optimization record
+
+The old version of this document mixed proposals and benchmark claims as though they were
+current recommendations. The durable engineering conclusions are narrower:
+
+| Phase | Experiment | Durable conclusion | Evidence status |
+|---|---|---|---|
+| 40 | Arc-wrap whole subcomponents | Limited runs did not demonstrate a consistent benefit; blanket Arc wrapping is not recommended | Historical measurements lacked a complete reproducibility bundle |
+| 41 | Arc-wrap selected RSL collection fields | Targeted sharing can reduce cloning in functional code | Reported throughput is historical and no longer describes current RSL ownership |
+| 47 | Manually prototype mutable RSL actions | Removing outer-state rebuilds was promising enough to automate | The reported “1.44× faster than hand-tuned” comparison was later retracted |
+| 48 | Add `mut_self_types` to the transpiler | Mutable lowering works for a restricted action shape, not every protocol | The broad rollout had no independent controlled benchmark and was not validated by a whole-crate compile |
+| 49 | Remove one hot deep clone and simplify RSL Arc ownership | The deep clone, not Arc itself, was the measured hotspot; Arc removal was primarily simplification | Reported comparisons cannot authenticate the binaries that ran |
+| 50 | Rebuild and validate the whole crate | Six simple protocols had to return to functional generation; only TwoPhase, EPaxos, and PBFT retained mutable lowering | Exposed stale build artifacts and invalidated the earlier results as current evidence |
+
+### Retracted and disputed claims
+
+The Phase 47 claim that generated RSL was **1.44× faster** than the hand-tuned reference is
+invalid. The reference used a stale shared library with a mismatched batch size.
+
+Phase 49 subsequently recorded generated-RSL trials of 54,000 and 54,849 operations/second and
+a hand-tuned summary value of 60,031 operations/second. Do not publish that as a controlled
+comparison. Phase 50 found 203 whole-crate compile errors and a stale pre-mutable `liblib.so`
+that had never been rebuilt from the relevant source. Raw logs, binary hashes, full hardware
+metadata, exact commands, and individual reference trials are also absent.
+
+A later fresh-build RSL run established only that the service starts and processes requests; it
+was not a matched benchmark. Consequently, this repository currently has **no controlled,
+reproducible generated-versus-hand-tuned RSL performance comparison** and no evidence for a
+claim that it is faster than the original IronFleet implementation.
+
+The phase ledger remains in [`TODO.md`](../../TODO.md) for historical investigation. Its numbers
+must not be presented as current performance without a fresh experiment.
+
+## Requirements for a new performance claim
+
+Before adding throughput or speedup to the README:
+
+1. Start from a named clean commit and record the Verus, Rust, .NET, and OS versions.
+2. Perform a clean full-crate verification and compilation; do not reuse an existing
+   `liblib.so`.
+3. Record hashes and timestamps for every compared executable/shared library and the exact
+   configuration used to build it.
+4. Hold host hardware, network topology, node count, client count, batch size, duration,
+   warm-up, and trial count constant.
+5. Capture every trial rather than only an average, and report variance or a range.
+6. Store raw CSV/log artifacts and the exact reproduction command under `reports/benchmarks/`.
+7. Re-run deterministic generation and the full Verus gate after any configuration or
+   transpiler change.
+8. Compare with IronFleet or another external system only when the workload and environment
+   are demonstrably equivalent.
+
+The historical [`scripts/bench_vary_clients.sh`](../../scripts/bench_vary_clients.sh) is not
+yet a publication-quality harness: it contains host-specific setup and can leave source batch
+configuration out of sync with a previously built library. Review and fix the harness before
+using it for a new headline result.
+
+## Implementation anchors
+
+- Configuration schema: [`transpiler/src/config.rs`](../src/config.rs)
+- Arc/mutable conflict resolution: [`transpiler/src/main.rs`](../src/main.rs)
+- Arc type generation: [`transpiler/src/codegen/mod.rs`](../src/codegen/mod.rs)
+- Mutable action translation: [`transpiler/src/translator/mod.rs`](../src/translator/mod.rs)
+- Mutable body printing: [`transpiler/src/printer/mod.rs`](../src/printer/mod.rs)
+- Current configuration reference and performance method:
+  [*The tla-rs Book*](../../docs/tla-rs-book.md), Appendix C and Chapter 25
