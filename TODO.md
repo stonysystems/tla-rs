@@ -14916,13 +14916,35 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         transpiler test at `lib.rs:3549` asserting `&CLearnerState` is valid, not stale — it
         sets up `arc_wrap_fields` explicitly.)
 
-        So the work is not "reconcile eight signatures". It is: accept fresh's by-value
-        signatures and update the preserved bodies that call them. Those bodies live only in
-        `learner_gen.rs` (learner has no `manual_code`), so the policy-clean route is the one
-        that delivered acceptor's notes in 54.7.b — **move learner's two hand-written bodies
-        into a `learner_manual.rs` and set `manual_code`, as acceptor and executor already
-        do, then edit there and regenerate.** That also removes learner from the
-        copy-from-backup path permanently.
+        **⚠ The paragraph above was wrong, and attempting it disproved it (2026-08-05).**
+        There *is* a transpiler defect, in two places, and "accept fresh's by-value
+        signatures" is not available. Walked end to end:
+
+        1. **`manual_code` needs the manual file to carry its own `impl` block.** Injection
+           happens at the top level of the `verus!` block (`lib.rs:680`, `:1300`), so
+           `&mut self` methods placed there fail with *"`self` parameter is only allowed in
+           associated functions"*. `acceptor_manual.rs` supplies `impl CAcceptor { … }` itself
+           — that is the convention, and it is not written down anywhere.
+        2. **`filter_clearnerstate` must not go in the manual file.** The transpiler
+           synthesises a helper of that name, so a copy there yields two definitions (merge
+           diff 119 → 455). It stays in the generated file under
+           `merge_generated.py --preserve`.
+        3. **The lemma parameter must be `&ExecType` unconditionally.** `param_type` in
+           `generate_map_proof_lemmas` is `&T` only when the field is Arc-wrapped, but the
+           lemma's *own body* calls `abstractify_{prefix}`, hand-written in `types_i.rs` and
+           taking `&CLearnerState`. By-value therefore does not type-check against it:
+           `expected &HashMap<..>, found HashMap<..>` — the exact error this item recorded
+           all along. The Arc case was never the only one that needed the reference.
+        4. **Fixing the signature is not enough.** With the lemmas taking `&T`, the
+           transpiler's *generated call sites* still pass by value
+           (`lemma_abstractify_empty_clearnerstate(result.unexecuted_learner_state)`), so the
+           emission has to change in both places. `tests::test_generate_map_proof_lemmas`
+           (`lib.rs:3394`) pins the current by-value form and must move with it.
+
+        So the remaining work is a **two-part transpiler change** — lemma signature *and*
+        call-site emission — plus the `learner_manual.rs` extraction, which is mechanical
+        once (1) and (2) are respected. All of it was attempted and reverted this session;
+        nothing is left half-applied.
 
         Not yet attributed: `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3) differ
         for a separate reason — check before assuming they are the same cause.
