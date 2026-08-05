@@ -24,8 +24,6 @@ The repository contains ten integrated protocol families: RSL (a Multi-Paxos rep
 state machine), single-decree Paxos, Raft, EPaxos, PBFT, Chain Replication,
 Primary-Backup, Vertical Paxos, Two-Phase Commit, and Bully-style leader election. Each is
 mounted in the common Rust/Verus crate and has generated code plus a service integration.
-Jetpack recovery-layer work is present as protocol-specification research, while the old
-Lock material is retained as legacy source and is not mounted with the integrated protocols.
 
 The project has four related, but distinct, tool paths:
 
@@ -92,7 +90,7 @@ The hand-written sources and derived artifacts are deliberately separate:
 | `src/protocol/<P>/*.rs` | Logical state, actions, invariants, and refinement proofs | Hand-written |
 | `*.automan` | Input/output modes and helper signatures | Hand-written |
 | `*_transpile.toml` | Naming, mappings, proof generation, and calling convention | Hand-written |
-| `src/generated/<P>/*_gen.rs` | Concrete types and executable transitions | Generated; never hand-edit |
+| `src/generated/<P>/*_gen.rs` | Concrete types and executable transitions | Generated, plus the hand-written bodies regeneration preserves (Chapter 13) |
 | `src/implementation/<P>/` | Host and runtime-facing protocol integration | Hand-written unless marked otherwise |
 | `src/services/<P>/` | Service entry points | Hand-written integration |
 | `model.toml` | Finite domains, search bounds, and checked properties | Hand-written |
@@ -221,7 +219,7 @@ The repository keeps these concerns separate:
 | Location | Responsibility |
 |---|---|
 | `src/protocol/<P>/` | Logical types, protocol actions, invariants, and refinement proofs |
-| `src/generated/<P>/` | Transpiler output; never hand-edit |
+| `src/generated/<P>/` | Transpiler output, plus the hand-written bodies regeneration preserves (Chapter 13) |
 | `src/implementation/<P>/` | Concrete support code, host/scheduler integration, and messages |
 | `src/services/<P>/` | Service entry points |
 | `transpiler/` | Spec parser, mode analysis, code generation, TLA+ tools, and model checker |
@@ -2460,7 +2458,8 @@ following:
 2. Add generated module declarations under `src/generated/<Protocol>/` and
    register the protocol in `src/generated/mod.rs`.
 3. Generate types, actions, and—when configured—runtime messages. Check in the
-   generated output, but never hand-edit it.
+   generated output, keep it byte-for-byte reproducible, and add a
+   `regen_matches_checked_in` parity test that holds it that way.
 4. Implement the protocol trait, scheduling, configuration, and marshalling
    under `src/implementation/<Protocol>/`; export it from
    `src/implementation/mod.rs`.
@@ -2737,9 +2736,31 @@ generated file manually are historical, even when the patch once worked.
 
 ### Generated code is derived code
 
-Everything below `src/generated/` is produced by the transpiler. Do not edit those
-files by hand. If generated output is wrong, change the earliest applicable source of
-truth:
+The rule follows provenance rather than path. `src/generated/` holds two kinds of code.
+
+**Transpiler-emitted code.** Change the source of truth and regenerate. An edit made
+directly to such a function is replaced by the next regeneration, so the change has to
+live in the specification, the annotation, the configuration, or the generator.
+
+**Hand-written bodies preserved inside generated files.** Functions listed in
+`skip_functions`, and helpers that live in a generated file without appearing in any
+configuration, are not emitted; regeneration copies them through verbatim. Edit these
+in place, and verify the module afterwards.
+
+Determine which kind a function is by provenance: generate into a temporary directory
+and diff. A function absent from fresh transpiler output is hand-maintained and may be
+edited in place; a function present in it is reached by changing the transpiler.
+`scripts/classify_trigger_notes.py --fresh-dir <dir>` automates the attribution.
+
+Nine protocols regenerate byte-for-byte, and `transpiler/tests/integration.rs` holds a
+`regen_matches_checked_in` parity test for each. RSL carries 36 `skip_functions`
+entries across seven modules whose hand-written verified bodies fresh generation does
+not contain, so it regenerates through the merge described in Chapter 19 and is scoped
+out of those parity tests. [`docs/rsl-skip-functions.md`](rsl-skip-functions.md)
+classifies every entry.
+
+For transpiler-emitted code, if the output is wrong, change the earliest applicable
+source of truth:
 
 - change the logical specification if the intended transition is wrong;
 - change the `.automan` file if input and output modes are wrong;
@@ -3526,6 +3547,28 @@ diff -u src/generated/Raft/raft_gen.rs "$scratch_dir/raft_gen.rs"
 The temporary directory keeps exploration out of the active artifact tree. Remove it
 after review; do not commit scratch or `src/generated_fresh` directories.
 
+### Regenerate RSL through the merge
+
+`regenerate_all.sh` replaces its targets with fresh output, which suits the nine
+protocols whose checked-in files are byte-for-byte reproducible. RSL's checked-in files
+also contain the hand-written bodies of its 36 `skip_functions` entries, which fresh
+output does not carry, so RSL regenerates through a merge:
+
+```bash
+./scripts/regenerate_rsl.sh
+```
+
+The script generates into a temporary directory, leaves the modules holding
+`skip_functions` in place, and prints a `scripts/merge_generated.py` invocation per
+module with `--preserve` flags drawn from `scripts/rsl_merge_preserve.txt`. Run those
+invocations to install the fresh output: the preserve list is what carries the
+hand-verified helper bodies through. `scripts/check_merge_body_drift.py`, which the
+script also runs, compares bodies rather than signatures and names every function a
+merge would rewrite.
+
+After merging, review the diff to confirm the hand-written bodies and their trigger
+annotations are intact, then verify the affected modules.
+
 ### Diagnose drift at the source
 
 Classify a diff before changing anything:
@@ -3537,9 +3580,12 @@ Classify a diff before changing anything:
 - **generator drift**: the same inputs now produce different text;
 - **manual drift**: checked-in output contains text fresh generation cannot produce.
 
-Manual drift is a policy violation or historical debt. Do not preserve it by teaching
-the script to copy the old file. Reconstruct the intended behavior in a real source of
-truth and add a parity test.
+Manual drift splits by provenance. A `skip_functions` body, or a helper that lives in a
+generated file without appearing in any configuration, is expected to differ from fresh
+output; the merge carries it through, and `scripts/check_merge_body_drift.py` with the
+preserve list confirms it is accounted for. Anywhere else, reconstruct the intended
+behavior in a real source of truth and add a parity test, rather than teaching the
+script to copy the old file.
 
 ### Review four dimensions
 
@@ -3601,11 +3647,14 @@ determinism/equality property.
 
 ### Recovering from historical instructions
 
-Some old regeneration notes prescribe Arc patches, body copying, or manual merges into
+Some old regeneration notes prescribe Arc patches or ad-hoc body copying into
 `src/generated`. Do not follow them. Use them only to identify the behavior that once
 needed support. Then locate the current configuration and generator implementation,
 write a regression for the intended output, implement the generic capability, regenerate,
 and delete or clearly archive the obsolete instruction.
+
+The RSL merge described earlier in this chapter is current tooling with a checked-in
+preserve list and its own tests, and is the supported way to install fresh RSL output.
 
 ## Chapter 20 — Verus Proof Engineering and Proof Generation
 
@@ -5044,7 +5093,8 @@ design decision, keep its date and link to the artifact.
 Phase plans and investigation notes often contain valuable failed approaches. Preserve
 them as historical records, add a short status banner, link to the current replacement,
 and remove obsolete instructions from the main path. In particular, any old advice to
-hand-edit generated code must be marked superseded by the generated-code policy.
+edit transpiler-emitted code must be marked superseded by the generated-code policy in
+Chapter 13.
 
 ### Review this book as executable infrastructure
 
