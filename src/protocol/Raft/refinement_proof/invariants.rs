@@ -1699,6 +1699,320 @@ verus! {
         );
     }
 
+    /// Cut-parameterised core of the minimal-missing-boundary phase argument.
+    ///
+    /// The two integer parameters have distinct roles that the original proof
+    /// conflated: `certificate_index` identifies the target certificate and its
+    /// committer, while `cut` is the prefix at which membership phases are
+    /// compared. Callers that compare at the boundary itself pass
+    /// `cut == certificate_index`; the short-log case compares at the leader's
+    /// log end instead.
+    ///
+    /// The governing phase at `cut` is taken as a hypothesis rather than read
+    /// off certificate validity, since only the `cut == certificate_index`
+    /// caller gets it for free.
+    pub proof fn lemma_minimal_missing_governing_phase_progresses_from_cut(
+        ds: RaftDistributedState,
+        certificate_index: int,
+        leader_id: int,
+        cut: int,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            raft_membership_log_is_well_formed(
+                ds.server_states[leader_id].log,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[leader_id].servers,
+                },
+            ),
+            uncommitted_suffix_has_at_most_one_configuration(
+                ds.server_states[leader_id].log,
+                ds.server_states[leader_id].commit_index,
+            ),
+            ds.configuration_commit_certificates.dom()
+                .contains(certificate_index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_constants[leader_id].servers
+                == ds.server_constants[
+                    ds.configuration_commit_certificates[certificate_index]
+                        .committer
+                ].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < cut
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            0 <= ds.server_states[leader_id].commit_index <= cut,
+            cut <= certificate_index,
+            cut <= ds.server_states[leader_id].log.len(),
+            // The governing phase, measured at the comparison prefix.
+            ds.configuration_commit_certificates[certificate_index]
+                .governing_phase
+                == active_membership_phase_from_raft_log(
+                    ds.server_states[
+                        ds.configuration_commit_certificates[certificate_index]
+                            .committer
+                    ].log,
+                    cut,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[leader_id].servers,
+                    },
+                ),
+        ensures
+            is_legal_phase_progression(
+                ds.configuration_commit_certificates[certificate_index]
+                    .governing_phase,
+                election_membership_phase_for_state(
+                    ds.server_states[leader_id],
+                    ds.server_constants[leader_id],
+                ),
+            ),
+            // Directional source of the governing phase. Callers need to know
+            // which side supplies it: two progressions into a common phase say
+            // nothing about the phases they start from.
+            ({
+                ||| ds.configuration_commit_certificates[certificate_index]
+                        .governing_phase
+                    == active_membership_phase_from_raft_log(
+                        ds.server_states[leader_id].log,
+                        ds.server_states[leader_id].commit_index,
+                        MembershipPhase::Stable {
+                            config: ds.server_constants[leader_id].servers,
+                        },
+                    )
+                ||| ds.configuration_commit_certificates[certificate_index]
+                        .governing_phase
+                    == active_membership_phase_from_raft_log(
+                        ds.server_states[leader_id].log,
+                        cut,
+                        MembershipPhase::Stable {
+                            config: ds.server_constants[leader_id].servers,
+                        },
+                    )
+            }),
+    {
+        let certificate =
+            ds.configuration_commit_certificates[certificate_index];
+        let committer = certificate.committer;
+        let leader = ds.server_states[leader_id];
+        let constants = ds.server_constants[leader_id];
+        let committed_len = leader.commit_index;
+        let initial_phase = MembershipPhase::Stable {
+            config: constants.servers,
+        };
+
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= certificate_index
+            < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(certificate_index <= ds.server_states[committer].log.len());
+        assert(cut <= ds.server_states[committer].log.len());
+
+        // Below the leader's committed prefix, both logs carry exactly the
+        // same membership boundaries. Data values are irrelevant here.
+        assert forall |j: int| 0 <= j < committed_len implies
+            ((leader.log[j].payload is Configuration)
+                == (ds.server_states[committer].log[j].payload
+                    is Configuration))
+        by {
+            if ds.server_states[committer].log[j].payload is Configuration {
+                lemma_committer_prefix_configurations_are_certified(
+                    ds, certificate_index, j);
+            }
+            if leader.log[j].payload is Configuration {
+                lemma_leader_committed_configuration_is_shared_with_committer(
+                    ds, certificate_index, leader_id, j);
+            }
+        };
+        assert forall |j: int|
+            0 <= j < committed_len
+            && leader.log[j].payload is Configuration
+        implies leader.log[j] == ds.server_states[committer].log[j]
+        by {
+            assert(ds.configuration_commit_certificates.dom().contains(j));
+            assert(leader.log[j]
+                == ds.configuration_commit_certificates[j].entry);
+            lemma_certified_boundary_agrees_with_committed_server(
+                ds, j, committer);
+        };
+        lemma_logs_with_same_configurations_have_same_active_phase(
+            leader.log,
+            ds.server_states[committer].log,
+            committed_len,
+            initial_phase,
+        );
+        assert(active_membership_phase_for_state(leader, constants)
+            == active_membership_phase_from_raft_log(
+                ds.server_states[committer].log,
+                committed_len,
+                initial_phase,
+            ));
+
+        lemma_latest_log_election_phase_is_at_most_one_step_ahead(
+            leader,
+            constants,
+        );
+
+        if forall |j: int|
+            committed_len <= j < cut
+            ==> !(leader.log[j].payload is Configuration)
+        {
+            assert forall |j: int|
+                committed_len <= j < cut
+                implies !(ds.server_states[committer].log[j].payload
+                    is Configuration)
+            by {
+                if ds.server_states[committer].log[j].payload is Configuration {
+                    lemma_committer_prefix_configurations_are_certified(
+                        ds, certificate_index, j);
+                    assert(leader.log[j]
+                        == ds.configuration_commit_certificates[j].entry);
+                    lemma_configuration_commit_certificate_basic_validity(
+                        ds, j);
+                    assert(false);
+                }
+            };
+            lemma_configuration_free_interval_preserves_active_phase(
+                ds.server_states[committer].log,
+                committed_len,
+                cut,
+                initial_phase,
+            );
+            assert(certificate.governing_phase
+                == active_membership_phase_for_state(leader, constants));
+        } else {
+            let boundary = choose |j: int|
+                committed_len <= j < cut
+                && leader.log[j].payload is Configuration;
+
+            assert forall |j: int|
+                committed_len <= j < leader.log.len()
+                && leader.log[j].payload is Configuration
+                implies j == boundary
+            by {
+                assert(uncommitted_suffix_has_at_most_one_configuration(
+                    leader.log, committed_len));
+            };
+
+            if ds.server_states[committer].log[boundary].payload
+                is Configuration
+            {
+                lemma_committer_prefix_configurations_are_certified(
+                    ds, certificate_index, boundary);
+                assert(leader.log[boundary]
+                    == ds.configuration_commit_certificates[boundary].entry);
+                assert(ds.server_states[committer].log[boundary]
+                    == ds.configuration_commit_certificates[boundary].entry)
+                by {
+                    lemma_certified_boundary_agrees_with_committed_server(
+                        ds, boundary, committer);
+                };
+
+                assert forall |j: int|
+                    committed_len <= j < cut
+                    && ds.server_states[committer].log[j].payload
+                        is Configuration
+                    implies j == boundary
+                by {
+                    lemma_committer_prefix_configurations_are_certified(
+                        ds, certificate_index, j);
+                    assert(leader.log[j]
+                        == ds.configuration_commit_certificates[j].entry);
+                    lemma_configuration_commit_certificate_basic_validity(
+                        ds, j);
+                };
+
+                assert forall |j: int| 0 <= j < cut implies
+                    ((leader.log[j].payload is Configuration)
+                        == (ds.server_states[committer].log[j].payload
+                            is Configuration))
+                by {
+                    if j < committed_len {
+                    } else {
+                        if leader.log[j].payload is Configuration {
+                            assert(j == boundary);
+                        }
+                        if ds.server_states[committer].log[j].payload
+                            is Configuration
+                        {
+                            assert(j == boundary);
+                        }
+                    }
+                };
+                assert forall |j: int|
+                    0 <= j < cut
+                    && leader.log[j].payload is Configuration
+                implies leader.log[j]
+                    == ds.server_states[committer].log[j]
+                by {
+                    if j < committed_len {
+                    } else {
+                        assert(j == boundary);
+                    }
+                };
+                lemma_logs_with_same_configurations_have_same_active_phase(
+                    leader.log,
+                    ds.server_states[committer].log,
+                    cut,
+                    initial_phase,
+                );
+                assert forall |j: int|
+                    cut <= j < leader.log.len()
+                    implies !(leader.log[j].payload is Configuration)
+                by {
+                    if leader.log[j].payload is Configuration {
+                        assert(j == boundary);
+                        assert(false);
+                    }
+                };
+                lemma_configuration_free_interval_preserves_active_phase(
+                    leader.log,
+                    cut,
+                    leader.log.len() as int,
+                    initial_phase,
+                );
+                assert(certificate.governing_phase
+                    == election_membership_phase_for_state(
+                        leader, constants));
+                lemma_phase_progression_reflexive(
+                    certificate.governing_phase);
+            } else {
+                assert forall |j: int|
+                    committed_len <= j < cut
+                    implies !(ds.server_states[committer].log[j].payload
+                        is Configuration)
+                by {
+                    if ds.server_states[committer].log[j].payload is Configuration {
+                        lemma_committer_prefix_configurations_are_certified(
+                            ds, certificate_index, j);
+                        assert(leader.log[j]
+                            == ds.configuration_commit_certificates[j].entry);
+                        lemma_configuration_commit_certificate_basic_validity(
+                            ds, j);
+                        assert(j == boundary);
+                        assert(false);
+                    }
+                };
+                lemma_configuration_free_interval_preserves_active_phase(
+                    ds.server_states[committer].log,
+                    committed_len,
+                    cut,
+                    initial_phase,
+                );
+                assert(certificate.governing_phase
+                    == active_membership_phase_for_state(leader, constants));
+            }
+        }
+    }
+
     /// At a minimal missing certified boundary, an extra uncommitted
     /// Configuration in the leader does not require the global
     /// `NoDivergentUncommittedConfiguration` hypothesis.
@@ -1780,13 +2094,12 @@ verus! {
     {
         let certificate = ds.configuration_commit_certificates[index];
         let committer = certificate.committer;
-        let leader = ds.server_states[leader_id];
-        let constants = ds.server_constants[leader_id];
-        let committed_len = leader.commit_index;
         let initial_phase = MembershipPhase::Stable {
-            config: constants.servers,
+            config: ds.server_constants[leader_id].servers,
         };
 
+        // Certificate validity supplies the governing phase at the boundary
+        // itself, which is this caller's comparison prefix.
         assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
         assert(0 <= committer < ds.num_servers);
         assert(0 <= index < ds.server_states[committer].commit_index);
@@ -1802,208 +2115,8 @@ verus! {
                 initial_phase,
             ));
 
-        // Below the leader's committed prefix, both logs carry exactly the
-        // same membership boundaries. Data values are irrelevant here.
-        assert forall |j: int| 0 <= j < committed_len implies
-            ((leader.log[j].payload is Configuration)
-                == (ds.server_states[committer].log[j].payload
-                    is Configuration))
-        by {
-            if ds.server_states[committer].log[j].payload is Configuration {
-                lemma_committer_prefix_configurations_are_certified(
-                    ds, index, j);
-            }
-            if leader.log[j].payload is Configuration {
-                lemma_leader_committed_configuration_is_shared_with_committer(
-                    ds, index, leader_id, j);
-            }
-        };
-        assert forall |j: int|
-            0 <= j < committed_len
-            && leader.log[j].payload is Configuration
-        implies leader.log[j] == ds.server_states[committer].log[j]
-        by {
-            assert(ds.configuration_commit_certificates.dom().contains(j));
-            assert(leader.log[j]
-                == ds.configuration_commit_certificates[j].entry);
-            lemma_certified_boundary_agrees_with_committed_server(
-                ds, j, committer);
-        };
-        lemma_logs_with_same_configurations_have_same_active_phase(
-            leader.log,
-            ds.server_states[committer].log,
-            committed_len,
-            initial_phase,
-        );
-        assert(active_membership_phase_for_state(leader, constants)
-            == active_membership_phase_from_raft_log(
-                ds.server_states[committer].log,
-                committed_len,
-                initial_phase,
-            ));
-
-        lemma_latest_log_election_phase_is_at_most_one_step_ahead(
-            leader,
-            constants,
-        );
-
-        if forall |j: int|
-            committed_len <= j < index
-            ==> !(leader.log[j].payload is Configuration)
-        {
-            // Any committer Configuration in this interval is certified and
-            // therefore held by the leader, contradicting this branch.
-            assert forall |j: int|
-                committed_len <= j < index
-                implies !(ds.server_states[committer].log[j].payload
-                    is Configuration)
-            by {
-                if ds.server_states[committer].log[j].payload is Configuration {
-                    lemma_committer_prefix_configurations_are_certified(
-                        ds, index, j);
-                    assert(leader.log[j]
-                        == ds.configuration_commit_certificates[j].entry);
-                    lemma_configuration_commit_certificate_basic_validity(
-                        ds, j);
-                    assert(false);
-                }
-            };
-            lemma_configuration_free_interval_preserves_active_phase(
-                ds.server_states[committer].log,
-                committed_len,
-                index,
-                initial_phase,
-            );
-            assert(certificate.governing_phase
-                == active_membership_phase_for_state(leader, constants));
-        } else {
-            let boundary = choose |j: int|
-                committed_len <= j < index
-                && leader.log[j].payload is Configuration;
-
-            assert forall |j: int|
-                committed_len <= j < leader.log.len()
-                && leader.log[j].payload is Configuration
-                implies j == boundary
-            by {
-                assert(uncommitted_suffix_has_at_most_one_configuration(
-                    leader.log, committed_len));
-            };
-
-            if ds.server_states[committer].log[boundary].payload
-                is Configuration
-            {
-                // The committer's unique boundary is certified and therefore
-                // exactly the same entry in the leader.
-                lemma_committer_prefix_configurations_are_certified(
-                    ds, index, boundary);
-                assert(leader.log[boundary]
-                    == ds.configuration_commit_certificates[boundary].entry);
-                assert(ds.server_states[committer].log[boundary]
-                    == ds.configuration_commit_certificates[boundary].entry)
-                by {
-                    lemma_certified_boundary_agrees_with_committed_server(
-                        ds, boundary, committer);
-                };
-
-                assert forall |j: int|
-                    committed_len <= j < index
-                    && ds.server_states[committer].log[j].payload
-                        is Configuration
-                    implies j == boundary
-                by {
-                    lemma_committer_prefix_configurations_are_certified(
-                        ds, index, j);
-                    assert(leader.log[j]
-                        == ds.configuration_commit_certificates[j].entry);
-                    lemma_configuration_commit_certificate_basic_validity(
-                        ds, j);
-                };
-
-                assert forall |j: int| 0 <= j < index implies
-                    ((leader.log[j].payload is Configuration)
-                        == (ds.server_states[committer].log[j].payload
-                            is Configuration))
-                by {
-                    if j < committed_len {
-                    } else {
-                        if leader.log[j].payload is Configuration {
-                            assert(j == boundary);
-                        }
-                        if ds.server_states[committer].log[j].payload
-                            is Configuration
-                        {
-                            assert(j == boundary);
-                        }
-                    }
-                };
-                assert forall |j: int|
-                    0 <= j < index
-                    && leader.log[j].payload is Configuration
-                implies leader.log[j]
-                    == ds.server_states[committer].log[j]
-                by {
-                    if j < committed_len {
-                    } else {
-                        assert(j == boundary);
-                    }
-                };
-                lemma_logs_with_same_configurations_have_same_active_phase(
-                    leader.log,
-                    ds.server_states[committer].log,
-                    index,
-                    initial_phase,
-                );
-                assert forall |j: int|
-                    index <= j < leader.log.len()
-                    implies !(leader.log[j].payload is Configuration)
-                by {
-                    if leader.log[j].payload is Configuration {
-                        assert(j == boundary);
-                        assert(false);
-                    }
-                };
-                lemma_configuration_free_interval_preserves_active_phase(
-                    leader.log,
-                    index,
-                    leader.log.len() as int,
-                    initial_phase,
-                );
-                assert(certificate.governing_phase
-                    == election_membership_phase_for_state(
-                        leader, constants));
-                lemma_phase_progression_reflexive(
-                    certificate.governing_phase);
-            } else {
-                // The leader's sole boundary is divergent. A real committer
-                // boundary in the interval would be certified, held by the
-                // leader, and hence forced to this same index, contradiction.
-                assert forall |j: int|
-                    committed_len <= j < index
-                    implies !(ds.server_states[committer].log[j].payload
-                        is Configuration)
-                by {
-                    if ds.server_states[committer].log[j].payload is Configuration {
-                        lemma_committer_prefix_configurations_are_certified(
-                            ds, index, j);
-                        assert(leader.log[j]
-                            == ds.configuration_commit_certificates[j].entry);
-                        lemma_configuration_commit_certificate_basic_validity(
-                            ds, j);
-                        assert(j == boundary);
-                        assert(false);
-                    }
-                };
-                lemma_configuration_free_interval_preserves_active_phase(
-                    ds.server_states[committer].log,
-                    committed_len,
-                    index,
-                    initial_phase,
-                );
-                assert(certificate.governing_phase
-                    == active_membership_phase_for_state(leader, constants));
-            }
-        }
+        lemma_minimal_missing_governing_phase_progresses_from_cut(
+            ds, index, leader_id, index);
     }
 
     /// The governing phase of a certificate progresses legally to the leader's
