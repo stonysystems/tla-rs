@@ -17648,23 +17648,25 @@ value per hour, not by phase number:
       is a doc-contract test reading `TODO.md`, and it failed once in a run where the release
       binary was already warm, so this does not explain it.
 
-- [ ] **54.17** `test_phase_38_10_4_b_shadow_subset_report_script_contract` is **flaky**.
-      Seen failing twice on 2026-08-05, passing on immediate re-run both times, and **not
-      reproduced in 6 consecutive full-suite runs** afterwards. The panic message was never
-      captured, so the cause is genuinely unknown — recorded rather than guessed at.
-      What has been ruled out: the two `fs::write` calls near it in `integration.rs` both
-      target `tempfile::tempdir()`, not the repo, so it is not an in-suite write race on the
-      files it reads.
-      What is suspicious: it is a **doc-contract test** — it reads `TODO.md` and
-      `transpiler/DPOR_based_model_tla_rs_checker/design.md` from the working tree and
-      asserts they contain specific fragments. A test that reads `TODO.md` is structurally
-      fragile in a workflow that rewrites `TODO.md` on every iteration; a non-atomic
-      `open(p,'w')` truncates before writing, so a concurrent reader can see a partial file.
-      Two fixes worth considering, in order: make the doc-contract tests read a committed
-      blob (`git show HEAD:TODO.md`) rather than the working tree, and make any tooling that
-      rewrites `TODO.md` write-then-rename. **This matters beyond itself**: every iteration
-      of this workflow runs the suite to check for regressions, and a test that fails at
-      random undermines that check.
+- [x] **54.17** `test_phase_38_10_4_b_shadow_subset_report_script_contract` flake.
+      **Closed 2026-08-05 as most likely 54.18, with the leading hypothesis disproved.**
+
+      I had recorded a suspicion: it is a doc-contract test reading `TODO.md` from the
+      working tree, and a non-atomic `open(p,'w')` truncates before writing, so a concurrent
+      reader could see a partial file. **Tested directly** — rewrote `TODO.md` in a tight
+      truncate-then-write loop while running the test six times: **0 failures**. The
+      hypothesis is wrong and is retracted rather than left as the standing theory.
+
+      **And my reason for excluding 54.18 was itself unverified.** I wrote that the second
+      failure happened "with the release binary already warm", but I never checked that —
+      the run in question had `cargo test --test integration` and `cargo test --lib`
+      back-to-back, and `--lib` builds a different target, which is exactly the shared-artifact
+      race 54.18 describes. Both failures are consistent with it.
+
+      Evidence for closing: 14 deliberate runs this iteration (8 full-suite, 6 under
+      concurrent rewrite) plus every routine full-suite run since 54.18 landed, all clean.
+      **Reopen if it recurs** — that would be real evidence against 54.18 being the whole
+      story, which is more than I have now in either direction.
 
 - [ ] **54.7.d** Annotate the **76 transpiler-emitted notes** on the checked-in artifacts
       with a post-processing pass, instead of waiting for the merge in 42.8.c.
