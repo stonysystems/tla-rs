@@ -1600,9 +1600,22 @@ fn test_rsl_generated_types_include_simple_clone_up_to_view() {
             .contains("impl CClockReading {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
         "generated CClockReading should include clone_up_to_view helper for primitive-only structs"
     );
+    // CParameters is defined in implementation/RSL/cparameters.rs, not in the
+    // generated file: `generate-types` reads types.rs, and its spec
+    // (LParameters) lives in protocol/RSL/parameters.rs. Phase 42.7 moved the
+    // hand-written struct to the module that already owned its validity and
+    // view semantics, which is what makes types_gen.rs reproducible byte for
+    // byte. The helper it must carry is unchanged, only its home.
+    let cparameters_home = std::fs::read_to_string("../src/implementation/RSL/cparameters.rs")
+        .expect("Failed to read cparameters.rs");
     assert!(
-        source.contains("impl CParameters {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
-        "generated CParameters should include clone_up_to_view helper for primitive-only structs"
+        cparameters_home
+            .contains("impl CParameters {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
+        "CParameters should include clone_up_to_view helper for primitive-only structs"
+    );
+    assert!(
+        source.contains("cparameters::CParameters"),
+        "types_gen.rs should re-export CParameters so its public API is unchanged"
     );
 
     let cparameters_source = std::fs::read_to_string("../src/implementation/RSL/cparameters.rs")
@@ -3365,7 +3378,12 @@ fn test_generated_types_module_public_api() {
     let normalized_source: String = source.split_whitespace().collect();
 
     let expected_types = [
-        "pub struct CParameters",
+        // CParameters is re-exported rather than defined here: its spec
+        // (LParameters) lives in protocol/RSL/parameters.rs, which
+        // `generate-types` never reads, so the struct was hand-added to this
+        // generated file until Phase 42.7 moved it to its owning module. The
+        // public API of types_gen is unchanged, which is what this test is for.
+        "pub use crate::implementation::RSL::cparameters::CParameters;",
         "pub use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};",
         "pub use crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants};",
         "pub use crate::implementation::RSL::acceptorimpl::CAcceptor;",
@@ -23990,4 +24008,77 @@ fn test_vec_element_ensures_emits_explicit_trigger() {
         quantifiers
     );
     let _ = std::fs::remove_file(&out);
+}
+
+/// Phase 42.7: regenerating `types_gen.rs` must reproduce the checked-in file.
+///
+/// It did not used to, and the reason was misdiagnosed for a while: the fresh
+/// output differed from the checked-in file only by `use` ordering, line
+/// wrapping, and one hand-written `CParameters` struct that `generate-types`
+/// cannot produce (its spec, `LParameters`, lives in
+/// `protocol/RSL/parameters.rs`, which that command never reads). A raw
+/// `git diff` counted the reordering as ~53 deleted lines, which read as "the
+/// regen drops hand-added imports" -- it does not; all 43 survive.
+///
+/// `CParameters` now lives in `implementation/RSL/cparameters.rs`, the module
+/// that already owned its validity and view semantics, and the generated file
+/// re-exports it through `custom_imports`. So this asserts the property that
+/// unblocks regeneration: emit, format, compare.
+#[test]
+fn test_types_gen_regeneration_is_byte_identical() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let tmp = std::env::temp_dir().join("phase42_6_types_gen.rs");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .args([
+            "generate-types",
+            "--input",
+            repo_root
+                .join("src/protocol/RSL/types.rs")
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join("src/protocol/RSL/types_transpile.toml")
+                .to_str()
+                .unwrap(),
+            "--output",
+            tmp.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run generate-types");
+    assert!(
+        out.status.success(),
+        "generate-types failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // rustfmt is what normalises `use` ordering and wrapping; without it the
+    // comparison is meaningless, so skip rather than assert a false failure.
+    let fmt = std::process::Command::new("rustfmt")
+        .args(["--edition", "2021", tmp.to_str().unwrap()])
+        .status();
+    if !matches!(fmt, Ok(s) if s.success()) {
+        eprintln!("rustfmt unavailable; skipping byte comparison");
+        return;
+    }
+
+    let fresh = std::fs::read_to_string(&tmp).expect("read fresh output");
+    let checked_in = std::fs::read_to_string(repo_root.join("src/generated/RSL/types_gen.rs"))
+        .expect("read checked-in types_gen.rs");
+    assert!(
+        !fresh.contains("pub struct CParameters"),
+        "CParameters must not be hand-added back into the generated file"
+    );
+    assert!(
+        fresh.contains("cparameters::CParameters"),
+        "the generated file must re-export CParameters from its owning module"
+    );
+    assert_eq!(
+        fresh, checked_in,
+        "regenerating types_gen.rs no longer reproduces the checked-in file"
+    );
+    let _ = std::fs::remove_file(&tmp);
 }

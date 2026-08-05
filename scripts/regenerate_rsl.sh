@@ -64,6 +64,13 @@ $TRANSPILER generate-types \
     --input "$SPEC_DIR/types.rs" \
     --config "$SPEC_DIR/types_transpile.toml" \
     --output "$FRESH_DIR/types_gen.rs"
+# Phase 42.7: rustfmt the emitted types so the output is byte-comparable with
+# the checked-in file. Without this the two differ only in `use` ordering and
+# line wrapping, which reads as a large diff and hides whether anything real
+# changed -- that is what made regeneration look lossy.
+if command -v rustfmt >/dev/null 2>&1; then
+    rustfmt --edition 2021 "$FRESH_DIR/types_gen.rs" || true
+fi
 echo "   types_gen.rs: done"
 
 # Modules

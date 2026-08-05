@@ -14746,6 +14746,29 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
 - [x] **42.4.b**: Run `regenerate_rsl.sh --validate-only` on HEAD. **Result**: all 8 modules transpile, validation PASSED. All function-level differences are exactly the skip_functions entries (15 total across 5 modules). Script rewritten to validation-first approach: modules with skip_functions keep existing files (hand-written bodies preserved); modules without skip_functions (types, broadcast, acceptor) can be safely replaced. Fixed pre-existing test `test_rsl_types_manual_helpers_component_part2_symbols_present` (expected `HashMap` but cb42869 changed to `Arc<HashMap>`).
 - [x] **42.4.c**: Confirm bench numbers post-regen match pre-regen (RSL ≥29K with cb42869-equivalent in place; ≥16K without). **Confirmed by Phase 41.3.a (2026-05-24): 32,663 ops/s avg with all 5 Arc-wrapped fields, exceeds 29K target.** The cb42869 single-field PoC is subsumed by Phase 41.1.b's full 5-field Arc-wrap.
 
+#### 42.7 Lossless `types_gen.rs` regeneration (2026-08-05)
+
+- [x] **42.7.a**: `types_gen.rs` regeneration is now **byte-identical** to the checked-in
+      file. Two causes, one of them a measurement error on my part:
+      (a) **ordering, not loss.** The transpiler emits `use` statements in TOML order while
+      the checked-in file is `rustfmt`-formatted, which sorts them. `git diff --stat` scored
+      that as ~53 deleted lines and it was recorded as "regen drops hand-added imports".
+      Comparing content shows 43 imports on both sides. `scripts/regenerate_rsl.sh` now runs
+      `rustfmt` on the emitted types so the two are comparable.
+      (b) **one genuinely hand-added block.** `CParameters` (struct + `clone_up_to_view`) was
+      written directly into the generated file, because `generate-types` reads `types.rs` and
+      `LParameters` lives in `parameters.rs`. It has moved to
+      `implementation/RSL/cparameters.rs` — the module whose own header already claimed to
+      own "CParameters validity/view semantics", and which previously re-exported the struct
+      *from* the generated file. That dependency is now the right way round, and
+      `types_gen.rs` re-exports it through `custom_imports`, so every existing path
+      (`generated::RSL::types_gen::CParameters`) still resolves.
+      `1044 verified, 0 errors`; `regenerate_rsl.sh --validate-only` passes; guarded by
+      `test_types_gen_regeneration_is_byte_identical`.
+      Note `generate-types` deliberately does **not** inject `manual_code` (there is a test
+      asserting it), so moving the block out was the only way to make the file pure
+      transpiler output rather than widening that escape hatch.
+
 #### 42.5 Phase 40 disposition (separate from 42.1–42.4)
 
 Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can bench. But it doesn't actively break anything either (the regen blocker hypothesis was wrong). Decide:
@@ -16314,16 +16337,20 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       `test_vec_element_ensures_emits_explicit_trigger`, which asserts the emitted text
       rather than a regenerated file, for the reason in 54.7.b.
 - [ ] **54.7.b** Regenerate `src/generated/RSL/` and confirm the notes are gone.
-      **BLOCKED on Phase 42 (RSL regen is lossy), measured 2026-08-04.** Running
-      `scripts/regenerate_rsl.sh` rewrites `types_gen.rs` with **53 lines deleted**, dropping
-      hand-added imports (`pub use ...acceptorimpl::CAcceptor`,
-      `...ElectionImpl::{CElectionState, ...}`, and more), and also rewrites `acceptor_gen.rs`.
-      Verified pre-existing: the identical loss occurs when regenerating at clean HEAD with
-      the unmodified transpiler, so it is not caused by the 54.7.a change (which adds only
-      the `#![trigger ...]` text). Landing a regeneration today would trade a trigger problem
-      for an import-correctness one. Sequence: Phase 42 (lossless RSL regen) → regenerate →
-      re-measure. Until then the 60 emitted notes remain in the checked-in files even though
-      the codegen that produces them is fixed.
+      **CORRECTION (2026-08-05): the blocker I recorded here was wrong, and is now much
+      smaller.** I wrote that regeneration "rewrites `types_gen.rs` with 53 lines deleted,
+      dropping hand-added imports". It does not. All **43 imports survive**; the 53-line
+      figure came from reading `git diff --stat`, which counts reordered lines as deletions
+      plus insertions. Compared as content, the fresh output differed from the checked-in
+      file only by (i) `use` ordering and line wrapping, which `rustfmt` normalises, and
+      (ii) one hand-written 27-line `CParameters` struct + `clone_up_to_view` impl.
+      Both are now fixed (Phase 42.7), so `types_gen.rs` regeneration is **byte-identical**.
+      `acceptor_gen.rs` differs in **13 lines**, all comment text plus one import listing two
+      extra names — cosmetic, not import loss.
+      Remaining before this task can close: regenerate the five modules that carry
+      `skip_functions` (learner, executor, election, proposer, replica) and confirm their
+      hand-written bodies survive byte-for-byte. `--validate-only` already passes for all
+      eight modules, so this is a verification exercise rather than a repair.
 - [ ] **54.7.c** The other **33** of the 109 generated notes are **not transpiler output**.
       They sit inside `skip_functions` hand-written bodies that regeneration preserves
       verbatim (`CRemoveExecutedRequestBatch`, the `lemma_*_bridge` proofs, and others across
