@@ -16492,33 +16492,19 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
       --fail-on-regression`, skipped with a message until `reports/triggers/timing-baseline.json`
       exists. 21 new tests, incl. a guard that an `enforce=true` ceiling must carry a number.
 
-### Acceptance
+### Acceptance — status 2026-08-05
 
-- 0 `automatically chose triggers` notes on a full pass, or a checked-in list of the
-  deliberate exceptions with a reason for each
-- `1044 verified, 0 errors` still holds
-- No module's verification wall-clock regresses more than 20% against the 54.2 baseline
-- CI guard from 54.9 in place
+| criterion | status |
+|---|---|
+| 0 `automatically chose triggers` notes, **or** a checked-in list of the deliberate exceptions with a reason for each | **MET via the list.** 534 → **120**. `reports/triggers/exceptions.md` accounts for every remaining note: 107 in `src/generated/` (transpiler output, blocked on regeneration — 54.7.b / 42.8.c.2.iv) and 13 nested-quantifier cases needing the expression restructured. Generated from a measured inventory by `scripts/trigger_exceptions.py`, and CI runs `--check` so it cannot silently drift. |
+| `1044 verified, 0 errors` still holds | **MET.** Now **1045**, 0 errors — the extra function came from regenerating `broadcast_gen.rs`, which had lost a proof helper. |
+| No module's verification wall-clock regresses more than 20% against the 54.2 baseline | **MET.** Measured min-of-3 on both sides at each batch; the crate ended up **faster** (54.8: −4.4%). |
+| CI guard from 54.9 in place | **MET.** Note-count ceiling (ratcheted 534 → 120) plus the `changed`-trigger check against the committed baseline; timing is reported rather than gated because CI hardware differs from the baseline host (54.9.a). |
 
-- [x] **54.9.a** CI timing gate — **root cause was not the floor. FIXED (2026-08-05).**
-      The report was right that the gate was red and wrong about why, and the mistake was
-      mine to begin with. Two things had already changed before `e0241425`: 54.4.a raised the
-      noise floor 500 → **1000 ms** and made it apply to the *base* value, so the 36 modules
-      under 100 ms could not fire the gate at all.
-      The actual cause: **the committed baseline was measured on this 127-thread box and CI
-      compares it against a GitHub runner with a handful of cores.** Verus verifies modules
-      in parallel, so per-module wall-clock tracks the core count and the contention pattern;
-      a percentage between the two measures the hardware, not the proof. No threshold and no
-      absolute floor fixes a cross-hardware comparison — the suggested 250 ms floor would
-      have suppressed the symptom while leaving the numbers meaningless.
-      Fixes: (a) CI **reports** timing instead of gating on it, with the reason in the
-      workflow; the 20% criterion stays a *local* pre-merge gate, which is how 54.3–54.8
-      actually used it. (b) `verus_timing.py diff` now records `num-threads` for both sides,
-      prints "**These runs are not comparable**" when they differ, and **refuses to fail**
-      on a cross-hardware comparison even when asked — so the category error announces
-      itself instead of being silently absorbed by a bigger threshold. 7 tests, including
-      one asserting CI does not pass `--fail-on-regression` to the timing diff.
-      Older inventories without `num-threads` are unaffected.
+**Phase 54 is complete against its stated acceptance criteria.** What remains is not
+trigger work: the 107 generated notes wait on RSL regeneration (Phase 42/21), and the 13
+nested cases wait on expression restructuring, both tracked in their own phases.
+
 
 ### Non-goals
 - Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.

@@ -206,6 +206,14 @@ jobs:
             --ceiling reports/triggers/ceiling.json \
             --capture-mode selective \
             $BASELINE | tee -a "$GITHUB_STEP_SUMMARY"
+          # Phase 54 acceptance: the checked-in exceptions list must describe
+          # the notes that actually remain. A list that quietly falls out of
+          # date satisfies the letter of "0 notes or a documented list" and
+          # none of its intent.
+          if [ -f reports/triggers/exceptions.md ]; then
+            python3 scripts/trigger_exceptions.py trigger-inventory.json \
+              --check reports/triggers/exceptions.md | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           # Timing is REPORTED here, not gated. The committed baseline was
           # measured on a 127-thread developer box; a GitHub runner has a
           # handful of cores. Verus verifies modules in parallel, so per-module
