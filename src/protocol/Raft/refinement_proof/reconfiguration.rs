@@ -1523,6 +1523,51 @@ verus! {
         }
     }
 
+    /// A newly elected leader's recorded phase *is* the latest-log phase of the
+    /// state it enters. Both promotion actions leave the log untouched and save
+    /// the phase derived from it, so the two coincide at the moment of
+    /// election.
+    ///
+    /// This matters because the coincidence is not preserved afterwards: once a
+    /// leader appends a Configuration entry its stored phase and its latest-log
+    /// phase diverge permanently. Results about newly elected leaders can
+    /// therefore rely on this equality, while results about arbitrary leaders
+    /// cannot.
+    pub proof fn lemma_receive_vote_and_become_leader_records_latest_log_phase(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        vote_term: int,
+        vote_granted: bool,
+        voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LReceiveVoteAndBecomeLeader(
+                s, s_, c, vote_term, vote_granted, voter, sent_packets),
+        ensures
+            s_.election_membership_phase
+                == Some(election_membership_phase_for_state(s_, c)),
+    {
+        assert(s_.log == s.log);
+    }
+
+    /// Same fact for the plain Candidate-to-Leader promotion.
+    pub proof fn lemma_become_leader_records_latest_log_phase(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LBecomeLeader(s, s_, c, sent_packets),
+        ensures
+            s_.election_membership_phase
+                == Some(election_membership_phase_for_state(s_, c)),
+    {
+        assert(s_.log == s.log);
+    }
+
     /// The Candidate-to-Leader action saves the phase derived from the
     /// candidate's current committed actual-log prefix.
     pub proof fn lemma_receive_vote_and_become_leader_records_log_provenance(

@@ -707,6 +707,87 @@ verus! {
         );
     }
 
+    /// Milestone B for newly elected leaders, with the phase hypothesis
+    /// discharged rather than assumed.
+    ///
+    /// The index induction needs the leader's recorded election phase to be the
+    /// latest-log phase of its own state. That is not an invariant — it fails
+    /// once a leader appends a Configuration — but it holds by construction at
+    /// the moment of promotion, which is exactly when Leader Completeness has
+    /// something to say. Existing leaders are covered separately by
+    /// `lemma_configuration_leader_completeness_quiet_step`.
+    pub proof fn lemma_new_leader_holds_certified_boundaries(
+        ds: RaftDistributedState,
+        leader_id: int,
+        bound: int,
+        pre_state: LState,
+        vote_term: int,
+        vote_granted: bool,
+        voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            NoDivergentUncommittedConfiguration(ds),
+            0 <= leader_id < ds.num_servers,
+            // `leader_id` has just been promoted into this state.
+            LReceiveVoteAndBecomeLeader(
+                pre_state,
+                ds.server_states[leader_id],
+                ds.server_constants[leader_id],
+                vote_term,
+                vote_granted,
+                voter,
+                sent_packets,
+            ),
+            0 <= bound <= ds.server_states[leader_id].log.len(),
+            forall |a: int, e: int|
+                #![trigger ds.server_constants[a], ds.server_constants[e]]
+                0 <= a < ds.num_servers && 0 <= e < ds.num_servers
+                ==> ds.server_constants[a].servers
+                    == ds.server_constants[e].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].current_term
+                    > ds.configuration_commit_certificates[m].entry.term,
+        ensures
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+    {
+        // The promotion rule leaves the log alone and stores the phase derived
+        // from it, so the recorded phase is this state's latest-log phase.
+        lemma_receive_vote_and_become_leader_records_latest_log_phase(
+            pre_state,
+            ds.server_states[leader_id],
+            ds.server_constants[leader_id],
+            vote_term,
+            vote_granted,
+            voter,
+            sent_packets,
+        );
+        assert(ds.server_states[leader_id].role is Leader);
+
+        lemma_certified_boundaries_present_below(ds, leader_id, bound);
+    }
+
     /// Step 2d: a leader whose log stops short of a certified boundary is
     /// impossible.
     ///
