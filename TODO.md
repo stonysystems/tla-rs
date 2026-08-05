@@ -14886,6 +14886,31 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the
+        same module on **several single-name lines** (`use X::a;` and `use X::b;`), and the
+        widening replaced only the first, leaving the second as a duplicate. It now widens
+        the first and drops the siblings.
+
+  - [ ] **54.7.b — the premise is wrong, measured 2026-08-05.** Merging proposer delivered
+        **zero** notes, as executor and election did. Attributing every one of the 103 notes
+        to its enclosing function and checking that function against **fresh transpiler
+        output** gives:
+
+        | | notes |
+        |---|---:|
+        | in bodies fresh does not emit at all | **72** |
+        | in bodies the preserve list protects | **28** |
+        | **actually deliverable by regenerating** | **3** |
+
+        So "regenerate `src/generated/RSL/` and the notes are gone" can clear **3 of 103**.
+        The rest are hand-written code that happens to live inside a generated file, which
+        regeneration copies through untouched. My earlier figures — 80, then 50 — were each
+        derived from a proxy (`skip_functions`, then the preserve list); this one is derived
+        from what the transpiler actually emits, which is the question being asked.
+        **This makes 54.7.c the real item**, not 54.7.b: the decision about whether that
+        hand-written code should live under `src/generated/` at all.
+
   - [x] **42.8.c.2.iv.H** **Election merged. `1046 verified, 0 errors`.** (2026-08-05)
         `assume(false)` in the merged file 5 → 0; 332 lines changed. Two more merge defects,
         both the same shape as earlier ones in a case I had not covered:

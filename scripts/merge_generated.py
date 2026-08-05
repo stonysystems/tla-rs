@@ -301,10 +301,18 @@ def merge(fresh_text, existing_text, preserve=()):
         widened = "{}{{{}}};".format(
             path.replace("use", "use ", 1), ", ".join(sorted(members))
         )
-        for line in fresh_text.split("\n"):
-            if line.strip().startswith("use ") and _module_path(line) == path:
-                fresh_text = fresh_text.replace(line, widened, 1)
-                break
+        # Fresh may import the same module on several lines
+        # (`use X::a;` and `use X::b;`). Widen the first and drop the rest, or
+        # the widened import duplicates every name the siblings brought.
+        siblings = [
+            line
+            for line in fresh_text.split("\n")
+            if line.strip().startswith("use ") and _module_path(line) == path
+        ]
+        if siblings:
+            fresh_text = fresh_text.replace(siblings[0], widened, 1)
+            for extra in siblings[1:]:
+                fresh_text = fresh_text.replace("\n" + extra, "", 1)
 
     lines = fresh_text.split("\n")
 

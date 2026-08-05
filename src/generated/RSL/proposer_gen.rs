@@ -4,26 +4,24 @@
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
-use crate::common::native::io_s::{EndPoint, AbstractEndPoint};
-use crate::protocol::RSL::environment::RslPacket;
+use crate::common::native::io_s::{AbstractEndPoint, EndPoint};
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::election_gen::*;
 use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTimerOff;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
-use crate::protocol::common::upper_bound::UpperBoundedAddition;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::gen_helpers::{
     clone_cpacket_full, clone_cpacket_preserving_validity, outbound_packets_to_vec,
 };
-use crate::implementation::RSL::types_i::abstractify_crequestbatch;
-use crate::implementation::RSL::types_i::clone_request_batch_up_to_view;
-use crate::implementation::RSL::types_i::crequestbatch_is_valid;
-use crate::implementation::RSL::types_i::cvotes_is_valid;
-use crate::implementation::RSL::types_i::lemma_cvotes_valid_key;
+use crate::implementation::RSL::types_i::{
+    abstractify_crequestbatch, clone_request_batch_up_to_view, lemma_cvotes_valid_key,
+};
+use crate::protocol::common::upper_bound::UpperBoundedAddition;
 use crate::protocol::RSL::configuration::*;
+use crate::protocol::RSL::environment::RslPacket;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
@@ -34,68 +32,6 @@ use vstd::set::*;
 use vstd::set_lib::*;
 
 verus! {
-
-// --- Direct mutation helpers (Phase 49.2: Arc removed, direct field access) ---
-// Each helper is #[verifier::external_body] with a trusted ensures clause.
-
-#[verifier::external_body]
-fn vec_push_request(rq: &mut Vec<CRequest>, val: CRequest)
-    ensures rq@ == old(rq)@.push(val)
-{
-    rq.push(val);
-}
-
-#[verifier::external_body]
-fn vec_clear_requests(rq: &mut Vec<CRequest>)
-    ensures rq@.len() == 0, rq@ =~= Seq::<CRequest>::empty()
-{
-    rq.clear();
-}
-
-#[verifier::external_body]
-fn vec_replace_from_concat(dest: &mut Vec<CRequest>, src1: &Vec<CRequest>, src2: &Vec<CRequest>)
-    ensures dest@ == src1@ + src2@
-{
-    dest.clear();
-    dest.extend_from_slice(src1);
-    dest.extend_from_slice(src2);
-}
-
-#[verifier::external_body]
-fn vec_set(dest: &mut Vec<CRequest>, new_val: Vec<CRequest>)
-    ensures dest@ == new_val@
-{
-    *dest = new_val;
-}
-
-#[verifier::external_body]
-fn hashset_insert_cpacket(hs: &mut HashSet<CPacket>, p: CPacket)
-    ensures hs@ == old(hs)@.insert(p)
-{
-    hs.insert(p);
-}
-
-#[verifier::external_body]
-fn hashset_clear_cpacket(hs: &mut HashSet<CPacket>)
-    ensures hs@.len() == 0, hs@ =~= Set::<CPacket>::empty()
-{
-    hs.clear();
-}
-
-#[verifier::external_body]
-fn hashmap_insert_seqno(hm: &mut HashMap<EndPoint, u64>, k: EndPoint, v: u64)
-    ensures hm@ == old(hm)@.insert(k, v)
-{
-    hm.insert(k, v);
-}
-
-#[verifier::external_body]
-fn hashmap_clear_seqno(hm: &mut HashMap<EndPoint, u64>)
-    ensures hm@.len() == 0, hm@ =~= Map::<EndPoint, u64>::empty()
-{
-    hm.clear();
-}
-
 
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
@@ -132,7 +68,6 @@ ensures
 }
 
 /// Helper: clone a Vec<CRequest> preserving both raw and mapped view.
-/// Uses clone_up_to_view() per element for verified view preservation.
 fn clone_request_queue(v: &Vec<CRequest>) -> (res: Vec<CRequest>)
 ensures
     res@ == v@,
@@ -216,6 +151,64 @@ ensures
 
 }
 
+#[verifier::external_body]
+fn vec_push_request(rq: &mut Vec<CRequest>, val: CRequest)
+    ensures rq@ == old(rq)@.push(val)
+{
+    rq.push(val);
+}
+
+#[verifier::external_body]
+fn vec_clear_requests(rq: &mut Vec<CRequest>)
+    ensures rq@.len() == 0, rq@ =~= Seq::<CRequest>::empty()
+{
+    rq.clear();
+}
+
+#[verifier::external_body]
+fn vec_replace_from_concat(dest: &mut Vec<CRequest>, src1: &Vec<CRequest>, src2: &Vec<CRequest>)
+    ensures dest@ == src1@ + src2@
+{
+    dest.clear();
+    dest.extend_from_slice(src1);
+    dest.extend_from_slice(src2);
+}
+
+#[verifier::external_body]
+fn vec_set(dest: &mut Vec<CRequest>, new_val: Vec<CRequest>)
+    ensures dest@ == new_val@
+{
+    *dest = new_val;
+}
+
+#[verifier::external_body]
+fn hashset_insert_cpacket(hs: &mut HashSet<CPacket>, p: CPacket)
+    ensures hs@ == old(hs)@.insert(p)
+{
+    hs.insert(p);
+}
+
+#[verifier::external_body]
+fn hashset_clear_cpacket(hs: &mut HashSet<CPacket>)
+    ensures hs@.len() == 0, hs@ =~= Set::<CPacket>::empty()
+{
+    hs.clear();
+}
+
+#[verifier::external_body]
+fn hashmap_insert_seqno(hm: &mut HashMap<EndPoint, u64>, k: EndPoint, v: u64)
+    ensures hm@ == old(hm)@.insert(k, v)
+{
+    hm.insert(k, v);
+}
+
+#[verifier::external_body]
+fn hashmap_clear_seqno(hm: &mut HashMap<EndPoint, u64>)
+    ensures hm@.len() == 0, hm@ =~= Map::<EndPoint, u64>::empty()
+{
+    hm.clear();
+}
+
 /// Abstractify HashMap<EndPoint, u64> to Map<AbstractEndPoint, int>.
 /// Matches the inline definition in CProposer.view().highest_seqno_requested_by_client_this_view.
 spec fn abstractify_endpoint_seqno_map(m: Map<EndPoint, u64>) -> Map<AbstractEndPoint, int> {
@@ -290,7 +283,6 @@ ensures
     };
 }
 
-// Phase 47.1.a: &mut self version — mutates in-place, 0 struct rebuilds, 0 unnecessary clones.
 impl CProposer {
 pub exec fn CProposerProcessRequest(&mut self, packet: &CPacket)
 requires
@@ -472,138 +464,6 @@ ensures
         }
     }
 }
-} // impl CProposer (Phase 47.1.a)
-
-// Phase 47.3.a.4: Batch 1 — simple proposer functions converted to &mut self
-impl CProposer {
-
-pub exec fn CProposerMaybeEnterNewViewAndSend1a(&mut self) -> (sent_packets: Vec<CPacket>)
-requires
-    old(self).valid(),
-ensures
-    self.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
-    LProposerMaybeEnterNewViewAndSend1a(old(self)@, self@, sent_packets@.map(|i, p: CPacket| p@)),
-{
-    let ghost old_self = old(self)@;
-    let cond1 = self.election_state.current_view.proposer_id == self.constants.my_index;
-    let cond2 = CBalLt(&self.max_ballot_i_sent_1a, &self.election_state.current_view);
-    proof {
-        assert(cond1 == (old_self.election_state.current_view.proposer_id == old_self.constants.my_index));
-        assert(cond2 == BalLt(old_self.max_ballot_i_sent_1a, old_self.election_state.current_view));
-    }
-    if cond1 && cond2 {
-        let sent_packets = CBroadcastToEveryone(&self.constants.all.config, &self.constants.my_index, &CMessage::CMessage1a {
-            bal_1a: self.election_state.current_view,
-        });
-        // Mutate changed fields
-        self.current_state = 1u64;
-        self.max_ballot_i_sent_1a = self.election_state.current_view;
-        vec_replace_from_concat(&mut self.request_queue, &self.election_state.requests_received_prev_epochs, &self.election_state.requests_received_this_epoch);
-        hashset_clear_cpacket(&mut self.received_1b_packets);
-        hashmap_clear_seqno(&mut self.highest_seqno_requested_by_client_this_view);
-        self.max_log_truncation_point = 0u64;
-        self.max_opn_with_proposal = 0u64;
-        proof {
-            // Prove received_1b_packets: empty HashSet maps to empty Set
-            let pkt_set = self.received_1b_packets@.map(|p: CPacket| p@);
-            assert forall|y: RslPacket| !(#[trigger] pkt_set.contains(y)) by {}
-            assert(pkt_set =~= Set::<RslPacket>::empty());
-            // Prove highest_seqno_requested_by_client_this_view: empty HashMap maps to empty Map
-            let hsm = self@.highest_seqno_requested_by_client_this_view;
-            assert forall|ak: AbstractEndPoint| !(#[trigger] hsm.dom().contains(ak)) by {}
-            assert(hsm =~= Map::<AbstractEndPoint, int>::empty());
-            // Prove request_queue concat maps correctly
-            assert(self@.request_queue =~= old_self.election_state.requests_received_prev_epochs + old_self.election_state.requests_received_this_epoch);
-        }
-        sent_packets
-    } else {
-        // No-op
-        let sent_packets: Vec<CPacket> = vec![];
-        proof {
-            assert(self@ == old_self);
-            assert(sent_packets@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
-        }
-        sent_packets
-    }
-}
-
-pub exec fn CProposerProcess1b(&mut self, p: &CPacket)
-requires
-    old(self).valid(),
-    p.valid(),
-    p.msg is CMessage1b,
-ensures
-    self.valid(),
-    LProposerProcess1b(old(self)@, self@, p@),
-{
-    let ghost old_self = old(self)@;
-    let p_cloned = clone_cpacket_preserving_validity(p);
-    hashset_insert_cpacket(&mut self.received_1b_packets, p_cloned);
-    proof {
-        assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.valid() by {
-            if !old(self).received_1b_packets@.contains(q) {
-                assert(q == p_cloned);
-            }
-        }
-        assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.abstractable() by {
-            if !old(self).received_1b_packets@.contains(q) {
-                assert(q == p_cloned);
-            }
-        }
-        broadcast use Set::lemma_set_map_insert_commute;
-        assert(self.received_1b_packets@.map(|q:CPacket| q@) =~=
-               old(self).received_1b_packets@.map(|q:CPacket| q@).insert(p@));
-        assert(self@.received_1b_packets =~= old_self.received_1b_packets + set![p@]);
-    }
-}
-
-pub exec fn CProposerMaybeEnterPhase2(&mut self, log_truncation_point: &u64) -> (sent_packets: Vec<CPacket>)
-requires
-    old(self).valid(),
-ensures
-    self.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
-    LProposerMaybeEnterPhase2(old(self)@, self@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)),
-{
-    let ghost old_self = old(self)@;
-    let cond1 = (self.received_1b_packets.len() as u64) >= (self.constants.all.config.CMinQuorumSize() as u64);
-    let cond2 = CProposer::CSetOfMessage1bAboutBallot(&self.received_1b_packets, &self.max_ballot_i_sent_1a);
-    let cond3 = self.current_state == 1;
-    proof {
-        assert(cond2 == LSetOfMessage1bAboutBallot(old_self.received_1b_packets, old_self.max_ballot_i_sent_1a));
-        assert(cond3 == (old_self.current_state == 1));
-        broadcast use vstd::std_specs::hash::group_hash_axioms;
-        crate::common::collections::hashsets::lemma_hashset_cpacket_len(&self.received_1b_packets);
-        assert(self.received_1b_packets@.map(|t: CPacket| t@) =~= old_self.received_1b_packets);
-    }
-    if cond1 && cond2 && cond3 {
-        let sent_packets = CBroadcastToEveryone(&self.constants.all.config, &self.constants.my_index, &CMessage::CMessageStartingPhase2 {
-            bal_2: self.max_ballot_i_sent_1a.clone(),
-            logTruncationPoint_2: log_truncation_point.clone(),
-        });
-        // Mutate changed fields only
-        self.current_state = 2u64;
-        self.next_operation_number_to_propose = *log_truncation_point;
-        self.max_log_truncation_point = 0u64;
-        self.max_opn_with_proposal = 0u64;
-        sent_packets
-    } else {
-        let sent_packets: Vec<CPacket> = vec![];
-        proof {
-            assert(self@ == old_self);
-            assert(sent_packets@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
-        }
-        sent_packets
-    }
-}
-
-} // impl CProposer (Phase 47.3.a.4 batch 1 — part 1)
-
-// Phase 47.3.a.4 batch 2: complex nominate functions
-impl CProposer {
 
 /// Batch slicing + struct update + broadcast CMessage2a.
 pub exec fn CProposerNominateNewValueAndSend2a(&mut self, clock: &u64, log_truncation_point: &u64) -> (sent_packets: Vec<CPacket>)
@@ -1013,12 +873,138 @@ ensures
     }
     sent_packets
 }
+}
 
-} // impl CProposer (Phase 47.3.a.4 batch 2)
-
-// Phase 47.3.a.4 batch 1 — part 2: election wrappers
 impl CProposer {
+pub exec fn CProposerMaybeEnterNewViewAndSend1a(&mut self) -> (sent_packets: Vec<CPacket>)
+requires
+    old(self).valid(),
+ensures
+    self.valid(),
+    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    LProposerMaybeEnterNewViewAndSend1a(old(self)@, self@, sent_packets@.map(|i, p: CPacket| p@)),
+{
+    let ghost old_self = old(self)@;
+    let cond1 = self.election_state.current_view.proposer_id == self.constants.my_index;
+    let cond2 = CBalLt(&self.max_ballot_i_sent_1a, &self.election_state.current_view);
+    proof {
+        assert(cond1 == (old_self.election_state.current_view.proposer_id == old_self.constants.my_index));
+        assert(cond2 == BalLt(old_self.max_ballot_i_sent_1a, old_self.election_state.current_view));
+    }
+    if cond1 && cond2 {
+        let sent_packets = CBroadcastToEveryone(&self.constants.all.config, &self.constants.my_index, &CMessage::CMessage1a {
+            bal_1a: self.election_state.current_view,
+        });
+        // Mutate changed fields
+        self.current_state = 1u64;
+        self.max_ballot_i_sent_1a = self.election_state.current_view;
+        vec_replace_from_concat(&mut self.request_queue, &self.election_state.requests_received_prev_epochs, &self.election_state.requests_received_this_epoch);
+        hashset_clear_cpacket(&mut self.received_1b_packets);
+        hashmap_clear_seqno(&mut self.highest_seqno_requested_by_client_this_view);
+        self.max_log_truncation_point = 0u64;
+        self.max_opn_with_proposal = 0u64;
+        proof {
+            // Prove received_1b_packets: empty HashSet maps to empty Set
+            let pkt_set = self.received_1b_packets@.map(|p: CPacket| p@);
+            assert forall|y: RslPacket| !(#[trigger] pkt_set.contains(y)) by {}
+            assert(pkt_set =~= Set::<RslPacket>::empty());
+            // Prove highest_seqno_requested_by_client_this_view: empty HashMap maps to empty Map
+            let hsm = self@.highest_seqno_requested_by_client_this_view;
+            assert forall|ak: AbstractEndPoint| !(#[trigger] hsm.dom().contains(ak)) by {}
+            assert(hsm =~= Map::<AbstractEndPoint, int>::empty());
+            // Prove request_queue concat maps correctly
+            assert(self@.request_queue =~= old_self.election_state.requests_received_prev_epochs + old_self.election_state.requests_received_this_epoch);
+        }
+        sent_packets
+    } else {
+        // No-op
+        let sent_packets: Vec<CPacket> = vec![];
+        proof {
+            assert(self@ == old_self);
+            assert(sent_packets@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        sent_packets
+    }
+}
+}
 
+impl CProposer {
+pub exec fn CProposerProcess1b(&mut self, p: &CPacket)
+requires
+    old(self).valid(),
+    p.valid(),
+    p.msg is CMessage1b,
+ensures
+    self.valid(),
+    LProposerProcess1b(old(self)@, self@, p@),
+{
+    let ghost old_self = old(self)@;
+    let p_cloned = clone_cpacket_preserving_validity(p);
+    hashset_insert_cpacket(&mut self.received_1b_packets, p_cloned);
+    proof {
+        assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.valid() by {
+            if !old(self).received_1b_packets@.contains(q) {
+                assert(q == p_cloned);
+            }
+        }
+        assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.abstractable() by {
+            if !old(self).received_1b_packets@.contains(q) {
+                assert(q == p_cloned);
+            }
+        }
+        broadcast use Set::lemma_set_map_insert_commute;
+        assert(self.received_1b_packets@.map(|q:CPacket| q@) =~=
+               old(self).received_1b_packets@.map(|q:CPacket| q@).insert(p@));
+        assert(self@.received_1b_packets =~= old_self.received_1b_packets + set![p@]);
+    }
+}
+}
+
+impl CProposer {
+pub exec fn CProposerMaybeEnterPhase2(&mut self, log_truncation_point: &u64) -> (sent_packets: Vec<CPacket>)
+requires
+    old(self).valid(),
+ensures
+    self.valid(),
+    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    LProposerMaybeEnterPhase2(old(self)@, self@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)),
+{
+    let ghost old_self = old(self)@;
+    let cond1 = (self.received_1b_packets.len() as u64) >= (self.constants.all.config.CMinQuorumSize() as u64);
+    let cond2 = CProposer::CSetOfMessage1bAboutBallot(&self.received_1b_packets, &self.max_ballot_i_sent_1a);
+    let cond3 = self.current_state == 1;
+    proof {
+        assert(cond2 == LSetOfMessage1bAboutBallot(old_self.received_1b_packets, old_self.max_ballot_i_sent_1a));
+        assert(cond3 == (old_self.current_state == 1));
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        crate::common::collections::hashsets::lemma_hashset_cpacket_len(&self.received_1b_packets);
+        assert(self.received_1b_packets@.map(|t: CPacket| t@) =~= old_self.received_1b_packets);
+    }
+    if cond1 && cond2 && cond3 {
+        let sent_packets = CBroadcastToEveryone(&self.constants.all.config, &self.constants.my_index, &CMessage::CMessageStartingPhase2 {
+            bal_2: self.max_ballot_i_sent_1a.clone(),
+            logTruncationPoint_2: log_truncation_point.clone(),
+        });
+        // Mutate changed fields only
+        self.current_state = 2u64;
+        self.next_operation_number_to_propose = *log_truncation_point;
+        self.max_log_truncation_point = 0u64;
+        self.max_opn_with_proposal = 0u64;
+        sent_packets
+    } else {
+        let sent_packets: Vec<CPacket> = vec![];
+        proof {
+            assert(self@ == old_self);
+            assert(sent_packets@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        sent_packets
+    }
+}
+}
+
+impl CProposer {
 pub exec fn CProposerProcessHeartbeat(&mut self, p: &CPacket, clock: &u64)
 requires
     old(self).valid(),
@@ -1037,7 +1023,9 @@ ensures
         vec_clear_requests(&mut self.request_queue);
     }
 }
+}
 
+impl CProposer {
 pub exec fn CProposerCheckForViewTimeout(&mut self, clock: &u64)
 requires
     old(self).valid(),
@@ -1047,7 +1035,9 @@ ensures
 {
     self.election_state.CElectionStateCheckForViewTimeout(&clock);
 }
+}
 
+impl CProposer {
 pub exec fn CProposerCheckForQuorumOfViewSuspicions(&mut self, clock: &u64)
 requires
     old(self).valid(),
@@ -1064,7 +1054,9 @@ ensures
         vec_clear_requests(&mut self.request_queue);
     }
 }
+}
 
+impl CProposer {
 pub exec fn CProposerResetViewTimerDueToExecution(&mut self, val: &CRequestBatch)
 requires
     old(self).valid(),
@@ -1075,9 +1067,6 @@ ensures
 {
     self.election_state.CElectionStateReflectExecutedRequestBatch(&val);
 }
-
-} // impl CProposer (Phase 47.3.a.4 batch 1 — part 2)
+}
 
 } // verus!
-
-
