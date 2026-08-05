@@ -39,26 +39,6 @@ verus! {
         }
     }
 
-    pub proof fn lemma_sentPackets_finite(
-        b:Behavior<RslState>,
-        c:LConstants,
-        i:int,
-    )
-        requires IsValidBehaviorPrefix(b, c, i),
-                 0 <= i,
-        ensures  b[i].environment.sentPackets.finite()
-        decreases i
-    {
-        if i == 0 {
-            // Base case: RslInit includes LEnvironment_Init which ensures sentPackets.finite()
-        } else {
-            lemma_sentPackets_finite(b, c, i - 1);
-            lemma_AssumptionsMakeValidTransition(b, c, i - 1);
-            lemma_environment_next_preserves_sentpackets_finite(
-                b[i - 1].environment, b[i].environment);
-        }
-    }
-
     pub proof fn lemma_PacketSetStaysInSentPackets(
         b:Behavior<RslState>,
         c:LConstants,
@@ -71,7 +51,7 @@ verus! {
                  packets <= b[i].environment.sentPackets
         ensures  packets <= b[j].environment.sentPackets
     {
-        assert forall |p: RslPacket| packets.contains(p) implies b[j].environment.sentPackets.contains(p) by{
+        assert forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) implies b[j].environment.sentPackets.contains(p) by{
             lemma_PacketStaysInSentPackets(b, c, i, j, p);
         };
     }

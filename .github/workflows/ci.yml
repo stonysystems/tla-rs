@@ -35,6 +35,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Regenerate DPOR test corpus
+        run: DPOR_based_model_tla_rs_checker/scripts/regenerate_corpus.sh
+
+      - name: Check README quickstart generation
+        run: ../scripts/check_readme_quickstart.sh
+
       - name: Run tests
         run: cargo test --all-features
 
@@ -85,14 +91,13 @@ jobs:
 
   verify:
     name: Verus Verification
-    runs-on: ubuntu-22.04
+    # Verus 0.2026.08.02 is linked against glibc 2.39.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      # Pin to 0.2026.01.14 — later versions (e.g., 0.2026.03.17) removed
-      # vstd::std_specs::hash::{KeysAdditionalSpecFns, SetIterAdditionalSpecFns}
-      # which generated RSL code depends on. Updating to the new API requires
-      # transpiler changes and regeneration (tracked separately).
-      VERUS_VERSION: "0.2026.01.14.88f7396"
+      # Latest stable release validated by the incremental Verus migration.
+      # The rolling release currently points at the same b677dd5 commit.
+      VERUS_VERSION: "0.2026.08.02.b677dd5"
     steps:
       - uses: actions/checkout@v4
 
@@ -107,7 +112,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/verus
-          key: verus-ubuntu-22.04-${{ env.VERUS_VERSION }}
+          key: verus-ubuntu-24.04-${{ env.VERUS_VERSION }}
 
       - name: Download Verus
         if: steps.cache-verus.outputs.cache-hit != 'true'
@@ -122,12 +127,123 @@ jobs:
       - name: Install Rust toolchain for Verus
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.97.1
           components: rustfmt
 
       - name: Verify with Verus
         run: |
-          scons --verus-path=$HOME/verus/verus --skip-dotnet
+          # pipefail so tee cannot mask a verification failure.
+          # --verus-extra-args="--time-expanded" adds the per-module timing
+          # breakdown to the same log (Phase 54.2.c); it changes no verifier
+          # behaviour, only what is printed.
+          set -o pipefail
+          scons --verus-path=$HOME/verus/verus --skip-dotnet \
+            --verus-extra-args="--time-expanded" 2>&1 | tee verus-verify.log
+
+      # Phase 54.2.a: record which quantifier triggers Verus chose for us.
+      # Runs even when verification failed (the notes are still emitted, and a
+      # failing run's inventory is still evidence); --allow-empty and the lack
+      # of any assertion here mean this step can never change the job verdict.
+      - name: Capture trigger inventory
+        if: always()
+        run: |
+          if [ ! -f verus-verify.log ]; then
+            echo "no verification log (an earlier step failed); nothing to capture"
+            exit 0
+          fi
+          python3 scripts/trigger_inventory.py parse verus-verify.log \
+            --label "${VERUS_VERSION} scons --skip-dotnet (triggers-mode selective)" \
+            --verus-version "${VERUS_VERSION}" \
+            --root . \
+            --allow-empty \
+            -o trigger-inventory.json
+          python3 scripts/trigger_inventory.py report trigger-inventory.json \
+            -o trigger-inventory.md
+          cat trigger-inventory.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Phase 54.2.c: the other half of the baseline. A trigger batch can
+      # verify and still be a regression if it doubled a module's solve time,
+      # which no pass/fail check sees. Report only -- the 20% gate belongs to
+      # a diff against a committed baseline, not to this capture.
+      - name: Capture verification timing
+        if: always()
+        run: |
+          if [ ! -f verus-verify.log ]; then
+            echo "no verification log (an earlier step failed); nothing to capture"
+            exit 0
+          fi
+          python3 scripts/verus_timing.py parse verus-verify.log \
+            --label "${VERUS_VERSION} scons --skip-dotnet" \
+            --verus-version "${VERUS_VERSION}" \
+            --allow-empty \
+            -o verus-timing.json
+          python3 scripts/verus_timing.py report verus-timing.json \
+            -o verus-timing.md
+          cat verus-timing.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Phase 54.9: keep the auto-chosen triggers from silently regrowing, and
+      # catch the case where Verus changes its mind about an expression nobody
+      # edited. The ceiling lives in reports/triggers/ceiling.json so raising it
+      # is a reviewable diff with a stated reason, not a workflow edit. Until a
+      # measured baseline is committed (54.2.b) the ceiling is unset and the
+      # guard reports without failing -- asserting an unmeasured number would
+      # either be vacuous or turn CI red for the wrong reason.
+      - name: Guard trigger inventory
+        if: always()
+        run: |
+          # pipefail: the guards below pipe into tee, and without it a failing
+          # guard would exit 0 and quietly stop guarding anything.
+          set -o pipefail
+          if [ ! -f trigger-inventory.json ]; then
+            echo "no inventory to guard (an earlier step failed)"
+            exit 0
+          fi
+          BASELINE=""
+          if [ -f reports/triggers/baseline.json ]; then
+            BASELINE="--baseline reports/triggers/baseline.json"
+          fi
+          python3 scripts/trigger_inventory.py guard trigger-inventory.json \
+            --ceiling reports/triggers/ceiling.json \
+            --capture-mode selective \
+            $BASELINE | tee -a "$GITHUB_STEP_SUMMARY"
+          # Phase 54 acceptance: the checked-in exceptions list must describe
+          # the notes that actually remain. A list that quietly falls out of
+          # date satisfies the letter of "0 notes or a documented list" and
+          # none of its intent.
+          if [ -f reports/triggers/exceptions.md ]; then
+            python3 scripts/trigger_exceptions.py trigger-inventory.json \
+              --check reports/triggers/exceptions.md | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          # Timing is REPORTED here, not gated. The committed baseline was
+          # measured on a 127-thread developer box; a GitHub runner has a
+          # handful of cores. Verus verifies modules in parallel, so per-module
+          # wall-clock tracks the core count -- a percentage between the two
+          # measures the hardware, not the proof, and no threshold fixes that
+          # (Phase 54.9.a). The 20% criterion is a *local* pre-merge gate; the
+          # procedure is in docs/phase54-trigger-workflow.md 6b.
+          if [ -f reports/triggers/timing-baseline.json ] && [ -f verus-timing.json ]; then
+            python3 scripts/verus_timing.py diff \
+              reports/triggers/timing-baseline.json verus-timing.json \
+              --max-regression-pct 20 \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no committed timing baseline; nothing to report"
+          fi
+
+      - name: Upload trigger inventory and timing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trigger-inventory-${{ env.VERUS_VERSION }}
+          path: |
+            trigger-inventory.json
+            trigger-inventory.md
+            verus-timing.json
+            verus-timing.md
+          if-no-files-found: warn
+
+      - name: Verify and run README quickstart
+        run: VERUS_PATH="$HOME/verus/verus" ./scripts/check_readme_quickstart.sh
 
   model-check-evidence:
     name: Model-Check Evidence Drift Guard
@@ -151,6 +267,15 @@ jobs:
 
       - name: Rebuild source-first matrix artifacts
         run: ./scripts/run_model_check_matrix.sh
+
+      # Phase 37.2.1.j: the regeneration above proves the artifacts can be
+      # rebuilt; this proves the rebuild still matches what is committed.
+      # Volatile keys (elapsed_ms and the timing subtree) are ignored, so
+      # runner-to-runner timing noise cannot make it red -- which is what
+      # 37.2.1.f was worried about when it rejected a raw git diff. Everything
+      # else (state counts, telemetry fields, paths) is compared exactly.
+      - name: Guard against structural artifact drift
+        run: ./scripts/check_model_check_drift.py
 
       - name: Verify status-doc evidence paths
         run: ./scripts/verify_model_check_evidence_paths.sh

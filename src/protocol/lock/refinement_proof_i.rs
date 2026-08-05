@@ -141,7 +141,9 @@ verus! {
             i
     {
         if i == 0 {
-            let locked_packets = Set::new(|p:LockPacket| glb[0].ls.environment.sentPackets.contains(p) && p.msg is Locked);
+            let locked_packets = glb[0].ls.environment.sentPackets.filter(
+                |p: LockPacket| p.msg is Locked,
+            );
             // TODO: Prove this
 
             // assert(locked_packets.len() == 0) by {
@@ -219,9 +221,6 @@ verus! {
         } else {
             lemma_lock_sentPackets_finite(glb, config, i - 1);
             lemma_ls_next(glb, config, i - 1);
-            // gls_next → ls_next → LEnvironment_Next → generic preservation
-            lemma_environment_next_preserves_sentpackets_finite(
-                glb[i - 1].ls.environment, glb[i].ls.environment);
         }
     }
 

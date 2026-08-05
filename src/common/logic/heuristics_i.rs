@@ -20,7 +20,7 @@ verus! {
         assert forall |i:int, x:temporal| #![trigger sat(i, always(x))] sat(i, always(x)) =~= (forall |j: int| TLe(i, j) ==> sat(j, x)) by
         {
             // reveal always();
-            let f = Map::new(|ii: int| ii == ii, |ii: int| forall |j: int| ii <= j ==> sat(j, x));
+            let f = IMap::new(|ii: int| ii == ii, |ii: int| forall |j: int| ii <= j ==> sat(j, x));
             calc!{
             (==)
             sat(i, always(x)); {}
@@ -42,7 +42,7 @@ verus! {
         assert forall |i:int, x:temporal| #![trigger sat(i, always(x))] sat(i, always(x)) =~= (forall |j: int| TLe(i, j) ==> sat(j, x)) by
         {
             // reveal always();
-            let f = Map::new(|ii: int| ii == ii, |ii: int| forall |j: int| ii <= j ==> sat(j, x));
+            let f = IMap::new(|ii: int| ii == ii, |ii: int| forall |j: int| ii <= j ==> sat(j, x));
             calc!{
             (==)
             sat(i, always(x)); {}
@@ -64,7 +64,7 @@ verus! {
         assert forall |i:int, x:temporal| #![trigger sat(i, always(x))] sat(i, always(x)) =~= (forall |j: int| TLe(i, j) ==> sat(j, x)) by
         {
             // reveal always();
-            let f = Map::new(|ii: int| ii == ii, |ii: int| forall |j: int| ii <= j ==> sat(j, x));
+            let f = IMap::new(|ii: int| ii == ii, |ii: int| forall |j: int| ii <= j ==> sat(j, x));
             calc!{
             (==)
             sat(i, always(x)); {}

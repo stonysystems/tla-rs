@@ -1,16 +1,83 @@
-# tla-rs (IronFleet Verus)
+# tla-rs: IronFleet and AutoMan in Verus
 
-A Rust implementation of the IronFleet verified distributed systems framework, featuring formally verified Byzantine fault-tolerant consensus protocols using [Verus](https://github.com/verus-lang/verus).
+`tla-rs` lets you write TLA-style distributed-system specifications in
+Rust/[Verus](https://github.com/verus-lang/verus), then automatically derive executable Rust
+implementations and the proof obligations connecting them to their specifications. It is
+primarily a reimplementation of the systems and methodology described in two papers:
+
+- [**IronFleet: Proving Practical Distributed Systems Correct**](https://doi.org/10.1145/2815400.2815428)
+  ([code](https://github.com/microsoft/Ironclad/tree/main/ironfleet)) — the verified
+  distributed-systems framework, refinement methodology, and Multi-Paxos replicated state
+  machine on which this project is based.
+- [**AutoMan: Facilitating Verified Distributed Systems Development Through Automatic Code
+  Generation and Manual Optimizations**](https://doi.org/10.1145/3731569.3764822)
+  ([code](https://github.com/stonysystems/automan)) — the workflow for generating executable
+  implementations and their verification obligations from protocol specifications.
+
+Both original systems use Dafny. This project re-expresses their core ideas in verified Rust:
+IronFleet's specifications, proofs, and runtime structure are ported to Verus, while AutoMan's
+specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
+
+The repository also extends that foundation with additional distributed protocols, bidirectional
+TLA+/Verus translation, source-first and DPOR-based model checking, mutation-oriented code
+generation, and deployable C# networking/runtime integration.
+
+## Quick Start: From a Spec to a Program
+
+Here is a complete counter transition written as a TLA-style relation in Verus:
+
+```rust
+verus! {
+    pub open spec fn LInit(value: int) -> bool {
+        value == 0
+    }
+
+    pub open spec fn LIncrement(value: int, value_: int) -> bool {
+        value_ == value + 1
+    }
+}
+```
+
+The accompanying AutoMan annotation marks supplied inputs with `+` and outputs for the
+transpiler to synthesize with `-`:
+
+```text
+LInit(-);
+LIncrement(+, -);
+```
+
+From the repository root, generate the executable functions, verify them, compile them, and
+run the result:
+
+```bash
+cargo run --manifest-path transpiler/Cargo.toml -- \
+  -i examples/quickstart/counter_spec.rs \
+  -a examples/quickstart/counter_spec.automan \
+  -c examples/quickstart/counter_transpile.toml \
+  -o examples/quickstart/counter_gen.rs
+
+"$VERUS_PATH" --compile examples/quickstart/main.rs -o /tmp/tla-rs-counter
+/tmp/tla-rs-counter
+```
+
+The generated `CInit` and `CIncrement` functions have `ensures` clauses tying their concrete
+`i64` results back to `LInit` and `LIncrement`. The final output is:
+
+```text
+verification results:: 2 verified, 0 errors
+Counter: 0 -> 1
+```
+
+All source, annotation, configuration, generated code, and runner files are in
+[`examples/quickstart/`](examples/quickstart/). CI regenerates the code, rejects proof shortcuts,
+and verifies, compiles, and runs this example.
 
 ## Features
 
 - **10 Formally Verified Protocols**: RSL (Multi-Paxos RSM), Single-Decree Paxos, Raft,
   EPaxos, PBFT, Chain Replication, Primary-Backup, Vertical Paxos, Two-Phase Commit, and
-  Bully Leader Election — plus a distributed Lock service
-- **~1000 Verified Functions**: Verified with Verus. Every protocol verifies with 0 errors
-  except Raft, whose refinement proof still carries 13 deprecated "Phase 34" `assume`s (a
-  known, isolated research gap)
-- **Spec-to-Exec Transpiler**: Automatic transformation of TLA-style specifications to verified implementations (~10K LOC)
+  Bully Leader Election
+- **Spec-to-Exec Transpiler**: Automatic transformation of TLA-style specifications to verified implementations
 - **C# FFI Integration**: Production-ready networking layer via .NET runtime
 
 ## Architecture
@@ -26,6 +93,7 @@ A Rust implementation of the IronFleet verified distributed systems framework, f
 ├─────────────────────────────────────────────┤
 │ src/services/       - Entry points          │
 │ src/implementation/ - Concrete impls        │
+│ src/generated/      - Transpiler output     │
 │ src/protocol/       - Specs & proofs        │
 │ src/common/         - Utilities & I/O       │
 └─────────────────────────────────────────────┘
@@ -33,16 +101,50 @@ A Rust implementation of the IronFleet verified distributed systems framework, f
 
 ## Requirements
 
-- **Verus**: v0.2026.02.04 or compatible (tested with 0.2026.02.04.175a879)
-- **Rust**: 1.80.1+ (tested with 1.92.0)
-- **.NET 6.0 SDK**: https://dotnet.microsoft.com/download
-- **scons**: `pip install scons`
-- **Python 3**: For running scons
+Ubuntu 24.04 or newer — the Verus release binaries link against glibc 2.39. On an older
+distribution, build Verus from source instead.
+
+```bash
+# rustup — must be rustup, not just a matching rustc: the verus launcher shells out to it
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+rustup toolchain install 1.97.1
+
+# Verus 0.2026.08.02.b677dd5 — the zip drops the executable bit, hence chmod
+V=0.2026.08.02.b677dd5
+wget https://github.com/verus-lang/verus/releases/download/release/$V/verus-$V-x86-linux.zip
+unzip -q verus-$V-x86-linux.zip -d ~/ && mv ~/verus-x86-linux ~/verus
+chmod +x ~/verus/verus && export VERUS_PATH=~/verus/verus
+
+sudo apt install scons          # `pip install scons` is blocked by PEP 668 on 24.04
+```
+
+.NET 6.0 SDK is needed only to build and run the services, not to verify.
+
+## Verification
+
+To check the correctness claims yourself, run Verus over the whole crate.
+
+```bash
+scons --verus-path="$VERUS_PATH" --skip-dotnet
+```
+
+All 10 protocols live in one crate rooted at `src/lib.rs`, so a single pass covers every
+protocol's spec, refinement proof, transpiler-generated implementation, and service entry
+point. Expect:
+
+```
+verification results:: 1048 verified, 0 errors
+```
+
+with no warnings and no `automatically chose triggers` notes — every quantifier in the tree
+carries an explicit trigger, so a future Verus release cannot silently change which
+instantiations fire. This takes about 3 minutes on CI hardware.
+The same pass runs on every push (`CI / Verus Verification`).
 
 ## Building
 
 ```bash
-# Build and verify all Rust code with Verus
+# Verify with Verus and build the C# services
 scons --verus-path="$VERUS_PATH"
 
 # Build only C# projects (skip Verus verification)
@@ -94,7 +196,7 @@ dotnet bin/IronRSLClientUDP.dll ip1=127.0.0.1 port1=4001 ip2=127.0.0.1 port2=400
 
 ### Other Protocols (Raft, EPaxos, PBFT, …)
 
-The 8 non-RSL protocols share a unified C# runtime: one server binary
+The 9 non-RSL protocols share a unified C# runtime: one server binary
 (`IronProtocolServer.dll`) dispatched by a `protocol=<name>` argument, and one client
 (`IronGenericClient.dll`). Supported `protocol=` values include `raft`, `epaxos`, `pbft`,
 and `primarybackup`.
@@ -118,28 +220,6 @@ scripts/bench_generic.sh pbft   8 1 4   # 4-node; see the script for cert setup
 
 See [`docs/REPRODUCE_WORKFLOW.md`](docs/REPRODUCE_WORKFLOW.md) for the full run recipe,
 including PBFT's 4-node certificate generation.
-
-### IronLock (Distributed Lock Service)
-
-#### Generate Certificates
-
-```bash
-dotnet bin/CreateIronServiceCerts.dll \
-    outputdir=certs name=MyLock type=IronLock \
-    addr1=127.0.0.1 port1=4001 \
-    addr2=127.0.0.1 port2=4002 \
-    addr3=127.0.0.1 port3=4003
-```
-
-#### Run Servers
-
-Note: The protocol starts once server1 is online.
-
-```bash
-dotnet bin/IronLockServer.dll certs/MyLock.IronLock.service.txt certs/MyLock.IronLock.server2.private.txt
-dotnet bin/IronLockServer.dll certs/MyLock.IronLock.service.txt certs/MyLock.IronLock.server3.private.txt
-dotnet bin/IronLockServer.dll certs/MyLock.IronLock.service.txt certs/MyLock.IronLock.server1.private.txt
-```
 
 ## Transpiler
 
@@ -203,16 +283,6 @@ an intermediate whole-state via a helper) instead use the **functional** convent
 `mut_self_types` unset. The choice is pure configuration; there is no protocol-specific logic
 in the transpiler.
 
-### Verified Examples
-
-The transpiler includes 25+ verified examples in `transpiler/verus_examples/` covering:
-- Init predicates (struct construction, collection initialization)
-- Process predicates (conditionals, state updates)
-- Quantifier patterns (forall over sequences/maps)
-- Collection mutations (seq.update, map.insert, set addition)
-- Cross-component dispatch (multi-component state transitions)
-- I/O operations (packet construction, broadcast patterns)
-
 ### Performance
 
 The transpiler's default `&mut self` calling convention mutates state in place — eliminating
@@ -255,7 +325,8 @@ See `transpiler/docs/EFFICIENT_EMIT.md` for the `&mut self`-vs-functional decisi
 ### Documentation
 
 - `transpiler/docs/ANNOTATION_FORMAT.md` - Mode annotation syntax
-- `transpiler/docs/PATTERNS.md` - Supported transformation patterns
+- `transpiler/docs/PATTERNS.md` - Supported transformation patterns, with runnable examples
+  in `transpiler/verus_examples/`
 - `transpiler/docs/EFFICIENT_EMIT.md` - `&mut self` vs functional convention, perf history
 - `transpiler/docs/LIMITATIONS.md` - Known limitations, workarounds, and performance analysis
 - `transpiler/docs/MIGRATION_GUIDE.md` - Migration from manual implementations
@@ -263,14 +334,8 @@ See `transpiler/docs/EFFICIENT_EMIT.md` for the `&mut self`-vs-functional decisi
 
 ## Code Organization
 
-### Naming Conventions
-
-- `*_s.rs` - Spec/abstract modules (protocol layer)
-- `*_i.rs` - Implementation/concrete modules
-- `L*` prefix - Logical/protocol types (e.g., `LReplica`, `LProposer`)
-- `C*` prefix - Concrete types (e.g., `CConstants`, `CMessage`)
-
-### Key Directories
+Types are prefixed by layer: `L*` for logical/protocol types (`LReplica`, `LProposer`) and
+`C*` for their concrete counterparts (`CConstants`, `CMessage`).
 
 | Directory | Purpose |
 |-----------|---------|
@@ -278,60 +343,39 @@ See `transpiler/docs/EFFICIENT_EMIT.md` for the `&mut self`-vs-functional decisi
 | `src/implementation/<P>/` | Verified concrete implementation + hand-written I/O host |
 | `src/generated/<P>/` | Transpiler-generated types and functions (do not hand-edit) |
 | `src/services/<P>/` | Service entry points |
-| `src/common/native/io_s.rs` | Network client with marshalling (~17K LOC) |
-| `csharp/` | C# runtime and deployable services (~45K LOC) |
-| `transpiler/` | Spec-to-exec transpiler (~10K LOC) |
+| `src/common/native/io_s.rs` | Network client with marshalling |
+| `csharp/` | C# runtime and deployable services (~6.6K LOC) |
+| `transpiler/` | Spec-to-exec transpiler (~135K LOC) |
 | `scripts/` | Utility scripts (regeneration, benchmarks) |
-
-## Verus Patterns
-
-### Function Types
-
-```rust
-verus! {
-    spec fn abstract_spec() -> bool;           // Pure mathematical (ghost)
-    proof fn lemma_about_spec() { ... }        // Proof-only
-    exec fn concrete_impl() { ... }            // Executable code
-}
-```
-
-### View Trait
-
-Maps concrete types to ghost types for verification:
-```rust
-// struct@ syntax calls the view function
-let ghost_replica = replica@;
-```
-
-### Triggers Workaround
-
-For arithmetic in triggers, use extra variables:
-```rust
-// Instead of: forall|i: int| 0 <= i < len ==> f(i + 1)
-// Use: forall|i: int, j: int| j == i + 1 && 0 <= i < len ==> f(j)
-```
 
 ## Known Limitations
 
-- Verus spec functions cannot use mutable variables or iteration (use recursion)
-- Verus maps/sets are infinite by default (need `.dom().finite()` bounds)
-- Cannot add conditions on trait implementations (copy clauses as workaround)
-- Marshalling lacks spec function for non-deserializable check
-- `&mut self` codegen cannot yet lift an intermediate whole-state (`s_mid = helper(s, …)`)
-  into `*self = s_mid`; protocols using that pattern (Raft) stay on the functional convention
-- RSL is not fully auto-generated: 10 functions have hand-written bodies (`skip_functions`);
-  see `transpiler/docs/REGEN_WORKFLOW.md`
+- Raft's refinement proof still carries a few `assume`s, mostly around leader completeness;
+  every other protocol's proof is assumption-free
+- RSL is not fully auto-generated. Of the 30 entries in its `skip_functions` lists:
+  **10 are a deliberate trust boundary** — the host event loop and its packet/clock
+  dispatch, which IronFleet also leaves trusted; **15 have proven hand-written
+  implementations** in `acceptor_manual.rs` / `executor_manual.rs`; and **8 are a genuine
+  transpiler gap** — quantifier-defined map constructions, recursive sequence walks, and
+  composite send-actions. Full RSL regeneration is not a goal. See
+  `docs/rsl-skip-functions.md` for the per-function classification and
+  `transpiler/docs/REGEN_WORKFLOW.md` for the workflow
+- `&mut self` codegen cannot handle intermediate whole-state assignments; protocols using
+  that pattern (Raft) stay on the slower functional convention
+- Marshalling lacks a spec function for the non-deserializable check
 
 ## Code Attribution
 
 Some code borrowed from [IronKV](https://github.com/verus-lang/verified-ironkv):
-- NetClient code (`src/common/framework/native/io_s.rs`)
+- NetClient code (`src/common/native/io_s.rs`)
 - Verus extra utilities (`src/verus_extra/...`)
 - C# I/O framework (modified)
 - Binding to C# (`src/lib.rs`)
 - Common marshalling library (`src/implementation/common/marshalling.rs`)
 
-The transpiler is inspired by [AutoMan](https://github.com/stonysystems/automan) (for Dafny), reimplemented in Rust for Verus.
+The transpiler reimplements the [AutoMan](https://github.com/stonysystems/automan) workflow
+for Rust and Verus. The additional protocols, translation/model-checking tools, and Rust-specific
+code-generation optimizations are extensions developed in this repository.
 
 ## License
 

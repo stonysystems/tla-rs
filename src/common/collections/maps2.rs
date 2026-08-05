@@ -6,7 +6,7 @@ use vstd::{modes::*, prelude::*, seq::*, *};
 verus! {
     pub open spec fn TLe(i:int, j:int) -> bool { i <= j }
 
-    pub open spec fn imaptotal<KT, VT>(m:Map<KT, VT>) -> bool
+    pub open spec fn imaptotal<KT, VT>(m:IMap<KT, VT>) -> bool
     {
         forall |k:KT| #![trigger m[k]] m.contains_key(k)
     }

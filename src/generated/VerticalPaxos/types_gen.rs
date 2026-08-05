@@ -87,7 +87,7 @@ impl View for CState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CConstants {
     pub quorum_size: u64,
     pub num_nodes: u64,
@@ -112,7 +112,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CVPMessage {
     Prepare {
         bal: u64,
@@ -151,3 +151,4 @@ impl View for CVPMessage {
 }
 
 } // verus!
+

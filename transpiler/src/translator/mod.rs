@@ -195,6 +195,10 @@ pub struct TranslatorConfig {
     /// Exec type names whose functions should be emitted as `impl Type { &mut self }` methods.
     /// When the first input param's exec type matches, the function becomes a method.
     pub mut_self_types: HashSet<String>,
+    /// Spec names of *cross-module* helpers whose exec form is `&mut self`.
+    /// Their state output is mutated in place, so the call site must not bind it
+    /// nor write it back (Phase 42.8.c.2.iv.J.3.a).
+    pub mut_self_helpers: HashSet<String>,
     /// Exec names of functions that will be emitted as `&mut self` methods.
     /// Pre-populated by the caller so that internal dispatch calls can be
     /// converted from `CFoo(var, ...)` to `var.CFoo(...)` during body generation.
@@ -243,6 +247,7 @@ impl Default for TranslatorConfig {
             proven_functions: HashSet::new(),
             arc_wrap_fields: HashMap::new(),
             mut_self_types: HashSet::new(),
+            mut_self_helpers: HashSet::new(),
             method_names: HashSet::new(),
         }
     }
@@ -799,11 +804,10 @@ impl ProofNeeds {
                 // Guard with contains_key: the lemma requires m2@ =~= old@.remove(k),
                 // which only holds when the remove actually happened (key was present).
                 // When the field is Arc-wrapped, prefix with & for auto-deref.
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
-                    "&"
-                } else {
-                    ""
-                };
+                // Always by reference: the lemma takes `&ExecType` whether or not the
+                // field is Arc-wrapped (Phase 42.8.c.2.iv.B). `&Arc<T>` auto-derefs.
+                let _ = &arc_wrapped_field_names;
+                let ref_prefix = "&";
                 let lemma_call = ExecExpr::Call {
                     func: format!("lemma_abstractify_{}_remove", prefix),
                     args: vec![
@@ -876,11 +880,10 @@ impl ProofNeeds {
         // Emit lemma_abstractify_empty_{prefix}(result.field) for map_fields with HashMap::new()
         for field_name in &self.map_field_empty_sites {
             if let Some((_exec_type, prefix, _val_type)) = map_fields.get(field_name) {
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
-                    "&"
-                } else {
-                    ""
-                };
+                // Always by reference: the lemma takes `&ExecType` whether or not the
+                // field is Arc-wrapped (Phase 42.8.c.2.iv.B). `&Arc<T>` auto-derefs.
+                let _ = &arc_wrapped_field_names;
+                let ref_prefix = "&";
                 stmts.push(ExecExpr::Call {
                     func: format!("lemma_abstractify_empty_{}", prefix),
                     args: vec![ExecExpr::Var(format!(
@@ -4661,7 +4664,7 @@ impl Translator {
     /// in the body expression (a precondition pattern like `let log_ok = ...; &&& log_ok`).
     /// If so, the let binding can be skipped because the standalone conjunct will be
     /// filtered out during conjunction handling (it is neither an input nor an output).
-    fn is_precondition_only_let(&self, name: &str, body: &Expr, ctx: &TransformContext) -> bool {
+    fn is_precondition_only_let(name: &str, body: &Expr, ctx: &TransformContext) -> bool {
         // The variable must not be an input or output parameter
         if ctx.is_input(name) || ctx.is_output(name) {
             return false;
@@ -4686,7 +4689,7 @@ impl Translator {
                 true
             }
             // For nested lets, check the inner body recursively
-            Expr::Let { body: inner, .. } => self.is_precondition_only_let(name, inner, ctx),
+            Expr::Let { body: inner, .. } => Self::is_precondition_only_let(name, inner, ctx),
             // If the body is just the variable itself, it is a pure precondition
             Expr::Ident(n) if n == name => true,
             // Otherwise, the variable might be used for computation
@@ -5157,7 +5160,7 @@ impl Translator {
         // 3. Per-field invariants from the struct element expression
         if let Expr::Struct { fields, .. } = element_expr {
             for (field_name, field_value) in fields {
-                let source_str = self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                let source_str = Self::field_expr_to_invariant_string(field_value, index_var, ctx);
                 invariants.push(format!(
                     "forall |j: int| 0 <= j < {} as int ==> (#[trigger] result@[j]).{}@ == {}",
                     index_var, field_name, source_str
@@ -5317,7 +5320,7 @@ impl Translator {
                 .iter()
                 .map(|(field_name, field_value)| {
                     let source_str =
-                        self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                        Self::field_expr_to_invariant_string(field_value, index_var, ctx);
                     format!("{}: {}", field_name, source_str)
                 })
                 .collect();
@@ -5328,7 +5331,7 @@ impl Translator {
                 .iter()
                 .map(|(field_name, field_value)| {
                     let source_str =
-                        self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                        Self::field_expr_to_invariant_string(field_value, index_var, ctx);
                     format!("assert(result@[j].{}@ == {});", field_name, source_str)
                 })
                 .collect();
@@ -5377,7 +5380,7 @@ impl Translator {
 
         let mut proof_stmts: Vec<ExecExpr> = Vec::new();
         for (field_name, field_value) in fields {
-            let source_str = self.field_expr_to_loop_string(field_value, index_var, ctx);
+            let source_str = Self::field_expr_to_loop_string(field_value, index_var, ctx);
             proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(format!(
                 "pkt.{}@ == {}",
                 field_name, source_str
@@ -5431,7 +5434,6 @@ impl Translator {
     /// - Scalar params (int/nat): `*param as int`
     /// - Standalone non-scalar params: `param@`
     fn field_expr_to_invariant_string(
-        &self,
         expr: &Expr,
         index_var: &str,
         ctx: &TransformContext,
@@ -5439,8 +5441,8 @@ impl Translator {
         match expr {
             Expr::Index(base, idx) => {
                 // base@[idx]@ — view the vec/seq, index, view the element
-                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
-                let idx_str = self.field_expr_to_invariant_string(idx, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string(base, index_var, ctx);
+                let idx_str = Self::field_expr_to_invariant_string(idx, index_var, ctx);
                 format!("{}@[{}]@", base_str, idx_str)
             }
             Expr::Ident(name) if name == index_var => "j".to_string(),
@@ -5458,21 +5460,16 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
     /// Convert a spec expression to a raw string WITHOUT adding `@` view to idents.
     /// Used for base expressions in field access chains (e.g., `c` in `c.replica_ids@[j]@`).
-    fn field_expr_to_raw_string(
-        &self,
-        expr: &Expr,
-        index_var: &str,
-        ctx: &TransformContext,
-    ) -> String {
+    fn field_expr_to_raw_string(expr: &Expr, index_var: &str, ctx: &TransformContext) -> String {
         match expr {
             Expr::Ident(name) if name == index_var => "j".to_string(),
             Expr::Ident(name) => {
@@ -5489,10 +5486,10 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
@@ -5500,16 +5497,11 @@ impl Translator {
     ///
     /// Similar to `field_expr_to_invariant_string`, but keeps the current loop index variable
     /// (e.g., `idx`) as `idx as int` instead of replacing it with the quantified `j`.
-    fn field_expr_to_loop_string(
-        &self,
-        expr: &Expr,
-        index_var: &str,
-        ctx: &TransformContext,
-    ) -> String {
+    fn field_expr_to_loop_string(expr: &Expr, index_var: &str, ctx: &TransformContext) -> String {
         match expr {
             Expr::Index(base, idx) => {
-                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
-                let idx_str = self.field_expr_to_loop_string(idx, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string_loop(base, index_var, ctx);
+                let idx_str = Self::field_expr_to_loop_string(idx, index_var, ctx);
                 format!("{}@[{}]@", base_str, idx_str)
             }
             Expr::Ident(name) if name == index_var => format!("{} as int", index_var),
@@ -5527,16 +5519,15 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string_loop(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
     /// Raw-string variant for loop-body field expression conversion.
     fn field_expr_to_raw_string_loop(
-        &self,
         expr: &Expr,
         index_var: &str,
         ctx: &TransformContext,
@@ -5556,10 +5547,10 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string_loop(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
@@ -6410,12 +6401,12 @@ impl Translator {
 
         // Transform combine expression, substituting seq[0] with seq[i]
         let combine_transformed = self.transform_expr(combine, &ctx)?;
-        let combine_expr = self.substitute_head_with_index(combine_transformed, seq_param);
+        let combine_expr = Self::substitute_head_with_index(combine_transformed, seq_param);
 
         // For fold, combine might reference __acc placeholder - substitute it
-        let mut combine_with_acc = self.substitute_acc_placeholder(combine_expr);
+        let mut combine_with_acc = Self::substitute_acc_placeholder(combine_expr);
         if let Expr::Ident(init_name) = init {
-            combine_with_acc = self.substitute_fold_acc_var(combine_with_acc, init_name);
+            combine_with_acc = Self::substitute_fold_acc_var(combine_with_acc, init_name);
         }
 
         // Build invariants
@@ -6506,7 +6497,7 @@ impl Translator {
     }
 
     /// Substitute __acc placeholder with actual acc variable
-    fn substitute_acc_placeholder(&self, expr: ExecExpr) -> ExecExpr {
+    fn substitute_acc_placeholder(expr: ExecExpr) -> ExecExpr {
         match expr {
             ExecExpr::Var(name) if name == "__acc" => ExecExpr::Var("acc".to_string()),
             ExecExpr::MethodCall {
@@ -6514,29 +6505,29 @@ impl Translator {
                 method,
                 args,
             } => ExecExpr::MethodCall {
-                receiver: Box::new(self.substitute_acc_placeholder(*receiver)),
+                receiver: Box::new(Self::substitute_acc_placeholder(*receiver)),
                 method,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_acc_placeholder(a))
+                    .map(Self::substitute_acc_placeholder)
                     .collect(),
             },
             ExecExpr::Call { func, args } => ExecExpr::Call {
                 func,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_acc_placeholder(a))
+                    .map(Self::substitute_acc_placeholder)
                     .collect(),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
-                lhs: Box::new(self.substitute_acc_placeholder(*lhs)),
+                lhs: Box::new(Self::substitute_acc_placeholder(*lhs)),
                 op,
-                rhs: Box::new(self.substitute_acc_placeholder(*rhs)),
+                rhs: Box::new(Self::substitute_acc_placeholder(*rhs)),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
                 stmts
                     .into_iter()
-                    .map(|s| self.substitute_acc_placeholder(s))
+                    .map(Self::substitute_acc_placeholder)
                     .collect(),
             ),
             other => other,
@@ -6545,7 +6536,7 @@ impl Translator {
 
     /// Substitute accumulator parameter references in fold-combine expressions
     /// with the loop accumulator local `acc`.
-    fn substitute_fold_acc_var(&self, expr: ExecExpr, acc_param_name: &str) -> ExecExpr {
+    fn substitute_fold_acc_var(expr: ExecExpr, acc_param_name: &str) -> ExecExpr {
         match expr {
             ExecExpr::Var(name) if name == acc_param_name => ExecExpr::Var("acc".to_string()),
             ExecExpr::MethodCall {
@@ -6553,33 +6544,33 @@ impl Translator {
                 method,
                 args,
             } => ExecExpr::MethodCall {
-                receiver: Box::new(self.substitute_fold_acc_var(*receiver, acc_param_name)),
+                receiver: Box::new(Self::substitute_fold_acc_var(*receiver, acc_param_name)),
                 method,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_fold_acc_var(a, acc_param_name))
+                    .map(|a| Self::substitute_fold_acc_var(a, acc_param_name))
                     .collect(),
             },
             ExecExpr::Call { func, args } => ExecExpr::Call {
                 func,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_fold_acc_var(a, acc_param_name))
+                    .map(|a| Self::substitute_fold_acc_var(a, acc_param_name))
                     .collect(),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
-                lhs: Box::new(self.substitute_fold_acc_var(*lhs, acc_param_name)),
+                lhs: Box::new(Self::substitute_fold_acc_var(*lhs, acc_param_name)),
                 op,
-                rhs: Box::new(self.substitute_fold_acc_var(*rhs, acc_param_name)),
+                rhs: Box::new(Self::substitute_fold_acc_var(*rhs, acc_param_name)),
             },
             ExecExpr::Unary { op, expr } => ExecExpr::Unary {
                 op,
-                expr: Box::new(self.substitute_fold_acc_var(*expr, acc_param_name)),
+                expr: Box::new(Self::substitute_fold_acc_var(*expr, acc_param_name)),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
                 stmts
                     .into_iter()
-                    .map(|s| self.substitute_fold_acc_var(s, acc_param_name))
+                    .map(|s| Self::substitute_fold_acc_var(s, acc_param_name))
                     .collect(),
             ),
             other => other,
@@ -6755,7 +6746,7 @@ impl Translator {
     }
 
     /// Convert an AST expression to a string suitable for spec invariants
-    fn expr_to_spec_string(&self, expr: &Expr, _extra_args: &[String]) -> String {
+    fn expr_to_spec_string(expr: &Expr, _extra_args: &[String]) -> String {
         match expr {
             Expr::Call { func, args } => {
                 let func_name = func
@@ -6765,7 +6756,7 @@ impl Translator {
                     .unwrap_or("unknown");
                 let args_str: Vec<String> = args
                     .iter()
-                    .map(|a| self.expr_to_spec_string(a, _extra_args))
+                    .map(|a| Self::expr_to_spec_string(a, _extra_args))
                     .collect();
                 format!("{}({})", func_name, args_str.join(", "))
             }
@@ -6774,10 +6765,10 @@ impl Translator {
                 method,
                 args,
             } => {
-                let recv_str = self.expr_to_spec_string(receiver, _extra_args);
+                let recv_str = Self::expr_to_spec_string(receiver, _extra_args);
                 let args_str: Vec<String> = args
                     .iter()
-                    .map(|a| self.expr_to_spec_string(a, _extra_args))
+                    .map(|a| Self::expr_to_spec_string(a, _extra_args))
                     .collect();
                 if args.is_empty() {
                     format!("{}.{}()", recv_str, method)
@@ -6787,20 +6778,20 @@ impl Translator {
             }
             Expr::Ident(name) => name.clone(),
             Expr::Index(base, idx) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
-                let idx_str = self.expr_to_spec_string(idx, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
+                let idx_str = Self::expr_to_spec_string(idx, _extra_args);
                 format!("{}[{}]", base_str, idx_str)
             }
             Expr::Field(base, field) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
                 format!("{}.{}", base_str, field)
             }
             Expr::Arrow(base, field) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
                 format!("{}->{}", base_str, field)
             }
             Expr::Is(base, variant) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
                 format!("{} is {}", base_str, variant)
             }
             Expr::Literal(lit) => match lit {
@@ -6809,46 +6800,46 @@ impl Translator {
                 Literal::String(s) => format!("\"{}\"", s),
             },
             Expr::Not(inner) => {
-                let inner_str = self.expr_to_spec_string(inner, _extra_args);
+                let inner_str = Self::expr_to_spec_string(inner, _extra_args);
                 format!("!({})", inner_str)
             }
             Expr::Binary(l, op, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} {} {})", l_str, op.as_str(), r_str)
             }
             Expr::Eq(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} == {})", l_str, r_str)
             }
             Expr::Le(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} <= {})", l_str, r_str)
             }
             Expr::Lt(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} < {})", l_str, r_str)
             }
             Expr::Ge(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} >= {})", l_str, r_str)
             }
             Expr::Gt(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} > {})", l_str, r_str)
             }
             Expr::Ne(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} != {})", l_str, r_str)
             }
             Expr::Cast(inner, ty) => {
-                let inner_str = self.expr_to_spec_string(inner, _extra_args);
+                let inner_str = Self::expr_to_spec_string(inner, _extra_args);
                 let ty_str = match ty {
                     Type::Int => "int",
                     Type::Nat => "nat",
@@ -6872,7 +6863,7 @@ impl Translator {
         let transformed = self.transform_expr(predicate, ctx)?;
 
         // Then substitute seq[0] patterns with seq.index(i)
-        Ok(self.substitute_head_with_index(transformed, seq_param))
+        Ok(Self::substitute_head_with_index(transformed, seq_param))
     }
 
     /// Substitute s[0] patterns with s.index(i) for ALL iterated sequences.
@@ -6880,13 +6871,13 @@ impl Translator {
     fn substitute_heads_with_index(&self, expr: ExecExpr, iterated_seqs: &[String]) -> ExecExpr {
         let mut result = expr;
         for seq_param in iterated_seqs {
-            result = self.substitute_head_with_index(result, seq_param);
+            result = Self::substitute_head_with_index(result, seq_param);
         }
         result
     }
 
     /// Substitute s[0] patterns with s.index(i) in an ExecExpr
-    fn substitute_head_with_index(&self, expr: ExecExpr, seq_param: &str) -> ExecExpr {
+    fn substitute_head_with_index(expr: ExecExpr, seq_param: &str) -> ExecExpr {
         match expr {
             ExecExpr::MethodCall {
                 receiver,
@@ -6912,11 +6903,11 @@ impl Translator {
                 }
                 // Recurse into receiver and args
                 ExecExpr::MethodCall {
-                    receiver: Box::new(self.substitute_head_with_index(*receiver, seq_param)),
+                    receiver: Box::new(Self::substitute_head_with_index(*receiver, seq_param)),
                     method,
                     args: args
                         .into_iter()
-                        .map(|a| self.substitute_head_with_index(a, seq_param))
+                        .map(|a| Self::substitute_head_with_index(a, seq_param))
                         .collect(),
                 }
             }
@@ -6924,49 +6915,49 @@ impl Translator {
                 func,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_head_with_index(a, seq_param))
+                    .map(|a| Self::substitute_head_with_index(a, seq_param))
                     .collect(),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
-                lhs: Box::new(self.substitute_head_with_index(*lhs, seq_param)),
+                lhs: Box::new(Self::substitute_head_with_index(*lhs, seq_param)),
                 op,
-                rhs: Box::new(self.substitute_head_with_index(*rhs, seq_param)),
+                rhs: Box::new(Self::substitute_head_with_index(*rhs, seq_param)),
             },
             ExecExpr::Unary { op, expr } => ExecExpr::Unary {
                 op,
-                expr: Box::new(self.substitute_head_with_index(*expr, seq_param)),
+                expr: Box::new(Self::substitute_head_with_index(*expr, seq_param)),
             },
             ExecExpr::If {
                 cond,
                 then_branch,
                 else_branch,
             } => ExecExpr::If {
-                cond: Box::new(self.substitute_head_with_index(*cond, seq_param)),
-                then_branch: Box::new(self.substitute_head_with_index(*then_branch, seq_param)),
+                cond: Box::new(Self::substitute_head_with_index(*cond, seq_param)),
+                then_branch: Box::new(Self::substitute_head_with_index(*then_branch, seq_param)),
                 else_branch: else_branch
-                    .map(|e| Box::new(self.substitute_head_with_index(*e, seq_param))),
+                    .map(|e| Box::new(Self::substitute_head_with_index(*e, seq_param))),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
                 stmts
                     .into_iter()
-                    .map(|s| self.substitute_head_with_index(s, seq_param))
+                    .map(|s| Self::substitute_head_with_index(s, seq_param))
                     .collect(),
             ),
             // Field access - need to recurse into base expression
             ExecExpr::Field(base, field) => ExecExpr::Field(
-                Box::new(self.substitute_head_with_index(*base, seq_param)),
+                Box::new(Self::substitute_head_with_index(*base, seq_param)),
                 field,
             ),
             // Clone - recurse into inner expression
-            ExecExpr::Clone(inner) => {
-                ExecExpr::Clone(Box::new(self.substitute_head_with_index(*inner, seq_param)))
-            }
+            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(Self::substitute_head_with_index(
+                *inner, seq_param,
+            ))),
             // Struct - recurse into field values
             ExecExpr::Struct { name, fields } => ExecExpr::Struct {
                 name,
                 fields: fields
                     .into_iter()
-                    .map(|(f, e)| (f, self.substitute_head_with_index(e, seq_param)))
+                    .map(|(f, e)| (f, Self::substitute_head_with_index(e, seq_param)))
                     .collect(),
             },
             // Other cases pass through unchanged
@@ -6982,7 +6973,7 @@ impl Translator {
         ctx: &TransformContext,
     ) -> TranspileResult<ExecExpr> {
         let transformed = self.transform_expr(transform, ctx)?;
-        let substituted = self.substitute_head_with_index(transformed, seq_param);
+        let substituted = Self::substitute_head_with_index(transformed, seq_param);
         // Wrap in clone
         Ok(ExecExpr::Clone(Box::new(substituted)))
     }
@@ -7675,7 +7666,7 @@ impl Translator {
 
         // For each sequence param, check if it's used with drop_first/skip in any recursive call
         for seq_param in &seq_params {
-            if self.expr_has_drop_first_recursive(&func.spec_fn.body, func_name, seq_param) {
+            if Self::expr_has_drop_first_recursive(&func.spec_fn.body, func_name, seq_param) {
                 return Some(seq_param.clone());
             }
         }
@@ -7684,7 +7675,7 @@ impl Translator {
     }
 
     /// Check if an expression contains a recursive call with drop_first/skip on the given seq param
-    fn expr_has_drop_first_recursive(&self, expr: &Expr, func_name: &str, seq_param: &str) -> bool {
+    fn expr_has_drop_first_recursive(expr: &Expr, func_name: &str, seq_param: &str) -> bool {
         match expr {
             Expr::Call { func, args } => {
                 // Check if this is a recursive call
@@ -7696,36 +7687,36 @@ impl Translator {
                 }
                 // Recurse into arguments
                 args.iter()
-                    .any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+                    .any(|a| Self::expr_has_drop_first_recursive(a, func_name, seq_param))
             }
             Expr::If {
                 cond,
                 then_branch,
                 else_branch,
             } => {
-                self.expr_has_drop_first_recursive(cond, func_name, seq_param)
-                    || self.expr_has_drop_first_recursive(then_branch, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(cond, func_name, seq_param)
+                    || Self::expr_has_drop_first_recursive(then_branch, func_name, seq_param)
                     || else_branch.as_ref().is_some_and(|e| {
-                        self.expr_has_drop_first_recursive(e, func_name, seq_param)
+                        Self::expr_has_drop_first_recursive(e, func_name, seq_param)
                     })
             }
             Expr::Binary(l, _, r) => {
-                self.expr_has_drop_first_recursive(l, func_name, seq_param)
-                    || self.expr_has_drop_first_recursive(r, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(l, func_name, seq_param)
+                    || Self::expr_has_drop_first_recursive(r, func_name, seq_param)
             }
             Expr::MethodCall { receiver, args, .. } => {
-                self.expr_has_drop_first_recursive(receiver, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(receiver, func_name, seq_param)
                     || args
                         .iter()
-                        .any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+                        .any(|a| Self::expr_has_drop_first_recursive(a, func_name, seq_param))
             }
             Expr::Let { value, body, .. } => {
-                self.expr_has_drop_first_recursive(value, func_name, seq_param)
-                    || self.expr_has_drop_first_recursive(body, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(value, func_name, seq_param)
+                    || Self::expr_has_drop_first_recursive(body, func_name, seq_param)
             }
             Expr::Conjunction(exprs) | Expr::Disjunction(exprs) => exprs
                 .iter()
-                .any(|e| self.expr_has_drop_first_recursive(e, func_name, seq_param)),
+                .any(|e| Self::expr_has_drop_first_recursive(e, func_name, seq_param)),
             _ => false,
         }
     }
@@ -7956,10 +7947,16 @@ impl Translator {
     /// For types with custom view expressions (e.g., Votes → abstractify_cvotes),
     /// uses the custom template. Otherwise uses `result@`.
     fn format_result_view(&self, return_type: &Type) -> String {
+        if matches!(return_type, Type::Int | Type::Nat) {
+            return "result as int".to_string();
+        }
         if let Type::Named(path) = return_type {
             if let Some(type_name) = path.last() {
                 if let Some(template) = self.config.type_view_exprs.get(type_name) {
                     return template.replace("{param}", "&result");
+                }
+                if self.config.is_strict_primitive(type_name) {
+                    return "result as int".to_string();
                 }
             }
         }
@@ -8198,6 +8195,32 @@ impl Translator {
             if segment.contains("::") {
                 // Split and translate each part
                 let parts: Vec<&str> = segment.split("::").collect();
+                // Primitive associated constants and functions are already exec
+                // Rust paths (for example, `u64::MAX`). They must not receive
+                // the spec-to-exec `C` prefix used for protocol datatypes.
+                if parts.first().is_some_and(|root| {
+                    matches!(
+                        *root,
+                        "u8" | "u16"
+                            | "u32"
+                            | "u64"
+                            | "u128"
+                            | "usize"
+                            | "i8"
+                            | "i16"
+                            | "i32"
+                            | "i64"
+                            | "i128"
+                            | "isize"
+                            | "f32"
+                            | "f64"
+                            | "bool"
+                            | "char"
+                            | "str"
+                    )
+                }) {
+                    return segment.clone();
+                }
                 if parts.len() >= 2 {
                     // Translate all parts except the last normally (no variant_remapping)
                     let mut result_parts: Vec<String> = parts[..parts.len() - 1]
@@ -10141,9 +10164,10 @@ impl Translator {
                         format!("result.{}", i)
                     };
                     for pred in &self.config.vec_element_ensures {
+                        // Phase 54.7: emit the trigger explicitly (see lib.rs).
                         ensures.push(format!(
-                            "forall |i:int| 0 <= i < {}@.len() ==> {}@[i].{}()",
-                            accessor, accessor, pred
+                            "forall |i:int| #![trigger {}@[i]] 0 <= i < {}@.len() ==> {}@[i].{}()",
+                            accessor, accessor, accessor, pred
                         ));
                     }
                 }
@@ -10198,21 +10222,32 @@ impl Translator {
                             }
                         }
                     }
-                    let base = if output_names.len() == 1 {
-                        "result@".to_string()
+                    let result_name = if output_names.len() == 1 {
+                        "result".to_string()
                     } else {
                         let output_idx = output_names
                             .iter()
                             .position(|n| n == &param.name)
                             .unwrap_or(0);
-                        format!("result.{}@", output_idx)
+                        format!("result.{}", output_idx)
                     };
                     // For Seq<StructType> outputs, add .map(|i, p: ExecType| p@)
                     // to convert Vec<ExecType>@ (= Seq<ExecType>) to Seq<SpecType>
                     if let Some(exec_elem_type) = self.output_needs_view_map(&param.ty) {
-                        format!("{}.map(|i, p: {}| p@)", base, exec_elem_type)
+                        format!("{}@.map(|i, p: {}| p@)", result_name, exec_elem_type)
+                    } else if matches!(param.ty, Type::Int | Type::Nat) {
+                        format!("{} as int", result_name)
+                    } else if let Type::Named(path) = &param.ty {
+                        if path
+                            .last()
+                            .is_some_and(|name| self.config.is_strict_primitive(name))
+                        {
+                            format!("{} as int", result_name)
+                        } else {
+                            format!("{}@", result_name)
+                        }
                     } else {
-                        base
+                        format!("{}@", result_name)
                     }
                 }
             })
@@ -10503,7 +10538,7 @@ impl Translator {
                     _ => None,
                 };
                 if let Some(name) = var_name {
-                    if self.is_precondition_only_let(name, body, ctx) {
+                    if Self::is_precondition_only_let(name, body, ctx) {
                         // Skip this let binding, just translate the body
                         return self.transform_expr(body, ctx);
                     }
@@ -12752,8 +12787,16 @@ impl Translator {
         let mut output_names: Vec<String> = Vec::new();
 
         // Add field outputs: (output_var, field) -> "var_field"
-        for (var, field) in &info.output_fields {
-            output_names.push(format!("{}_{}", var.trim_end_matches('_'), field));
+        //
+        // Phase 42.8.c.2.iv.J.3.a: a `&mut self` callee mutates the receiver in
+        // place and returns only the value outputs, so binding its state output
+        // would destructure a value that is not there. `CAcceptorProcess1a` is
+        // `(&mut self, &CPacket) -> Vec<CPacket>`, and the pattern must be
+        // `sent_packets`, not `(s_acceptor, sent_packets)`.
+        if !self.config.mut_self_helpers.contains(&info.func_name) {
+            for (var, field) in &info.output_fields {
+                output_names.push(format!("{}_{}", var.trim_end_matches('_'), field));
+            }
         }
 
         // Add direct output params
@@ -12796,6 +12839,26 @@ impl Translator {
                     func: self.translate_name(&info.func_name),
                     args: info.input_args.clone(),
                 }
+            }
+        } else if self.config.mut_self_helpers.contains(&info.func_name) {
+            // A `&mut self` callee that stays a *free* function -- `CExecutorExecute`
+            // is `(s: &mut CExecutor) -> Vec<CPacket>`. It needs the state argument
+            // passed mutably; only the call *form* is unchanged, which is why the
+            // two config keys are separate (Phase 42.8.c.2.iv.J.3.c).
+            let mut args = info.input_args.clone();
+            if let Some(first) = args.first_mut() {
+                if let ExecExpr::Unary { op, expr } = first {
+                    if op == "&" {
+                        *first = ExecExpr::Unary {
+                            op: "&mut ".to_string(),
+                            expr: expr.clone(),
+                        };
+                    }
+                }
+            }
+            ExecExpr::Call {
+                func: self.translate_name(&info.func_name),
+                args,
             }
         } else {
             ExecExpr::Call {
@@ -12854,13 +12917,42 @@ impl Translator {
 
     /// Get the substitution map from helper call info
     /// Maps "s_.proposer" style access to variable name "s_proposer"
-    fn get_helper_substitutions(info: &HelperCallInfo) -> HashMap<(String, String), String> {
+    fn get_helper_substitutions(&self, info: &HelperCallInfo) -> HashMap<(String, String), String> {
         let mut map = HashMap::new();
+        let mutates_in_place = self.config.mut_self_helpers.contains(&info.func_name);
         for (var, field) in &info.output_fields {
-            let var_name = format!("{}_{}", var.trim_end_matches('_'), field);
+            // For a `&mut self` callee the post-state *is* the receiver, because
+            // the call already mutated it. Pointing the substitution at the input
+            // field makes the struct literal treat it exactly like an unchanged
+            // field (`acceptor: s.acceptor`), which the `&mut self` lift then
+            // renders as a self-assignment -- correct, and with no dangling
+            // reference to a binding that is no longer generated.
+            let var_name = if mutates_in_place {
+                Self::receiver_field_path(info, field)
+            } else {
+                format!("{}_{}", var.trim_end_matches('_'), field)
+            };
             map.insert((var.clone(), field.clone()), var_name);
         }
         map
+    }
+
+    /// `s.acceptor` for a call whose receiver argument is `&s.acceptor`.
+    ///
+    /// Falls back to the field name alone when the receiver is not a plain field
+    /// access, which keeps the substitution well-formed rather than emitting a
+    /// half-built path.
+    fn receiver_field_path(info: &HelperCallInfo, field: &str) -> String {
+        let receiver = info.input_args.first().map(|a| match a {
+            ExecExpr::Unary { op, expr } if op == "&" => expr.as_ref(),
+            other => other,
+        });
+        if let Some(ExecExpr::Field(base, f)) = receiver {
+            if let ExecExpr::Var(v) = base.as_ref() {
+                return format!("{}.{}", v, f);
+            }
+        }
+        field.to_string()
     }
 
     /// Transform a conditional field assignment pattern
@@ -12912,7 +13004,7 @@ impl Translator {
                 let_bindings.push(let_binding);
 
                 // Add substitutions from this helper call (for field accesses)
-                let subs = Self::get_helper_substitutions(&info);
+                let subs = self.get_helper_substitutions(&info);
                 combined_substitutions.extend(subs);
 
                 // Track which direct outputs were bound
@@ -13737,6 +13829,53 @@ impl Translator {
         (lhs_expr, rhs_expr)
     }
 
+    /// Phase 54.14.b: is this comparison constantly false once the operand is
+    /// narrowed to an unsigned exec type?
+    ///
+    /// A protocol spec legitimately range-checks an `int` parameter before
+    /// casting it -- `follower_id < 0 || follower_id > u64::MAX as int` in
+    /// `Raft/raft.rs`. Once `int` is narrowed to `config.int_type`, both halves
+    /// are vacuous: rustc reports "comparison is useless due to type limits" and
+    /// the branch they guard is unreachable, dead code that still carries proof
+    /// blocks.
+    ///
+    /// Deliberately narrow. It fires only when the left operand is an input
+    /// parameter whose *spec* type is `int`, so the narrowing is known to have
+    /// happened, and only for an unsigned `int_type`. Any operand whose exec
+    /// type cannot be named this way is left alone -- folding `x < 0` for a
+    /// signed or unknown `x` would be wrong.
+    fn is_vacuous_unsigned_bound(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        op: &str,
+        ctx: &TransformContext,
+    ) -> bool {
+        if !self.config.int_type.starts_with('u') {
+            return false;
+        }
+        let narrowed_int_param = match lhs {
+            Expr::Ident(name) => matches!(ctx.input_types.get(name), Some(Type::Int)),
+            _ => false,
+        };
+        if !narrowed_int_param {
+            return false;
+        }
+        // strip a trailing `as int` / `as u64`, which the spec writes on the bound
+        let bound = match rhs {
+            Expr::Cast(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        match op {
+            "<" => matches!(bound, Expr::Literal(Literal::Int(0))),
+            ">" => match bound {
+                Expr::Ident(name) => *name == format!("{}::MAX", self.config.int_type),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     fn transform_binary_op(
         &self,
         lhs: &Expr,
@@ -13744,8 +13883,22 @@ impl Translator {
         op: &str,
         ctx: &TransformContext,
     ) -> TranspileResult<ExecExpr> {
+        if self.is_vacuous_unsigned_bound(lhs, rhs, op, ctx) {
+            return Ok(ExecExpr::Literal("false".to_string()));
+        }
         let lhs_expr = self.transform_expr(lhs, ctx)?;
         let rhs_expr = self.transform_expr(rhs, ctx)?;
+        // Phase 54.14.b: a range guard is two vacuous halves joined by `||`, so
+        // collapse rather than emit `false || false`.
+        if op == "||" {
+            let is_false = |x: &ExecExpr| matches!(x, ExecExpr::Literal(l) if l == "false");
+            match (is_false(&lhs_expr), is_false(&rhs_expr)) {
+                (true, true) => return Ok(ExecExpr::Literal("false".to_string())),
+                (true, false) => return Ok(rhs_expr),
+                (false, true) => return Ok(lhs_expr),
+                (false, false) => {}
+            }
+        }
         let (lhs_expr, rhs_expr) = self.normalize_binary_operands(lhs_expr, rhs_expr, ctx);
         let collection_add_helper = if op == "+" {
             self.collection_add_helper(lhs, rhs, ctx)
@@ -14417,10 +14570,11 @@ impl Translator {
                 receiver,
                 method,
                 args,
-            } if method == "ext_equal" && args.len() == 1 => {
-                if self.is_output_indexed(receiver, idx_var, output_name) {
-                    return Some(args[0].clone());
-                }
+            } if method == "ext_equal"
+                && args.len() == 1
+                && self.is_output_indexed(receiver, idx_var, output_name) =>
+            {
+                return Some(args[0].clone());
             }
             _ => {}
         }
@@ -15185,12 +15339,8 @@ impl Translator {
         if let Expr::Disjunction(parts) = expr {
             let mut containers = Vec::new();
             for part in parts {
-                if let Some(container) = self.extract_contains_receiver(part, element_var) {
-                    containers.push(container);
-                } else {
-                    // Not a pure disjunction of contains calls
-                    return None;
-                }
+                let container = self.extract_contains_receiver(part, element_var)?;
+                containers.push(container);
             }
             if !containers.is_empty() {
                 return Some(containers);
@@ -15203,18 +15353,16 @@ impl Translator {
             // Try to extract from lhs
             if let Some(container) = self.extract_contains_receiver(lhs, element_var) {
                 containers.push(container);
-            } else if let Some(mut nested) = self.extract_contains_disjunction(lhs, element_var) {
-                containers.append(&mut nested);
             } else {
-                return None;
+                let mut nested = self.extract_contains_disjunction(lhs, element_var)?;
+                containers.append(&mut nested);
             }
             // Try to extract from rhs
             if let Some(container) = self.extract_contains_receiver(rhs, element_var) {
                 containers.push(container);
-            } else if let Some(mut nested) = self.extract_contains_disjunction(rhs, element_var) {
-                containers.append(&mut nested);
             } else {
-                return None;
+                let mut nested = self.extract_contains_disjunction(rhs, element_var)?;
+                containers.append(&mut nested);
             }
             return Some(containers);
         }
@@ -15412,7 +15560,7 @@ impl Translator {
 
     /// Extract source map from a conditional value expression
     /// Handles: if cond { v1 } else { source[k] }
-    fn extract_source_from_conditional_value(&self, expr: &Expr, key_var: &str) -> Option<String> {
+    fn extract_source_from_conditional_value(expr: &Expr, key_var: &str) -> Option<String> {
         use crate::ast::Expr;
 
         match expr {
@@ -15439,7 +15587,7 @@ impl Translator {
                 // Recursively check then branch
                 if let Expr::If { then_branch, .. } = expr {
                     if let Some(source) =
-                        self.extract_source_from_conditional_value(then_branch, key_var)
+                        Self::extract_source_from_conditional_value(then_branch, key_var)
                     {
                         return Some(source);
                     }
@@ -15636,7 +15784,7 @@ impl Translator {
                 //
                 // Try to extract source map from the value expression
                 if let Some(source_map) =
-                    self.extract_source_from_conditional_value(value_expr, key_var)
+                    Self::extract_source_from_conditional_value(value_expr, key_var)
                 {
                     // Generate: source.iter().map(|(k, v)| (k.clone(), value_expr)).collect()
                     let value = self.transform_expr(value_expr, ctx)?;
@@ -16003,6 +16151,11 @@ mod tests {
             translator.translate_path(&path_combined),
             "CMessage::CMessage1b"
         );
+
+        // Rust primitive associated items are executable paths, not protocol
+        // names, so they must survive spec-to-exec translation unchanged.
+        let primitive_constant = Path::single("u64::MAX".to_string());
+        assert_eq!(translator.translate_path(&primitive_constant), "u64::MAX");
     }
 
     #[test]
@@ -16166,15 +16319,15 @@ mod tests {
     #[test]
     fn test_transform_cast_expr() {
         // Test: Cast(ident, Int) → "ident as int" in expr_to_spec_string
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         let expr = Expr::Cast(Box::new(Expr::Ident("follower".to_string())), Type::Int);
         let empty_args: Vec<String> = vec![];
-        let result = translator.expr_to_spec_string(&expr, &empty_args);
+        let result = Translator::expr_to_spec_string(&expr, &empty_args);
         assert_eq!(result, "follower as int");
 
         let expr_nat = Expr::Cast(Box::new(Expr::Ident("x".to_string())), Type::Nat);
-        let result_nat = translator.expr_to_spec_string(&expr_nat, &empty_args);
+        let result_nat = Translator::expr_to_spec_string(&expr_nat, &empty_args);
         assert_eq!(result_nat, "x as nat");
     }
 
@@ -16782,7 +16935,7 @@ mod tests {
 
     #[test]
     fn test_extract_source_from_conditional_value() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test: if cond { new_value } else { source[k] }
         let source_index = Expr::Index(
@@ -16795,7 +16948,7 @@ mod tests {
             else_branch: Some(Box::new(source_index)),
         };
 
-        let result = translator.extract_source_from_conditional_value(&conditional, "k");
+        let result = Translator::extract_source_from_conditional_value(&conditional, "k");
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "source");
     }
@@ -19814,6 +19967,83 @@ mod tests {
         }
     }
 
+    /// Phase 54.14.b. The fold must fire on a genuinely vacuous bound and must
+    /// NOT fire on anything whose exec type we cannot show is unsigned --
+    /// folding `x < 0` for a signed or unknown `x` would silently change
+    /// behaviour, so the negative cases matter more than the positive one.
+    #[test]
+    fn test_vacuous_unsigned_bound_folding() {
+        use crate::ast::{Literal, Type};
+
+        fn ctx_with<'a>(
+            config: &'a TranslatorConfig,
+            name: &str,
+            ty: Type,
+        ) -> TransformContext<'a> {
+            let mut input_types = HashMap::new();
+            input_types.insert(name.to_string(), ty);
+            TransformContext {
+                config,
+                output_params: Vec::new(),
+                input_params: vec![name.to_string()],
+                output_types: HashMap::new(),
+                input_types,
+                field_substitutions: HashMap::new(),
+                temp_var_counter: std::cell::RefCell::new(0),
+                requires: Vec::new(),
+            }
+        }
+
+        let unsigned = TranslatorConfig {
+            int_type: "u64".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let t = Translator::new(unsigned.clone());
+        let ctx = ctx_with(&unsigned, "follower_id", Type::Int);
+
+        let id = Expr::Ident("follower_id".to_string());
+        let zero = Expr::Literal(Literal::Int(0));
+        let max = Expr::Ident("u64::MAX".to_string());
+        let max_as_int = Expr::Cast(Box::new(max.clone()), Type::Int);
+
+        // fires: `x < 0` and `x > u64::MAX`, with or without the `as int` cast
+        assert!(t.is_vacuous_unsigned_bound(&id, &zero, "<", &ctx));
+        assert!(t.is_vacuous_unsigned_bound(&id, &max, ">", &ctx));
+        assert!(t.is_vacuous_unsigned_bound(&id, &max_as_int, ">", &ctx));
+
+        // does not fire: a real bound, or the comparison the other way round
+        assert!(!t.is_vacuous_unsigned_bound(&id, &Expr::Literal(Literal::Int(1)), "<", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, ">", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, "<=", &ctx));
+
+        // does not fire: the operand is not an int-typed input parameter, so we
+        // cannot claim it was narrowed to an unsigned type
+        let nat_ctx = ctx_with(&unsigned, "follower_id", Type::Nat);
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, "<", &nat_ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&Expr::Ident("other".to_string()), &zero, "<", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(
+            &Expr::Field(Box::new(id.clone()), "f".to_string()),
+            &zero,
+            "<",
+            &ctx
+        ));
+
+        // does not fire: a signed int_type, where `x < 0` is a real test
+        let signed = TranslatorConfig {
+            int_type: "i64".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let ts = Translator::new(signed.clone());
+        let signed_ctx = ctx_with(&signed, "follower_id", Type::Int);
+        assert!(!ts.is_vacuous_unsigned_bound(&id, &zero, "<", &signed_ctx));
+        assert!(!ts.is_vacuous_unsigned_bound(
+            &id,
+            &Expr::Ident("i64::MAX".to_string()),
+            ">",
+            &signed_ctx
+        ));
+    }
+
     #[test]
     fn test_translate_type_string_custom_int_nat() {
         // Test with custom int_type and nat_type config
@@ -21548,32 +21778,32 @@ mod tests {
 
     #[test]
     fn test_expr_to_spec_string_function_call() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test function call conversion
         let expr = func_call("RequestSatisfiedBy", vec![seq_head("s"), ident("r")]);
-        let result = translator.expr_to_spec_string(&expr, &[]);
+        let result = Translator::expr_to_spec_string(&expr, &[]);
         assert!(result.contains("RequestSatisfiedBy"));
         assert!(result.contains("s[0]") || result.contains("s.index(0)"));
     }
 
     #[test]
     fn test_expr_to_spec_string_method_call() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test method call conversion
         let expr = method_call(ident("s"), "len", vec![]);
-        let result = translator.expr_to_spec_string(&expr, &[]);
+        let result = Translator::expr_to_spec_string(&expr, &[]);
         assert_eq!(result, "s.len()");
     }
 
     #[test]
     fn test_expr_to_spec_string_is_variant() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test "is" expression (enum variant check)
         let expr = Expr::Is(Box::new(seq_head("ios")), "Send".to_string());
-        let result = translator.expr_to_spec_string(&expr, &[]);
+        let result = Translator::expr_to_spec_string(&expr, &[]);
         assert!(result.contains("is Send"));
     }
 
@@ -23667,6 +23897,58 @@ mod tests {
     }
 
     #[test]
+    fn test_build_spec_call_with_int_output() {
+        use crate::ast::{Generics, Parameter};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LIncrement".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "value".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "value_".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: Some("int".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_spec_call(&annotated, &["value_".to_string()]);
+        assert_eq!(spec_call, "LIncrement(*value as int, result as int)");
+
+        // Scalar helper results need the same exec-to-spec integer conversion.
+        assert_eq!(translator.format_result_view(&Type::Int), "result as int");
+        assert_eq!(translator.format_result_view(&Type::Nat), "result as int");
+        assert_eq!(translator.format_result_view(&Type::Bool), "result@");
+    }
+
+    #[test]
     fn test_build_spec_call_with_int_input_params() {
         use crate::ast::{Generics, Parameter, Path};
         let translator = Translator::default();
@@ -24733,6 +25015,110 @@ mod tests {
 
         let requires = translator.build_requires(&func);
         assert!(requires.iter().any(|r| r == "s.role is CLeader"));
+    }
+
+    /// Phase 42.8.c.2.iv.J. `assume_postconditions` drops recommends, because a
+    /// precondition the caller does not establish would break it -- and the body
+    /// is trusted via `assume(false)` anyway. `proven_functions` is the opt-out:
+    /// those bodies really are verified, so they need the precondition back.
+    ///
+    /// This interaction is what gates replica's merge. Fresh output for
+    /// `CReplicaNextProcess1a` was missing `received_packet.msg is CMessage1a`
+    /// and carried `assume(false)`; listing the spec name restores the clause
+    /// character-for-character against the checked-in file and drops the assume.
+    /// The pre-existing recommends test runs with the default config, so neither
+    /// half of this was covered.
+    fn recommends_func() -> AnnotatedFunction {
+        let mut func = make_annotated_func(
+            "LAction",
+            vec![
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            Expr::Literal(Literal::Bool(true)),
+        );
+        func.spec_fn.recommends.push(Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "role".to_string(),
+            )),
+            "Leader".to_string(),
+        ));
+        func
+    }
+
+    fn translator_with(assume_postconditions: bool, proven: &[&str]) -> Translator {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        config.assume_postconditions = assume_postconditions;
+        config.proven_functions = proven.iter().map(|s| s.to_string()).collect();
+        Translator::new(config)
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.c. A `&mut self` callee that stays a *free* function
+    /// -- `CExecutorExecute(s: &mut CExecutor) -> Vec<CPacket>` -- needs its state
+    /// argument passed mutably. Only the binding shape changes, not the call form,
+    /// which is why `mut_self_helpers` and `[method_calls]` are separate keys.
+    #[test]
+    fn test_free_mut_self_helper_gets_a_mutable_receiver_argument() {
+        let mut config = TranslatorConfig::default();
+        config.mut_self_helpers = ["LExecutorExecute".to_string()].into_iter().collect();
+        let translator = Translator::new(config);
+        let info = HelperCallInfo {
+            func_name: "LExecutorExecute".to_string(),
+            input_args: vec![ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("self".to_string())),
+                    "executor".to_string(),
+                )),
+            }],
+            output_fields: vec![("s_".to_string(), "executor".to_string())],
+            output_params: vec!["sent_packets".to_string()],
+        };
+        let binding = translator.generate_helper_let_binding(&info);
+        let rendered = format!("{:?}", binding);
+        assert!(
+            rendered.contains("&mut "),
+            "the state argument must be passed mutably: {}",
+            rendered
+        );
+        // the state output is mutated in place, so only `sent_packets` is bound
+        assert!(
+            rendered.contains("pattern: \"sent_packets\""),
+            "no tuple destructure for a &mut self callee: {}",
+            rendered
+        );
+    }
+
+    #[test]
+    fn test_assume_postconditions_drops_recommends() {
+        let requires = translator_with(true, &[]).build_requires(&recommends_func());
+        assert!(
+            !requires.iter().any(|r| r.contains("is CLeader")),
+            "recommends must not become a requires when the body is trusted via \
+             assume(false); the caller has not been asked to establish it: {:?}",
+            requires
+        );
+    }
+
+    #[test]
+    fn test_proven_functions_restores_recommends_under_assume_postconditions() {
+        let requires = translator_with(true, &["LAction"]).build_requires(&recommends_func());
+        assert!(
+            requires.iter().any(|r| r == "s.role is CLeader"),
+            "a proven function carries no assume(false), so it needs its \
+             precondition back: {:?}",
+            requires
+        );
     }
 
     #[test]
@@ -26561,9 +26947,11 @@ mod tests {
                         assert_eq!(args.len(), 1);
                         match &args[0] {
                             ExecExpr::Var(path) => {
-                                assert_eq!(path, "result.cache");
+                                // By reference even with no Arc-wrapped fields: the lemma
+                                // takes `&ExecType` (Phase 42.8.c.2.iv.B).
+                                assert_eq!(path, "&result.cache");
                             }
-                            other => panic!("Expected Var(\"result.cache\"), got {:?}", other),
+                            other => panic!("Expected Var(\"&result.cache\"), got {:?}", other),
                         }
                     }
                     other => panic!("Expected Call, got {:?}", other),

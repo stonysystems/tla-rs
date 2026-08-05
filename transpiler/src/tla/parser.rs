@@ -78,6 +78,14 @@ pub type ParseResult<T> = Result<T, TlaParseError>;
 pub struct TlaParser {
     tokens: Vec<TlaToken>,
     pos: usize,
+    /// Columns of the junction lists currently being parsed, innermost last.
+    ///
+    /// TLA+ scopes a bulleted `/\` or `\/` list by the column of its bullets:
+    /// every item of the list starts at that column, and everything belonging to
+    /// an item is indented further. A token at or left of the bullet column
+    /// therefore ends the current item -- which is the only thing that tells
+    /// `IF c THEN /\ a /\ b ELSE d` where the THEN branch stops.
+    junction_columns: Vec<usize>,
 }
 
 impl TlaParser {
@@ -85,12 +93,20 @@ impl TlaParser {
     pub fn new(source: &str) -> ParseResult<Self> {
         let mut tokenizer = TlaTokenizer::new(source);
         let tokens = tokenizer.tokenize()?;
-        Ok(Self { tokens, pos: 0 })
+        Ok(Self {
+            tokens,
+            pos: 0,
+            junction_columns: Vec::new(),
+        })
     }
 
     /// Create a parser from pre-tokenized input
     pub fn from_tokens(tokens: Vec<TlaToken>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            junction_columns: Vec::new(),
+        }
     }
 
     /// Parse a complete TLA+ module
@@ -105,8 +121,13 @@ impl TlaParser {
 
         let mut module = TlaModule::new(name);
 
-        // Parse module body until we hit the closing dashes or EOF
-        while !self.is_at_end() && !self.check(TlaTokenKind::ModuleDashes) {
+        // Parse the body until the module terminator (`====`) or EOF. A `----`
+        // inside the body is a section divider, not the end of the module.
+        while !self.is_at_end() && !self.check(TlaTokenKind::ModuleEnd) {
+            if self.check(TlaTokenKind::ModuleDashes) {
+                self.advance();
+                continue;
+            }
             self.parse_module_unit(&mut module)?;
         }
 
@@ -140,6 +161,10 @@ impl TlaParser {
             Some(TlaTokenKind::Theorem) => {
                 let theorem = self.parse_theorem()?;
                 module.theorems.push(theorem);
+                // A theorem may be followed by a TLAPS proof. Proofs are not
+                // part of the spec we translate, and the proof language is a
+                // different grammar, so skip it rather than fail on it.
+                self.skip_proof();
             }
             Some(TlaTokenKind::Instance) => {
                 let instance = self.parse_instance()?;
@@ -173,9 +198,21 @@ impl TlaParser {
                 }
             }
             Some(TlaTokenKind::Ident(_)) => {
-                // Operator definition: Name == expr or Name(params) == expr
-                let op = self.parse_operator_def()?;
-                module.operators.push(op);
+                // `V == INSTANCE Voting` binds a module instance to a name; it
+                // is a definition whose right-hand side is not an expression.
+                if matches!(self.peek_ahead_kind(1), Some(TlaTokenKind::DefEq))
+                    && matches!(self.peek_ahead_kind(2), Some(TlaTokenKind::Instance))
+                {
+                    let name = self.expect_ident()?;
+                    self.advance(); // ==
+                    let mut instance = self.parse_instance()?;
+                    instance.local_name = Some(name);
+                    module.instances.push(instance);
+                } else {
+                    // Operator definition: Name == expr or Name(params) == expr
+                    let op = self.parse_operator_def()?;
+                    module.operators.push(op);
+                }
             }
             Some(TlaTokenKind::ModuleDashes) => {
                 // End of module
@@ -195,6 +232,64 @@ impl TlaParser {
             }
         }
         Ok(())
+    }
+
+    /// Skip a TLAPS proof body following a THEOREM.
+    ///
+    /// Proof steps are either indented or start with a level marker (`<1>2.`),
+    /// and the proof ends at the next module-level unit, which by TLA+
+    /// convention starts at column 1. Anything at column 1 that is a step
+    /// marker or a proof keyword still belongs to the proof.
+    fn skip_proof(&mut self) {
+        const PROOF_KEYWORDS: &[&str] = &[
+            "BY", "OBVIOUS", "QED", "PROOF", "DEF", "DEFS", "USE", "HIDE", "SUFFICES", "PROVE",
+            "NEW", "WITNESS", "PICK", "TAKE", "HAVE", "OMITTED", "ONLY",
+        ];
+
+        while !self.is_at_end() {
+            let at_column_one = self.current_column() == Some(1);
+            if !at_column_one {
+                self.advance();
+                continue;
+            }
+            match self.peek_kind() {
+                // `<1>2.` -- a structured proof step marker.
+                Some(TlaTokenKind::ProofStep(_)) => {
+                    self.advance();
+                }
+                Some(TlaTokenKind::Ident(name)) if PROOF_KEYWORDS.contains(&name.as_str()) => {
+                    self.advance();
+                }
+                // Anything else at column 1 starts the next module unit.
+                _ => break,
+            }
+        }
+    }
+
+    /// Whether the current token(s) spell the CASE arm separator `[]`.
+    fn at_case_separator(&self) -> bool {
+        self.check(TlaTokenKind::Always)
+            || (self.check(TlaTokenKind::LBracket)
+                && self.peek_ahead_kind(1) == Some(TlaTokenKind::RBracket))
+    }
+
+    /// Whether the separator ahead introduces the `OTHER` arm.
+    fn case_separator_precedes_other(&self) -> bool {
+        let after = if self.check(TlaTokenKind::Always) {
+            1
+        } else {
+            2
+        };
+        self.peek_ahead_kind(after) == Some(TlaTokenKind::Other)
+    }
+
+    fn consume_case_separator(&mut self) {
+        if self.check(TlaTokenKind::Always) {
+            self.advance();
+        } else {
+            self.advance(); // [
+            self.advance(); // ]
+        }
     }
 
     /// Parse EXTENDS declaration
@@ -218,14 +313,33 @@ impl TlaParser {
         self.advance();
 
         let mut constants = Vec::new();
-        constants.push(TlaConstantDecl::new(self.expect_ident()?));
+        constants.push(self.parse_constant_decl()?);
 
         while self.check(TlaTokenKind::Comma) {
             self.advance();
-            constants.push(TlaConstantDecl::new(self.expect_ident()?));
+            constants.push(self.parse_constant_decl()?);
         }
 
         Ok(constants)
+    }
+
+    /// One constant declaration, possibly an operator constant with an arity:
+    /// `CONSTANTS Commands, FastQuorums(_)`.
+    fn parse_constant_decl(&mut self) -> ParseResult<TlaConstantDecl> {
+        let name = self.expect_ident()?;
+
+        // `F(_, _)` declares a constant *operator*. The arity is not part of
+        // TlaConstantDecl, and nothing downstream consumes it today, so the
+        // shape is accepted and the placeholders skipped.
+        if self.check(TlaTokenKind::LParen) {
+            self.advance();
+            while !self.check(TlaTokenKind::RParen) && !self.is_at_end() {
+                self.advance();
+            }
+            self.expect(TlaTokenKind::RParen)?;
+        }
+
+        Ok(TlaConstantDecl::new(name))
     }
 
     /// Parse VARIABLE or VARIABLES declaration
@@ -247,6 +361,15 @@ impl TlaParser {
     /// Parse ASSUME declaration
     fn parse_assume(&mut self) -> ParseResult<TlaExpr> {
         self.expect(TlaTokenKind::Assume)?;
+        // A named assumption -- `ASSUME NAssump == N \in Nat` -- binds a name to
+        // the assumed formula so proofs can cite it. The name carries no
+        // semantic content for us, so it is consumed and the formula returned.
+        if matches!(self.peek_kind(), Some(TlaTokenKind::Ident(_)))
+            && matches!(self.peek_ahead_kind(1), Some(TlaTokenKind::DefEq))
+        {
+            self.advance();
+            self.advance();
+        }
         self.parse_expr()
     }
 
@@ -310,6 +433,24 @@ impl TlaParser {
     fn parse_operator_def(&mut self) -> ParseResult<TlaOperator> {
         let start_span = self.current_span();
         let name = self.expect_ident()?;
+
+        // Infix operator definition: `a \prec b == body`. The name parsed above
+        // is the left operand, not the operator. Bakery defines `\prec` this
+        // way for lexicographic ticket comparison.
+        if let Some(TlaTokenKind::InfixOp(op)) = self.peek_kind() {
+            self.advance();
+            let rhs = self.expect_ident()?;
+            self.expect(TlaTokenKind::DefEq)?;
+            let body = self.parse_expr()?;
+            return Ok(TlaOperator {
+                name: op,
+                params: vec![TlaParam::new(name), TlaParam::new(rhs)],
+                body,
+                is_recursive: false,
+                is_local: false,
+                span: start_span,
+            });
+        }
 
         // Parse optional parameters
         let params = if self.check(TlaTokenKind::LParen) {
@@ -399,13 +540,14 @@ impl TlaParser {
     /// \/ expr2
     /// ```
     fn parse_or_expr(&mut self) -> ParseResult<TlaExpr> {
-        // Handle bullet-list disjunction: \/ expr1 \/ expr2 ...
+        // A leading `\/` opens a bulleted list scoped by its own column.
         if self.check(TlaTokenKind::Or) {
+            let bullet_col = self.current_column().unwrap_or(1);
             self.advance();
-            let mut left = self.parse_and_expr()?;
-            while self.check(TlaTokenKind::Or) {
+            let mut left = self.parse_junction_item(bullet_col)?;
+            while self.at_bullet(&TlaTokenKind::Or, bullet_col) {
                 self.advance();
-                let right = self.parse_and_expr()?;
+                let right = self.parse_junction_item(bullet_col)?;
                 left = TlaExpr::binop(TlaBinOp::Or, left, right);
             }
             return Ok(left);
@@ -413,7 +555,7 @@ impl TlaParser {
 
         let mut left = self.parse_and_expr()?;
 
-        while self.check(TlaTokenKind::Or) {
+        while self.check(TlaTokenKind::Or) && !self.at_junction_boundary() {
             self.advance();
             let right = self.parse_and_expr()?;
             left = TlaExpr::binop(TlaBinOp::Or, left, right);
@@ -429,13 +571,14 @@ impl TlaParser {
     /// /\ expr2
     /// ```
     fn parse_and_expr(&mut self) -> ParseResult<TlaExpr> {
-        // Handle bullet-list conjunction: /\ expr1 /\ expr2 ...
+        // A leading `/\` opens a bulleted list scoped by its own column.
         if self.check(TlaTokenKind::And) {
+            let bullet_col = self.current_column().unwrap_or(1);
             self.advance();
-            let mut left = self.parse_implies_expr()?;
-            while self.check(TlaTokenKind::And) {
+            let mut left = self.parse_junction_item(bullet_col)?;
+            while self.at_bullet(&TlaTokenKind::And, bullet_col) {
                 self.advance();
-                let right = self.parse_implies_expr()?;
+                let right = self.parse_junction_item(bullet_col)?;
                 left = TlaExpr::binop(TlaBinOp::And, left, right);
             }
             return Ok(left);
@@ -443,7 +586,7 @@ impl TlaParser {
 
         let mut left = self.parse_implies_expr()?;
 
-        while self.check(TlaTokenKind::And) {
+        while self.check(TlaTokenKind::And) && !self.at_junction_boundary() {
             self.advance();
             let right = self.parse_implies_expr()?;
             left = TlaExpr::binop(TlaBinOp::And, left, right);
@@ -456,13 +599,14 @@ impl TlaParser {
     fn parse_implies_expr(&mut self) -> ParseResult<TlaExpr> {
         let mut left = self.parse_comparison_expr()?;
 
-        while self.check(TlaTokenKind::Implies)
+        while (self.check(TlaTokenKind::Implies)
             || self.check(TlaTokenKind::Iff)
-            || self.check(TlaTokenKind::LeadsTo)
+            || self.check(TlaTokenKind::LeadsTo))
+            && !self.at_junction_boundary()
         {
             if self.check(TlaTokenKind::LeadsTo) {
                 self.advance();
-                let right = self.parse_comparison_expr()?;
+                let right = self.parse_implication_operand()?;
                 left = TlaExpr::LeadsTo {
                     left: Box::new(left),
                     right: Box::new(right),
@@ -474,7 +618,7 @@ impl TlaParser {
                     TlaBinOp::Iff
                 };
                 self.advance();
-                let right = self.parse_comparison_expr()?;
+                let right = self.parse_implication_operand()?;
                 left = TlaExpr::binop(op, left, right);
             }
         }
@@ -482,11 +626,46 @@ impl TlaParser {
         Ok(left)
     }
 
+    /// The right operand of `=>`, `<=>` or `~>`.
+    ///
+    /// Normally this binds at comparison precedence, but a bulleted junction
+    /// list written after the arrow is the operand:
+    ///     (m.type = "1b") => /\ maxBal[m.acc] >= m.bal
+    ///                        /\ ...
+    /// The list's own column scoping is what ends it, so nothing outside the
+    /// implication is absorbed.
+    fn parse_implication_operand(&mut self) -> ParseResult<TlaExpr> {
+        if self.check(TlaTokenKind::And) || self.check(TlaTokenKind::Or) {
+            self.parse_or_expr()
+        } else {
+            self.parse_comparison_expr()
+        }
+    }
+
     /// Parse comparison expressions
     fn parse_comparison_expr(&mut self) -> ParseResult<TlaExpr> {
         let mut left = self.parse_set_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
+            // Application of an infix operator with no dedicated token kind
+            // (`a \prec b`, `s \o t`). It becomes an ordinary operator
+            // application named `\prec` / `\o`, which is how the definition
+            // side records it too.
+            if let Some(TlaTokenKind::InfixOp(op)) = self.peek_kind() {
+                self.advance();
+                let right = self.parse_set_expr()?;
+                left = TlaExpr::OpApply {
+                    op: Box::new(TlaExpr::Ident(op)),
+                    args: vec![left, right],
+                };
+                continue;
+            }
+
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Eq) => TlaBinOp::Eq,
                 Some(TlaTokenKind::Neq) => TlaBinOp::Neq,
@@ -509,9 +688,14 @@ impl TlaParser {
 
     /// Parse set operation expressions
     fn parse_set_expr(&mut self) -> ParseResult<TlaExpr> {
-        let mut left = self.parse_additive_expr()?;
+        let mut left = self.parse_range_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Cup) => TlaBinOp::Cup,
                 Some(TlaTokenKind::Cap) => TlaBinOp::Cap,
@@ -520,22 +704,43 @@ impl TlaParser {
                 _ => break,
             };
             self.advance();
-            let right = self.parse_additive_expr()?;
+            let right = self.parse_range_expr()?;
             left = TlaExpr::binop(op, left, right);
         }
 
         Ok(left)
     }
 
-    /// Parse additive expressions (including `..` range operator)
+    /// Parse a range, `a .. b`.
+    ///
+    /// **`..` binds more loosely than `+`.** In TLA+ `..` is priority 9 and the
+    /// arithmetic operators are 10 and above, so `1 .. MaxInstance + 1` is
+    /// `1 .. (MaxInstance + 1)`. Parsing it at the additive level made it
+    /// `(1 .. MaxInstance) + 1` — a set plus a number, which is nonsense, and
+    /// which for `0 .. N - 1` would have quietly produced the wrong node set.
+    fn parse_range_expr(&mut self) -> ParseResult<TlaExpr> {
+        let left = self.parse_additive_expr()?;
+        if self.at_junction_boundary() || !self.check(TlaTokenKind::DotDot) {
+            return Ok(left);
+        }
+        self.advance();
+        let right = self.parse_additive_expr()?;
+        Ok(TlaExpr::binop(TlaBinOp::DotDot, left, right))
+    }
+
+    /// Parse additive expressions
     fn parse_additive_expr(&mut self) -> ParseResult<TlaExpr> {
         let mut left = self.parse_multiplicative_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Plus) => TlaBinOp::Plus,
                 Some(TlaTokenKind::Minus) => TlaBinOp::Minus,
-                Some(TlaTokenKind::DotDot) => TlaBinOp::DotDot,
                 _ => break,
             };
             self.advance();
@@ -551,6 +756,11 @@ impl TlaParser {
         let mut left = self.parse_unary_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Star) => TlaBinOp::Times,
                 Some(TlaTokenKind::Slash) => TlaBinOp::Slash,
@@ -572,7 +782,15 @@ impl TlaParser {
         match self.peek_kind() {
             Some(TlaTokenKind::Not) => {
                 self.advance();
-                let operand = self.parse_unary_expr()?;
+                // `~` normally binds tighter than `/\`, but a bulleted list
+                // written directly after it is its operand:
+                //     ~ /\ pc[i] = "cs"
+                //       /\ pc[j] = "cs"
+                let operand = if self.check(TlaTokenKind::And) || self.check(TlaTokenKind::Or) {
+                    self.parse_or_expr()?
+                } else {
+                    self.parse_unary_expr()?
+                };
                 Ok(TlaExpr::unary(TlaUnaryOp::Not, operand))
             }
             Some(TlaTokenKind::Minus) => {
@@ -609,6 +827,26 @@ impl TlaParser {
     /// Handles `.field`, `[index]`, `(args)`, and `'` (prime).
     fn parse_postfix_chain(&mut self, mut expr: TlaExpr) -> ParseResult<TlaExpr> {
         loop {
+            // `V!Op` -- an operator of the module instance bound to `V`. The
+            // qualified name is kept whole so the reference stays resolvable
+            // against the instance recorded on the module.
+            if self.check(TlaTokenKind::Bang) {
+                if let (TlaExpr::Ident(base), Some(TlaTokenKind::Ident(_))) =
+                    (&expr, self.peek_ahead_kind(1))
+                {
+                    let base = base.clone();
+                    self.advance();
+                    let member = self.expect_ident()?;
+                    expr = TlaExpr::Ident(format!("{base}!{member}"));
+                    continue;
+                }
+            }
+
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             match self.peek_kind() {
                 Some(TlaTokenKind::Prime) => {
                     self.advance();
@@ -698,6 +936,15 @@ impl TlaParser {
                 self.expect(TlaTokenKind::RParen)?;
                 Ok(expr)
             }
+            // `@` inside an EXCEPT update: the value the updated component had
+            // before the update, as in `[f EXCEPT ![i] = @ + 1]`. It is only
+            // meaningful inside `EXCEPT`, which the parser does not track, so it
+            // is carried as the reserved identifier `@` and interpreted by
+            // whoever walks the FnExcept node.
+            Some(TlaTokenKind::At) => {
+                self.advance();
+                Ok(TlaExpr::ident("@"))
+            }
             // Set enumeration or comprehension
             Some(TlaTokenKind::LBrace) => self.parse_set_expr_inner(),
             // Tuple/sequence
@@ -714,6 +961,7 @@ impl TlaParser {
             Some(TlaTokenKind::Forall) => self.parse_forall(),
             Some(TlaTokenKind::Exists) => self.parse_exists(),
             Some(TlaTokenKind::Choose) => self.parse_choose(),
+            Some(TlaTokenKind::Lambda) => self.parse_lambda(),
             // UNCHANGED
             Some(TlaTokenKind::Unchanged) => self.parse_unchanged(),
             // ENABLED
@@ -783,6 +1031,34 @@ impl TlaParser {
         if self.check(TlaTokenKind::Colon) {
             self.advance();
             let second = self.parse_expr()?;
+            // `{ e : x \in S, y \in T }` binds more than one variable. Only the
+            // map form does; a filter's extra commas would be part of its
+            // predicate.
+            let mut bindings = Vec::new();
+            while self.check(TlaTokenKind::Comma) {
+                self.advance();
+                let TlaExpr::BinOp {
+                    op: TlaBinOp::In,
+                    left,
+                    right,
+                } = self.parse_expr()?
+                else {
+                    return Err(TlaParseError::new(
+                        "expected a `x \\in S` binding after `,` in a set comprehension",
+                        self.current_span(),
+                    ));
+                };
+                let TlaExpr::Ident(var) = *left else {
+                    return Err(TlaParseError::new(
+                        "a set comprehension binds a name",
+                        self.current_span(),
+                    ));
+                };
+                bindings.push(TlaQuantBound {
+                    var,
+                    set: Some(*right),
+                });
+            }
             self.expect(TlaTokenKind::RBrace)?;
 
             // Determine if this is filter or map based on structure:
@@ -813,10 +1089,21 @@ impl TlaParser {
             {
                 // Map form: {f(x) : x \in S}
                 if let TlaExpr::Ident(var) = left.as_ref() {
-                    return Ok(TlaExpr::SetMap {
-                        expr: Box::new(first),
+                    if bindings.is_empty() {
+                        return Ok(TlaExpr::SetMap {
+                            expr: Box::new(first),
+                            var: var.clone(),
+                            set: right.clone(),
+                        });
+                    }
+                    let mut all = vec![TlaQuantBound {
                         var: var.clone(),
-                        set: right.clone(),
+                        set: Some((**right).clone()),
+                    }];
+                    all.extend(bindings);
+                    return Ok(TlaExpr::SetMapMulti {
+                        expr: Box::new(first),
+                        bindings: all,
                     });
                 }
             }
@@ -852,7 +1139,25 @@ impl TlaParser {
         }
 
         self.expect(TlaTokenKind::RAngle)?;
-        Ok(TlaExpr::Tuple(elements))
+        let tuple = TlaExpr::Tuple(elements);
+
+        // Angle-bracket action subscript: `<<A>>_vars` is `A /\ ~UNCHANGED vars`
+        // (the dual of `[A]_vars`), used to state that a step is not stuttering.
+        if self.check(TlaTokenKind::Underscore) {
+            self.advance();
+            let subscript = self.parse_subscript_vars()?;
+            let action = match tuple {
+                TlaExpr::Tuple(mut elements) if elements.len() == 1 => elements.remove(0),
+                other => other,
+            };
+            return Ok(TlaExpr::binop(
+                TlaBinOp::And,
+                action,
+                TlaExpr::unary(TlaUnaryOp::Not, TlaExpr::Unchanged(subscript)),
+            ));
+        }
+
+        Ok(tuple)
     }
 
     /// Parse bracket expression (function, record, EXCEPT, or function set type)
@@ -885,6 +1190,23 @@ impl TlaParser {
                     domain: Box::new(domain),
                     body: Box::new(body),
                 });
+            } else if self.check(TlaTokenKind::Colon) {
+                // Record set: [holder: 1..NP, clean: BOOLEAN] -- the set of all
+                // records with those field types, as used in type invariants.
+                self.advance();
+                let value = self.parse_expr()?;
+                let mut fields = vec![(name, value)];
+
+                while self.check(TlaTokenKind::Comma) {
+                    self.advance();
+                    let field_name = self.expect_ident()?;
+                    self.expect(TlaTokenKind::Colon)?;
+                    let field_value = self.parse_expr()?;
+                    fields.push((field_name, field_value));
+                }
+
+                self.expect(TlaTokenKind::RBracket)?;
+                return Ok(TlaExpr::RecordSet(fields));
             } else if self.check(TlaTokenKind::MapsTo) {
                 // Record: [a |-> 1, ...]
                 self.advance();
@@ -957,7 +1279,33 @@ impl TlaParser {
         }
 
         self.expect(TlaTokenKind::RBracket)?;
+
+        // Action subscript: `[A]_vars` is by definition `A \/ UNCHANGED vars`.
+        // Desugaring here keeps the AST free of a construct that means exactly
+        // a disjunction, and makes `Spec == Init /\ [][Next]_vars` parse.
+        if self.check(TlaTokenKind::Underscore) {
+            self.advance();
+            let subscript = self.parse_subscript_vars()?;
+            return Ok(TlaExpr::binop(
+                TlaBinOp::Or,
+                expr,
+                TlaExpr::Unchanged(subscript),
+            ));
+        }
+
         Ok(expr)
+    }
+
+    /// Parse the variable list of an action subscript (`_vars` or `_<<x, y>>`).
+    fn parse_subscript_vars(&mut self) -> ParseResult<Vec<TlaExpr>> {
+        if self.check(TlaTokenKind::LAngle) {
+            match self.parse_tuple()? {
+                TlaExpr::Tuple(elements) => Ok(elements),
+                other => Ok(vec![other]),
+            }
+        } else {
+            Ok(vec![self.parse_primary_expr()?])
+        }
     }
 
     /// Parse EXCEPT updates
@@ -1006,9 +1354,13 @@ impl TlaParser {
         self.expect(TlaTokenKind::Then)?;
         let then_expr = self.parse_expr()?;
         self.expect(TlaTokenKind::Else)?;
-        // Parse ELSE with implication-level precedence so top-level conjunction/disjunction
-        // outside the IF expression is not absorbed into the ELSE branch.
-        let else_expr = self.parse_implies_expr()?;
+        // The ELSE branch is a full expression, including a bulleted junction
+        // list of its own (`ELSE /\ a /\ b`). It used to be parsed at
+        // implication precedence to stop it absorbing an enclosing conjunction;
+        // junction-column scoping now does that correctly, and precisely -- a
+        // bullet of the enclosing list is at or left of that list's column, so
+        // it ends the branch, while an inline `/\` on the same line does not.
+        let else_expr = self.parse_expr()?;
 
         Ok(TlaExpr::IfThenElse {
             cond: Box::new(cond),
@@ -1048,12 +1400,11 @@ impl TlaParser {
         let result = self.parse_expr()?;
         arms.push((cond, result));
 
-        // Parse additional arms
-        while self.check(TlaTokenKind::LBracket)
-            && self.peek_ahead_kind(1) == Some(TlaTokenKind::RBracket)
-        {
-            self.advance(); // [
-            self.advance(); // ]
+        // Parse additional arms. The arm separator is `[]`, which the tokenizer
+        // folds into the temporal `Always` token when the brackets are adjacent
+        // -- both spellings have to be accepted here.
+        while self.at_case_separator() && !self.case_separator_precedes_other() {
+            self.consume_case_separator();
             let cond = self.parse_expr()?;
             self.expect(TlaTokenKind::RightArrow)?;
             let result = self.parse_expr()?;
@@ -1061,11 +1412,8 @@ impl TlaParser {
         }
 
         // Parse optional OTHER
-        let other = if self.check(TlaTokenKind::LBracket)
-            && self.peek_ahead_kind(1) == Some(TlaTokenKind::RBracket)
-        {
-            self.advance(); // [
-            self.advance(); // ]
+        let other = if self.at_case_separator() {
+            self.consume_case_separator();
             self.expect(TlaTokenKind::Other)?;
             self.expect(TlaTokenKind::RightArrow)?;
             Some(Box::new(self.parse_expr()?))
@@ -1098,6 +1446,22 @@ impl TlaParser {
 
         Ok(TlaExpr::Exists {
             vars,
+            body: Box::new(body),
+        })
+    }
+
+    /// Parse `LAMBDA x, y : e`.
+    fn parse_lambda(&mut self) -> ParseResult<TlaExpr> {
+        self.expect(TlaTokenKind::Lambda)?;
+        let mut params = vec![self.expect_ident()?];
+        while self.check(TlaTokenKind::Comma) {
+            self.advance();
+            params.push(self.expect_ident()?);
+        }
+        self.expect(TlaTokenKind::Colon)?;
+        let body = self.parse_expr()?;
+        Ok(TlaExpr::Lambda {
+            params,
             body: Box::new(body),
         })
     }
@@ -1215,6 +1579,37 @@ impl TlaParser {
     /// Get current token kind
     fn peek_kind(&self) -> Option<TlaTokenKind> {
         self.peek().map(|t| t.kind.clone())
+    }
+
+    /// Column of the current token, 1-indexed.
+    fn current_column(&self) -> Option<usize> {
+        self.peek().map(|t| t.span.start.column)
+    }
+
+    /// Whether the current token ends the innermost junction-list item.
+    ///
+    /// A token at or left of the enclosing bullet column cannot belong to the
+    /// item being parsed: it is either the next bullet of that list or
+    /// something that closes the list entirely.
+    fn at_junction_boundary(&self) -> bool {
+        match (self.junction_columns.last(), self.current_column()) {
+            (Some(&bullet_col), Some(col)) => col <= bullet_col,
+            _ => false,
+        }
+    }
+
+    /// Parse one item of a junction list whose bullets sit at `bullet_col`.
+    fn parse_junction_item(&mut self, bullet_col: usize) -> ParseResult<TlaExpr> {
+        self.junction_columns.push(bullet_col);
+        let item = self.parse_expr();
+        self.junction_columns.pop();
+        item
+    }
+
+    /// Whether the current token is a bullet of kind `kind` at exactly `col`,
+    /// i.e. the next item of the list being parsed.
+    fn at_bullet(&self, kind: &TlaTokenKind, col: usize) -> bool {
+        self.peek_kind().as_ref() == Some(kind) && self.current_column() == Some(col)
     }
 
     /// Look ahead n tokens
@@ -1894,5 +2289,339 @@ mod tests {
             }
             other => panic!("Expected Record, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_parse_named_assume() {
+        // TLAPS-style named assumption: the name is bound for proof citation
+        // and carries no semantic content for us.
+        let source = r#"
+            ---- MODULE Test ----
+            CONSTANT N
+            ASSUME NAssump == (N \in Nat) /\ (N > 0)
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.assumptions.len(), 1);
+        match &module.assumptions[0] {
+            TlaExpr::BinOp {
+                op: TlaBinOp::And, ..
+            } => {}
+            other => panic!("Expected the assumed conjunction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_infix_operator_definition_and_application() {
+        // Bakery defines \prec as lexicographic less-than on pairs.
+        let source = r#"
+            ---- MODULE Test ----
+            a \prec b == \/ a[1] < b[1]
+                         \/ /\ a[1] = b[1]
+                            /\ a[2] < b[2]
+            Cmp == <<1, 2>> \prec <<1, 3>>
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        let def = module
+            .operators
+            .iter()
+            .find(|o| o.name == "\\prec")
+            .expect("infix definition should be recorded under its operator name");
+        assert_eq!(
+            def.params.len(),
+            2,
+            "infix def takes both operands as params"
+        );
+        assert_eq!(def.params[0].name, "a");
+        assert_eq!(def.params[1].name, "b");
+
+        let cmp = module.operators.iter().find(|o| o.name == "Cmp").unwrap();
+        match &cmp.body {
+            TlaExpr::OpApply { op, args } => {
+                assert_eq!(**op, TlaExpr::Ident("\\prec".to_string()));
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("Expected an infix application, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_union_and_intersect_aliases() {
+        // \union / \intersect are the ASCII long names for \cup / \cap.
+        let source = r#"
+            ---- MODULE Test ----
+            A == S \union {x}
+            B == S \intersect T
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::BinOp { op, .. } => assert_eq!(*op, TlaBinOp::Cup),
+            other => panic!("Expected Cup, got {:?}", other),
+        }
+        match &module.operators[1].body {
+            TlaExpr::BinOp { op, .. } => assert_eq!(*op, TlaBinOp::Cap),
+            other => panic!("Expected Cap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_backslash_o_is_concat_not_octal_without_digits() {
+        // `\o` introduces an octal literal only when a digit follows it;
+        // otherwise it is sequence concatenation.
+        let source = r#"
+            ---- MODULE Test ----
+            Cat == s \o t
+            Oct == \o777
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::OpApply { op, args } => {
+                assert_eq!(**op, TlaExpr::Ident("\\o".to_string()));
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("Expected concat application, got {:?}", other),
+        }
+        match &module.operators[1].body {
+            TlaExpr::Number(_) => {}
+            other => panic!("Expected an octal literal, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_except_with_at() {
+        // `@` is the pre-update value of the component being updated.
+        let source = r#"
+            ---- MODULE Test ----
+            Bump == [clock EXCEPT ![p] = @ + 1]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::FnExcept { updates, .. } => {
+                assert_eq!(updates.len(), 1);
+                match &updates[0].value {
+                    TlaExpr::BinOp { op, left, .. } => {
+                        assert_eq!(*op, TlaBinOp::Plus);
+                        assert_eq!(**left, TlaExpr::Ident("@".to_string()));
+                    }
+                    other => panic!("Expected `@ + 1`, got {:?}", other),
+                }
+            }
+            other => panic!("Expected FnExcept, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_except_multi_index_path() {
+        // Pairwise-FIFO networks index twice: `![q][p]`.
+        let source = r#"
+            ---- MODULE Test ----
+            Recv == [network EXCEPT ![q][p] = Tail(@), ![p][q] = Append(@, m)]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::FnExcept { updates, .. } => {
+                assert_eq!(updates.len(), 2, "both EXCEPT updates are kept");
+                assert_eq!(updates[0].path.len(), 2, "![q][p] is a two-step path");
+            }
+            other => panic!("Expected FnExcept, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_action_subscript_desugars_to_its_meaning() {
+        // `[A]_vars` IS `A \/ UNCHANGED vars` in TLA+, so the parser stores that
+        // rather than inventing a node for it.
+        let source = r#"
+            ---- MODULE Test ----
+            Spec == Init /\ [][Next]_vars
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        let body = &module.operators[0].body;
+        let TlaExpr::BinOp { op, right, .. } = body else {
+            panic!("Expected a conjunction, got {:?}", body)
+        };
+        assert_eq!(*op, TlaBinOp::And);
+        let TlaExpr::Always(inner) = &**right else {
+            panic!(
+                "Expected [] applied to the subscripted action, got {:?}",
+                right
+            )
+        };
+        match &**inner {
+            TlaExpr::BinOp { op, left, right } => {
+                assert_eq!(*op, TlaBinOp::Or);
+                assert_eq!(**left, TlaExpr::Ident("Next".to_string()));
+                assert!(matches!(**right, TlaExpr::Unchanged(_)));
+            }
+            other => panic!("Expected `Next \\/ UNCHANGED vars`, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_angle_action_subscript() {
+        // `<<A>>_vars` is the non-stuttering dual: `A /\ ~UNCHANGED vars`.
+        let source = r#"
+            ---- MODULE Test ----
+            Live == WF_vars(Next) /\ <<Next>>_vars
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::BinOp { right, .. } = &module.operators[0].body else {
+            panic!("Expected a conjunction")
+        };
+        match &**right {
+            TlaExpr::BinOp { op, left, right } => {
+                assert_eq!(*op, TlaBinOp::And);
+                assert_eq!(**left, TlaExpr::Ident("Next".to_string()));
+                assert!(matches!(
+                    &**right,
+                    TlaExpr::UnaryOp {
+                        op: TlaUnaryOp::Not,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("Expected `Next /\\ ~UNCHANGED vars`, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_underscore_is_not_an_identifier_prefix() {
+        // `_vars` in `[Next]_vars` is `_` + `vars`, not one identifier. Getting
+        // this wrong silently truncates the enclosing definition.
+        let source = r#"
+            ---- MODULE Test ----
+            Spec == [][Next]_vars
+            After == 1
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(
+            module.operators.len(),
+            2,
+            "the definition after a subscripted action must still be seen"
+        );
+        assert_eq!(module.operators[1].name, "After");
+    }
+
+    #[test]
+    fn test_junction_list_scoped_by_bullet_column() {
+        // The `/\ d` at the outer bullet column (8) belongs to the outer list,
+        // not to the ELSE branch whose list sits at column 19. Column is the
+        // only thing that says so.
+        let source = r#"---- MODULE Test ----
+Act == /\ a
+       /\ IF c
+             THEN /\ x
+                  /\ y
+             ELSE /\ z
+       /\ d
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::BinOp {
+            op: TlaBinOp::And,
+            left,
+            right,
+        } = &module.operators[0].body
+        else {
+            panic!("Expected a conjunction, got {:?}", module.operators[0].body)
+        };
+        assert_eq!(
+            **right,
+            TlaExpr::Ident("d".to_string()),
+            "the last outer bullet must be `d`, i.e. it was not absorbed into \
+             the ELSE branch"
+        );
+        let TlaExpr::BinOp { right: middle, .. } = &**left else {
+            panic!("Expected `a /\\ IF...`, got {:?}", left)
+        };
+        assert!(
+            matches!(**middle, TlaExpr::IfThenElse { .. }),
+            "second item should be the IF, got {:?}",
+            middle
+        );
+    }
+
+    #[test]
+    fn test_inline_junction_is_infix_not_a_new_bullet() {
+        // On one line there are no bullets to align, so `/\` is infix and ELSE
+        // still terminates the THEN branch.
+        let source = r#"---- MODULE Test ----
+Act == IF c THEN /\ x /\ y ELSE z
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::IfThenElse {
+            then_expr,
+            else_expr,
+            ..
+        } = &module.operators[0].body
+        else {
+            panic!("Expected IF-THEN-ELSE, got {:?}", module.operators[0].body)
+        };
+        assert!(matches!(
+            **then_expr,
+            TlaExpr::BinOp {
+                op: TlaBinOp::And,
+                ..
+            }
+        ));
+        assert_eq!(**else_expr, TlaExpr::Ident("z".to_string()));
+    }
+
+    #[test]
+    fn test_nested_junction_lists_alternate_kind() {
+        // A `\/` list (column 11) nested inside one item of a `/\` list
+        // (column 8), with its own `/\` sub-list at column 14.
+        let source = r#"---- MODULE Test ----
+Act == /\ p
+       /\ \/ /\ q
+             /\ r
+          \/ s
+       /\ t
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::BinOp { right, .. } = &module.operators[0].body else {
+            panic!("Expected a conjunction, got {:?}", module.operators[0].body)
+        };
+        assert_eq!(
+            **right,
+            TlaExpr::Ident("t".to_string()),
+            "the outer list must continue past the nested disjunction"
+        );
+    }
+
+    #[test]
+    fn test_negated_junction_list() {
+        // `~` takes a bulleted list as its operand when one follows directly,
+        // as in Bakery's MutualExclusion.
+        let source = r#"---- MODULE Test ----
+Mutex == ~ /\ p
+           /\ q
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::UnaryOp {
+            op: TlaUnaryOp::Not,
+            operand,
+        } = &module.operators[0].body
+        else {
+            panic!("Expected a negation, got {:?}", module.operators[0].body)
+        };
+        assert!(
+            matches!(
+                **operand,
+                TlaExpr::BinOp {
+                    op: TlaBinOp::And,
+                    ..
+                }
+            ),
+            "the negation must cover both items of the list, got {:?}",
+            operand
+        );
     }
 }

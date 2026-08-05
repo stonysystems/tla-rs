@@ -51,19 +51,20 @@ verus! {
     /// Well-formedness of the distributed state
     pub open spec fn WellFormedRaftDistributed(ds: RaftDistributedState) -> bool {
         &&& ds.num_servers > 0
+        &&& ds.num_servers <= u64::MAX as int
         &&& ds.server_states.len() == ds.num_servers
         &&& ds.server_constants.len() == ds.num_servers
-        &&& (forall |i: int| 0 <= i < ds.num_servers ==> {
+        &&& (forall |i: int| #![trigger ds.server_constants[i]] 0 <= i < ds.num_servers ==> {
             &&& ds.server_constants[i].my_id == i
             &&& ds.server_constants[i].quorum_size == ds.num_servers / 2 + 1
-            &&& ds.server_constants[i].servers == Set::new(|j: int| 0 <= j < ds.num_servers)
+            &&& ds.server_constants[i].servers =~= Set::<int>::range(0, ds.num_servers)
         })
     }
 
     /// Distributed system initialization
     pub open spec fn RaftDistributedInit(ds: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
-        &&& (forall |i: int| 0 <= i < ds.num_servers ==>
+        &&& (forall |i: int| #![trigger ds.server_states[i]] #![trigger ds.server_constants[i]] 0 <= i < ds.num_servers ==>
             LInit(ds.server_states[i], ds.server_constants[i]))
         &&& ds.network == Set::<LRaftPacket>::empty()
         &&& ds.vote_log_len == Map::<(int, int), int>::empty()
@@ -99,7 +100,7 @@ verus! {
                     )))
             ||| (received_from is None && (exists |nci: int| LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets)))
             // (B) Message handling — received packet must be in network
-            ||| (exists |pkt: LRaftPacket| {
+            ||| (exists |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                     &&& received_from == Some(pkt.src)
                     &&& ds.network.contains(pkt)
                     &&& pkt.dst == server_id
@@ -127,7 +128,7 @@ verus! {
             // Network monotonicity: old packets preserved
             &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
             // New packets come from sent_packets with routing constraints
-            &&& (forall |pkt: LRaftPacket|
+            &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                 ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                     &&& pkt.src == server_id
                     &&& 0 <= pkt.dst < ds.num_servers
@@ -141,7 +142,7 @@ verus! {
             // Ghost state: vote_log_len tracks voter log length at vote time.
             // Old entries preserved (monotonic). New entry added when a granted
             // VoteResponse is sent: record (server_id, vote_term) → s.log.len().
-            &&& (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+            &&& (forall |v: int, t: int| #![trigger ds_.vote_log_len[(v, t)]] #![trigger ds.vote_log_len[(v, t)]] ds.vote_log_len.dom().contains((v, t))
                 ==> ds_.vote_log_len.dom().contains((v, t))
                     && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)])
             // Ghost state new-entry clause: either a granted VoteResponse was
@@ -158,6 +159,9 @@ verus! {
                     // Record voter log length at vote time
                     &&& ds_.vote_log_len.dom().contains((server_id, vt))
                     &&& ds_.vote_log_len[(server_id, vt)] == s.log.len()
+                    &&& ds_.vote_log_len
+                        == ds.vote_log_len.insert(
+                            (server_id, vt), s.log.len() as int)
                 })
                 ||| (
                     // No granted VoteResponse sent
@@ -165,6 +169,7 @@ verus! {
                         0 <= i < sent_packets.len()
                         && (sent_packets[i] is VoteResponse)
                         && sent_packets[i]->VoteResponse_granted)
+                    && ds_.vote_log_len == ds.vote_log_len
                 )
             })
             // Ghost state: election_log_len records the stepping server's log
@@ -368,7 +373,7 @@ verus! {
         &&& WellFormedRaftDistributed(ds_)
         &&& ds_.num_servers == ds.num_servers
         &&& ds_.server_constants == ds.server_constants
-        &&& exists |server_id: int| {
+        &&& exists |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             // The chosen server transitions
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -479,7 +484,7 @@ verus! {
         } else {
             // Use the first server that has commit_index >= max_commit
             // (Safety invariants guarantee all such servers agree)
-            let server_id = choose |id: int| 0 <= id < ds.num_servers
+            let server_id = choose |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
                 && ds.server_states[id].commit_index >= max_commit
                 && ds.server_states[id].log.len() >= max_commit;
             ExtractLogValues(ds.server_states[server_id].log, max_commit)
@@ -533,7 +538,7 @@ verus! {
         ds: RaftDistributedState,
         rs: RaftSystemState
     ) -> bool {
-        &&& rs.server_ids == Set::new(|j: int| 0 <= j < ds.num_servers)
+        &&& rs.server_ids =~= Set::<int>::range(0, ds.num_servers)
         &&& rs.committed_log == GetCommittedLog(ds)
     }
 
@@ -546,7 +551,7 @@ verus! {
         &&& high_level_behavior.len() > 0
         &&& RaftSystemInit(
             high_level_behavior[0],
-            Set::new(|j: int| 0 <= j < low_level_behavior[0].num_servers)
+            Set::<int>::range(0, low_level_behavior[0].num_servers)
         )
         &&& (forall |i: int| #![trigger low_level_behavior[i]] 0 <= i < low_level_behavior.len() ==>
             RaftSystemRefinement(low_level_behavior[i], high_level_behavior[i]))
@@ -621,8 +626,8 @@ verus! {
     pub proof fn lemma_max_commit_seq_achieved(states: Seq<LState>)
         requires
             states.len() > 0,
-            forall |j: int| 0 <= j < states.len() ==> states[j].commit_index >= 0,
-        ensures exists |j: int| 0 <= j < states.len()
+            forall |j: int| #![trigger states[j]] 0 <= j < states.len() ==> states[j].commit_index >= 0,
+        ensures exists |j: int| #![trigger states[j]] 0 <= j < states.len()
             && states[j].commit_index == max_commit_index_seq(states)
         decreases states.len()
     {
@@ -654,12 +659,12 @@ verus! {
                 assert(states[n - 1].commit_index == max_commit_index_seq(states));
             } else {
                 // Some server in sub achieves rest_max
-                assert forall |j: int| 0 <= j < sub.len()
+                assert forall |j: int| #![trigger sub[j]] 0 <= j < sub.len()
                 implies sub[j].commit_index >= 0 by {
                     assert(sub[j] == states[j]);
                 }
                 lemma_max_commit_seq_achieved(sub);
-                let j = choose |j: int| 0 <= j < sub.len()
+                let j = choose |j: int| #![trigger sub[j]] 0 <= j < sub.len()
                     && sub[j].commit_index == max_commit_index_seq(sub);
                 assert(states[j] == sub[j]);
                 assert(states[j].commit_index == rest_max);
@@ -676,7 +681,7 @@ verus! {
             CommitIndexBounded(ds),
             MaxCommitIndex(ds) > 0,
         ensures
-            exists |id: int| 0 <= id < ds.num_servers
+            exists |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
                 && ds.server_states[id].commit_index >= MaxCommitIndex(ds)
                 && ds.server_states[id].log.len() >= MaxCommitIndex(ds)
         decreases ds.num_servers
@@ -720,7 +725,7 @@ verus! {
                 // max_commit_index_seq(sub) == rest_max
                 let sub = ds.server_states.subrange(0, n - 1);
                 lemma_max_commit_seq_ge_server_reverse(sub, rest_max);
-                let j = choose |j: int| 0 <= j < sub.len()
+                let j = choose |j: int| #![trigger sub[j]] 0 <= j < sub.len()
                     && sub[j].commit_index >= rest_max;
                 assert(ds.server_states[j] == sub[j]);
                 assert(ds.server_states[j].commit_index >= MaxCommitIndex(ds));
@@ -737,7 +742,7 @@ verus! {
             max_commit_index_seq(states) >= threshold,
             threshold > 0,
         ensures
-            exists |j: int| 0 <= j < states.len()
+            exists |j: int| #![trigger states[j]] 0 <= j < states.len()
                 && states[j].commit_index >= threshold
         decreases states.len()
     {
@@ -752,7 +757,7 @@ verus! {
             assert(rest_max >= threshold);
             if sub.len() > 0 {
                 lemma_max_commit_seq_ge_server_reverse(sub, threshold);
-                let j = choose |j: int| 0 <= j < sub.len()
+                let j = choose |j: int| #![trigger sub[j]] 0 <= j < sub.len()
                     && sub[j].commit_index >= threshold;
                 assert(states[j] == sub[j]);
             }
@@ -773,7 +778,7 @@ verus! {
         } else {
             // Find a server achieving max_commit with log.len() >= max_commit
             lemma_max_commit_index_witness(ds);
-            let j = choose |id: int| 0 <= id < ds.num_servers
+            let j = choose |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
                 && ds.server_states[id].commit_index >= max_commit
                 && ds.server_states[id].log.len() >= max_commit;
             // ExtractLogValues(log, max_commit) has length max_commit

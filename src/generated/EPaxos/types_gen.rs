@@ -86,7 +86,7 @@ impl View for CState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CConstants {
     pub num_replicas: u64,
     pub fast_quorum_size: u64,
@@ -148,7 +148,7 @@ impl View for CInstancePhase {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CEPaxosMessage {
     PreAccept {
         ballot: u64,
@@ -206,3 +206,4 @@ impl View for CEPaxosMessage {
 }
 
 } // verus!
+

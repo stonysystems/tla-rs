@@ -15,14 +15,25 @@ verus! {
     pub open spec fn MapSeqToSet<X,Y>(xs:Seq<X>, f: spec_fn(X) -> Y) -> Set<Y>
         recommends Injective(f)
     {
-        Set::new(|y:Y| exists |x:X| xs.contains(x) && f(x) == y)
+        xs.to_set().map(f)
     }
 
     pub proof fn lemma_MapSeqToSet<X,Y>(xs:Seq<X>, f: spec_fn(X) -> Y)
         requires Injective(f)
         ensures forall |x:X| #[trigger] xs.contains(x) <==> MapSeqToSet(xs, f).contains(f(x))
     {
-
+        broadcast use Set::lemma_map_contains;
+        broadcast use Seq::to_set_ensures;
+        assert forall |x: X| #[trigger] xs.contains(x)
+            implies MapSeqToSet(xs, f).contains(f(x)) by {
+            assert(xs.to_set().contains(x));
+        };
+        assert forall |x: X| #[trigger] MapSeqToSet(xs, f).contains(f(x))
+            implies xs.contains(x) by {
+            let x0 = choose |x0: X| xs.to_set().contains(x0) && f(x0) == f(x);
+            assert(xs.contains(x0));
+            assert(x0 == x);
+        };
     }
 
     pub open spec fn intsetmax(s: Set<int>) -> int
@@ -35,13 +46,13 @@ verus! {
 
     /// Helper: any finite non-empty set of ints has a maximum element.
     proof fn lemma_finite_int_set_has_max(s: Set<int>)
-        requires s.finite(), s.len() > 0
+        requires s.len() > 0
         ensures
             s.contains(intsetmax(s)),
             forall |i: int| s.contains(i) ==> intsetmax(s) >= i,
         decreases s.len()
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         let x = s.choose();
         let s_minus = s.remove(x);
@@ -84,7 +95,7 @@ verus! {
     }
 
     pub proof fn lemma_intsetmax_ensures(s: Set<int>)
-        requires s.len() > 0, s.finite()
+        requires s.len() > 0
         ensures ({
             let m = intsetmax(s);
             &&& s.contains(m)
@@ -96,7 +107,6 @@ verus! {
 
     pub proof fn SetNotEmpty<T>(s:Set<T>)
         requires exists |x:T| s.contains(x),
-                 s.finite(),
         ensures s.len()>0
     {
         vstd::set_lib::lemma_set_empty_equivalency_len(s);
@@ -114,16 +124,14 @@ verus! {
         s: Set<S>, f: spec_fn(S) -> T, t: Set<T>,
     )
         requires
-            t.finite(),
             forall |x: S| s.contains(x) ==> t.contains(#[trigger] f(x)),
             forall |x1: S, x2: S| #![trigger f(x1), f(x2)]
                 s.contains(x1) && s.contains(x2) && f(x1) == f(x2) ==> x1 == x2,
         ensures
-            s.finite(),
             s.len() <= t.len(),
         decreases t.len(),
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         if t.len() == 0 {
             vstd::set_lib::lemma_set_empty_equivalency_len(t);
@@ -168,20 +176,19 @@ verus! {
             InjectiveOver(xs, ys, f),
             forall |x: X| xs.contains(x) ==> ys.contains(f(x)),
             forall |y: Y| ys.contains(y) ==> exists |x: X| xs.contains(x) && y == f(x),
-            xs.finite(),
         ensures
             xs.len() == ys.len(),
         decreases xs.len(),
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         // Derive ys.finite(): ys ⊆ xs.map(f) and xs.map(f) is finite
         assert(ys.subset_of(xs.map(f))) by {
-            assert forall |y: Y| ys.contains(y) implies xs.map(f).contains(y) by {
+            assert forall |y: Y| #![trigger ys.contains(y)]
+                ys.contains(y) implies xs.map(f).contains(y) by {
                 let x = choose |x: X| xs.contains(x) && y == f(x);
             };
         };
-        xs.lemma_map_finite(f);
         vstd::set_lib::lemma_len_subset(ys, xs.map(f));
         // ys is now known to be finite
 
@@ -240,7 +247,6 @@ verus! {
     pub proof fn subset_cardinality<T>(x:Set<T>, y:Set<T>)
         requires
             x.subset_of(y),
-            y.finite(),
         ensures x.len() <= y.len()
     {
         vstd::set_lib::lemma_len_subset(x, y);
@@ -248,26 +254,24 @@ verus! {
 
     pub proof fn InsertCardinality<T>(s:Set<T>, x:T)
         requires
-            s.finite(),
             forall |y:T| s.contains(y) ==> y != x,
         ensures s.insert(x).len() == s.len() + 1
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         // forall y in s: y != x. Instantiate with y = x: s.contains(x) ==> x != x.
         // Since x == x, we get !s.contains(x).
         assert(!s.contains(x));
-        // axiom_set_insert_len (in group_set_axioms): s.insert(x).len() == s.len() + 1
+        // lemma_set_insert_len (in group_set_lemmas): s.insert(x).len() == s.len() + 1
     }
 
     pub proof fn subset_len_equal_implies_equal<T>(s1: Set<T>, s2: Set<T>)
     requires
         s1.subset_of(s2),
         s1.len() == s2.len(),
-        s2.finite(),
     ensures
         s1 == s2
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         if s1 != s2 {
             // s1 ⊆ s2 and s1 ≠ s2 ⟹ ∃x ∈ s2 \ s1
             assert(exists |x: T| s2.contains(x) && !s1.contains(x)) by {
@@ -278,7 +282,8 @@ verus! {
             let x = choose |x: T| s2.contains(x) && !s1.contains(x);
             // s1 ⊆ s2.remove(x) since all of s1 is in s2 and x ∉ s1
             assert(s1.subset_of(s2.remove(x))) by {
-                assert forall |y: T| s1.contains(y) implies s2.remove(x).contains(y) by {
+                assert forall |y: T| #![trigger s1.contains(y)]
+                    s1.contains(y) implies s2.remove(x).contains(y) by {
                     assert(s2.contains(y));  // from s1 ⊆ s2
                     assert(y != x);          // x ∉ s1 but y ∈ s1
                 };
@@ -303,7 +308,6 @@ verus! {
             a.subset_of(u),
             b.subset_of(u),
             a.len() + b.len() > u.len(),
-            u.finite(),
         ensures
             exists |w: T| a.contains(w) && b.contains(w),
     {
@@ -313,7 +317,8 @@ verus! {
 
         // a ∪ b ⊆ u
         assert((a + b).subset_of(u)) by {
-            assert forall |x: T| (a + b).contains(x) implies u.contains(x) by {};
+            assert forall |x: T| #![trigger u.contains(x)]
+                (a + b).contains(x) implies u.contains(x) by {};
         };
 
         // |a ∪ b| ≤ |u| and a ∪ b is finite
@@ -326,7 +331,8 @@ verus! {
 
         // a ∩ b is finite (subset of a)
         assert(a.intersect(b).subset_of(a)) by {
-            assert forall |x: T| a.intersect(b).contains(x) implies a.contains(x) by {};
+            assert forall |x: T| #![trigger a.contains(x)]
+                a.intersect(b).contains(x) implies a.contains(x) by {};
         };
         vstd::set_lib::lemma_len_subset(a.intersect(b), a);
 

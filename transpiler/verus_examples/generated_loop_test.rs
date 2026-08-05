@@ -5,7 +5,6 @@
 use vstd::prelude::*;
 use vstd::map::*;
 use vstd::set::*;
-use vstd::std_specs::hash::KeysAdditionalSpecFns;
 use std::collections::HashMap;
 
 verus! {

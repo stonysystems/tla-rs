@@ -1,7 +1,6 @@
 use crate::common::collections::hashsets::{
     clone_hashset_u64,
     hashset_to_vec,
-    lemma_hashset_view_finite,
     lemma_set_u64_to_int_len,
 };
 use crate::generated::Raft::types_gen::{
@@ -161,11 +160,6 @@ pub fn is_majority_of_servers(
     let config = membership_servers_set(servers);
     let is_subset = hashset_is_subset(quorum, &config);
 
-    proof {
-        lemma_hashset_view_finite(&config);
-        lemma_hashset_view_finite(quorum);
-    }
-
     if config.len() == 0 {
         assert(config@.len() == 0);
         false
@@ -208,13 +202,9 @@ pub proof fn lemma_u64_majority_matches_logical(
     let cast = |server: u64| server as int;
     let mapped_servers = servers.map_values(cast);
 
-    broadcast use seq_to_set_is_finite;
-
     servers.lemma_to_set_map_commutes(cast);
     lemma_set_u64_to_int_len(quorum);
     lemma_set_u64_to_int_len(config);
-    quorum.lemma_map_finite(cast);
-    config.lemma_map_finite(cast);
 
     assert(servers.map(
         |i: int, server: u64| server as int,
@@ -279,7 +269,6 @@ pub fn is_majority_of_membership_view(
 {
     let result = is_majority_of_servers(quorum, servers);
     proof {
-        lemma_hashset_view_finite(quorum);
         lemma_u64_majority_matches_logical(
             quorum@,
             servers@,
@@ -639,8 +628,7 @@ pub proof fn lemma_u64_joint_quorum_matches_logical(
     let new_config = new_servers.to_set();
     let cast = |server: u64| server as int;
 
-    broadcast use seq_to_set_is_finite;
-    broadcast use vstd::set::group_set_axioms;
+    broadcast use vstd::set::group_set_lemmas;
 
     old_servers.lemma_to_set_map_commutes(cast);
     new_servers.lemma_to_set_map_commutes(cast);
@@ -709,7 +697,6 @@ pub fn is_joint_quorum_membership_view(
         new_servers,
     );
     proof {
-        lemma_hashset_view_finite(quorum);
         lemma_u64_joint_quorum_matches_logical(
             quorum@,
             old_servers@,
@@ -736,16 +723,8 @@ pub fn is_majority_of_hashset_membership_view(
     let is_subset = hashset_is_subset(quorum, config);
 
     proof {
-        lemma_hashset_view_finite(quorum);
-        lemma_hashset_view_finite(config);
         lemma_set_u64_to_int_len(quorum@);
         lemma_set_u64_to_int_len(config@);
-        quorum@.lemma_map_finite(
-            |server: u64| server as int,
-        );
-        config@.lemma_map_finite(
-            |server: u64| server as int,
-        );
         lemma_u64_cast_map_subset_iff(
             quorum@,
             config@,

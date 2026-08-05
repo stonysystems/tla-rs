@@ -507,14 +507,14 @@ verus! {
 
         // From UpdateNewCache: since s didn't have client, s_prime.reply_cache[client] comes from replies
         assert(UpdateNewCache(s.reply_cache, s_prime.reply_cache, replies));
-        let req_num_new = choose |req_num: int| 0 <= req_num < replies.len() && replies[req_num].client == client && s_prime.reply_cache[client] == replies[req_num];
+        let req_num_new = choose |req_num: int| #![trigger replies[req_num]] 0 <= req_num < replies.len() && replies[req_num].client == client && s_prime.reply_cache[client] == replies[req_num];
 
         // Build qs and lift to step i
         let qs_prev = lemma_AppStateAlwaysValid(b, c, i - 1, idx);
         let q = lemma_DecidedOperationWasChosen(b, c, i - 1, idx);
         let qs_new = qs_prev + seq![q];
 
-        assert forall |opn: int| 0 <= opn < qs_new.len() implies qs_new[opn].opn == opn && IsValidQuorumOf2bs(b[i - 1 as int], qs_new[opn]) by {
+        assert forall |opn: int| #![trigger qs_new[opn]] 0 <= opn < qs_new.len() implies qs_new[opn].opn == opn && IsValidQuorumOf2bs(b[i - 1 as int], qs_new[opn]) by {
             if opn < qs_prev.len() as int {
                 assert(qs_new[opn] == qs_prev[opn]);
             }
@@ -530,7 +530,7 @@ verus! {
         // Prove batches_new.subrange(0, batch_num_new) =~= GetSequenceOfRequestBatches(qs_prev)
         lemma_GetSequenceOfRequestBatches(qs_prev);
         assert(batches_new.subrange(0, batch_num_new) =~= GetSequenceOfRequestBatches(qs_prev)) by {
-            assert forall |n: int| 0 <= n < batch_num_new implies batches_new.subrange(0, batch_num_new)[n] == GetSequenceOfRequestBatches(qs_prev)[n] by {
+            assert forall |n: int| #![trigger GetSequenceOfRequestBatches(qs_prev)[n]] 0 <= n < batch_num_new implies batches_new.subrange(0, batch_num_new)[n] == GetSequenceOfRequestBatches(qs_prev)[n] by {
                 lemma_SequenceOfRequestBatchesNthElement(qs_new, n);
                 lemma_SequenceOfRequestBatchesNthElement(qs_prev, n);
                 assert(qs_new[n] == qs_prev[n]);
@@ -876,7 +876,7 @@ verus! {
         // This connects GetReplyFromRequestBatches to HandleRequestBatch(app, batch)
         lemma_GetSequenceOfRequestBatches(qs_prev);
         assert(batches.subrange(0, batch_num) =~= GetSequenceOfRequestBatches(qs_prev)) by {
-            assert forall |n: int| 0 <= n < batch_num implies batches.subrange(0, batch_num)[n] == GetSequenceOfRequestBatches(qs_prev)[n] by {
+            assert forall |n: int| #![trigger GetSequenceOfRequestBatches(qs_prev)[n]] 0 <= n < batch_num implies batches.subrange(0, batch_num)[n] == GetSequenceOfRequestBatches(qs_prev)[n] by {
                 lemma_SequenceOfRequestBatchesNthElement(qs, n);
                 lemma_SequenceOfRequestBatchesNthElement(qs_prev, n);
                 assert(qs[n] == qs_prev[n]);  // since n < qs_prev.len() and qs = qs_prev + seq![q]

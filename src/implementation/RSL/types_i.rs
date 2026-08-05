@@ -102,12 +102,28 @@ verus! {
     }
 
     define_struct_and_derive_marshalable!{
-        #[derive(Clone, PartialEq, Eq, Hash)]
+        #[derive(PartialEq, Eq, Hash)]
         pub struct CRequest {
             pub client : EndPoint,
             pub seqno : u64,
             pub request : CAppMessage,
         }
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CRequest {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result == *self,
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl View for CRequest {
@@ -158,12 +174,28 @@ verus! {
     }
 
     define_struct_and_derive_marshalable!{
-        #[derive(Clone, Eq, PartialEq, Hash)]
+        #[derive(Eq, PartialEq, Hash)]
         pub struct CReply {
             pub client : EndPoint,
             pub seqno : u64,
             pub reply : CAppMessage,
         }
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CReply {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result == *self,
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl CReply {
@@ -218,8 +250,8 @@ verus! {
     pub fn clone_request_batch_up_to_view(batch: &CRequestBatch) -> (res: CRequestBatch)
         ensures
             res@ == batch@,
-            forall |i: int| 0 <= i < batch.len() ==> res[i]@ == batch[i]@,
-            forall |i: int| 0 <= i < batch.len() ==> res[i].valid() == batch[i].valid(),
+            forall |i: int| #![trigger res[i]] #![trigger batch[i]] 0 <= i < batch.len() ==> res[i]@ == batch[i]@,
+            forall |i: int| #![trigger res[i]] #![trigger batch[i]] 0 <= i < batch.len() ==> res[i].valid() == batch[i].valid(),
     {
         let mut cloned:Vec<CRequest> = Vec::new();
         let mut i = 0;
@@ -263,7 +295,7 @@ verus! {
             res@ == cache@,
             forall |k| cache@.contains_key(k) ==> res@.contains_key(k),
             forall |k| res@.contains_key(k) ==> cache@.contains_key(k),
-            forall |k| res@.contains_key(k) ==> res@[k] == cache@[k]
+            forall |k| #![trigger res@[k]] #![trigger cache@[k]] res@.contains_key(k) ==> res@[k] == cache@[k]
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
@@ -321,20 +353,36 @@ verus! {
         recommends creplycache_is_abstractable(m)
     {
         Map::new(
-            |ak: AbstractEndPoint| exists |k:EndPoint| m@.contains_key(k) && k@ == ak, // m@.contains_key(k) k@,
+            m@.dom().map(|k: EndPoint| k@),
             |ak: AbstractEndPoint| {
-                let k = choose |k: EndPoint| m@.contains_key(k) && k@ == ak;
+                let k = choose |k: EndPoint| #![trigger k@] m@.contains_key(k) && k@ == ak;
                 m@[k]@
             }
         )
     }
 
     define_struct_and_derive_marshalable!{
-        #[derive(Clone, Eq, PartialEq, Hash)]
+        #[derive(Eq, PartialEq, Hash)]
         pub struct CVote {
             pub max_value_bal : CBallot,
             pub max_val : CRequestBatch,
         }
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CVote {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl CVote{
@@ -374,8 +422,8 @@ verus! {
     /// Vec<CRequest> / CRequest view is injective (EndPoint by axiom, u64 Copy, CAppMessage by ensures).
     /// The only gap is Vec identity ≠ Seq identity in Verus's SMT model.
     #[verifier(external_body)]
-    pub broadcast proof fn axiom_cvote_view()
-        ensures forall |v1: CVote, v2: CVote| v1@ == v2@ ==> v1 == v2
+    pub broadcast proof fn axiom_cvote_view(v1: CVote, v2: CVote)
+        ensures #[trigger] v1@ == #[trigger] v2@ ==> v1 == v2
     {
     }
 
@@ -386,7 +434,7 @@ verus! {
             res@ == votes@,
             forall |k| votes@.contains_key(k) ==> res@.contains_key(k),
             forall |k| res@.contains_key(k) ==> votes@.contains_key(k),
-            forall |k| res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
+            forall |k| #![trigger res@.index(k)] #![trigger votes@.index(k)] res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
@@ -458,7 +506,7 @@ verus! {
         recommends cvotes_is_abstractable(m)
     {
         Map::new(
-            |ak: int| exists |k: u64| m@.contains_key(k) && k@ == ak,
+            m@.dom().map(|k: u64| k as int),
             |ak: int| {
                 let k = choose |k: u64| m@.contains_key(k) && k@ == ak;
                 m@[k]@
@@ -511,7 +559,7 @@ verus! {
         }
 
         pub open spec fn abstractable(self) -> bool{
-            &&& (forall |p| self.received_2b_message_senders@.contains(p) ==> p.abstractable())
+            &&& (forall |p| #![trigger self.received_2b_message_senders@.contains(p)] self.received_2b_message_senders@.contains(p) ==> p.abstractable())
             &&& crequestbatch_is_abstractable(&self.candidate_learned_value)
         }
 
@@ -547,8 +595,8 @@ verus! {
     /// and CRequest view is injective making abstractify_crequestbatch injective.
     /// The only gap is HashSet/Vec identity ≠ Set/Seq identity in Verus's SMT model.
     #[verifier(external_body)]
-    pub broadcast proof fn axiom_clearner_tuple_view()
-        ensures forall |t1: CLearnerTuple, t2: CLearnerTuple| t1@ == t2@ ==> t1 == t2
+    pub broadcast proof fn axiom_clearner_tuple_view(t1: CLearnerTuple, t2: CLearnerTuple)
+        ensures #[trigger] t1@ == #[trigger] t2@ ==> t1 == t2
     {
     }
 
@@ -567,7 +615,7 @@ verus! {
         recommends clearnerstate_is_abstractable(m)
     {
         Map::new(
-            |ak: int| exists |k: u64| m@.contains_key(k) && k@ == ak,
+            m@.dom().map(|k: u64| k as int),
             |ak: int| {
                 let k = choose |k: u64| m@.contains_key(k) && k@ == ak;
                 m@[k]@

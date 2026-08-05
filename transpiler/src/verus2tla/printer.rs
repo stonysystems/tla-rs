@@ -300,6 +300,32 @@ impl TlaPrinter {
                 format!("{}{{{}:{} \\in {}}}", indent, expr_str, var, set_str)
             }
 
+            TlaExpr::Lambda { params, body } => format!(
+                "{}LAMBDA {} : {}",
+                indent,
+                params.join(", "),
+                self.print_expr_no_indent(body)
+            ),
+
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                let bound = bindings
+                    .iter()
+                    .map(|b| match &b.set {
+                        Some(set) => {
+                            format!("{} \\in {}", b.var, self.print_expr_no_indent(set))
+                        }
+                        None => b.var.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "{}{{{} : {}}}",
+                    indent,
+                    self.print_expr_no_indent(expr),
+                    bound
+                )
+            }
+
             TlaExpr::FnConstruct { var, domain, body } => {
                 let domain_str = self.print_expr_no_indent(domain);
                 let body_str = self.print_expr_no_indent(body);
@@ -332,6 +358,16 @@ impl TlaPrinter {
                 let domain_str = self.print_expr_no_indent(domain);
                 let range_str = self.print_expr_no_indent(range);
                 format!("{}[{} -> {}]", indent, domain_str, range_str)
+            }
+
+            TlaExpr::RecordSet(fields) => {
+                // [f: S, g: T] -- the set of records, printed with `:` rather
+                // than `|->` so it does not round-trip into a record value.
+                let fields_str: Vec<String> = fields
+                    .iter()
+                    .map(|(name, expr)| format!("{}: {}", name, self.print_expr_no_indent(expr)))
+                    .collect();
+                format!("{}[{}]", indent, fields_str.join(", "))
             }
 
             TlaExpr::Record(fields) => {

@@ -29,7 +29,6 @@ use vstd::{map::*, map_lib::*, prelude::*, seq::*};
 verus! {
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
 
-#[derive(Clone)]
 pub struct CReplica {
     pub constants: CReplicaConstants,
     pub nextHeartbeatTime: u64,
@@ -37,6 +36,20 @@ pub struct CReplica {
     pub acceptor: CAcceptor,
     pub learner: CLearner,
     pub executor: CExecutor,
+}
+
+// Verus cannot attach a specification to a derived Clone for a type whose
+// clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+// proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+// without adding any trusted code.
+impl Clone for CReplica {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        self.clone_up_to_view()
+    }
 }
 
 impl CReplica{
@@ -127,13 +140,33 @@ impl View for CReplica {
     }
 }
 
-#[derive(Clone)]
 pub struct CScheduler {
     pub replica: CReplica,
     pub nextActionIndex: u64,
 }
 
+impl Clone for CScheduler {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        self.clone_up_to_view()
+    }
+}
+
 impl CScheduler {
+    pub fn clone_up_to_view(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        CScheduler {
+            replica: self.replica.clone(),
+            nextActionIndex: self.nextActionIndex,
+        }
+    }
+
     pub open spec fn valid(&self) -> bool {
         &&& self.replica.valid()
         &&& 0 <= self.nextActionIndex < 10  // LReplicaNumActions() == 10
@@ -186,7 +219,7 @@ impl CReplica {
 
     pub fn Packet1bHasUniqueSrc(s:&HashSet<CPacket>, pkt:&CPacket) -> (res:bool)
         requires pkt.msg is CMessage1b,
-        ensures res == (forall |op:CPacket| s@.contains(op) ==> op.src@ != pkt.src@)
+        ensures res == (forall |op:CPacket| #![trigger s@.contains(op)] s@.contains(op) ==> op.src@ != pkt.src@)
     {
         crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc(s, pkt)
     }
@@ -197,17 +230,17 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessInvalid(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessInvalidOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageInvalid,
         ensures self.valid(), res.valid(),
             LReplicaNextProcessInvalid(old(self)@, self@, received_packet@, res@)
     {
-        let _ = crate::generated::RSL::replica_gen::CReplicaNextProcessInvalid(self, &received_packet);
+        let _ = self.CReplicaNextProcessInvalid(&received_packet);
         OutboundPackets::PacketSequence { s: vec![] }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessRequest(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessRequestOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageRequest,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -218,18 +251,18 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess1a(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess1aOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage1a,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcess1a(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcess1a(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcess1a(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess1b(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess1bOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage1b,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -240,18 +273,18 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessStartingPhase2(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessStartingPhase2Outbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageStartingPhase2,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessStartingPhase2(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessStartingPhase2(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcessStartingPhase2(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess2a(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess2aOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage2a,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -262,83 +295,83 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess2b(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess2bOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage2b,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcess2b(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcess2b(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcess2b(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessReply(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessReplyOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageReply,
         ensures self.valid(), res.valid(),
             LReplicaNextProcessReply(old(self)@, self@, received_packet@, res@)
     {
-        let _ = crate::generated::RSL::replica_gen::CReplicaNextProcessReply(self, &received_packet);
+        let _ = self.CReplicaNextProcessReply(&received_packet);
         OutboundPackets::PacketSequence { s: vec![] }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessAppStateSupply(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessAppStateSupplyOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageAppStateSupply,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessAppStateSupply(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessAppStateSupply(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcessAppStateSupply(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessAppStateRequest(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessAppStateRequestOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageAppStateRequest,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessAppStateRequest(old(self)@, self@, received_packet@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessAppStateRequest(self, &received_packet);
+        let sent_packets = self.CReplicaNextProcessAppStateRequest(&received_packet);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessHeartbeat(&mut self, received_packet: CPacket, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessHeartbeatOutbound(&mut self, received_packet: CPacket, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageHeartbeat,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
             LReplicaNextProcessHeartbeat(old(self)@, self@, received_packet@, clock as int, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextProcessHeartbeat(self, &received_packet, &clock);
+        let sent_packets = self.CReplicaNextProcessHeartbeat(&received_packet, &clock);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1aOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
             LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(old(self)@, self@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(self);
+        let sent_packets = self.CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a();
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeEnterPhase2(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeEnterPhase2Outbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
             LReplicaNextSpontaneousMaybeEnterPhase2(old(self)@, self@, res@)
     {
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextSpontaneousMaybeEnterPhase2(self);
+        let sent_packets = self.CReplicaNextSpontaneousMaybeEnterPhase2();
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeMakeDecision(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeMakeDecisionOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -349,7 +382,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeExecute(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeExecuteOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -360,7 +393,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockMaybeSendHeartbeat(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockMaybeSendHeartbeatOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockMaybeSendHeartbeat(old(self)@, self@, ClockReading{t: clock as int}, res@)
@@ -372,31 +405,31 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockCheckForViewTimeout(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockCheckForViewTimeoutOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockCheckForViewTimeout(old(self)@, self@, ClockReading{t: clock as int}, res@)
     {
         use crate::generated::RSL::types_gen::CClockReading;
         let c = CClockReading { t: clock };
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextReadClockCheckForViewTimeout(self, &c);
+        let sent_packets = self.CReplicaNextReadClockCheckForViewTimeout(&c);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockCheckForQuorumOfViewSuspicionsOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockCheckForQuorumOfViewSuspicions(old(self)@, self@, ClockReading{t: clock as int}, res@)
     {
         use crate::generated::RSL::types_gen::CClockReading;
         let c = CClockReading { t: clock };
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextReadClockCheckForQuorumOfViewSuspicions(self, &c);
+        let sent_packets = self.CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&c);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpointsOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -407,14 +440,14 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockMaybeNominateValueAndSend2a(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockMaybeNominateValueAndSend2aOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockMaybeNominateValueAndSend2a(old(self)@, self@, ClockReading{t: clock as int}, res@)
     {
         use crate::generated::RSL::types_gen::CClockReading;
         let c = CClockReading { t: clock };
-        let sent_packets = crate::generated::RSL::replica_gen::CReplicaNextReadClockMaybeNominateValueAndSend2a(self, &c);
+        let sent_packets = self.CReplicaNextReadClockMaybeNominateValueAndSend2a(&c);
         OutboundPackets::PacketSequence { s: sent_packets }
     }
 

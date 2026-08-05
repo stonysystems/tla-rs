@@ -1,0 +1,34 @@
+note: automatically chose triggers for this expression:
+  --> src/probe.rs:10:5
+   |
+10 | /     forall|i: int|
+11 | |         0 <= i < n
+12 | |             ==> f(i) == g(i)
+13 | |             && h(i, n)
+   | |______________________^
+
+note:   trigger 1 of 2:
+  --> src/probe.rs:12:17
+   |
+12 |             ==> f(i) == g(i)
+   |                 ^^^^
+
+note:   trigger 2 of 2:
+  --> src/probe.rs:12:25
+   |
+12 |             ==> f(i) == g(i)
+   |                         ^^^^
+
+note: automatically chose triggers for this expression:
+  --> src/probe.rs:17:45
+   |
+17 |     forall|i: int| #[trigger] f(i) == 0 ==> exists|j: int| h(i, j)
+   |                                             ^^^^^^^^^^^^^^^^^^^^^^
+
+note:   trigger 1 of 1:
+  --> src/probe.rs:17:60
+   |
+17 |     forall|i: int| #[trigger] f(i) == 0 ==> exists|j: int| h(i, j)
+   |                                                            ^^^^^^^
+
+verification results:: 1 verified, 0 errors

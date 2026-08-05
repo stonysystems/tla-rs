@@ -125,7 +125,51 @@ impl Printer {
             self.indent();
             self.write("let ghost old_self = *old(self);");
             self.newline();
-            let method_body = Self::struct_to_field_assignments(&func.body);
+            // Phase 42.8.c.2.iii: a method whose receiver-typed output collapsed
+            // the return type to `()` must not keep the functional tail, and its
+            // proof blocks must read the updated `self` rather than the vanished
+            // output binding.
+            let returns_unit = matches!(&func.return_type, ExecType::Named(n) if n == "()");
+            // Phase 42.8.c.2.iv.E: four hand-built models of this body all lifted
+            // correctly while the real one did not, so the divergence is in how the
+            // AST is built. Set VERUS_TRANSPILE_DUMP_BODY=<fn name> to print what
+            // the printer actually receives.
+            if std::env::var("VERUS_TRANSPILE_DUMP_BODY").as_deref() == Ok(func.name.as_str()) {
+                eprintln!(
+                    "=== {} is_method={} returns_unit={} return_type={:?}\n{:#?}",
+                    func.name, func.is_method, returns_unit, func.return_type, func.body
+                );
+            }
+            let method_body = Self::struct_to_field_assignments(&func.body, returns_unit);
+            if std::env::var("VERUS_TRANSPILE_DUMP_BODY").as_deref() == Ok(func.name.as_str()) {
+                eprintln!("=== AFTER TRANSFORM ===\n{:#?}", method_body);
+            }
+            // If nothing still binds the output name, every remaining mention of
+            // it refers to the state the assignments just wrote -- i.e. `self`.
+            // The guard matters: renaming while `let result = ..` is still live
+            // makes proof blocks read the *old* state, which is the mistake
+            // recorded in 42.8.c.2.ii.
+            let method_body = if returns_unit && !Self::binds_var(&method_body, "result") {
+                Self::fix_ghost_refs_in_proofs(&method_body, "result")
+            } else {
+                method_body
+            };
+            // Phase 42.8.c.2.iv.J.3.b: a proof block can still index the pre-lift
+            // tuple -- `assert(result.1@.map(..) =~= Seq::empty())` where `result`
+            // is now the single remaining output. The restructure path already
+            // rewrites these, but it only runs when the `let` value still holds a
+            // tuple; when the state element was dropped upstream the value is just
+            // `{ vec![] }`, the transform is a no-op, and the stale index survives.
+            //
+            // A non-tuple return type makes this unambiguous: `result.N` cannot be
+            // a legitimate index into a value that is not a tuple, so every such
+            // reference is a leftover of the lift. Methods that really do return a
+            // tuple are left alone.
+            let method_body = if !returns_unit && !matches!(&func.return_type, ExecType::Tuple(_)) {
+                Self::rewrite_tuple_refs_in_expr(&method_body, Some(0), "result", 1)
+            } else {
+                method_body
+            };
             self.print_expr(&method_body);
         } else {
             self.print_expr(&func.body);
@@ -156,12 +200,148 @@ impl Printer {
 
     /// Transform tail-position struct constructions into `self.field = expr;` assignments
     /// for `&mut self` method bodies. Recursively handles if/else branches and blocks.
-    fn struct_to_field_assignments(expr: &ExecExpr) -> ExecExpr {
+    /// Whether any statement still binds `name` with a `let`.
+    fn binds_var(expr: &ExecExpr, name: &str) -> bool {
+        match expr {
+            ExecExpr::Let { pattern, .. } => pattern == name,
+            ExecExpr::Block(stmts) => stmts.iter().any(|s| Self::binds_var(s, name)),
+            ExecExpr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::binds_var(then_branch, name)
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| Self::binds_var(e, name))
+            }
+            _ => false,
+        }
+    }
+
+    /// Rewrite ghost references after the body was lifted to in-place updates.
+    ///
+    /// In the functional body the receiver param (already renamed to `self`)
+    /// denotes the **pre** state and the output binding denotes the **post**
+    /// state. Once the struct is lifted into field assignments those meanings
+    /// swap: `self` is the post state and `*old(self)` -- bound as `old_self`
+    /// -- is the pre state. So the substitution has to be simultaneous:
+    ///
+    /// ```text
+    /// result.X  ->  self.X        (post state keeps its meaning)
+    /// self.X    ->  old_self.X    (pre state moves to the ghost binding)
+    /// ```
+    ///
+    /// Doing only the first half silently collapses both arguments of a lemma
+    /// like `lemma_abstractify_clearnerstate_remove(old_m, m2, k)` onto the
+    /// same value, whose precondition `m2@ =~= old_m@.remove(k)` is then
+    /// unprovable.
+    ///
+    /// This applies **only inside proof contexts**. In exec position `self`
+    /// before the assignments is genuinely the pre state, and rewriting it to
+    /// the ghost `old_self` would not compile.
+    fn swap_ghost_state_refs(text: &str, output: &str) -> String {
+        const MARK: &str = "\u{0}post\u{0}";
+        let staged = text.replace(&format!("{}.", output), MARK);
+        let staged = staged.replace("self.", "old_self.");
+        staged.replace(MARK, "self.")
+    }
+
+    fn fix_ghost_refs_in_proofs(expr: &ExecExpr, output: &str) -> ExecExpr {
+        fn in_proof(expr: &ExecExpr, output: &str) -> ExecExpr {
+            match expr {
+                ExecExpr::Var(name) => ExecExpr::Var(Printer::swap_ghost_state_refs(name, output)),
+                ExecExpr::Block(stmts) => {
+                    ExecExpr::Block(stmts.iter().map(|s| in_proof(s, output)).collect())
+                }
+                ExecExpr::ProofBlock { stmts } => ExecExpr::ProofBlock {
+                    stmts: stmts.iter().map(|s| in_proof(s, output)).collect(),
+                },
+                ExecExpr::Assert(inner) => ExecExpr::Assert(Box::new(in_proof(inner, output))),
+                ExecExpr::Assume(inner) => ExecExpr::Assume(Box::new(in_proof(inner, output))),
+                ExecExpr::Call { func, args } => ExecExpr::Call {
+                    func: func.clone(),
+                    args: args.iter().map(|a| in_proof(a, output)).collect(),
+                },
+                ExecExpr::Field(base, field) => {
+                    ExecExpr::Field(Box::new(in_proof(base, output)), field.clone())
+                }
+                ExecExpr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => ExecExpr::If {
+                    cond: Box::new(in_proof(cond, output)),
+                    then_branch: Box::new(in_proof(then_branch, output)),
+                    else_branch: else_branch.as_ref().map(|e| Box::new(in_proof(e, output))),
+                },
+                other => other.clone(),
+            }
+        }
+
+        match expr {
+            ExecExpr::ProofBlock { .. } | ExecExpr::Assert(_) | ExecExpr::Assume(_) => {
+                in_proof(expr, output)
+            }
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts
+                    .iter()
+                    .map(|s| Self::fix_ghost_refs_in_proofs(s, output))
+                    .collect(),
+            ),
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
+                cond: cond.clone(),
+                then_branch: Box::new(Self::fix_ghost_refs_in_proofs(then_branch, output)),
+                else_branch: else_branch
+                    .as_ref()
+                    .map(|e| Box::new(Self::fix_ghost_refs_in_proofs(e, output))),
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// `self.clone_up_to_view()` / `self.clone()` as a whole branch: the state
+    /// is unchanged, which in a `&mut self` method means "do nothing".
+    fn is_identity_self_clone(expr: &ExecExpr) -> bool {
+        match expr {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                args.is_empty()
+                    && (method == "clone_up_to_view" || method == "clone")
+                    && matches!(receiver.as_ref(), ExecExpr::Var(v) if v == "self")
+            }
+            // The translator emits a dedicated `Clone` node, not a `.clone()` method
+            // call, for `(self.clone(), ..)` in proof-fallback stubs. Matching only
+            // the MethodCall form is why the Tuple-arm fix in 42.8.c.2.iv.E passed
+            // its unit test and changed nothing in the real output; found by dumping
+            // the AST the printer receives.
+            ExecExpr::Clone(inner) => matches!(inner.as_ref(), ExecExpr::Var(v) if v == "self"),
+            ExecExpr::Block(stmts) => stmts.len() == 1 && Self::is_identity_self_clone(&stmts[0]),
+            _ => false,
+        }
+    }
+
+    fn struct_to_field_assignments(expr: &ExecExpr, returns_unit: bool) -> ExecExpr {
         match expr {
             ExecExpr::Struct { fields, .. } => {
                 // Convert each field to self.field = expr;
                 let assignments: Vec<ExecExpr> = fields
                     .iter()
+                    // Phase 42.8.c.2.iv.J.3.a: `self.acceptor = self.acceptor` is a
+                    // self-move and does not compile. It arises when a field is
+                    // updated by a `&mut self` callee: the call already mutated the
+                    // receiver, so that field's post-state *is* the field and the
+                    // struct literal's entry for it is an identity. A `.clone()`
+                    // would compile but deep-copy the sub-state on every action,
+                    // which is the cost `&mut self` exists to avoid.
+                    .filter(|(name, value)| !Self::is_identity_field_assignment(name, value))
                     .map(|(name, value)| ExecExpr::Binary {
                         lhs: Box::new(ExecExpr::Field(
                             Box::new(ExecExpr::Var("self".to_string())),
@@ -196,7 +376,8 @@ impl Printer {
                         |s| matches!(s, ExecExpr::Let { pattern, .. } if pattern == tail_var),
                     ) {
                         if let ExecExpr::Let { value, .. } = &stmts[let_idx] {
-                            let transformed = Self::struct_to_field_assignments(value);
+                            let transformed =
+                                Self::struct_to_field_assignments(value, returns_unit);
                             if !matches!(&transformed, v if Self::expr_eq(v, value)) {
                                 // The Let value was transformed — restructure the block:
                                 // 1. Statements before the Let (preserved)
@@ -229,22 +410,45 @@ impl Printer {
                                         }
                                     }
                                     _ => {
-                                        // Single expression (assignments only)
-                                        new_stmts.push(transformed);
+                                        // A single expression. When the method still
+                                        // returns something -- the value is an `if`
+                                        // whose branches each yield the remaining
+                                        // output -- it has to stay bound, because the
+                                        // trailing `result` below is still emitted.
+                                        // Pushing it bare dropped the binding and left
+                                        // `result` undefined (Phase 42.8.c.2.iv.J.3.b).
+                                        if returns_unit {
+                                            new_stmts.push(transformed);
+                                        } else {
+                                            new_stmts.push(ExecExpr::Let {
+                                                pattern: tail_var.clone(),
+                                                ty: None,
+                                                value: Box::new(transformed),
+                                            });
+                                        }
                                     }
                                 }
 
                                 // Add remaining statements (proof blocks etc.) with index rewriting
                                 for stmt in &stmts[let_idx + 1..stmts.len() - 1] {
-                                    new_stmts.push(Self::rewrite_tuple_refs_in_expr(
+                                    let rewritten = Self::rewrite_tuple_refs_in_expr(
                                         stmt,
                                         struct_idx,
                                         tail_var,
                                         remaining_count,
-                                    ));
+                                    );
+                                    // The struct was lifted into `self`'s fields, so
+                                    // anything still naming the output refers to the
+                                    // new state -- which is `self`.
+                                    // The ghost-reference swap happens once, at the
+                                    // top level of the method body; doing it here as
+                                    // well produced `old_old_self`.
+                                    new_stmts.push(rewritten);
                                 }
-                                // Keep trailing var for return
-                                new_stmts.push(stmts.last().unwrap().clone());
+                                // Keep trailing var only when it is still returned.
+                                if !returns_unit {
+                                    new_stmts.push(stmts.last().unwrap().clone());
+                                }
                                 return ExecExpr::Block(new_stmts);
                             }
                         }
@@ -252,7 +456,7 @@ impl Printer {
                 }
                 // Default: transform the last statement, keep the rest
                 let mut new_stmts = stmts[..stmts.len() - 1].to_vec();
-                let last = Self::struct_to_field_assignments(stmts.last().unwrap());
+                let last = Self::struct_to_field_assignments(stmts.last().unwrap(), returns_unit);
                 new_stmts.push(last);
                 ExecExpr::Block(new_stmts)
             }
@@ -264,20 +468,44 @@ impl Printer {
                 // Transform both branches
                 ExecExpr::If {
                     cond: cond.clone(),
-                    then_branch: Box::new(Self::struct_to_field_assignments(then_branch)),
-                    else_branch: else_branch
-                        .as_ref()
-                        .map(|e| Box::new(Self::struct_to_field_assignments(e))),
+                    then_branch: Box::new(
+                        if returns_unit && Self::is_identity_self_clone(then_branch) {
+                            ExecExpr::Block(Vec::new())
+                        } else {
+                            Self::struct_to_field_assignments(then_branch, returns_unit)
+                        },
+                    ),
+                    else_branch: else_branch.as_ref().map(|e| {
+                        Box::new(if returns_unit && Self::is_identity_self_clone(e) {
+                            ExecExpr::Block(Vec::new())
+                        } else {
+                            Self::struct_to_field_assignments(e, returns_unit)
+                        })
+                    }),
                 }
             }
             ExecExpr::Tuple(elems) => {
                 // For multi-output methods: find the Struct/StructUpdate element,
                 // convert it to field assignments, and return the remaining elements.
-                let struct_idx = elems.iter().position(|e| {
-                    matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
-                });
+                // The state element is usually a struct literal. It can also be an
+                // identity `self.clone()` -- a no-op update, which the proof-fallback
+                // stubs emit as `(self.clone(), vec![..])`. Both mean "this element
+                // becomes `self`"; only the literal produces assignments. Missing the
+                // clone form left `result` naming the whole tuple, so the body returned
+                // a pair where the signature promised one element
+                // (Phase 42.8.c.2.iv.E).
+                let struct_idx = elems
+                    .iter()
+                    .position(|e| {
+                        matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
+                    })
+                    .or_else(|| elems.iter().position(Self::is_identity_self_clone));
                 if let Some(idx) = struct_idx {
-                    let struct_assignments = Self::struct_to_field_assignments(&elems[idx]);
+                    let struct_assignments = if Self::is_identity_self_clone(&elems[idx]) {
+                        ExecExpr::Block(vec![]) // no-op update: nothing to assign
+                    } else {
+                        Self::struct_to_field_assignments(&elems[idx], returns_unit)
+                    };
                     let remaining: Vec<ExecExpr> = elems
                         .iter()
                         .enumerate()
@@ -307,6 +535,20 @@ impl Printer {
             }
             // For other expressions (no struct at tail), leave unchanged
             other => other.clone(),
+        }
+    }
+
+    /// Whether assigning `value` to `self.<field>` would be `self.x = self.x`.
+    ///
+    /// Both spellings occur: the substitution machinery carries a field path as a
+    /// single dotted name, while ordinary translation produces a real field access.
+    fn is_identity_field_assignment(field: &str, value: &ExecExpr) -> bool {
+        match value {
+            ExecExpr::Var(v) => v == &format!("self.{}", field),
+            ExecExpr::Field(base, f) => {
+                f == field && matches!(base.as_ref(), ExecExpr::Var(v) if v == "self")
+            }
+            _ => false,
         }
     }
 
@@ -2049,6 +2291,362 @@ mod tests {
         assert!(!regular_param.is_self);
     }
 
+    /// Phase 42.8.c.2.iv.E. The `&mut self` lift handles
+    /// `let result = (Struct{..}, rest); ..proofs..; result` at the top level of a
+    /// body. executor's proof-fallback stubs nest that one level deeper --
+    /// `{ assume(false); { let result = ..; proof {..}; result } }` -- and the
+    /// lift left `result` bound to the pre-lift tuple, so the body returned
+    /// `(CExecutor, Vec<CPacket>)` where the signature promised `Vec<CPacket>`.
+    #[test]
+    fn test_lift_reaches_a_nested_trailing_block() {
+        let inner = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Tuple(vec![
+                    ExecExpr::Struct {
+                        name: "CExecutor".to_string(),
+                        fields: vec![("ops".to_string(), ExecExpr::Var("n".to_string()))],
+                    },
+                    ExecExpr::Var("packets".to_string()),
+                ])),
+            },
+            ExecExpr::ProofBlock {
+                stmts: vec![ExecExpr::Call {
+                    func: "lemma_empty_seq_map".to_string(),
+                    args: vec![],
+                }],
+            },
+            ExecExpr::Var("result".to_string()),
+        ]);
+        let body = ExecExpr::Block(vec![
+            ExecExpr::Assume(Box::new(ExecExpr::Literal("false".to_string()))),
+            inner,
+        ]);
+
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            rendered.contains("self"),
+            "the struct should have become `self.field = ..` assignments:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("Tuple"),
+            "the tuple must not survive: the signature returns only the second element\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.E, second shape. executor's broken stubs bind `result`
+    /// to a block whose tail is an `if/else` returning tuples in each branch,
+    /// and the method has a non-unit return so the trailing `result` is kept.
+    #[test]
+    fn test_lift_projects_a_tuple_behind_an_if_else() {
+        let tup = |n: &str| {
+            ExecExpr::Tuple(vec![
+                ExecExpr::Struct {
+                    name: "CExecutor".to_string(),
+                    fields: vec![("ops".to_string(), ExecExpr::Var(n.to_string()))],
+                },
+                ExecExpr::Var("packets".to_string()),
+            ])
+        };
+        let value = ExecExpr::Block(vec![ExecExpr::If {
+            cond: Box::new(ExecExpr::Var("c".to_string())),
+            then_branch: Box::new(tup("a")),
+            else_branch: Some(Box::new(tup("b"))),
+        }]);
+        let body = ExecExpr::Block(vec![ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(value),
+            },
+            ExecExpr::ProofBlock {
+                stmts: vec![ExecExpr::Call {
+                    func: "lemma_empty_seq_map".to_string(),
+                    args: vec![],
+                }],
+            },
+            ExecExpr::Var("result".to_string()),
+        ])]);
+
+        // returns_unit = false: the method returns Vec<CPacket>, so the trailing
+        // `result` is kept -- and must therefore name only the second element.
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            !rendered.contains("Tuple"),
+            "`result` still names the pre-lift tuple; the signature returns only its \
+             second element:\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.E, the actual cause. The lift recognises a *struct
+    /// literal* as the new state. executor's stubs return `(self.clone(), vec![..])`
+    /// -- an identity clone, no struct literal -- so nothing converts, the guard
+    /// falls through, and `result` keeps naming the tuple. With a non-unit return
+    /// the trailing `result` is kept, and the body returns
+    /// `(CExecutor, Vec<CPacket>)` where the signature promised `Vec<CPacket>`.
+    #[test]
+    fn test_lift_handles_identity_self_clone_as_the_state_element() {
+        let value = ExecExpr::Tuple(vec![
+            ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("self".to_string())),
+                method: "clone".to_string(),
+                args: vec![],
+            },
+            ExecExpr::Var("packets".to_string()),
+        ]);
+        let body = ExecExpr::Block(vec![ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(value),
+            },
+            ExecExpr::Var("result".to_string()),
+        ])]);
+
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            !rendered.contains("Tuple"),
+            "`result` still names the pre-lift tuple -- an identity `self.clone()` state \
+             element is a no-op update, so the lift should drop it and return only the \
+             second element:\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.E, the real shape. Same as the if/else case but with a
+    /// `let` *before* the `if` inside the value block, which is what executor
+    /// actually emits: `let result = { let __rhs_0 = ..; if c { (self.clone(), ..) }
+    /// else { (self.clone(), ..) } };`
+    #[test]
+    fn test_lift_with_a_let_before_the_if_in_the_value_block() {
+        let tup = || {
+            ExecExpr::Tuple(vec![
+                ExecExpr::MethodCall {
+                    receiver: Box::new(ExecExpr::Var("self".to_string())),
+                    method: "clone".to_string(),
+                    args: vec![],
+                },
+                ExecExpr::Var("packets".to_string()),
+            ])
+        };
+        let value = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "__rhs_0".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Var("cond_part".to_string())),
+            },
+            ExecExpr::If {
+                cond: Box::new(ExecExpr::Var("__rhs_0".to_string())),
+                then_branch: Box::new(tup()),
+                else_branch: Some(Box::new(tup())),
+            },
+        ]);
+        let body = ExecExpr::Block(vec![
+            ExecExpr::Assume(Box::new(ExecExpr::Literal("false".to_string()))),
+            ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "result".to_string(),
+                    ty: None,
+                    value: Box::new(value),
+                },
+                ExecExpr::ProofBlock {
+                    stmts: vec![ExecExpr::Call {
+                        func: "lemma_empty_seq_map".to_string(),
+                        args: vec![],
+                    }],
+                },
+                ExecExpr::Var("result".to_string()),
+            ]),
+        ]);
+
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            !rendered.contains("Tuple"),
+            "`result` still names the pre-lift tuple:\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.b. A proof block can outlive the tuple it indexes.
+    /// The restructure path rewrites `result.1` to `result`, but it only runs when
+    /// the `let` value still holds a tuple; when the state element was dropped
+    /// upstream the value is just `{ vec![] }`, the transform is a no-op, and the
+    /// stale index survives into code that does not compile.
+    #[test]
+    fn test_stale_tuple_index_in_proof_is_rewritten_for_a_non_tuple_return() {
+        let func = ExecFunction {
+            name: "CReplicaNextProcessInvalid".to_string(),
+            params: vec![],
+            return_type: ExecType::Vec(Box::new(ExecType::Named("CPacket".to_string()))),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            is_method: true,
+            receiver_type: Some("CReplica".to_string()),
+            body: ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "result".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::VecLit(vec![])),
+                },
+                ExecExpr::ProofBlock {
+                    stmts: vec![ExecExpr::Assert(Box::new(ExecExpr::Var(
+                        "result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty()".to_string(),
+                    )))],
+                },
+                ExecExpr::Var("result".to_string()),
+            ]),
+        };
+        let out = Printer::default().print_function(&func);
+        assert!(
+            !out.contains("result.1"),
+            "the stale tuple index must be rewritten: {}",
+            out
+        );
+        assert!(
+            out.contains("result@.map"),
+            "it should become a plain `result@`: {}",
+            out
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.b. When the lifted value is an `if` rather than a
+    /// block, the restructure pushed it as a bare statement and dropped the
+    /// `let result =` binding -- while still emitting the trailing `result`, which
+    /// is then undefined. Only methods that still return something are affected;
+    /// a unit-returning one has no trailing var to strand.
+    #[test]
+    fn test_if_shaped_value_keeps_its_binding_when_the_method_returns() {
+        let body = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::If {
+                    cond: Box::new(ExecExpr::Var("c".to_string())),
+                    then_branch: Box::new(ExecExpr::Tuple(vec![
+                        ExecExpr::Struct {
+                            name: "CReplica".to_string(),
+                            fields: vec![("f".to_string(), ExecExpr::Var("x".to_string()))],
+                        },
+                        ExecExpr::VecLit(vec![]),
+                    ])),
+                    else_branch: Some(Box::new(ExecExpr::Tuple(vec![
+                        ExecExpr::Struct {
+                            name: "CReplica".to_string(),
+                            fields: vec![("f".to_string(), ExecExpr::Var("y".to_string()))],
+                        },
+                        ExecExpr::VecLit(vec![]),
+                    ]))),
+                }),
+            },
+            ExecExpr::Var("result".to_string()),
+        ]);
+        let out = Printer::default()
+            .print_expr_to_string(&Printer::struct_to_field_assignments(&body, false));
+        assert!(
+            out.contains("let result ="),
+            "the binding must survive an if-shaped value: {}",
+            out
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.a. A field updated by a `&mut self` callee has already
+    /// been mutated by the call, so the struct literal's entry for it is an identity
+    /// and must not become an assignment: `self.acceptor = self.acceptor` is a
+    /// self-move that does not compile.
+    #[test]
+    fn test_identity_field_assignment_is_recognised_in_both_spellings() {
+        // dotted name, as the substitution machinery produces
+        assert!(Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Var("self.acceptor".to_string())
+        ));
+        // real field access, as ordinary translation produces
+        assert!(Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Field(
+                Box::new(ExecExpr::Var("self".to_string())),
+                "acceptor".to_string()
+            )
+        ));
+        // a different field is a real assignment
+        assert!(!Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Var("self.learner".to_string())
+        ));
+        // a different receiver is a real assignment
+        assert!(!Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Field(
+                Box::new(ExecExpr::Var("other".to_string())),
+                "acceptor".to_string()
+            )
+        ));
+        // the ordinary unchanged-field form keeps its assignment
+        assert!(!Printer::is_identity_field_assignment(
+            "constants",
+            &ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("self".to_string())),
+                    "constants".to_string()
+                )),
+                method: "clone".to_string(),
+                args: vec![],
+            }
+        ));
+    }
+
+    #[test]
+    fn test_struct_lift_drops_only_the_identity_assignment() {
+        let st = ExecExpr::Struct {
+            name: "CReplica".to_string(),
+            fields: vec![
+                (
+                    "acceptor".to_string(),
+                    ExecExpr::Var("self.acceptor".to_string()),
+                ),
+                ("learner".to_string(), ExecExpr::Var("other".to_string())),
+            ],
+        };
+        let out = Printer::struct_to_field_assignments(&st, false);
+        let rendered = format!("{:?}", out);
+        assert!(
+            !rendered.contains("self.acceptor"),
+            "the identity assignment must not be emitted: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("learner"),
+            "a real assignment must survive: {}",
+            rendered
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.E. The translator emits a dedicated `Clone` node, not a
+    /// `.clone()` MethodCall, for `(self.clone(), ..)`. Found by dumping the AST the
+    /// printer receives (`VERUS_TRANSPILE_DUMP_BODY`), after a MethodCall-shaped fix
+    /// passed its own test and changed nothing in the real output.
+    #[test]
+    fn test_identity_self_clone_recognises_the_clone_node() {
+        assert!(Printer::is_identity_self_clone(&ExecExpr::Clone(Box::new(
+            ExecExpr::Var("self".to_string())
+        ))));
+        assert!(Printer::is_identity_self_clone(&ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("self".to_string())),
+            method: "clone".to_string(),
+            args: vec![],
+        }));
+        // not an identity clone: a different receiver
+        assert!(!Printer::is_identity_self_clone(&ExecExpr::Clone(
+            Box::new(ExecExpr::Var("other".to_string()))
+        )));
+    }
+
+    // Was missing `#[test]`, so it compiled but never ran -- found while adding the
+    // test above. It is the oldest test of the lift that 42.8.c.2.iv.E is chasing.
     #[test]
     fn test_method_body_struct_to_field_assignments() {
         // A method whose body is a struct construction should emit field assignments

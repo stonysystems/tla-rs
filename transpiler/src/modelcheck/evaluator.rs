@@ -261,7 +261,7 @@ pub fn dump_eval_expr_profile() {
             ("Match", p.match_expr),
             ("(other)", p.other),
         ];
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         for (name, count) in entries.iter().filter(|(_, c)| *c > 0) {
             let pct = if total > 0 {
                 100.0 * (*count as f64) / (total as f64)

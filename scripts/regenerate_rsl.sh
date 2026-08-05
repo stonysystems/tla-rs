@@ -64,6 +64,13 @@ $TRANSPILER generate-types \
     --input "$SPEC_DIR/types.rs" \
     --config "$SPEC_DIR/types_transpile.toml" \
     --output "$FRESH_DIR/types_gen.rs"
+# Phase 42.7: rustfmt the emitted types so the output is byte-comparable with
+# the checked-in file. Without this the two differ only in `use` ordering and
+# line wrapping, which reads as a large diff and hides whether anything real
+# changed -- that is what made regeneration look lossy.
+if command -v rustfmt >/dev/null 2>&1; then
+    rustfmt --edition 2021 "$FRESH_DIR/types_gen.rs" || true
+fi
 echo "   types_gen.rs: done"
 
 # Modules
@@ -187,9 +194,53 @@ echo "Backup: $BACKUP_DIR"
 echo "Output: $OUT_DIR"
 echo ""
 echo "Modules with skip_functions were NOT replaced (hand-written bodies preserved)."
-echo "To update transpiler-emitted code in those modules, manually diff and merge:"
-echo "  diff $FRESH_DIR/<module>_gen.rs $OUT_DIR/<module>_gen.rs"
+echo "To update transpiler-emitted code in those modules, merge with the tool rather"
+echo "than by hand -- it protects helpers the transpiler would otherwise overwrite:"
 echo ""
+PRESERVE_LIST="$REPO_ROOT/scripts/rsl_merge_preserve.txt"
+for MODULE in types broadcast acceptor learner executor election proposer replica; do
+    [ -f "$FRESH_DIR/${MODULE}_gen.rs" ] || continue
+    FLAGS=""
+    if [ -f "$PRESERVE_LIST" ]; then
+        while read -r PMOD PFN; do
+            case "$PMOD" in ''#''*|"") continue ;; esac
+            [ "$PMOD" = "$MODULE" ] && FLAGS="$FLAGS --preserve $PFN"
+        done < "$PRESERVE_LIST"
+    fi
+    echo "  python3 scripts/merge_generated.py \\"
+    echo "      $FRESH_DIR/${MODULE}_gen.rs $OUT_DIR/${MODULE}_gen.rs$FLAGS \\"
+    echo "      -o $OUT_DIR/${MODULE}_gen.rs && rustfmt --edition 2021 $OUT_DIR/${MODULE}_gen.rs"
+done
+echo ""
+echo "The --preserve flags come from scripts/rsl_merge_preserve.txt. Without them the"
+echo "merge silently replaces hand-verified helper bodies with naive transpiler output."
+echo ""
+
+# --- Step 2b: body drift ---
+# The parity check above compares `pub exec fn` *names*, so it cannot see a body
+# being swapped, and misses private `fn`s entirely -- which is exactly how
+# filter_clearnerstate was nearly lost. This compares bodies.
+echo "2b. Checking which bodies a merge would rewrite..."
+echo ""
+DRIFT_OK=true
+for MODULE in broadcast acceptor learner executor election proposer replica; do
+    [ -f "$FRESH_DIR/${MODULE}_gen.rs" ] || continue
+    [ -f "$OUT_DIR/${MODULE}_gen.rs" ] || continue
+    echo "   $MODULE:"
+    if ! python3 "$REPO_ROOT/scripts/check_merge_body_drift.py" \
+        "$FRESH_DIR/${MODULE}_gen.rs" "$OUT_DIR/${MODULE}_gen.rs" \
+        --preserve-list "$REPO_ROOT/scripts/rsl_merge_preserve.txt" \
+        --module "$MODULE" | sed 's/^/  /'; then
+        DRIFT_OK=false
+    fi
+done
+echo ""
+if [ "$DRIFT_OK" = false ]; then
+    echo "   Some bodies would be rewritten by a merge. Decide per function whether it is"
+    echo "   hand-written (add it to scripts/rsl_merge_preserve.txt) or should take the"
+    echo "   fresh output, before merging that module."
+    echo ""
+fi
 echo "After any changes, apply manual patches from transpiler/docs/REGEN_WORKFLOW.md:"
 echo "  - Arc-wrap for proposer_gen.rs (cb42869)"
 echo ""

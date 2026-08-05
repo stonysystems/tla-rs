@@ -20,7 +20,7 @@ use vstd::{set::*, set_lib::*};
 verus! {
 
     define_enum_and_derive_marshalable! {
-        #[derive(Clone , Eq, /*Hash,*/ PartialEq)]
+        #[derive(Eq, /*Hash,*/ PartialEq)]
         #[verus::trusted]
         pub enum CMessage {
             #[tag = 0]
@@ -82,6 +82,23 @@ verus! {
             },
         }
         [rlimit attr = verifier::rlimit(100)]
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CMessage {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+            result.abstractable() == self.abstractable(),
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl CMessage{
@@ -219,8 +236,8 @@ verus! {
 
 
     #[verifier(external_body)]
-    pub broadcast proof fn axiom_cmessage_view()
-        ensures forall |p1:CMessage, p2:CMessage| p1@ == p2@ ==> p1 == p2
+    pub broadcast proof fn axiom_cmessage_view(p1: CMessage, p2: CMessage)
+        ensures #[trigger] p1@ == #[trigger] p2@ ==> p1 == p2
     {
 
     }
@@ -232,12 +249,27 @@ verus! {
     }
 
 
-    #[derive(Clone, Eq, Hash, PartialEq)]
+    #[derive(Eq, Hash, PartialEq)]
     #[verus::trusted]
     pub struct CPacket{
         pub dst: EndPoint,
         pub src: EndPoint,
         pub msg: CMessage,
+    }
+
+    // Verus cannot attach a specification to a derived Clone for a type whose
+    // clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+    // proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+    // without adding any trusted code.
+    impl Clone for CPacket {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+            result.abstractable() == self.abstractable(),
+        {
+            self.clone_up_to_view()
+        }
     }
 
     impl CPacket{
@@ -291,8 +323,8 @@ verus! {
         }
     }
 
-    pub broadcast proof fn axiom_cpacket_view()
-        ensures forall |p1:CPacket, p2:CPacket| p1@ == p2@ ==> p1 == p2
+    pub broadcast proof fn axiom_cpacket_view(p1: CPacket, p2: CPacket)
+        ensures #[trigger] p1@ == #[trigger] p2@ ==> p1 == p2
     {
         broadcast use crate::common::native::io_s::axiom_endpoint_view;
         broadcast use axiom_cmessage_view;

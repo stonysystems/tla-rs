@@ -1,0 +1,40 @@
+verification results:: 3 verified, 0 errors
+(use --output-json for machine-readable output)
+verus-build-info
+Verus
+  Version: 0.2026.01.02.6f52890
+  Profile: release
+  Platform: linux_x86_64
+  Toolchain: 1.91.0-x86_64-unknown-linux-gnu
+
+total-time:             370 ms    (estimated total cpu time 467 ms)
+    rust-time:                  91 ms
+        init-and-types:             19 ms
+        trait-conflicts:            53 ms
+        compile-time:               18 ms
+    verification-time:         269 ms
+        vir-time:                  212 ms
+            hir-time:                    1 ms
+            import-time:               176 ms
+            rust-to-vir:                13 ms
+        verify-crate-time:          56 ms
+    unaccounted-time:            9 ms
+
+verify-crate-time-breakdown
+    total verify-time:            151 ms   (3 threads)
+      1. beta                                             53 ms
+      2.                                                  50 ms
+      3. alpha                                            47 ms
+        total air-time:                95 ms   (3 threads)
+      1. beta                                             32 ms
+      2. alpha                                            31 ms
+      3.                                                  31 ms
+        total smt-time:                10 ms   (3 threads)
+            total smt-init:                10 ms   (3 threads)
+                1. alpha                                             3 ms
+                2.                                                   3 ms
+                3. beta                                              3 ms
+            total smt-run:                  0 ms,     4683 rlimit (3 threads)
+                1. alpha                                             0 ms,     1568 rlimit
+                2.                                                   0 ms,     1547 rlimit
+                3. beta                                              0 ms,     1568 rlimit

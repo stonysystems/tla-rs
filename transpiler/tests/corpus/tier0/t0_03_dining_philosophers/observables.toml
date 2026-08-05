@@ -1,0 +1,37 @@
+# V2 strong fidelity: what `clean.tla` and `original.tla` must agree on.
+#
+# `hungry` is the observable, and it survives the rewrite **under its own
+# name and its own meaning**: TRUE until the philosopher eats, FALSE until it
+# gets hungry again. It is what `NobodyStarves` is stated over in the original.
+#
+# Nothing else compares, and each for a reason the rewrite makes:
+#
+# - `forks` is gone. The original models a fork as a global object with a
+#   `holder`; the rewrite makes it a fact each endpoint holds about one of its
+#   edges (`hasFork[p][q]`). That is the C2 fix, and it is the whole rewrite.
+# - `pc` is a PlusCal artefact of the original's control flow. The rewrite has
+#   `eating`, which is what `pc = "Eat"` means, but the two are a boolean and a
+#   string and the comparator compares variables, not derived expressions.
+# - `forkClean`, `hasToken` and `msgs` have no counterpart at all: the token and
+#   the messages are what the original declined to model.
+#
+# `NP = 4`, matching original.cfg.
+#
+# Run: tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier0/t0_03_dining_philosophers <tla2tools.jar>
+
+[clean]
+module = "DiningPhilosophersClean"
+config = """
+CONSTANT NP = 4
+SPECIFICATION Spec
+"""
+
+[original]
+module = "DiningPhilosophers"
+config = """
+CONSTANT NP = 4
+SPECIFICATION Spec
+"""
+
+[observables]
+hungry = "hungry"

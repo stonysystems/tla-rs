@@ -656,6 +656,26 @@ impl ConstraintCollector {
                 set_type
             }
 
+            // A lambda is an operator value; the projection is what gives it a
+            // type, from the operator it is passed to.
+            TlaExpr::Lambda { .. } => TlaType::Unknown,
+
+            // Set map over several binders: each one is typed from its own set.
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                for binding in bindings {
+                    let Some(set) = &binding.set else { continue };
+                    if let TlaType::Set(elem_type) = &self.collect_from_expr(set) {
+                        let elem = (**elem_type).clone();
+                        self.name_types.insert(binding.var.clone(), elem.clone());
+                        self.add(TypeConstraint::HasType {
+                            name: binding.var.clone(),
+                            ty: elem,
+                        });
+                    }
+                }
+                TlaType::set(self.collect_from_expr(expr))
+            }
+
             // Set map: {f(x) : x \in S}
             TlaExpr::SetMap { expr, var, set } => {
                 let set_type = self.collect_from_expr(set);
@@ -753,6 +773,16 @@ impl ConstraintCollector {
 
             // Function EXCEPT: [f EXCEPT ![i] = v]
             TlaExpr::FnExcept { func, updates: _ } => self.collect_from_expr(func),
+
+            // Record set type: [f: S, g: T] -- a set of records.
+            TlaExpr::RecordSet(fields) => {
+                let mut record = RecordType::new();
+                for (name, value) in fields {
+                    let field_type = self.collect_from_expr(value);
+                    record.fields.insert(name.clone(), field_type);
+                }
+                TlaType::set(TlaType::Record(record))
+            }
 
             // Function set type: [Domain -> Range]
             TlaExpr::FnSet { domain, range } => {
@@ -1167,7 +1197,7 @@ impl TypeUnifier {
             // Type variables unify with anything
             (TlaType::TypeVar(id), other) | (other, TlaType::TypeVar(id)) => {
                 // Occurs check: prevent infinite types
-                if !self.occurs(*id, other) {
+                if !Self::occurs(*id, other) {
                     self.substitution.insert(*id, other.clone());
                     UnifyResult::Ok
                 } else {
@@ -1286,16 +1316,16 @@ impl TypeUnifier {
     }
 
     /// Check if a type variable occurs in a type (for occurs check)
-    fn occurs(&self, var_id: usize, ty: &TlaType) -> bool {
+    fn occurs(var_id: usize, ty: &TlaType) -> bool {
         match ty {
             TlaType::TypeVar(id) => *id == var_id,
-            TlaType::Set(elem) | TlaType::Seq(elem) => self.occurs(var_id, elem),
-            TlaType::Map { key, value } => self.occurs(var_id, key) || self.occurs(var_id, value),
+            TlaType::Set(elem) | TlaType::Seq(elem) => Self::occurs(var_id, elem),
+            TlaType::Map { key, value } => Self::occurs(var_id, key) || Self::occurs(var_id, value),
             TlaType::Function { domain, range } => {
-                self.occurs(var_id, domain) || self.occurs(var_id, range)
+                Self::occurs(var_id, domain) || Self::occurs(var_id, range)
             }
-            TlaType::Tuple(elems) => elems.iter().any(|e| self.occurs(var_id, e)),
-            TlaType::Record(rec) => rec.fields.values().any(|t| self.occurs(var_id, t)),
+            TlaType::Tuple(elems) => elems.iter().any(|e| Self::occurs(var_id, e)),
+            TlaType::Record(rec) => rec.fields.values().any(|t| Self::occurs(var_id, t)),
             _ => false,
         }
     }

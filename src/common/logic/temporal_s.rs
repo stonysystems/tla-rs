@@ -4,14 +4,14 @@ use vstd::prelude::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {
-    pub type temporal = Map<int, bool>;
-    pub type Behavior<S> = Map<int, S>;
+    pub type temporal = IMap<int, bool>;
+    pub type Behavior<S> = IMap<int, S>;
 
-    pub open spec fn stepmap(f: Map<int, bool>) -> temporal {
+    pub open spec fn stepmap(f: IMap<int, bool>) -> temporal {
         f
     }
 
-    proof fn predicate_stempmap(f: Map<int, bool>)
+    proof fn predicate_stempmap(f: IMap<int, bool>)
         ensures forall |i:int| f.contains_key(i) ==> sat(i, stepmap(f)) =~= #[trigger] f[i]
     {}
 
@@ -21,7 +21,7 @@ verus! {
 
     pub open spec fn and(x:temporal, y:temporal) -> temporal
     {
-        stepmap(Map::new(|i:int| i == i, |i:int|  sat(i, x) && sat(i, y)))
+        stepmap(IMap::new(|i:int| i == i, |i:int|  sat(i, x) && sat(i, y)))
     }
 
     proof fn predicate_and(x: temporal, y: temporal)
@@ -29,7 +29,7 @@ verus! {
     {}
 
     pub open spec fn or(x:temporal, y:temporal) -> temporal {
-        stepmap(Map::new(|i:int| i == i, |i:int| sat(i, x) || sat(i, y)))
+        stepmap(IMap::new(|i:int| i == i, |i:int| sat(i, x) || sat(i, y)))
     }
 
     proof fn predicate_or(x: temporal, y: temporal)
@@ -37,7 +37,7 @@ verus! {
 
     pub open spec fn temporal_imply(x:temporal, y:temporal) -> temporal
     {
-        stepmap(Map::new(|i:int| i == i,  |i:int| sat(i, x) ==> sat(i, y)))
+        stepmap(IMap::new(|i:int| i == i,  |i:int| sat(i, x) ==> sat(i, y)))
     }
 
     proof fn predicate_temporal_imply(x: temporal, y: temporal)
@@ -45,7 +45,7 @@ verus! {
     {}
 
     pub open spec fn equiv(x: temporal, y: temporal) -> temporal {
-        stepmap(Map::new(|i:int| i == i,  |i:int| sat(i, x) <==> sat(i, y)))
+        stepmap(IMap::new(|i:int| i == i,  |i:int| sat(i, x) <==> sat(i, y)))
     }
 
     proof fn predicate_equiv(x:temporal, y:temporal)
@@ -55,7 +55,7 @@ verus! {
 
     pub open spec fn not(x:temporal) -> temporal
     {
-        stepmap(Map::new(|i:int| i == i,  |i:int| !sat(i, x)))
+        stepmap(IMap::new(|i:int| i == i,  |i:int| !sat(i, x)))
     }
 
     proof fn predicate_not(x: temporal)
@@ -69,7 +69,7 @@ verus! {
 
     pub open spec fn next(x:temporal) -> temporal
     {
-        stepmap(Map::new(|i:int| i == i,  |i:int| sat(nextstep(i), x)))
+        stepmap(IMap::new(|i:int| i == i,  |i:int| sat(nextstep(i), x)))
     }
 
     proof fn predicate_next(x: temporal)
@@ -78,12 +78,12 @@ verus! {
 
     pub open spec fn always(x:temporal) -> temporal
     {
-        stepmap(Map::new(|i:int| i == i, |i: int| forall |j:int| i <= j ==> sat(j, x)))
+        stepmap(IMap::new(|i:int| i == i, |i: int| forall |j:int| i <= j ==> sat(j, x)))
     }
 
     pub open spec fn eventual(x:temporal) -> temporal
     {
-      stepmap(Map::new(|i: int| i == i, |i: int| exists |j: int| i <= j && sat(j, x)))
+      stepmap(IMap::new(|i: int| i == i, |i: int| exists |j: int| i <= j && sat(j, x)))
     }
 
 } // !verus

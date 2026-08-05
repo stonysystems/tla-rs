@@ -213,6 +213,14 @@ pub enum TlaExpr {
         var: String,
         set: Box<TlaExpr>,
     },
+    /// Set comprehension over more than one binder:
+    /// `{ [a |-> x, b |-> y] : x \in S, y \in T }`. Kept separate from
+    /// [`TlaExpr::SetMap`] so that the single-binder form -- which is what
+    /// almost every spec writes -- keeps its shape and its existing handling.
+    SetMapMulti {
+        expr: Box<TlaExpr>,
+        bindings: Vec<TlaQuantBound>,
+    },
 
     // Functions
     /// Function construction: `[x \in S |-> f(x)]`
@@ -235,6 +243,10 @@ pub enum TlaExpr {
     // Records
     /// Record construction: `[a |-> 1, b |-> 2]`
     Record(Vec<(String, TlaExpr)>),
+    /// Record set: `[holder: 1..NP, clean: BOOLEAN]` — the set of all records
+    /// with those fields drawn from those sets. Distinct from `Record`, which
+    /// is a single record value.
+    RecordSet(Vec<(String, TlaExpr)>),
     /// Record field access: `r.field`
     RecordAccess { record: Box<TlaExpr>, field: String },
 
@@ -251,6 +263,13 @@ pub enum TlaExpr {
     /// Existential quantifier: `\E x \in S : P(x)`
     Exists {
         vars: Vec<TlaQuantBound>,
+        body: Box<TlaExpr>,
+    },
+    /// Anonymous operator: `LAMBDA x, y : e`. TLA+ allows one only where an
+    /// operator is expected -- as an argument to a higher-order operator such
+    /// as `SelectSeq` -- so it is a value here and nowhere else.
+    Lambda {
+        params: Vec<String>,
         body: Box<TlaExpr>,
     },
     /// Choose operator: `CHOOSE x \in S : P(x)`

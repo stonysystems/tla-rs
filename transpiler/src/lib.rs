@@ -373,6 +373,20 @@ impl Transpiler {
                 sorted_imports.push(hashset_import);
             }
         }
+        // Phase 42.8: the untyped `clone_hashset` helper (emitted when the
+        // verified variant is off) mentions `HashSet` in its signature, so the
+        // output has to import it. Without this the emitted module does not
+        // compile -- which is why regenerating broadcast_gen.rs failed with
+        // "cannot find type `HashSet` in this scope".
+        if !self.config.translator.use_verified_hashset_clone && self.needs_set_helpers() {
+            let hashset_import = "use std::collections::HashSet;".to_string();
+            if !sorted_imports
+                .iter()
+                .any(|i| i.contains("std::collections::HashSet"))
+            {
+                sorted_imports.push(hashset_import);
+            }
+        }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
@@ -768,9 +782,12 @@ impl Transpiler {
                         "result".to_string()
                     };
                     for pred in &self.config.translator.vec_element_ensures {
+                        // Phase 54.7: emit the trigger explicitly. Verus
+                        // otherwise picks `X@[i]` itself and reports it, and an
+                        // auto-chosen trigger can change between releases.
                         ensures_lines.push(format!(
-                            "    forall |i:int| 0 <= i < {}@.len() ==> {}@[i].{}(),",
-                            accessor, accessor, pred
+                            "    forall |i:int| #![trigger {}@[i]] 0 <= i < {}@.len() ==> {}@[i].{}(),",
+                            accessor, accessor, accessor, pred
                         ));
                     }
                 }
@@ -1703,13 +1720,13 @@ impl Transpiler {
 
         for (_field, (exec_type, prefix, value_type)) in &sorted_fields {
             let is_arc = arc_wrapped_field_names.contains(_field.as_str());
-            // When the field is Arc-wrapped, proof lemmas take &ExecType instead of ExecType
-            // so that auto-deref from &Arc<ExecType> works at call sites.
-            let param_type = if is_arc {
-                format!("&{}", exec_type)
-            } else {
-                exec_type.to_string()
-            };
+            // `&ExecType` unconditionally. The lemma's own body calls
+            // `abstractify_{prefix}`, which is hand-written in `types_i.rs` and takes
+            // a reference, so a by-value parameter does not type-check against it:
+            // "expected &HashMap<..>, found HashMap<..>". Being Arc-wrapped also needs
+            // the reference (auto-deref from `&Arc<ExecType>`), which is why this was
+            // conditional -- but that was never the only case. Phase 42.8.c.2.iv.B.
+            let param_type = format!("&{}", exec_type);
             // =========================================================
             // lemma_abstractify_empty_{prefix}
             // =========================================================
@@ -1792,7 +1809,7 @@ impl Transpiler {
             output.push_str("        }\n");
             output.push_str("    }\n");
             // Value equivalence
-            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
+            output.push_str("    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
             output.push_str(
                 "        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
             );
@@ -1865,7 +1882,7 @@ impl Transpiler {
             output.push_str("            assert(old_m@.contains_key(kw) && kw as int == ak);\n");
             output.push_str("        }\n");
             output.push_str("    }\n");
-            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
+            output.push_str("    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
             output.push_str(
                 "        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
             );
@@ -1929,7 +1946,7 @@ impl Transpiler {
             output.push_str("            assert(k == opn);\n");
             output.push_str("        }\n");
             output.push_str("    }\n");
-            output.push_str("    assert forall |ak: int| abs.contains_key(ak) implies abs[ak] == expected[ak] by {\n");
+            output.push_str("    assert forall |ak: int| #![trigger abs[ak]] #![trigger expected[ak]] abs.contains_key(ak) implies abs[ak] == expected[ak] by {\n");
             output.push_str(
                 "        let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n",
             );
@@ -3374,8 +3391,10 @@ mod tests {
 
         // Check all 4 proof lemmas are generated
         assert!(
-            output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: CLearnerState)"),
-            "Should contain empty lemma"
+            // `&CLearnerState` even with no Arc-wrapped fields: the lemma body calls
+            // `abstractify_clearnerstate`, which takes a reference (Phase 42.8.c.2.iv.B).
+            output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: &CLearnerState)"),
+            "Should contain empty lemma taking &CLearnerState"
         );
         assert!(
             output.contains("proof fn lemma_abstractify_clearnerstate_insert("),
@@ -3386,8 +3405,8 @@ mod tests {
             "Should contain remove lemma"
         );
         assert!(
-            output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: CLearnerState"),
-            "Should contain singleton lemma"
+            output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: &CLearnerState"),
+            "Should contain singleton lemma taking &CLearnerState"
         );
 
         // Check helpers are generated
@@ -3412,6 +3431,57 @@ mod tests {
         assert!(
             output.contains("clearnerstate_is_valid(old_m)"),
             "Should check validity"
+        );
+    }
+
+    /// Phase 54.7.e. The value-equivalence `assert forall` in the generated map
+    /// lemmas carries explicit triggers. They pin exactly what Verus was already
+    /// choosing (`abs2[ak]` / `expected[ak]`, reported as trigger 1 and 2 of 2),
+    /// so the instantiation is unchanged and only the note goes away -- which is
+    /// the point: an auto-chosen trigger can move between Verus releases.
+    #[test]
+    fn test_map_proof_lemmas_pin_the_value_equivalence_triggers() {
+        let mut map_fields = std::collections::HashMap::new();
+        map_fields.insert(
+            "unexecuted_learner_state".to_string(),
+            (
+                "CLearnerState".to_string(),
+                "clearnerstate".to_string(),
+                "CLearnerTuple".to_string(),
+            ),
+        );
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+
+        // Only the *value*-equivalence assert is pinned. The key-set assert
+        // (`abs2.contains_key(ak) == expected.contains_key(ak)`) emits no note, so
+        // there is no chosen trigger to pin and annotating it would be a change
+        // with no evidence behind it.
+        assert!(
+            !output.contains(
+                "assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak]"
+            ),
+            "the unannotated value-equivalence form must not survive:\n{}",
+            output
+        );
+        assert!(
+            output.contains(
+                "assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] \
+                 abs2.contains_key(ak)"
+            ),
+            "insert/remove lemmas should pin both chosen triggers:\n{}",
+            output
+        );
+        assert!(
+            output.contains(
+                "assert forall |ak: int| #![trigger abs[ak]] #![trigger expected[ak]] \
+                 abs.contains_key(ak)"
+            ),
+            "the singleton lemma uses `abs`, not `abs2`:\n{}",
+            output
         );
     }
 

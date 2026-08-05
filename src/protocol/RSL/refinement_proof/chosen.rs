@@ -26,13 +26,13 @@ verus! {
 
     pub open spec fn IsValidQuorumOf2bsSequence(ps:RslState, qs:Seq<QuorumOf2bs>) -> bool
     {
-        forall |opn:int| 0 <= opn < qs.len() ==> qs[opn].opn == opn && IsValidQuorumOf2bs(ps, qs[opn])
+        forall |opn:int| #![trigger qs[opn]] 0 <= opn < qs.len() ==> qs[opn].opn == opn && IsValidQuorumOf2bs(ps, qs[opn])
     }
 
     pub open spec fn IsMaximalQuorumOf2bsSequence(ps:RslState, qs:Seq<QuorumOf2bs>) -> bool
     {
         &&& IsValidQuorumOf2bsSequence(ps, qs)
-        &&& !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(ps, q) && q.opn == qs.len()
+        &&& !exists |q:QuorumOf2bs| #![trigger IsValidQuorumOf2bs(ps, q)] IsValidQuorumOf2bs(ps, q) && q.opn == qs.len()
     }
 
     pub open spec fn GetSequenceOfRequestBatches(qs:Seq<QuorumOf2bs>) -> Seq<RequestBatch>
@@ -77,22 +77,19 @@ pub proof fn lemma_GetUpperBoundOnQuorumOf2bsOperationNumber(
         requires IsValidBehaviorPrefix(b, c, i),
                  0 <= i,
         ensures bound >= 0,
-                !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound
+                !exists |q:QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[i], q)] IsValidQuorumOf2bs(b[i], q) && q.opn == bound
     {
-        let p2bs = Set::new(|p:RslPacket| b[i].environment.sentPackets.contains(p) && p.msg is RslMessage2b);
+        let p2bs = b[i].environment.sentPackets.filter(
+            |p: RslPacket| p.msg is RslMessage2b,
+        );
         let opns = p2bs.map(|p:RslPacket| p.msg->opn_2b);
 
-        // Derive opns.finite(): sentPackets.finite() → p2bs ⊆ sentPackets → p2bs.finite() → opns.finite()
-        lemma_sentPackets_finite(b, c, i);
         assert(p2bs.subset_of(b[i].environment.sentPackets)) by {
-            assert forall |p: RslPacket| p2bs.contains(p)
+            assert forall |p: RslPacket| #![trigger p2bs.contains(p)] p2bs.contains(p)
                 implies b[i].environment.sentPackets.contains(p) by {};
         };
         vstd::set_lib::lemma_len_subset(p2bs, b[i].environment.sentPackets);
-        // p2bs.finite() established
-        let f = |p: RslPacket| p.msg->opn_2b;
-        p2bs.lemma_map_finite(f);
-        // opns.finite() established
+        // Set::map preserves finiteness, so opns is finite.
 
         let bound = if opns.len() > 0 && intsetmax(opns) >= 0 { intsetmax(opns) + 1 } else {1};
         if opns.len() > 0 && intsetmax(opns) >= 0 {
@@ -119,9 +116,9 @@ pub proof fn lemma_GetUpperBoundOnQuorumOf2bsOperationNumber(
 
         assert(opns.len() > 0 ==> (forall |opn:int| opns.contains(opn) ==> opn < bound));
 
-        if exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound
+        if exists |q:QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[i], q)] IsValidQuorumOf2bs(b[i], q) && q.opn == bound
         {
-            let q = choose |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound;
+            let q = choose |q:QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[i], q)] IsValidQuorumOf2bs(b[i], q) && q.opn == bound;
             assert(q.indices.len() >= LMinQuorumSize(b[i].constants.config) > 0);
             assert(q.indices.len() > 0);
             let idx_ = q.indices.choose();
@@ -157,7 +154,7 @@ pub proof fn lemma_GetMaximalQuorumOf2bsSequenceWithinBound(
         requires IsValidBehaviorPrefix(b, c, i),
                  0 <= bound,
         ensures IsValidQuorumOf2bsSequence(b[i], qs),
-                (qs.len() == bound || !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == qs.len()),
+                (qs.len() == bound || !exists |q:QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[i], q)] IsValidQuorumOf2bs(b[i], q) && q.opn == qs.len()),
         decreases bound
     {
         if bound == 0
@@ -167,15 +164,15 @@ pub proof fn lemma_GetMaximalQuorumOf2bsSequenceWithinBound(
         }
 
         let qs = lemma_GetMaximalQuorumOf2bsSequenceWithinBound(b, c, i, bound-1);
-        if !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == qs.len()
+        if !exists |q:QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[i], q)] IsValidQuorumOf2bs(b[i], q) && q.opn == qs.len()
         {
           return qs;
         }
 
         assert(qs.len() == bound - 1);
-        let q = choose |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound - 1;
+        let q = choose |q:QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[i], q)] IsValidQuorumOf2bs(b[i], q) && q.opn == bound - 1;
         let new_qs = qs + seq![q];
-        assert forall |opn:int| 0 <= opn < new_qs.len() implies
+        assert forall |opn:int| #![trigger new_qs[opn]] 0 <= opn < new_qs.len() implies
             new_qs[opn].opn == opn && IsValidQuorumOf2bs(b[i], new_qs[opn])
         by {
             if opn < qs.len() {
@@ -219,13 +216,13 @@ pub proof fn lemma_IfValidQuorumOf2bsSequenceNowThenNext(
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_ConstantsAllConsistent(b, c, i + 1);
 
-        assert forall|opn: int| 0 <= opn < qs.len() implies
+        assert forall|opn: int| #![trigger qs[opn]] 0 <= opn < qs.len() implies
             qs[opn].opn == opn && IsValidQuorumOf2bs(b[i + 1], qs[opn])
         by {
             assert(qs[opn].opn == opn);
             assert(IsValidQuorumOf2bs(b[i], qs[opn]));
 
-            assert forall|idx: int| qs[opn].indices.contains(idx) implies
+            assert forall|idx: int| #![trigger qs[opn].indices.contains(idx)] qs[opn].indices.contains(idx) implies
                  b[i + 1].environment.sentPackets.contains(qs[opn].packets[idx])
             by {
                 lemma_PacketStaysInSentPackets(b, c, i, i + 1, qs[opn].packets[idx]);

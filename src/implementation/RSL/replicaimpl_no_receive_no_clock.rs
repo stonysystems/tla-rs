@@ -15,7 +15,7 @@ verus! {
         requires old(r).valid(),
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
-        let outpackets = CReplica::CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&mut r.replica);
+        let outpackets = CReplica::CReplicaNextSpontaneousMaybeEnterNewViewAndSend1aOutbound(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -24,7 +24,7 @@ verus! {
         requires old(r).valid(),
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
-        let outpackets = CReplica::CReplicaNextSpontaneousMaybeEnterPhase2(&mut r.replica);
+        let outpackets = CReplica::CReplicaNextSpontaneousMaybeEnterPhase2Outbound(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -33,7 +33,7 @@ verus! {
         requires old(r).valid(),
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
-        let outpackets = CReplica::CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&mut r.replica);
+        let outpackets = CReplica::CReplicaNextSpontaneousTruncateLogBasedOnCheckpointsOutbound(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -42,7 +42,7 @@ verus! {
         requires old(r).valid(),
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
-        let outpackets = CReplica::CReplicaNextSpontaneousMaybeMakeDecision(&mut r.replica);
+        let outpackets = CReplica::CReplicaNextSpontaneousMaybeMakeDecisionOutbound(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -51,7 +51,7 @@ verus! {
         requires old(r).valid(),
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
-        let outpackets = CReplica::CReplicaNextSpontaneousMaybeExecute(&mut r.replica);
+        let outpackets = CReplica::CReplicaNextSpontaneousMaybeExecuteOutbound(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }

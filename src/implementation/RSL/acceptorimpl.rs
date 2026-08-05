@@ -8,7 +8,6 @@ use crate::implementation::RSL::types_i::*;
 use crate::protocol::RSL::{acceptor::*, types::*};
 
 verus! {
-    #[derive(Clone)]
     pub struct CAcceptor {
         pub constants: CReplicaConstants,
         pub max_bal: CBallot,
@@ -18,13 +17,27 @@ verus! {
         pub min_vote_opn: COperationNumber,
     }
 
+    // Verus cannot attach a specification to a derived Clone for a type whose
+    // clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+    // proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+    // without adding any trusted code.
+    impl Clone for CAcceptor {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+        {
+            self.clone_up_to_view()
+        }
+    }
+
     impl CAcceptor{
         pub open spec fn abstractable(self) -> bool
         {
             &&& self.constants.abstractable()
             &&& self.max_bal.abstractable()
             &&& cvotes_is_abstractable(&self.votes)
-            &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsAbstractable(self.last_checkpointed_operation[i]))
+            &&& (forall |i:int| #![trigger self.last_checkpointed_operation[i]] 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsAbstractable(self.last_checkpointed_operation[i]))
             &&& COperationNumberIsAbstractable(self.log_truncation_point)
         }
 
@@ -33,7 +46,7 @@ verus! {
             &&& self.constants.valid()
             &&& self.max_bal.valid()
             &&& cvotes_is_valid(&self.votes)
-            &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsValid(self.last_checkpointed_operation[i]))
+            &&& (forall |i:int| #![trigger self.last_checkpointed_operation[i]] 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsValid(self.last_checkpointed_operation[i]))
             &&& COperationNumberIsValid(self.log_truncation_point)
             &&& self.last_checkpointed_operation.len() == self.constants.all.config.replica_ids.len()
         }
@@ -98,7 +111,7 @@ verus! {
     pub fn CIsLogTruncationPointValid(log_truncation_point: COperationNumber,last_checkpointed_operation:&Vec<COperationNumber>,config:&CConfiguration) -> (isValid: bool)
         requires
             COperationNumberIsValid(log_truncation_point),
-            forall |i: int| 0 <= i < last_checkpointed_operation.len() ==> COperationNumberIsValid(last_checkpointed_operation[i]),
+            forall |i: int| #![trigger last_checkpointed_operation[i]] 0 <= i < last_checkpointed_operation.len() ==> COperationNumberIsValid(last_checkpointed_operation[i]),
             config.valid()
         ensures
             isValid == IsLogTruncationPointValid(AbstractifyCOperationNumberToOperationNumber(log_truncation_point),last_checkpointed_operation@.map(|i, x| (x as int)), config@)

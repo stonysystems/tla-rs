@@ -1068,6 +1068,196 @@ fn test_chain_replication_config_loading() {
 
 /// Helper: verify that transpiler output for a protocol matches the checked-in *_gen.rs.
 /// Catches stale generated files (e.g., missing proof lemma calls after config changes).
+/// Phase 54.15: the RSL skip_functions classification is derived from the
+/// transpile configs, so it can drift silently the moment someone edits one.
+/// Recompute it from the configs and hold the README and the classification
+/// note to the result.
+///
+/// The split that matters is `skip_functions` vs `skip_functions` ∩
+/// `no_stub_functions`: the intersection is not "missing code", it is code that
+/// exists and is verified by hand in a `*_manual.rs`. Conflating the two is what
+/// made this limitation read as far more debt than it is.
+#[test]
+fn test_rsl_skip_function_classification_matches_configs() {
+    fn toml_list(src: &str, name: &str) -> Vec<String> {
+        let start = match src.find(&format!("{name} = [")) {
+            Some(i) => i,
+            None => return Vec::new(),
+        };
+        let rest = &src[start..];
+        let end = rest.find(']').expect("unterminated list");
+        rest[..end]
+            .match_indices('"')
+            .collect::<Vec<_>>()
+            .chunks(2)
+            .filter(|c| c.len() == 2)
+            .map(|c| rest[c[0].0 + 1..c[1].0].to_string())
+            .collect()
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let modules = [
+        "broadcast",
+        "acceptor",
+        "learner",
+        "executor",
+        "election",
+        "proposer",
+        "replica",
+    ];
+
+    let (mut total, mut hand_implemented) = (0usize, 0usize);
+    for m in modules {
+        let path = repo_root.join(format!("src/protocol/RSL/{m}_transpile.toml"));
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let skip = toml_list(&src, "skip_functions");
+        let no_stub = toml_list(&src, "no_stub_functions");
+        total += skip.len();
+        hand_implemented += skip.iter().filter(|f| no_stub.contains(f)).count();
+    }
+    let stub_emitted = total - hand_implemented;
+
+    // Phase 42.8.c.2.iv.J.3.d added 6 replica entries: actions whose checked-in
+    // bodies are hand-written proofs (`broadcast use` plus explicit lemma calls)
+    // that the transpiler cannot generate. Skipping them is what lets replica
+    // regenerate without trading those proofs for `assume(false)`.
+    assert_eq!(total, 36, "RSL skip_functions count changed");
+    assert_eq!(
+        hand_implemented, 21,
+        "skip ∩ no_stub changed -- these have hand-written implementations, not gaps"
+    );
+    assert_eq!(stub_emitted, 15, "stub-emitted skip_functions changed");
+
+    // The README and the classification note quote these numbers; if the configs
+    // move, they must move too rather than quietly becoming wrong.
+    let readme = std::fs::read_to_string(repo_root.join("README.md")).expect("read README");
+    for fragment in [
+        "30 entries",
+        "10 are a deliberate trust boundary",
+        "15 have proven hand-written",
+        "8 are a genuine",
+    ] {
+        assert!(
+            readme.contains(fragment),
+            "README no longer states the classification fragment `{fragment}` -- \
+             update it (and docs/rsl-skip-functions.md) to match the configs"
+        );
+    }
+    let note = std::fs::read_to_string(repo_root.join("docs/rsl-skip-functions.md"))
+        .expect("read docs/rsl-skip-functions.md");
+    assert!(
+        note.contains("15 of the 30 are in both"),
+        "the classification note no longer matches the configs"
+    );
+}
+
+/// Phase 54.18: build the release binary once, then invoke it directly.
+///
+/// These tests used to each spawn `cargo run --release -- ...`. Around twenty
+/// of them do, and cargo runs tests in parallel, so those nested cargo
+/// processes contend on the same target directory -- with each other and with
+/// the outer `cargo test`, which is holding it too. The symptom was whole
+/// batches of regen tests failing together with
+/// `failed to build archive ... libverus_transpiler-*.rlib`, and passing on an
+/// immediate re-run once the artifacts were warm. That reads like a real
+/// regression and costs real time to dismiss.
+///
+/// `OnceLock::get_or_init` runs the build exactly once; concurrent callers
+/// block until it finishes rather than racing it.
+fn transpiler_binary() -> &'static std::path::Path {
+    static BIN: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BIN.get_or_init(|| {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let out = std::process::Command::new("cargo")
+            .args(["build", "--release", "--bin", "verus-transpile"])
+            .current_dir(manifest)
+            .output()
+            .expect("failed to spawn `cargo build --release`");
+        assert!(
+            out.status.success(),
+            "cargo build --release --bin verus-transpile failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let path = manifest.join("target/release/verus-transpile");
+        assert!(
+            path.exists(),
+            "cargo build --release reported success but {} is missing",
+            path.display()
+        );
+        path
+    })
+    .as_path()
+}
+
+/// Phase 42.8.c.2.iv.E. A `&mut self` method must not return the pre-lift tuple.
+///
+/// The lift rewrites `(state, outputs)` into assignments on `self` plus
+/// `outputs`. When the state element is an identity clone the translator emits
+/// an `ExecExpr::Clone` node, not a `.clone()` MethodCall, and the lift matched
+/// only the latter -- so `result` stayed bound to the pair and the body returned
+/// `(CExecutor, Vec<CPacket>)` where the signature promised `Vec<CPacket>`.
+///
+/// This asserts on *emitted text*, deliberately. Four AST-level tests of this
+/// same lift passed while the real output stayed broken, and the metric used to
+/// check it (`grep '; result }'`) matched the fixed and broken forms alike --
+/// that string is present either way, because the defect was `result`'s type,
+/// not the presence of the tail. A surviving `(self.clone(), ..)` cannot be
+/// read two ways.
+#[test]
+fn test_mut_self_lift_leaves_no_tuple_tail_in_rsl_output() {
+    let repo_root = resolve_repo_root_for_integration();
+    for (spec, toml, automan) in [
+        ("executor.rs", "executor_transpile.toml", "executor.automan"),
+        ("election.rs", "election_transpile.toml", "election.automan"),
+        ("proposer.rs", "proposer_transpile.toml", "proposer.automan"),
+        ("replica.rs", "replica_transpile.toml", "replica.automan"),
+    ] {
+        let output = std::process::Command::new(transpiler_binary())
+            .args([
+                "--input",
+                repo_root
+                    .join(format!("src/protocol/RSL/{}", spec))
+                    .to_str()
+                    .unwrap(),
+                "--config",
+                repo_root
+                    .join(format!("src/protocol/RSL/{}", toml))
+                    .to_str()
+                    .unwrap(),
+                "--annotations",
+                repo_root
+                    .join(format!("src/protocol/RSL/{}", automan))
+                    .to_str()
+                    .unwrap(),
+                "--stdout",
+            ])
+            .current_dir(repo_root.join("transpiler"))
+            .output()
+            .expect("Failed to run transpiler");
+        assert!(
+            output.status.success(),
+            "Transpiler failed for {}:\n{}",
+            spec,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let fresh = String::from_utf8(output.stdout).expect("output is not UTF-8");
+        let offenders: Vec<&str> = fresh
+            .lines()
+            .filter(|l| l.contains("(self.clone(),"))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "{} emits {} tuple-tail state element(s); the `&mut self` lift did not \
+             reach them, so the body returns a pair where the signature promises one \
+             value:\n{}",
+            spec,
+            offenders.len(),
+            offenders.join("\n")
+        );
+    }
+}
+
 fn assert_regen_matches_checked_in(
     protocol_dir: &str, // e.g. "ChainReplication"
     spec_file: &str,    // e.g. "chain.rs"
@@ -1078,11 +1268,8 @@ fn assert_regen_matches_checked_in(
     let repo_root = resolve_repo_root_for_integration();
     let checked_in_path = repo_root.join(format!("src/generated/{}/{}", protocol_dir, gen_file));
 
-    let output = std::process::Command::new("cargo")
+    let output = std::process::Command::new(transpiler_binary())
         .args([
-            "run",
-            "--release",
-            "--",
             "--input",
             repo_root
                 .join(format!("src/protocol/{}/{}", protocol_dir, spec_file))
@@ -1265,11 +1452,8 @@ fn assert_types_regen_matches_checked_in(
     let repo_root = resolve_repo_root_for_integration();
     let checked_in_path = repo_root.join(format!("src/generated/{}/types_gen.rs", protocol_dir));
 
-    let output = std::process::Command::new("cargo")
+    let output = std::process::Command::new(transpiler_binary())
         .args([
-            "run",
-            "--release",
-            "--",
             "generate-types",
             "--input",
             repo_root
@@ -1600,9 +1784,22 @@ fn test_rsl_generated_types_include_simple_clone_up_to_view() {
             .contains("impl CClockReading {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
         "generated CClockReading should include clone_up_to_view helper for primitive-only structs"
     );
+    // CParameters is defined in implementation/RSL/cparameters.rs, not in the
+    // generated file: `generate-types` reads types.rs, and its spec
+    // (LParameters) lives in protocol/RSL/parameters.rs. Phase 42.7 moved the
+    // hand-written struct to the module that already owned its validity and
+    // view semantics, which is what makes types_gen.rs reproducible byte for
+    // byte. The helper it must carry is unchanged, only its home.
+    let cparameters_home = std::fs::read_to_string("../src/implementation/RSL/cparameters.rs")
+        .expect("Failed to read cparameters.rs");
     assert!(
-        source.contains("impl CParameters {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
-        "generated CParameters should include clone_up_to_view helper for primitive-only structs"
+        cparameters_home
+            .contains("impl CParameters {\n    pub fn clone_up_to_view(&self) -> (result: Self)"),
+        "CParameters should include clone_up_to_view helper for primitive-only structs"
+    );
+    assert!(
+        source.contains("cparameters::CParameters"),
+        "types_gen.rs should re-export CParameters so its public API is unchanged"
     );
 
     let cparameters_source = std::fs::read_to_string("../src/implementation/RSL/cparameters.rs")
@@ -2500,11 +2697,15 @@ fn test_generated_replica_module_public_api() {
         "Replica functions should take &mut CReplica"
     );
 
-    // Verify result validity ensures (Phase 48.6.b: s.valid() in ensures)
-    let validity_count = source.matches("s.valid()").count();
+    // Verify result validity ensures (Phase 48.6.b: s.valid() in ensures).
+    // Phase 42.8.c.2.iv.J.3.d: 13 of the actions are now `&mut self` methods and
+    // spell this `self.valid()`, so counting only the free-function form under-
+    // counts by exactly those. Both spellings are the same obligation.
+    let validity_count =
+        source.matches("s.valid()").count() + source.matches("self.valid()").count();
     assert!(
         validity_count >= 10,
-        "replica_gen.rs should have >= 10 s.valid() ensures, found {}",
+        "replica_gen.rs should have >= 10 validity ensures, found {}",
         validity_count
     );
 
@@ -2673,10 +2874,8 @@ fn test_election_recursive_functions_generate_loop_code() {
     std::fs::write(&tmp_toml, &base_toml).expect("Failed to write temp TOML");
     let tmp_out = std::env::temp_dir().join("test_election_recursive_out.rs");
 
-    let output = std::process::Command::new("cargo")
+    let output = std::process::Command::new(transpiler_binary())
         .args([
-            "run",
-            "--",
             "-i",
             spec_path,
             "-a",
@@ -3037,10 +3236,26 @@ fn test_executor_cache_helpers_rehomed_out_of_manual_injection() {
 
     let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
         .expect("Failed to read executor_gen.rs");
+    // Check the import's *content*, not its formatting: rustfmt wraps and sorts a
+    // long `use` list, so an exact single-line match fails on a file that imports
+    // exactly the right three helpers (Phase 42.8.c.2.iv.G).
+    let gen_helpers_import: String = generated_source
+        .split("use crate::implementation::RSL::gen_helpers::")
+        .nth(1)
+        .map(|rest| rest.split(';').next().unwrap_or("").to_string())
+        .unwrap_or_default();
+    for helper in [
+        "CClientsInReplies",
+        "CUpdateNewCache",
+        "CGetPacketsFromReplies",
+    ] {
+        assert!(
+            gen_helpers_import.contains(helper),
+            "executor_gen.rs should import {helper} from gen_helpers; got `{gen_helpers_import}`"
+        );
+    }
     assert!(
-        generated_source.contains(
-            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache, CGetPacketsFromReplies};"
-        ),
+        generated_source.contains("use crate::implementation::RSL::gen_helpers::"),
         "executor_gen.rs should import re-homed helpers from gen_helpers"
     );
     assert!(
@@ -3365,7 +3580,12 @@ fn test_generated_types_module_public_api() {
     let normalized_source: String = source.split_whitespace().collect();
 
     let expected_types = [
-        "pub struct CParameters",
+        // CParameters is re-exported rather than defined here: its spec
+        // (LParameters) lives in protocol/RSL/parameters.rs, which
+        // `generate-types` never reads, so the struct was hand-added to this
+        // generated file until Phase 42.7 moved it to its owning module. The
+        // public API of types_gen is unchanged, which is what this test is for.
+        "pub use crate::implementation::RSL::cparameters::CParameters;",
         "pub use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};",
         "pub use crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants};",
         "pub use crate::implementation::RSL::acceptorimpl::CAcceptor;",
@@ -4670,11 +4890,13 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
 
 /// Phase 16.8.5: D1 on LLM-authored TLA+ specs
 /// Tests parser robustness against TLA+ written by an LLM without knowledge of parser limitations.
-/// 3/16 pass (simple flat-variable specs), remaining failures are currently
-/// dominated by temporal-subscript and unsupported-syntax parser gaps.
-/// Full specs: Raft, Paxos, PBFT, EPaxos, BullyElection, ChainRep, PrimaryBackup,
-/// TwoPhaseCommit, VerticalPaxos — all fail on parser gaps (range, EXCEPT, CHOOSE, \o)
-/// Simple* pass: SimpleConsensus, SimpleLeader, SimplePrimary (flat variables only)
+///
+/// History: this started at 3/16 and asserted that the parser gaps it hit
+/// (temporal subscripts, range syntax) still existed. Phase 52.M0.0 closed
+/// them -- `\name` operators tokenize instead of erroring (a), `[A]_vars`
+/// desugars to the disjunction it denotes (b), junction lists are scoped by
+/// their bullet column (c) -- taking the suite to 16/16. The assertion below
+/// locks in that result rather than continuing to assert the defects.
 #[test]
 fn test_d1_on_llm_tla_specs() {
     use verus_transpiler::tla::{parse_module, translator::ModuleTranslator};
@@ -4739,17 +4961,12 @@ fn test_d1_on_llm_tla_specs() {
         total >= 16,
         "Should process at least 16 .tla files (7 simple + 9 full), got {total}"
     );
-    assert!(
-        passed >= 3,
-        "At least 3 simple specs should pass, got {passed}"
-    );
-    assert!(
-        range_fails >= 1,
-        "Expected at least one range-related parser limitation, got {range_fails}"
-    );
-    assert!(
-        temporal_fails >= 1,
-        "Expected at least one temporal-subscript parser limitation, got {temporal_fails}"
+    assert_eq!(
+        passed, total,
+        "Phase 52.M0.0 took this corpus to {total}/{total}; got {passed} -- any \
+         drop is a parser regression. Range fails: {range_fails}, temporal \
+         fails: {temporal_fails}, other: {:?}",
+        other_fails
     );
     if !other_fails.is_empty() {
         eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));
@@ -4808,24 +5025,22 @@ fn test_d1_on_community_tla_specs() {
         failures.len()
     );
 
-    // 3 pass (EPaxos, Paxos, Raft), 1 fail (TwoPhase — record set constructor)
     assert!(
         total >= 4,
         "Should process at least 4 .tla files, got {total}"
     );
-    assert!(
-        passed >= 3,
-        "At least 3 community specs should parse, got {passed}"
+    // Was 3/4 with TwoPhase failing on the record-set constructor
+    // `[type : {"Prepared"}, rm : RM]`. Phase 52.M0.0.e added record sets,
+    // named INSTANCE, `@@`/`:>`, higher-order CONSTANTS, instance-qualified
+    // references and junction lists after `=>`, taking it to 4/4. Note the
+    // earlier "pass" was also shallower than it looked: the parser stopped at
+    // the first `----` section divider, so it only ever saw a prefix.
+    assert_eq!(
+        passed,
+        total,
+        "community specs must all parse: {}",
+        failures.join(", ")
     );
-    // TwoPhase_community.tla fails on record set constructor [type : {"Prepared"}, rm : RM]
-    assert!(
-        !failures.is_empty(),
-        "Expected at least 1 failure (TwoPhase record set), got {}",
-        failures.len()
-    );
-    if !failures.is_empty() {
-        eprintln!("Expected failures: {}", failures.join(", "));
-    }
 }
 
 // ============================================================
@@ -8299,11 +8514,19 @@ fn test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts() 
                     case.protocol, case.artifact_path
                 )
             });
+        // `elapsed_ms` is deliberately NOT asserted. It is wall-clock, so it
+        // differs between the machine that wrote the table and any machine that
+        // regenerates the artifacts -- asserting equality pins a timing value
+        // from one host into a checked-in document and makes every honest
+        // evidence refresh look like a failure. That is what kept the artifacts
+        // stale (Phase 37.2.1.i): they had drifted structurally for months
+        // because refreshing them tripped this assertion. The structural
+        // metrics below are the ones that carry meaning, and they stay pinned.
+        let _ = elapsed_ms;
         for value in [
             states,
             transitions,
             depth,
-            elapsed_ms,
             pruned_by_por,
             symmetry_collapses,
             hash_compaction_collisions,
@@ -23907,5 +24130,294 @@ fn test_regenerate_rsl_validate_only_passes() {
     assert!(
         stdout.contains("Validation PASSED"),
         "validate-only should report PASSED when existing files match transpiler output"
+    );
+}
+
+/// Phase 54.7: `vec_element_ensures` quantifiers must carry an explicit trigger.
+///
+/// The transpiler synthesises `forall |i:int| 0 <= i < X@.len() ==> X@[i].pred()`
+/// for every entry in `vec_element_ensures`. Verus otherwise picks `X@[i]` itself
+/// and reports it — 60 of the 109 notes in `src/generated/RSL/` were this one
+/// shape. An auto-chosen trigger is an implementation detail of the release, so
+/// pinning it is the point of the phase.
+///
+/// This asserts the emitted text rather than a regenerated file on purpose:
+/// `scripts/regenerate_rsl.sh` is currently lossy (it drops hand-added imports
+/// from `types_gen.rs` — Phase 42), so regenerating to check would trade one
+/// correctness problem for another.
+#[test]
+fn test_vec_element_ensures_emits_explicit_trigger() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let out = std::env::temp_dir().join("phase54_7_broadcast_gen.rs");
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .args([
+            "--input",
+            repo_root
+                .join("src/protocol/RSL/broadcast.rs")
+                .to_str()
+                .unwrap(),
+            "--annotations",
+            repo_root
+                .join("src/protocol/RSL/broadcast.automan")
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join("src/protocol/RSL/broadcast_transpile.toml")
+                .to_str()
+                .unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run transpiler");
+    assert!(
+        status.status.success(),
+        "transpiler failed: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+
+    let emitted = std::fs::read_to_string(&out).expect("read generated output");
+    let quantifiers: Vec<&str> = emitted
+        .lines()
+        .filter(|l| l.contains("forall |i:int| ") && l.contains("@.len() ==>"))
+        .collect();
+    assert!(
+        !quantifiers.is_empty(),
+        "expected vec_element_ensures quantifiers in the generated output"
+    );
+    for line in &quantifiers {
+        assert!(
+            line.contains("#![trigger "),
+            "vec_element_ensures quantifier emitted without an explicit trigger: {}",
+            line.trim()
+        );
+    }
+    // The trigger must name the indexed element, which is what Verus chose.
+    assert!(
+        quantifiers
+            .iter()
+            .any(|l| l.contains("#![trigger result@[i]]")),
+        "expected `#![trigger result@[i]]`, got: {:?}",
+        quantifiers
+    );
+    let _ = std::fs::remove_file(&out);
+}
+
+/// Phase 42.7: regenerating `types_gen.rs` must reproduce the checked-in file.
+///
+/// It did not used to, and the reason was misdiagnosed for a while: the fresh
+/// output differed from the checked-in file only by `use` ordering, line
+/// wrapping, and one hand-written `CParameters` struct that `generate-types`
+/// cannot produce (its spec, `LParameters`, lives in
+/// `protocol/RSL/parameters.rs`, which that command never reads). A raw
+/// `git diff` counted the reordering as ~53 deleted lines, which read as "the
+/// regen drops hand-added imports" -- it does not; all 43 survive.
+///
+/// `CParameters` now lives in `implementation/RSL/cparameters.rs`, the module
+/// that already owned its validity and view semantics, and the generated file
+/// re-exports it through `custom_imports`. So this asserts the property that
+/// unblocks regeneration: emit, format, compare.
+#[test]
+fn test_types_gen_regeneration_is_byte_identical() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let tmp = std::env::temp_dir().join("phase42_6_types_gen.rs");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .args([
+            "generate-types",
+            "--input",
+            repo_root
+                .join("src/protocol/RSL/types.rs")
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join("src/protocol/RSL/types_transpile.toml")
+                .to_str()
+                .unwrap(),
+            "--output",
+            tmp.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run generate-types");
+    assert!(
+        out.status.success(),
+        "generate-types failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // rustfmt is what normalises `use` ordering and wrapping; without it the
+    // comparison is meaningless, so skip rather than assert a false failure.
+    let fmt = std::process::Command::new("rustfmt")
+        .args(["--edition", "2021", tmp.to_str().unwrap()])
+        .status();
+    if !matches!(fmt, Ok(s) if s.success()) {
+        eprintln!("rustfmt unavailable; skipping byte comparison");
+        return;
+    }
+
+    let fresh = std::fs::read_to_string(&tmp).expect("read fresh output");
+    let checked_in = std::fs::read_to_string(repo_root.join("src/generated/RSL/types_gen.rs"))
+        .expect("read checked-in types_gen.rs");
+    assert!(
+        !fresh.contains("pub struct CParameters"),
+        "CParameters must not be hand-added back into the generated file"
+    );
+    assert!(
+        fresh.contains("cparameters::CParameters"),
+        "the generated file must re-export CParameters from its owning module"
+    );
+    assert_eq!(
+        fresh, checked_in,
+        "regenerating types_gen.rs no longer reproduces the checked-in file"
+    );
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Phase 42.8.c.2.iii: `&mut self` methods must not keep the functional output.
+///
+/// When a receiver-typed output collapses the return type to `()`, the printer
+/// lifts `let result = Struct{..}` into field assignments on `self`. Three
+/// things used to survive that lift and made the emitted module uncompilable,
+/// which is why the five `skip_functions` RSL modules could never be
+/// regenerated:
+///
+///   * a trailing `result` in a method that returns `()`;
+///   * `result.field` inside proof blocks, naming a binding that no longer
+///     exists;
+///   * an `else` branch left as `self.clone_up_to_view()` (type `Self`) against
+///     a then-branch of assignments (type `()`).
+///
+/// The proof-block rewrite is a *simultaneous* swap, not a rename: in the
+/// functional body `self` is the pre state and `result` the post state, and
+/// after the lift those meanings exchange. Renaming only `result -> self`
+/// collapses both arguments of
+/// `lemma_abstractify_clearnerstate_remove(old_m, m2, k)` onto one value, whose
+/// precondition `m2@ =~= old_m@.remove(k)` is then unprovable.
+#[test]
+fn test_mut_self_method_drops_functional_output() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let out = std::env::temp_dir().join("phase42_8_learner_gen.rs");
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .args([
+            "--input",
+            repo_root
+                .join("src/protocol/RSL/learner.rs")
+                .to_str()
+                .unwrap(),
+            "--annotations",
+            repo_root
+                .join("src/protocol/RSL/learner.automan")
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join("src/protocol/RSL/learner_transpile.toml")
+                .to_str()
+                .unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run transpiler");
+    assert!(
+        status.status.success(),
+        "transpiler failed: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+
+    let emitted = std::fs::read_to_string(&out).expect("read generated output");
+    let start = emitted
+        .find("pub exec fn CLearnerForgetDecision")
+        .expect("CLearnerForgetDecision should be emitted");
+    let body: String = emitted[start..].chars().take(1400).collect();
+
+    assert!(
+        !body.contains("result"),
+        "a &mut self method must not name the functional output:\n{}",
+        body
+    );
+    assert!(
+        !body.contains("} else {\n            self.clone_up_to_view()"),
+        "an identity-clone else branch must become a no-op:\n{}",
+        body
+    );
+    // The pre state moves to the ghost binding, the post state stays `self`.
+    // The `&` is tolerated: since Phase 42.8.c.2.iv.B these lemmas take
+    // `&ExecType` unconditionally. What this guards is that the two arguments are
+    // *different* states, which is what the &mut self lift gets wrong when broken.
+    assert!(
+        body.contains(
+            "lemma_abstractify_clearnerstate_remove(&old_self.unexecuted_learner_state, \
+             &self.unexecuted_learner_state"
+        ) || body.contains(
+            "lemma_abstractify_clearnerstate_remove(old_self.unexecuted_learner_state, \
+             self.unexecuted_learner_state"
+        ),
+        "proof args must be (old_self, self), not both the same state:\n{}",
+        body
+    );
+    let _ = std::fs::remove_file(&out);
+}
+
+/// Phase 38: the DPOR corpus must contain no degenerate stub specs.
+///
+/// `detect_stub_specs.py` exists to catch cases that "pass" because their
+/// generated `Types.rs` fabricates values with `arbitrary::<..>()` instead of
+/// modelling the protocol — a vacuous pass, which is the failure mode the whole
+/// Phase 38.14 audit track was about.
+///
+/// It had no guard test, and that is precisely how its status went stale: the
+/// TODO recorded "4 findings in cases 14/15/16/19" long after regeneration had
+/// stopped producing them. The corpus is gitignored and rebuilt, so the only
+/// way the claim stays true is to check it rather than remember it.
+#[test]
+fn test_dpor_corpus_has_no_degenerate_stub_specs() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let script =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/scripts/detect_stub_specs.py");
+    assert!(
+        script.exists(),
+        "stub detector missing at {}",
+        script.display()
+    );
+
+    let corpus = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs");
+    if !corpus.exists() {
+        // The corpus is generated (regenerate_corpus.sh); without it there is
+        // nothing to judge, and asserting would fail for the wrong reason.
+        eprintln!("corpus not generated; skipping stub-spec check");
+        return;
+    }
+
+    let out = std::process::Command::new("python3")
+        .arg(&script)
+        .current_dir(&repo_root)
+        .output()
+        .expect("run detect_stub_specs.py");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "detect_stub_specs.py reported degenerate stub specs:\n{}\n{}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("no degenerate stub specs"),
+        "unexpected detector output:\n{}",
+        stdout
     );
 }

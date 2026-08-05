@@ -1667,12 +1667,7 @@ mod tests {
         let result = QuantifierMatcher::match_template(&forall);
         assert!(result.is_some());
 
-        if let Some(QuantifierTemplate::CollectionCheck {
-            element_var,
-            predicate: _,
-            ..
-        }) = result
-        {
+        if let Some(QuantifierTemplate::CollectionCheck { element_var, .. }) = result {
             assert_eq!(element_var, "p");
         } else {
             panic!("Expected CollectionCheck template, got {:?}", result);

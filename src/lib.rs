@@ -1,5 +1,16 @@
 #![allow(unused_imports)]
 #![allow(unused_attributes)]
+// Phase 54.10: the `L*` / `C*` identifiers deliberately mirror the IronFleet
+// Dafny names (LAcceptorProcess1a, CMessage, LReplicaConstants). That
+// correspondence is what makes this port auditable against the original, so
+// renaming them to satisfy Rust's convention would cost more than it buys.
+// Silencing the lint crate-wide removes 886 of the 1016 warnings a full pass
+// emits -- and until it is silenced the handful that matter are unreadable.
+#![allow(non_snake_case)]
+// Verus 0.2026.05 introduced first-class mutable references. Keep the old
+// postcondition interpretation temporarily while generated and handwritten
+// contracts are migrated to explicit `final(...)` post-state expressions.
+#![verifier::deprecated_postcondition_mut_ref_style(true)]
 #![verus::trusted]
 use vstd::modes::*;
 use vstd::multiset::*;

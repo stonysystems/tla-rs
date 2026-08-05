@@ -1,0 +1,137 @@
+# AGENTS.md - tla-rs Project Guide
+
+## Important: Generated Code Policy
+
+**Do NOT hand-edit files under `src/generated/`.** All code there must be produced by running the transpiler. To add proofs or fix assumes, improve the transpiler's proof generation (in `transpiler/src/`), then regenerate the output files. Do NOT delegate to manual implementation code or use "clone-delegate-extract" patterns in generated files. Read `TODO.md` Phase 12 for the full plan.
+
+## Project Overview
+
+tla-rs is a Rust implementation of the IronFleet verified distributed systems framework, focused on Replicated State Machine (RSM) protocols. It provides formally verified implementations of Byzantine fault-tolerant consensus protocols using Verus (a deductive program verifier for Rust).
+
+## Build Commands
+
+```bash
+# Build and verify all Rust code with Verus
+scons --verus-path=/path/to/verus
+
+# Build only C# projects
+scons --skip-verus
+
+# Build specific target
+scons bin/IronRSLServerUDP.dll
+```
+
+**Requirements:**
+- Verus verifier (tested: release/0.2026.08.02.b677dd5; rolling is the same commit)
+- rustc 1.97.1
+- .NET 6.0 SDK
+- scons (`pip install scons`)
+
+## Running Services
+
+```bash
+# Generate certificates
+dotnet bin/CreateIronServiceCerts.dll outputdir=certs name=MyService ...
+
+# Run RSL server (UDP — default)
+export LD_LIBRARY_PATH="$PWD"
+dotnet bin/IronRSLServerUDP.dll <service.txt> <private_key.txt>
+
+# Run RSL client (UDP)
+dotnet bin/IronRSLClientUDP.dll ip1=... port1=... nthreads=4 duration=10
+
+# Legacy TCP+SSL variant (slower, kept for backward compat)
+# dotnet bin/IronRSLServer.dll <service.txt> <private_key.txt>
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  C# .NET Layer (I/O & Networking)           │
+│  - csharp/Common/IoFramework.cs             │
+│  - Trusted runtime for network operations   │
+└──────────────────┬──────────────────────────┘
+                   │ (FFI)
+┌──────────────────▼──────────────────────────┐
+│  Rust/Verus Layer (Verified Protocol)       │
+├─────────────────────────────────────────────┤
+│ src/services/     - Entry points            │
+│ src/implementation/ - Concrete impls        │
+│ src/protocol/     - Specs & proofs          │
+│ src/common/       - Utilities & I/O         │
+└─────────────────────────────────────────────┘
+```
+
+## Code Organization
+
+### Naming Conventions
+- `*_s.rs` - Spec/abstract modules (protocol layer)
+- `*_i.rs` - Implementation/concrete modules
+- `L*` prefix - Logical/protocol types (e.g., `LReplica`, `LProposer`)
+- `C*` prefix - Concrete types (e.g., `CConstants`, `CMessage`)
+
+### Key Directories
+- `src/protocol/RSL/` - Abstract protocol specs and proofs (~6K LOC)
+- `src/implementation/RSL/` - Verified concrete implementation (~6K LOC)
+- `src/common/native/io_s.rs` - Network client with marshalling
+- `csharp/` - C# runtime and deployable services
+
+## Verus Patterns
+
+### Function Types
+```rust
+verus! {
+    spec fn abstract_spec() -> bool;           // Pure mathematical (ghost)
+    proof fn lemma_about_spec() { ... }        // Proof-only
+    exec fn concrete_impl() { ... }            // Executable code
+}
+```
+
+### Annotations
+- `#[verifier(external)]` - Trusted FFI, not verified
+- `#[verifier(external_body)]` - Implementation trusted, interface verified
+- `#[verus::trusted]` - Mark entire module as trusted
+
+### View Trait
+Maps concrete types to ghost types for verification:
+```rust
+// struct@ syntax calls the view function
+let ghost_replica = replica@;
+```
+
+### Triggers Workaround
+For arithmetic in triggers, use extra variables:
+```rust
+// Instead of: forall|i: int| 0 <= i < len ==> f(i + 1)
+// Use: forall|i: int, j: int| j == i + 1 && 0 <= i < len ==> f(j)
+```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/protocol/RSL/replica.rs` | Abstract replica state machine |
+| `src/protocol/RSL/proposer.rs` | Ballot/proposal logic (~22K LOC) |
+| `src/implementation/RSL/ReplicaImpl.rs` | Concrete replica impl |
+| `src/implementation/RSL/marshalling.rs` | Message serialization |
+| `src/common/native/io_s.rs` | Network client (~17K LOC) |
+| `csharp/Common/IoFramework.cs` | C# I/O framework (~45K LOC) |
+
+## Protocol Components
+
+The RSL protocol implements Multi-Paxos with:
+- **Proposer** - Generates ballots and proposals
+- **Acceptor** - Stores votes and accepts ballots
+- **Learner** - Learns committed values from quorum
+- **Executor** - Applies committed operations to state machine
+- **Election** - Leader election via ballot numbers
+
+## Known Issues
+
+See `hacks.md` for Verus workarounds and `notes.md` for development notes.
+
+**Key limitations:**
+- Verus spec functions cannot use mutable variables or iteration (use recursion)
+- Verus maps/sets are infinite by default (need `.dom().finite()` bounds)
+- Cannot add conditions on trait implementations (copy clauses as workaround)

@@ -16,7 +16,7 @@ verus! {
     // fields (candidate, voter, leader, follower) are set to c.my_id == server_id.
 
     pub open spec fn SenderIntegrity(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==> {
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==> {
             &&& 0 <= p.src < ds.num_servers
             &&& 0 <= p.dst < ds.num_servers
             &&& match p.msg {
@@ -42,7 +42,7 @@ verus! {
     // that sent the RequestVote (received_from == Some(pkt.src)).
 
     pub open spec fn VoteResponseIntegrity(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
                     granted ==> {
@@ -70,10 +70,10 @@ verus! {
     // overlap-voter witnesses back to request-vote context.
 
     pub open spec fn VoteResponseHasRequestVote(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
-                    granted ==> exists |req: LRaftPacket| {
+                    granted ==> exists |req: LRaftPacket| #![trigger ds.network.contains(req)] {
                         &&& ds.network.contains(req)
                         &&& req.src == p.dst
                         &&& req.dst == v
@@ -105,7 +105,7 @@ verus! {
     //   valid while d stays in the same election term.
 
     pub open spec fn RequestVoteSummaryStillValidAtSameTerm(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::RequestVote {
                     term: t,
@@ -142,7 +142,7 @@ verus! {
     // ETHVQ intermediate server d may have advanced past the RequestVote's term.
 
     pub open spec fn RequestVoteSummaryAlwaysValid(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::RequestVote {
                     term: t,
@@ -173,7 +173,7 @@ verus! {
     // satisfied as long as term > 0 (which holds since term starts at 1+).
 
     pub open spec fn RequestVoteLastLogTermBound(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::RequestVote {
                     term: t,
@@ -223,7 +223,7 @@ verus! {
     //   valid even if v has moved to a higher term.
 
     pub open spec fn VoteResponseSummaryStillValidAtOrAboveTerm(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::VoteResponse {
                     term: t,
@@ -295,7 +295,7 @@ verus! {
     // VoteResponse{granted: true} when !has_voted (first vote in that term).
 
     pub open spec fn OneVotePerTermInNetwork(ds: RaftDistributedState) -> bool {
-        forall |p1: LRaftPacket, p2: LRaftPacket|
+        forall |p1: LRaftPacket, p2: LRaftPacket| #![trigger ds.network.contains(p1), ds.network.contains(p2)]
             ds.network.contains(p1) && ds.network.contains(p2) ==>
             match p1.msg {
                 LRaftMessage::VoteResponse { term: t1, granted: g1, voter: v1, .. } =>
@@ -319,7 +319,7 @@ verus! {
     // (v, t) is added to vote_log_len.
 
     pub open spec fn VoteLogLenCoversNetwork(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
                     granted ==> {
@@ -339,7 +339,7 @@ verus! {
     // This follows from LogAppendOnly: the voter's log only grows after voting.
 
     pub open spec fn VoteLogLenBounded(ds: RaftDistributedState) -> bool {
-        forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t)) ==> {
+        forall |v: int, t: int| #![trigger ds.vote_log_len.dom().contains((v, t))] ds.vote_log_len.dom().contains((v, t)) ==> {
             &&& 0 <= v < ds.num_servers
             &&& 0 <= ds.vote_log_len[(v, t)]
             &&& ds.vote_log_len[(v, t)] <= ds.server_states[v].log.len()
@@ -600,7 +600,7 @@ verus! {
     // (LClientRequest, LFollowerAppendEntries), so there is no log truncation.
 
     pub open spec fn LogAppendOnly(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
-        forall |i: int| 0 <= i < ds.num_servers ==> {
+        forall |i: int| #![trigger ds_.server_states[i]] #![trigger ds.server_states[i]] 0 <= i < ds.num_servers ==> {
             &&& ds_.server_states[i].log.len() >= ds.server_states[i].log.len()
             &&& (forall |k: int| #![trigger ds.server_states[i].log[k]]
                 0 <= k < ds.server_states[i].log.len() ==>
@@ -627,7 +627,7 @@ verus! {
             LogAppendOnly(ds, ds_)
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -636,7 +636,7 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
-        assert forall |i: int| 0 <= i < ds.num_servers implies {
+        assert forall |i: int| #![trigger ds_.server_states[i]] #![trigger ds.server_states[i]] 0 <= i < ds.num_servers implies {
             &&& ds_.server_states[i].log.len() >= ds.server_states[i].log.len()
             &&& (forall |k: int| #![trigger ds.server_states[i].log[k]]
                 0 <= k < ds.server_states[i].log.len() ==>

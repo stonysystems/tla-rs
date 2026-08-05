@@ -5,9 +5,23 @@ use crate::protocol::RSL::configuration::*;
 use vstd::prelude::*;
 
 verus! {
-#[derive(Clone)]
 pub struct CConfiguration {
     pub replica_ids: Vec<EndPoint>,
+}
+
+// Verus cannot attach a specification to a derived Clone for a type whose
+// clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+// proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+// without adding any trusted code.
+impl Clone for CConfiguration {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+        self.replica_ids.len() == result.replica_ids.len(),
+    {
+        self.clone_up_to_view()
+    }
 }
 
 impl CConfiguration {
@@ -26,7 +40,7 @@ impl CConfiguration {
                 len == self.replica_ids.len(),
                 newVec.len() == i,
                 newVec@ =~= self.replica_ids@.take(i as int),
-                forall |j: int| 0 <= j < i ==> newVec@[j] == self.replica_ids@[j],
+                forall |j: int| #![trigger newVec@[j]] 0 <= j < i ==> newVec@[j] == self.replica_ids@[j],
             decreases len - i,
         {
             let ep = self.replica_ids[i].clone_up_to_view();
@@ -48,14 +62,14 @@ impl CConfiguration {
 
     pub open spec fn abstractable(self) -> bool
     {
-        &&& (forall |i:int| 0 <= i < self.replica_ids.len() ==> self.replica_ids[i].abstractable())
+        &&& (forall |i:int| #![trigger self.replica_ids[i]] 0 <= i < self.replica_ids.len() ==> self.replica_ids[i].abstractable())
         &&& seq_is_unique(self.replica_ids@)
     }
 
     pub open spec fn valid(self) -> bool
     {
         &&& self.abstractable()
-        &&& (forall |i:int| 0 <= i < self.replica_ids.len() ==> self.replica_ids[i].abstractable() && self.replica_ids[i].valid_public_key())
+        &&& (forall |i:int| #![trigger self.replica_ids[i]] 0 <= i < self.replica_ids.len() ==> self.replica_ids[i].abstractable() && self.replica_ids[i].valid_public_key())
         &&& (0 < self.replica_ids.len() < 0xffff_ffff_ffff_ffff)
     }
 
@@ -195,14 +209,14 @@ pub open spec fn ReplicaIndexValid(index:u64, config:CConfiguration) -> bool
 pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)
     requires
         seq_is_unique(s@),
-        (forall |i:int| 0 <= i < s.len() ==> s[i].abstractable()),
+        (forall |i:int| #![trigger s[i]] 0 <= i < s.len() ==> s[i].abstractable()),
     ensures
         ({
             let ss = s@.map(|i, e:EndPoint| e@);
             &&& s.len() ==  ss.len()
-            &&& (forall |i:int| 0 <= i < s.len() ==> ss[i] == s[i]@)
-            &&& (forall |i:AbstractEndPoint| ss.contains(i) ==> exists |x:int| 0 <= x < s.len() && i == s[x]@)
-            &&& (forall |i:EndPoint| ss.contains(i@) ==> exists |x:int| 0 <= x < s.len() && i == s[x])
+            &&& (forall |i:int| #![trigger ss[i]] 0 <= i < s.len() ==> ss[i] == s[i]@)
+            &&& (forall |i:AbstractEndPoint| ss.contains(i) ==> exists |x:int| #![trigger s[x]@] 0 <= x < s.len() && i == s[x]@)
+            &&& (forall |i:EndPoint| #![trigger i@] ss.contains(i@) ==> exists |x:int| 0 <= x < s.len() && i == s[x])
             &&& seq_is_unique(ss)
         })
 {

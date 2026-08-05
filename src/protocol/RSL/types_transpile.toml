@@ -66,6 +66,7 @@ re_exports = [
     "crate::implementation::RSL::ReplicaImpl::{CReplica, CScheduler, abstractify_clpacket, abstractify_crslio, abstractify_crslio_seq}",
     # Broadcast helpers (CBroadcast, OutboundPackets with verified loops)
     "crate::implementation::RSL::cbroadcast::*",
+    "crate::implementation::RSL::cparameters::CParameters",
     # Upper bound helpers (CUpperBound has spec int field, CUpperBoundedAddition)
     "crate::implementation::common::upper_bound::*",
     "crate::implementation::common::upper_bound_i::*",
@@ -198,7 +199,7 @@ custom_imports = [
 # CProposer fields (complex collection conversions)
 "LProposer.request_queue" = "self.request_queue@.map(|i, r:CRequest| r.view())"
 "LProposer.received_1b_packets" = "self.received_1b_packets@.map(|p:CPacket| p.view())"
-"LProposer.highest_seqno_requested_by_client_this_view" = "Map::new(|ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak, |ak: AbstractEndPoint| { let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak; self.highest_seqno_requested_by_client_this_view@[k] as int })"
+"LProposer.highest_seqno_requested_by_client_this_view" = "Map::new(self.highest_seqno_requested_by_client_this_view@.dom().map(|k: EndPoint| k@), |ak: AbstractEndPoint| { let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak; self.highest_seqno_requested_by_client_this_view@[k] as int })"
 # CElectionState fields
 "ElectionState.current_view_suspectors" = "self.current_view_suspectors@.map(|u:u64| u as int)"
 "ElectionState.requests_received_this_epoch" = "self.requests_received_this_epoch@.map(|i, r:CRequest| r.view())"

@@ -94,13 +94,12 @@ verus! {
     /// have equal cardinality.
     pub proof fn lemma_set_map_injective_len<T, U>(s: Set<T>, f: spec_fn(T) -> U)
     requires
-        s.finite(),
         forall |x1: T, x2: T| #![trigger f(x1), f(x2)] f(x1) == f(x2) ==> x1 == x2,
     ensures
         s.map(f).len() == s.len(),
     decreases s.len(),
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         if s.len() == 0 {
             assert(s =~= Set::<T>::empty());
             assert(s.map(f) =~= Set::<U>::empty());
@@ -127,8 +126,7 @@ verus! {
                 }
             };
 
-            // s_prime.map(f) is finite
-            s_prime.lemma_map_finite(f);
+            // Set::map preserves finiteness.
         }
     }
 
@@ -136,8 +134,6 @@ verus! {
     ///
     /// Used in Raft (votes_granted: HashSet<u64>, spec uses Set<int>).
     pub proof fn lemma_set_u64_to_int_len(s: Set<u64>)
-    requires
-        s.finite(),
     ensures
         s.map(|x: u64| x as int).len() == s.len(),
     {
@@ -158,7 +154,6 @@ verus! {
         s@.map(|x: u64| x as int).len() == s.len(),
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        lemma_hashset_view_finite(s);
         assert(s@.len() == s.len());
         lemma_set_u64_to_int_len(s@);
     }
@@ -172,7 +167,6 @@ verus! {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
-        lemma_hashset_view_finite(s);
         assert(s@.len() == s.len());
         let f = |p: crate::implementation::RSL::cmessage::CPacket| p@;
         assert forall |p1: crate::implementation::RSL::cmessage::CPacket, p2: crate::implementation::RSL::cmessage::CPacket|
@@ -189,7 +183,6 @@ verus! {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
         broadcast use crate::common::native::io_s::axiom_endpoint_view;
-        lemma_hashset_view_finite(s);
         assert(s@.len() == s.len());
         let f = |e: crate::common::native::io_s::EndPoint| e@;
         assert forall |e1: crate::common::native::io_s::EndPoint, e2: crate::common::native::io_s::EndPoint|
@@ -216,9 +209,18 @@ verus! {
         src: crate::common::native::io_s::AbstractEndPoint,
     )
     ensures
-        (forall |op: crate::implementation::RSL::cmessage::CPacket| s.contains(op) ==> op.src@ != src)
+        (forall |op: crate::implementation::RSL::cmessage::CPacket| #![trigger s.contains(op)]
+            s.contains(op) ==> op.src@ != src)
         <==>
-        (forall |op: crate::protocol::RSL::environment::RslPacket| s.map(|p: crate::implementation::RSL::cmessage::CPacket| p@).contains(op) ==> op.src != src),
+        // NOTE: no explicit trigger here. Verus auto-chooses
+        // `s.map(<closure>).contains(op)`, and a trigger may not contain a
+        // lambda ("triggers cannot contain let/forall/exists/lambda/choose"),
+        // so the term it picks cannot be written by hand. Hoisting the closure
+        // into a named spec fn would change this ensures clause, whose only
+        // caller is generated code (src/generated/RSL/replica_gen.rs).
+        // Tracked as a deliberate exception in reports/triggers/exceptions.md.
+        (forall |op: crate::protocol::RSL::environment::RslPacket|
+            s.map(|p: crate::implementation::RSL::cmessage::CPacket| p@).contains(op) ==> op.src != src),
     {
         let f = |p: crate::implementation::RSL::cmessage::CPacket| p@;
 
@@ -226,7 +228,9 @@ verus! {
         // For any RslPacket in s.map(f), its preimage CPacket in s has src@ != src,
         // and p@.src == p.src@ definitionally, so the RslPacket inherits the property.
         assert forall |rsl_op: crate::protocol::RSL::environment::RslPacket|
-            (forall |op: crate::implementation::RSL::cmessage::CPacket| s.contains(op) ==> op.src@ != src) &&
+            #![trigger s.map(f).contains(rsl_op)]
+            (forall |op: crate::implementation::RSL::cmessage::CPacket| #![trigger s.contains(op)]
+                s.contains(op) ==> op.src@ != src) &&
             s.map(f).contains(rsl_op)
             implies rsl_op.src != src by {
             let q = choose |q: crate::implementation::RSL::cmessage::CPacket| s.contains(q) && f(q) == rsl_op;
@@ -239,7 +243,9 @@ verus! {
         // For any CPacket in s, its view op@ is in s.map(f), and
         // op@.src == op.src@ definitionally, so the CPacket inherits the property.
         assert forall |op: crate::implementation::RSL::cmessage::CPacket|
-            (forall |rsl_op: crate::protocol::RSL::environment::RslPacket| s.map(f).contains(rsl_op) ==> rsl_op.src != src) &&
+            #![trigger s.contains(op)]
+            (forall |rsl_op: crate::protocol::RSL::environment::RslPacket| #![trigger s.map(f).contains(rsl_op)]
+                s.map(f).contains(rsl_op) ==> rsl_op.src != src) &&
             s.contains(op)
             implies op.src@ != src by {
             // op ∈ s means f(op) = op@ ∈ s.map(f)
@@ -253,17 +259,6 @@ verus! {
     // Trusted primitive: HashSet view is always finite (Phase 30)
     // ══════════════════════════════════════════════════════════════════
     //
-    // Sound because a physical HashSet always contains a finite number
-    // of elements — its view Set<Key> is therefore always finite.
-
-    /// Any HashSet's spec view is a finite set.
-    #[verifier::external_body]
-    pub proof fn lemma_hashset_view_finite<Key>(s: &HashSet<Key>)
-    ensures
-        s@.finite(),
-    {
-    }
-
     /// Verified clone for HashSet<u64>.
     ///
     /// Unlike the generic `clone_hashset<T>` (which is `external_body` because

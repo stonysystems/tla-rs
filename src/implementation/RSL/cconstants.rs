@@ -6,10 +6,24 @@ use crate::protocol::RSL::constants::{LConstants, LReplicaConstants, LReplicaCon
 use vstd::prelude::*;
 
 verus! {
-#[derive(Clone)]
 pub struct CConstants {
     pub config: CConfiguration,
     pub params: CParameters,
+}
+
+// Verus cannot attach a specification to a derived Clone for a type whose
+// clone is not a copy, so `#[derive(Clone)]` left `.clone()` opaque to every
+// proof. Delegating to the spec'd `clone_up_to_view` gives the same postcondition
+// without adding any trusted code.
+impl Clone for CConstants {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+        self.config.replica_ids.len() == result.config.replica_ids.len(),
+    {
+        self.clone_up_to_view()
+    }
 }
 
 pub struct CReplicaConstants {
@@ -140,7 +154,8 @@ impl CReplicaConstants {
         requires self.valid(),
         ensures res == LReplicaConstantsValid(self@)
     {
-        self.my_index >= 0 && self.my_index < self.all.config.replica_ids.len() as u64
+        // my_index: u64, so the spec's `0 <= my_index` is automatic
+        self.my_index < self.all.config.replica_ids.len() as u64
     }
 }
 

@@ -81,7 +81,7 @@ impl View for CState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CConstants {
     pub f: u64,
     pub n: u64,
@@ -140,7 +140,7 @@ impl View for CPhase {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CPBFTMessage {
     PrePrepare {
         view: u64,
@@ -173,3 +173,4 @@ impl View for CPBFTMessage {
 }
 
 } // verus!
+

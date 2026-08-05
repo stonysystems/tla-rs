@@ -1,0 +1,17 @@
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+int_type = "i64"
+nat_type = "u64"
+
+# Rust's executable i64 is bounded even though Verus's spec int is not.
+[extra_requires]
+CIncrement = ["*value < i64::MAX"]
+
+[output]
+generate_inline_types = false
+generate_proofs = true
+custom_imports = [
+    "use vstd::prelude::*;",
+    "use crate::counter_spec::*;",
+]

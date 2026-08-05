@@ -26,7 +26,7 @@ verus! {
     }
 
     define_enum_and_derive_marshalable! {
-        #[derive(Clone, PartialEq, Eq, Hash)]
+        #[derive(PartialEq, Eq, Hash)]
         pub enum CAppMessage {
             #[tag = 0]
             CAppIncrement,
@@ -36,6 +36,22 @@ verus! {
             CAppInvalid,
         }
         [rlimit attr = verifier::rlimit(25)]
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CAppMessage {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result == *self,
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl CAppMessage {

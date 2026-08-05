@@ -1,0 +1,203 @@
+# Clean-Subset TLA+ Corpus Manifest (Phase 53)
+#
+# One case table per corpus entry. See README.md for the four-tuple convention,
+# the status vocabulary, and the per-tier golden strategy.
+#
+# Tier gating (plan §"咬合"): a translator milestone may not be claimed before its
+# tier is green.
+#   tier 0 -> 52.M1 (projection P1/P2/P5)
+#   tier 1 -> 52.M2 (messages P3 / quorum P4)
+#   tier 2 -> 52.M4
+#   tier 3 -> 52.M4b
+#
+# Fields:
+#   id             directory name under tier<N>/
+#   tier           0..3
+#   status         planned | intake | clean | golden | green | blocked
+#   role           translate (default) | reject-only — see README "Roles"
+#   source_repo    upstream repo, "handwritten" if authored here
+#   source_path    path inside that repo
+#   source_commit  pinned upstream commit (filled by intake_case.sh)
+#   golden_kind    handwritten | bootstrapped | bootstrapped_reviewed | bootstrapped_partial_ref
+#   reference      repo-relative path to an existing hand-written tla-rs spec, or ""
+#   clean_distance linter-measured C1-C5 violations on original.tla, or "unmeasured"
+#   expected_rules which rules the linter reports for original.tla; pinned by
+#                  tests/corpus_lint_guard.rs together with clean_distance
+#   rules_skipped  implemented rules that did NOT run on original.tla. C1/C2/C3
+#                  all need a node set and return early without one, so a spec
+#                  the linter understands less scores *lower*. When this is
+#                  non-empty, clean_distance is a lower bound, not a distance.
+#   milestone_gate the Phase 52 milestone this case gates
+#   notes          free text; REQUIRED when status = "blocked"
+
+# ============================================================
+# Tier 0 — micro / classical concurrency (53.2)
+# Low clean-distance. Purpose: get the projection pass working end to end
+# and provide a fast regression smoke suite.
+# ============================================================
+
+[[case]]
+id = "t0_01_simple"
+tier = 0
+status = "green"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/TeachingConcurrency/Simple.tla"
+source_commit = "ab9a2c33566c2e8c9202f292540852282e1fbb32"
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "2"
+expected_rules = ["C2"]
+rules_skipped = []
+milestone_gate = "52.M1"
+notes = "Lamport's TeachingConcurrency 'Simple'. Smallest per-node-array case: x, y, pc are all [0..N-1 -> T] and Next is `\\E self \\in 0..N-1: proc(self)`. proc(self) reads y[j] for j /= self, so it violates C2 and the rewrite must message-ify that read. Ships with a TLAPS proof upstream."
+
+[[case]]
+id = "t0_02_bakery"
+tier = 0
+status = "intake"
+role = "reject-only"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/Bakery-Boulangerie/Bakery.tla"
+source_commit = "dc6470ac55fe7f4f395ac62dba60ec6fd5d87c24"
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "3"
+expected_rules = ["C2"]
+rules_skipped = []
+milestone_gate = "52.M1"
+notes = "Lamport's bakery. Heavy C2 case: the doorway/ticket protocol reads num[j] and flag[j] for other processes. **reject-only, decided 2026-08-04.** Bakery is shared-memory, and a clean-subset version of it is not a rewrite of Bakery — it is a different algorithm that solves the same problem, so V2 would have nothing to compare. Worse, the message-passing counterpart of 'distributed mutual exclusion by timestamps' is literally `t0_05_lamport_mutex`, which is already in the corpus: rewriting this case would duplicate that one. Its value is as the specimen the linter must reject, with clean-distance pinned at 3."
+
+[[case]]
+id = "t0_03_dining_philosophers"
+tier = 0
+status = "green"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/DiningPhilosophers/DiningPhilosophers.tla"
+source_commit = "41faafbabe549530ad54bd4301b07ca4fd93e65b"
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "6"
+expected_rules = ["C2"]
+rules_skipped = []
+milestone_gate = "52.M1"
+notes = "Forks are shared between neighbours -> C2 violations at the fork pickup. The rewrite is NOT a redesign: Chandy-Misra is natively a message algorithm and the original merely declines to model the handing, so a fork stops being a global object with a `holder` and becomes a per-edge fact held at each end. V2 EQUAL on `hungry` (5 distinct each side at NP=4) -- and the comparison **caught a defect in this rewrite before the golden was frozen**: an earlier draft split `Think` from becoming hungry again, reaching 11 `hungry` states the original cannot. First time V2 caught a rewrite error rather than a configuration one."
+
+[[case]]
+id = "t0_04_readers_writers"
+tier = 0
+status = "intake"
+role = "reject-only"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/ReadersWriters/ReadersWriters.tla"
+source_commit = "ee05f259276db2b878a55a442ea6daa8429db7e9"
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "1"
+expected_rules = ["C5"]
+rules_skipped = ["C1", "C2", "C3"]
+milestone_gate = "52.M1"
+notes = "Queue-based reader/writer lock. State is global (readers/writers/waiting sets), not per-node -> exercises the C1 boundary: what does projection do when there is no [Node -> T] array at all? **reject-only, decided 2026-08-04.** The answer to that question is 'nothing' — a spec with no per-node state has no projection, and the linter says so plainly rather than reporting three separate C1 violations. Turning it into a distributed lock would be designing a new protocol, not rewriting this one. Its value is that boundary, and the linter's handling of it."
+
+[[case]]
+id = "t0_05_lamport_mutex"
+tier = 0
+status = "green"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/lamport_mutex/LamportMutex.tla"
+source_commit = "b17be0a959108701a89b5cadec1a1ee1b216f7a4"
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "2"
+expected_rules = ["C1", "C4"]
+rules_skipped = []
+milestone_gate = "52.M1"
+notes = "Lamport 1978 distributed mutual exclusion. The CLEANEST tier-0 case and the most valuable one: already message-passing (`network` is [Proc -> [Proc -> Seq(Message)]], pairwise FIFO), all of clock/req/ack are per-node, Next is `\\E p \\in Proc`. Rewrite work is mostly (a) network 2-D queue array -> one message set with src/dst, (b) `crit` global set -> per-node boolean. Swapped in for BlockingQueue, which is an upstream submodule (lemmy/BlockingQueue) and has no per-node arrays."
+
+# ============================================================
+# Tier 1 — medium consensus (53.3). MVP / killer demo.
+# Golden bootstrapped, reviewed against the existing tla-rs hand-written spec.
+# ============================================================
+
+[[case]]
+id = "t1_01_paxos"
+tier = 1
+status = "green"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/Paxos/Paxos.tla"
+source_commit = ""
+golden_kind = "bootstrapped_reviewed"
+reference = "src/protocol/Paxos/paxos.rs"
+clean_distance = "1"
+expected_rules = ["C5"]
+rules_skipped = []
+milestone_gate = "52.M2"
+notes = "MVP. MUST use the message-passing Paxos (a 'msgs' variable, per-node arrays), NOT the Voting abstraction — Voting has no per-server arrays so projection is N/A."
+
+[[case]]
+id = "t1_02_twophase"
+tier = 1
+status = "green"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/transaction_commit/TwoPhase.tla"
+source_commit = ""
+golden_kind = "bootstrapped_reviewed"
+reference = "src/protocol/TwoPhase/twophase.rs"
+clean_distance = "2"
+expected_rules = ["C1"]
+rules_skipped = []
+milestone_gate = "52.M2"
+notes = "Real two-phase commit. NOTE `specifications/TwoPhase/TwoPhase.tla` upstream is a two-phase *handshake* (producer/consumer), an entirely different protocol — 2PC lives under `transaction_commit/`. The linter designates `msgs` and finds `rmState` per-node; the two violations are `tmState` and `tmPrepared`, the transaction manager's own state. That is the case's real question: 2PC has two roles, and the rewrite must decide whether the TM is a node."
+
+# ============================================================
+# Tier 2 — complex, already message-passing (53.4)
+# Rewrite work is mostly deleting history variables.
+# ============================================================
+
+[[case]]
+id = "t2_01_raft"
+tier = 2
+status = "golden"
+source_repo = "ongardie/raft.tla"
+source_path = "raft.tla"
+source_commit = "935da8ef24c668176e5f061757b9f25d533e58f0"
+golden_kind = "bootstrapped_reviewed"
+reference = "src/protocol/Raft/raft.rs"
+clean_distance = "6"
+expected_rules = ["C1", "C3", "C4", "C5"]
+rules_skipped = []
+milestone_gate = "52.M4"
+notes = "Rewrite removes history vars (allLogs, elections, voterLog). Reconfiguration is out of the clean subset (Q2) and is stripped. `golden` not `green`: the golden verifies (V1) and matches (V3), but TLC does not close the state space even at 2 servers, so V2 is bounded evidence only — see rewrite.md. This is the case that made the projection carry types (Seq vs Map indexing, record payloads, named enum labels)."
+
+[[case]]
+id = "t2_02_epaxos"
+tier = 2
+status = "golden"
+source_repo = "efficient/epaxos"
+source_path = "tla+/EgalitarianPaxos.tla"
+source_commit = "ab4dbeae58a7eabcb514865e9ccf1ab0386abfc3"
+golden_kind = "bootstrapped_reviewed"
+reference = "src/protocol/EPaxos/epaxos.rs"
+clean_distance = "4"
+expected_rules = ["C1", "C2"]
+rules_skipped = []
+milestone_gate = "52.M4"
+notes = "Hardest tier-2 case. Already message-passing (`sentMsg` is one set), so C2 and C4 are clean out of the box and the node set `Replicas` is found: the three findings are all C1 globals — `proposed` (commands offered), `committed` (per-instance decisions), `ballots` (a shared counter). NOTE the first measurement said 1, and it was wrong: `Next == \/ CommandLeaderAction \/ ReplicaAction` pushes the node quantifier one level down, and the linter could not see through it. Fixed in the linter; this case is what found it. **Re-measured 3 -> 4 on 2026-08-04** after a second, worse defect in the same area: `node_parameterized_operators` seeded from the RAW `Next`, not the expanded one, so on a grouped `Next` it returned an empty map and **C2 iterated over nothing**. The pinned 3 was C1 running alone. EPaxos is the only case affected -- every other original quantifies directly in `Next` -- and the C2 finding it was hiding is a real cross-node read of `crtInst[cleader]`. Translated + verus-passed 2026-08-04 after **nine** type-shaped translator defects, all listed in golden.rs's header; TLC closes the space (3.2M distinct, depth 47). `golden` not `green`: Consistency here is over cmdLog and the original's is over the `committed` history variable C3 deletes, so there is no comparable projection."
+
+# ============================================================
+# Tier 3 — hard (53.5)
+# ============================================================
+
+[[case]]
+id = "t3_01_jetpack"
+tier = 3
+status = "golden"
+source_repo = "local"
+source_path = "docs/jetpack_reference/jetpack_raft_composition.tla"
+source_commit = ""
+golden_kind = "bootstrapped_partial_ref"
+reference = "src/protocol/Jetpack/jetpack.rs"
+clean_distance = "2"
+expected_rules = ["C4", "C5"]
+rules_skipped = ["C1", "C2", "C3"]
+milestone_gate = "52.M4b"
+notes = "Heavy rewrite: instantaneous global reads, 3-D log, INSTANCE composition. `original.tla` is the *composition* module, the only one of the three with Init/Next/Spec; the other two are kept beside it as `original_jetpack_layer.tla` and `original_base_raft.tla`. The clean-distance of 2 is NOT comparable to the other cases: the composition module has no type invariant, so the linter cannot identify the node set and never reaches C1/C2 — the two findings are the message *array* (C4) and that failure itself (C5). Reading it as 'nearly clean' would be wrong. The Phase 51 reference spec is PARTIAL (entry actions 51.9 missing) — it is a review aid, not a golden, and golden.rs is MORE complete than it. `clean.tla` translated first try and passed verus first try, the only case in the corpus to do so; Raft is what paid for that. TLC closes the state space at both 2 and 3 servers (19.5M distinct at 3, depth 78, TypeOK + Consistency hold), which is stronger than Raft. `golden` not `green` only because V2 as defined is clean-vs-original and the slice shares no observable with the composition module — the same gap Paxos has."

@@ -58,12 +58,12 @@ verus! {
         ensures
             ({
                 let s = b[i].replicas[idx].replica.proposer;
-                &&&(forall |p: RslPacket| s.received_1b_packets.contains(p) ==>
+                &&&(forall |p: RslPacket| #![trigger s.received_1b_packets.contains(p)] s.received_1b_packets.contains(p) ==>
                     p.msg is RslMessage1b &&
                     p.msg->bal_1b == s.max_ballot_i_sent_1a &&
                     c.config.replica_ids.contains(p.src) &&
                     b[i].environment.sentPackets.contains(p))
-                &&& (forall |p1: RslPacket, p2: RslPacket| s.received_1b_packets.contains(p1) && s.received_1b_packets.contains(p2)
+                &&& (forall |p1: RslPacket, p2: RslPacket| #![trigger s.received_1b_packets.contains(p1), s.received_1b_packets.contains(p2)] s.received_1b_packets.contains(p1) && s.received_1b_packets.contains(p2)
                           ==> p1 == p2 || p1.src != p2.src)
             }),
         decreases i
@@ -76,7 +76,7 @@ verus! {
             let s = b[i - 1].replicas[idx].replica.proposer;
             let s_prime = b[i].replicas[idx].replica.proposer;
 
-            assert forall |p: RslPacket| s_prime.received_1b_packets.contains(p)
+            assert forall |p: RslPacket| #![trigger s_prime.received_1b_packets.contains(p)] s_prime.received_1b_packets.contains(p)
                 implies p.msg is RslMessage1b
                     && p.msg->bal_1b == s.max_ballot_i_sent_1a
                     && b[i].environment.sentPackets.contains(p)
@@ -87,7 +87,7 @@ verus! {
                 }
             };
 
-            assert forall |p1: RslPacket, p2: RslPacket|
+            assert forall |p1: RslPacket, p2: RslPacket| #![trigger s_prime.received_1b_packets.contains(p1), s_prime.received_1b_packets.contains(p2)]
                 s_prime.received_1b_packets.contains(p1)
                 && s_prime.received_1b_packets.contains(p2)
                 implies p1 == p2 || p1.src != p2.src

@@ -4,12 +4,130 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Tools & Environment
 
-- **Verus**: `/home/users/zihao/verus/verus` (version 0.2026.02.04.175a879)
-- **Rust**: 1.92.0-x86_64-unknown-linux-gnu (required by Verus)
-- **Verification command**: `/home/users/zihao/verus/verus --crate-type=lib src/lib.rs`
-- **Build command**: `scons --verus-path=/home/users/zihao/verus`
+Repo-of-record versions (README / `.github/workflows/ci.yml`):
 
-## Current Status (last updated 2026-05-28)
+- **Verus**: 0.2026.08.02.b677dd5 — pinned by CI; `VERUS_VERSION` in `ci.yml`
+- **Rust**: 1.97.1 (the toolchain that Verus binary requires)
+- **Verification command**: `$VERUS --crate-type=lib src/lib.rs`
+- **Build command**: `scons --verus-path=$VERUS`
+- **TLA+ tools**: `tla2tools.jar` (TLC 2.19) — needed by Phase 52/53 fidelity checking
+
+**This dev box (`ztang`, 2026-08-04)** — Step 0 of the Phase 52/53 work:
+
+| Tool | Status | Notes |
+|---|---|---|
+| Rust | ✅ 1.97.1 via rustup | Installed 2026-08-04. The system `cargo` 1.75 **cannot** build the transpiler (`clap_lex` needs `edition2024`); always `export PATH="$HOME/.cargo/bin:$PATH"`. |
+| transpiler | ✅ `cargo check --all-targets` clean | ~80 s cold. |
+| TLC | ✅ `tla2tools.jar` 2.19, Java 17 | Kept out of the repo; fetch from `tlaplus/tlaplus` releases. |
+| Verus | ⚠️ built from source | The **prebuilt** 0.2026.08.02 release links glibc 2.39; this box has **2.35**, so it cannot run. Built from source at commit `b677dd5` under `~/verus-src` with **z3 4.14.1** (the newest z3 with a glibc-2.35 build; Verus pins 4.16.0). Building z3 4.16.0 from source also fails here — it needs C++20 `<format>`, which libstdc++ only ships from GCC 13 and this box has GCC 12. So the version check must be bypassed at **both** layers: `vargo --no-solver-version-check build --release` when building, and `-V no-solver-version-check` on every `verus` invocation. Solver-version skew can change proof stability — treat proof-level results from this box as advisory and re-check on a glibc-2.39 machine or in CI. |
+| .NET | ❌ absent | No `dotnet` — C# runtime, cluster runs, and throughput benches cannot be reproduced here. |
+
+## Current Status (last updated 2026-08-05)
+
+**🔝 42.8.c is COMPLETE (2026-08-05). All seven RSL modules are reconciled.**
+`1046 verified, 0 errors`; trigger notes **534 → 74**; `assume(false)` **0**.
+`scripts/classify_trigger_notes.py` reports **0 notes deliverable by regeneration** — the
+codegen pipeline this phase opened is drained, and the ceiling is tightened to 77 so it
+cannot silently regrow.
+
+**What is left:**
+**All 74 sit in hand-written bodies.** Verified against fresh transpiler output on
+2026-08-05 (54.10.b), not inferred: `classify_trigger_notes.py --fresh-dir` reports
+**0 emitted**. There is no codegen work left in this phase.
+Recorded in `docs/rsl-skip-functions.md`.
+
+**✅ Phase 54 is at ZERO auto-chosen trigger notes (2026-08-05).** 534 → 0, `1048 verified,
+0 errors`, ceiling set to 0 so any new unannotated quantifier fails the build. The last 74
+landed under the policy change below.
+**And zero warnings**: 54.12.b's `Set::new_assuming_finite`, the last one, is gone too — it
+was never going to clear by regeneration, because the function holding it is hand-written.
+
+**🔝 POLICY CHANGE (2026-08-05, by the user): the block on those 74 is lifted.**
+`CLAUDE.md` now scopes the generated-code rule by **provenance rather than path**.
+Transpiler-emitted code still may not be hand-edited; hand-written bodies preserved inside
+`src/generated/` **may be edited directly**, because regeneration copies them through verbatim,
+so the divergence risk the rule guards against does not apply to them. 54.7.c's "closed under
+current policy" no longer holds — its facts were right, only the policy was. **Do 54.7.f next**
+(the 53 deliverable notes). Confirm provenance per function with
+`classify_trigger_notes.py --fresh-dir` rather than inferring it from the config; that
+inference was already measured wrong for all 74.
+
+**42.8.c final (2026-08-05).** Six of seven RSL modules are reconciled and the crate is at
+`1046 verified, 0 errors`, notes 103, warnings 3.
+
+| module | state |
+|---|---|
+| broadcast, acceptor | already byte-identical / lossless |
+| learner | reconciled (transpiler `&T` fix + `--preserve`) |
+| executor, election, proposer | **merged this session**; `assume(false)` 6→0, 5→0, 9→0 |
+| replica | **merged 2026-08-05** (was blocked). 13 of the 18 actions migrated to `&mut self` methods; 5 stay hand-written free functions because their proofs cannot be generated. `assume(false)` 0→0, notes 103→77. |
+
+**What the merges did not do is deliver trigger notes: three merges, 103 → 103.** That is
+the measured fact, and it outranks four successive estimates of the deliverable count (80,
+50, 3, 40) — see 54.7.b, where the "3" is retracted as the product of an unsound
+attribution.
+*(Updated 2026-08-05: the fourth merge — replica — did deliver, 103 → 77. The attribution
+in 54.7.c had said all 36 deliverable notes were in replica and none in the other three,
+which is exactly what the three no-op merges and this one together confirm.)*
+
+**Attribution, measured 2026-08-05 by `scripts/classify_trigger_notes.py` (21 tests).**
+The count has been estimated five times now — 80, 50, 3, 40, 72 — so this one is done by a
+checked-in tool that attributes each note to its containing function *by line range* and
+classifies that function two ways: where the body comes from, and whether the expression is
+the one shape codegen annotates. Both dimensions are needed; the earlier "72" used only the
+second and so counted notes that no regeneration can reach.
+
+| origin | vec-element | other | total | can regeneration deliver it? |
+|---|---|---|---|---|
+| **transpiler-emitted** | **36** | 14 | 50 | 36 yes; the 14 need new codegen |
+| preserved (`rsl_merge_preserve.txt`) | 23 | 7 | 30 | no — the merge keeps the existing text |
+| `skip_functions` (hand-written) | 14 | 9 | 23 | no — the transpiler emits nothing at all |
+| | 73 | 30 | 103 | |
+
+**All 36 deliverable notes are in `replica`** — which is exactly why three merges delivered
+nothing: executor, election and proposer had **zero** notes in that cell, so 103 → 103 was
+the correct outcome, not a disappointment. The earlier reading, "the shape is handled and
+these instances are not produced by codegen", is half right: 53 of the 103 are indeed
+hand-written or preserved, but 50 *are* transpiler output.
+
+**The 36 hinge on how 42.8.c.2.iv.J is resolved, and the cheap resolution is worth 0.**
+They sit on `ensures` clauses, not in bodies — e.g. `replica_gen.rs:258-259`, whose body is
+a real one-line delegation. `merge_generated.py --preserve` keeps the *whole function*,
+contract included. So preserving replica's 18 actions to protect their bodies also preserves
+their stale contracts and delivers nothing; the 36 land only if fresh output can be taken
+whole, which means the `&mut self` conversion must emit real bodies rather than
+`assume(false)` stubs. That makes J worth 36 of 103 notes and promotes it from "Phase 48/49
+cleanup" to the highest-value item in Phase 54.
+
+**So the policy question in 54.7.c/54.7.d is worth 53 notes, not 72** — and `CLAUDE.md`
+forecloses both of its proposed answers, not just one. Beyond *"Do NOT hand-edit files under
+`src/generated/`"* it also says *"Do NOT delegate to manual implementation code or use
+'clone-delegate-extract' patterns in generated files"*, which rules out moving the bodies
+out as squarely as it rules out annotating them in place. `manual_code` is separately pinned
+to acceptor-only by `test_manual_code_footprint_is_empty`, and proposer/election explicitly
+removed theirs. Under current policy the only route to those 53 is transpiler support for
+the skipped functions (Phase 42 Option B). Recorded as decided rather than left open: I am
+following `CLAUDE.md` as written, so 54.7.c/d stay closed to me and the exceptions list says
+so permanently. Reopening them means amending `CLAUDE.md`, which is the user's call.
+
+Also still open and needing a decision rather than work: **54.7.d** (post-processing
+`src/generated/` conflicts with `CLAUDE.md`).
+
+Phases 52/53 stay on hold.
+
+*(prior banner, 2026-08-04)* Phase 54 — Explicit Quantifier Triggers.
+A full verification pass emits 534 `automatically chose triggers` notes, all in our own code.
+The Verus team raised this while evaluating tla-rs as a compatibility test target: an
+auto-chosen trigger can change between Verus releases, so a proof that verifies today can
+fail tomorrow as an uninformative `rlimit exceeded`. See
+[Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+
+Phases 52/53 were sequenced behind this and are no longer waiting: both are
+**COMPLETE (2026-08-04)** — eight `clean.tla` specs translate, all eight goldens pass
+`verus` under a guard, five cases are `green`. See
+[Phase 52](#phase-52-clean-subset-tla--verus-translator--complete-2026-08-04) and
+`docs/clean_tla_translator_evidence.md`.
+
 
 **Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-16).** After Phase 38.17 (direct-assignment solver optimization + DPOR reduction activation), the main `verus-transpile model-check` path is 5.7-19x faster on protocol cases (Paxos 511s → 77s, PBFT 87s → 4.6s, Raft 1115s → 195s). Sleep-set DPOR reduction now actively prunes transitions on all multi-process cases (5/5 reduction-gate hits: Paxos 82.9%, Raft 49.4%, PBFT 43.2%, Peterson 43.8%, counter 33.3%). With DPOR reduction enabled (`dpor-checker shadow-compare`), Paxos runs in 2.6s — a 29x end-to-end speedup from the pre-38.17 baseline with exact state parity preserved. See `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/{latest.md,dpor_vs_tlc.md,sleep_set_reduction_table.md}` for full evidence. Remaining DPOR work is tracked in Phase 38.18 (explorer parallelism, helper-call inlining at IR, main-path DPOR reduction, Raft/PBFT internal-explorer parity).
 
@@ -74,13 +192,20 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
-- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
+- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. **38.11 is closed (verified 2026-08-05)**: all ten acceptance criteria are met and each has a guard test — `cargo test --test integration phase_38_11` runs 10 tests, all passing. The previously recorded "4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19)" **no longer reproduce**: `scripts/detect_stub_specs.py` reports "no degenerate stub specs detected in corpus" and none of those four cases contains an `arbitrary::` constructor. The corpus is gitignored and regenerated (CI runs `regenerate_corpus.sh`), so that finding came from a stale local copy. Phase 38's remaining leaves — 38.20.3, 38.21.C, 38.21.H, 38.22.2.b.iii — are all marked blocked, multi-week, case-specific or deferred, so the phase has no small actionable leaf right now.
 
-**Next steps (priority order, updated 2026-05-28):**
+**Next steps (priority order, updated 2026-08-04):**
+
+0. **🔝 Phase 54: Explicit Quantifier Triggers** — 534 auto-chosen triggers make our proofs
+   sensitive to Verus version changes. Raised by the Verus team while evaluating tla-rs as a
+   compatibility test target. **Do this first.** (Phases 52/53 were sequenced behind it;
+   they completed independently on 2026-08-04 and are no longer waiting.)
+   See [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
 
-1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Remaining leaf tasks: 38.20.3 (blocked on solver ceilings), 38.21.C (Source DPOR, multi-week), 38.21.H (bit-pack, case-specific), 38.22.2.b.iii (NamedFields indexed Vec, deferred). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — `38.11` acceptance criteria are **closed** (10/10, each with a passing guard test, verified 2026-08-05). What remains is `38.18` / `38.22` performance work, and every open leaf is blocked or deferred (see below), so this phase is not currently actionable in small steps. Remaining leaf tasks: 38.20.3 (blocked on solver ceilings), 38.21.C (Source DPOR, multi-week), 38.21.H (bit-pack, case-specific), 38.22.2.b.iii (NamedFields indexed Vec, deferred). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
 5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler to translate value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. Concrete target: eliminate `raft_manual.rs` (369 LOC).
@@ -11328,6 +11453,88 @@ Reported current state: the latest commit only has one of these five checks pass
 
 ### 37.2 Restore green CI without weakening checks
 
+- [x] **37.2.1.i** (2026-08-04) Local re-run of all 5 CI jobs after the Lint fix:
+  **Format PASS, Lint PASS, Test PASS (2608), Model-Check Evidence PASS, Verus Verification
+  not runnable here** (pinned release needs glibc >= 2.39; box has 2.35). 4/5 verified green.
+  Running the evidence job surfaced a separate problem it is structurally unable to catch:
+  **the checked-in model-check artifacts had drifted from what the code produces.**
+  Regenerating changed 16 files (+668/-132):
+  (a) telemetry fields added in Phase 36.3.2 / 36.3.7 (`deferred_constraint_evaluations`,
+  `direct_assigned_fields`, `eq_constraints`, `evaluator_calls`, `fallback_reason`,
+  `guard_pruned_assignments`, `predicate_constraints`) were missing from every artifact;
+  (b) `spec`/`types` paths were `../src/...`, i.e. generated from `transpiler/`, while the CI
+  job has no `working-directory` and runs from the repo root, so `src/...` is canonical;
+  (c) `OPTIMIZATION_DELTAS.md` still claimed `primarybackup_small.json` guard `3/3`, last
+  written 2599743b (March) — it predates and contradicts 6f9baf70 (May 24), which corrected
+  that case to 2 states after the Phase 38.17.2 inlining fix. Checked-in evidence was
+  disagreeing with itself for over two months.
+  Artifacts regenerated and committed; full suite re-run against them.
+  **Root cause of the rot, found while regenerating**:
+  `test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts` asserted that
+  every metric in the artifact — **including `elapsed_ms`** — appears verbatim in the baseline
+  table in `docs/model_checker_status.md`. That pins one host's wall-clock into a checked-in
+  document, so regenerating on any other machine fails the test (here: artifact `8` ms vs
+  table `1` ms). Refreshing the evidence honestly was therefore *guaranteed* to look like a
+  regression, which is why nobody did it for months. Fixed by dropping `elapsed_ms` from the
+  asserted tokens and marking that column indicative in the status doc; every structural
+  metric (`states`, `transitions`, `depth`, `pruned_by_por`, `symmetry_collapses`,
+  `hash_compaction_collisions`) stays pinned. This is the phase rule's "previous guard proven
+  incorrect" case, not a weakening: asserting timing equality across hosts carries no
+  correctness signal and actively blocked the evidence discipline it was meant to protect.
+- [x] **37.2.1.j** Normalized artifact-drift guard. **DONE (2026-08-04).**
+  `scripts/check_model_check_drift.py` + a `Guard against structural artifact drift` step
+  that runs immediately after the existing regeneration step in the evidence job. It
+  normalizes both sides (working tree vs `git show HEAD:<path>`) by dropping the volatile
+  keys, then compares exactly and names the changed key paths
+  (`~ /summary/states: 1 -> 42`). Proven both ways on the real tree: a +999 ms `elapsed_ms`
+  edit passes, while a changed state count plus a `../src/...` path — the exact 37.2.1.i
+  drift — fails with both differences pinpointed.
+  Design points: (a) the volatile set is an **explicit list, not a `_ms$` rule**, because
+  `timeout_ms` also ends in `_ms` but is a configuration input whose change must be caught —
+  a suffix heuristic would have silenced exactly the wrong thing; (b) `MANIFEST.txt`'s
+  `git_rev:` line is dropped, since it changes on every commit by construction;
+  (c) `.jsonl` parity exports are normalized per line; (d) a deleted artifact is reported as
+  `missing` rather than silently skipped; (e) `--warn-only` exists for local use but a test
+  asserts CI does **not** use it; (f) scope comes from `MANIFEST.txt`, i.e. only what the
+  matrix script actually generates — `reports/model_check/` also holds a hand-written
+  README and parity exports from other scripts, and a guard that goes red on a doc edit is
+  a guard someone deletes (caught while testing: the first version flagged this task's own
+  README edit). `--all-files` overrides. 29 tests, including an end-to-end suite against a
+  real throwaway git repository, since the guard shells out to git.
+
+  Original rationale: 37.2.1.f deliberately rejected a
+  git-diff check because `elapsed_ms` varies per runner — correct, but the consequence is
+  that structural drift (new telemetry fields, changed state counts, wrong-cwd paths) rots
+  silently, as 37.2.1.i shows. The fix is not to reinstate a raw diff but to diff
+  **normalized** artifacts: drop the volatile keys (`elapsed_ms`, timestamps, `git_rev`) and
+  compare the rest against git HEAD. That is a strictly stronger correct guard replacing a
+  weaker one, which the phase rules allow. Needs: normalizer + comparison script, tests over
+  fixture pairs (timing-only diff must pass, field/count/path diff must fail), and a CI step
+  after the existing regeneration step.
+
+- [x] **37.2.1.h** (2026-08-04) `CI / Lint` was red again: `cargo clippy --all-targets
+  --all-features -- -D warnings` reported **18 `clippy::only_used_in_recursion`** warnings
+  across `tla/translator.rs`, `tla/types.rs`, `translator/mod.rs`, `verus2tla/converter.rs`.
+  Fixed the code, not the check: each flagged method takes `&self` but never touches state —
+  it only passes the receiver along to its own recursive call — so the receiver was dropped
+  and the methods became associated functions, with ~280 call sites requalified
+  `self.f(..)` -> `Self::f(..)` (and `x.f(..)` -> `Type::f(..)` where the receiver was a
+  local). All 18 are private, so no public API moved.
+  Three things worth knowing for the next person:
+  (a) **it cascades** — while a method still calls a sibling that takes `&self`, the sibling
+  keeps `self` "used", so fixing one exposes the next. It took a fixpoint loop
+  (`field_expr_to_raw_string` -> `field_expr_to_invariant_string` -> `field_expr_to_loop_string`);
+  (b) removing receivers turns `|e| Self::f(e)` into a `redundant_closure` warning, but the
+  closure is still **required** where the argument needs deref coercion
+  (`Option<Box<TlaExpr>>::is_some_and`) — 4 of those had to be restored after the compiler
+  rejected the point-free form;
+  (c) `cargo clippy` caches, so a re-run after an edit prints nothing and looks clean —
+  `touch src/lib.rs` first or the fixpoint loop terminates on a lie.
+  Verified locally: `clippy --all-targets --all-features -- -D warnings` exit 0, `cargo fmt
+  --check` clean, full test suite green. **Caveat**: verified with clippy 1.91.0 (the newest
+  toolchain cached on this box); CI uses `dtolnay/rust-toolchain@stable`, which may be newer
+  and carry lints 1.91 does not have.
+
 - [x] **37.2.1**: Fix the current CI failures across all 5 push checks without deleting coverage. **Status**: 4/5 jobs fixed (Format, Lint, Test, Model-Check Evidence). Verus Verification has infrastructure fixed (--skip-dotnet, 45min timeout) but 1 rlimit proof failure remains — this is a proof gap (Phase 34), not a CI gap.
   - No `continue-on-error`.
   - No disabling entire jobs.
@@ -12020,6 +12227,21 @@ stub detector clean and the run script reporting 0 vacuous passes.
     `tests/reports/shadow_parity_subset_latest.json`, checks markdown contract
     fragments in `tests/reports/shadow_parity_subset_latest.md`, and fails on
     missing required keys (for example `summary.parity_failures`).
+
+### 38.11 status verification (2026-08-05)
+
+All ten criteria below are met **and each has a passing guard test** —
+`cargo test --test integration phase_38_11` runs 10 tests, 10 pass. Verified rather than
+assumed, because two adjacent status claims had gone stale:
+
+- "Remaining DPOR work is acceptance-criteria closure in 38.11" — it is not; 38.11 is closed.
+- "Structural detector reports 4 `arbitrary::<...>()` findings (cases 14/15/16/19)" — it does
+  not. `scripts/detect_stub_specs.py` reports "no degenerate stub specs detected in corpus",
+  and none of those four cases contains an `arbitrary::` constructor. The corpus is
+  gitignored and regenerated, so the finding came from a stale local copy. That detector had
+  **no guard test**, which is exactly how the claim drifted; it now has one
+  (`test_dpor_corpus_has_no_degenerate_stub_specs`), which skips cleanly when the corpus has
+  not been generated rather than failing for the wrong reason.
 
 ### 38.11 Acceptance criteria
 
@@ -14649,6 +14871,783 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
 - [x] **42.4.b**: Run `regenerate_rsl.sh --validate-only` on HEAD. **Result**: all 8 modules transpile, validation PASSED. All function-level differences are exactly the skip_functions entries (15 total across 5 modules). Script rewritten to validation-first approach: modules with skip_functions keep existing files (hand-written bodies preserved); modules without skip_functions (types, broadcast, acceptor) can be safely replaced. Fixed pre-existing test `test_rsl_types_manual_helpers_component_part2_symbols_present` (expected `HashMap` but cb42869 changed to `Arc<HashMap>`).
 - [x] **42.4.c**: Confirm bench numbers post-regen match pre-regen (RSL ≥29K with cb42869-equivalent in place; ≥16K without). **Confirmed by Phase 41.3.a (2026-05-24): 32,663 ops/s avg with all 5 Arc-wrapped fields, exceeds 29K target.** The cb42869 single-field PoC is subsumed by Phase 41.1.b's full 5-field Arc-wrap.
 
+#### 42.8 Regenerating the RSL modules (2026-08-05)
+
+- [x] **42.8.a**: `broadcast_gen.rs` and `acceptor_gen.rs` regenerated from spec and
+      installed; both are now **idempotent** (regenerate → rustfmt → byte-identical).
+      `1045 verified, 0 errors` — one *more* than before, because the fresh broadcast output
+      carries a `lemma_empty_set_map` proof the checked-in file had lost. Trigger notes in
+      generated code: 109 → **107** (broadcast's 2, via the 54.7.a codegen fix, which this
+      confirms end-to-end: fix codegen → regenerate → notes gone).
+- [x] **42.8.b**: Transpiler bug found by doing it: the emitted `clone_hashset` helper
+      mentions `HashSet` in its signature but no `use std::collections::HashSet;` was
+      emitted, so regenerating `broadcast_gen.rs` produced code that **did not compile**
+      ("cannot find type `HashSet` in this scope"). The import is now emitted alongside the
+      helper, mirroring how `clone_hashset_u64` is already handled.
+- [x] **42.8.c.1**: Merge tool written — `scripts/merge_generated.py`. Takes fresh output as
+      the source of truth and splices back exactly the items the transpiler did not emit,
+      placing methods inside the `impl` they came from (a method emitted at top level becomes
+      `&mut self` outside an impl, which does not compile) and free functions before the
+      impls, carrying their imports. `--report` describes a merge without performing it.
+      10 tests, including that codegen improvements survive the merge and that a missing
+      `impl` in fresh output is an error rather than a silent drop.
+- [x] **42.8.c.2**: **The five modules are blocked on a transpiler bug, not on merge
+      mechanics.** — **CLOSED 2026-08-05: all seven RSL modules are reconciled.**
+      The diagnosis held up: it was transpiler bugs throughout, not merge mechanics, and each
+      was fixed rather than worked around — the `&mut self` lift (2.iii, E), the drift check's
+      blind spots (C, F, J), cross-module `&mut self` call shape (J.3.a), proof blocks
+      outliving their tuple (J.3.b), and method inference on associated functions (J.3.c).
+      `1046 verified, 0 errors`, `assume(false)` 0, trigger notes 534 → 74.
+      Regenerating `learner` emits `CLearnerForgetDecision` as a `&mut self`
+      method whose body still names the functional output: `result.unexecuted_learner_state`
+      inside a proof block and a bare `result` tail, with no such binding. It does not
+      compile, which is why these modules have always sat in the "keep existing" bucket.
+  - [x] **42.8.c.2.i** Mechanism located (2026-08-05). The lift already exists and mostly
+        works: `Printer::struct_to_field_assignments`
+        (`transpiler/src/printer/mod.rs:191`) recognises
+        `let result = Struct{..}; ..proofs..; result` and rewrites the struct into field
+        assignments on `self`. Three residues defeat it for this function, all inside that
+        same transform:
+        (a) **the trailing var is re-pushed unconditionally** (`// Keep trailing var for
+        return`, line ~247) even when the method's return type collapsed to `()`;
+        (b) **proof statements are only index-rewritten**, by
+        `rewrite_tuple_refs_in_expr`, so `result.field` survives where it should now read
+        `self.field`;
+        (c) when the `let` value is an **`if`/`else`** rather than a plain struct, the
+        branches lift asymmetrically: the then-branch becomes assignments (type `()`), the
+        else-branch stays `self.clone_up_to_view()` (type `Self`), so even fixing (a) and (b)
+        leaves a branch-type mismatch. The identity-clone branch has to become a no-op.
+  - [x] **42.8.c.2.ii** One approach tried and rejected (2026-08-05): renaming `result` →
+        `self` and dropping the tail *upstream*, in `translate_predicate` after
+        `maybe_apply_mut_self`. **Do not repeat this.** It looks right and is wrong twice
+        over: the printer's lift keys on finding a `Let` whose pattern equals the *tail
+        variable*, so removing the tail disables the lift entirely; and renaming while the
+        `let result = ..` binding still exists makes the proof block read the **old** state
+        instead of the new value. The fix belongs in the printer transform, which is the
+        only place that knows the struct was lifted into `self`'s fields.
+  - [x] **42.8.c.2.iii** Implemented (2026-08-05). `Printer::struct_to_field_assignments`
+        now takes `returns_unit`, threaded from `func.return_type` at the one call site where
+        it is in scope. With it: the trailing var is dropped, an identity-clone branch becomes
+        a no-op, and proof blocks are rewritten. `CLearnerForgetDecision` now emits correctly.
+        **The proof rewrite is a simultaneous swap, not a rename** — in the functional body
+        `self` is the pre state and `result` the post state, and the lift exchanges those
+        meanings, so `result.X -> self.X` and `self.X -> old_self.X` must happen at once.
+        Renaming only the first half collapses both arguments of
+        `lemma_abstractify_clearnerstate_remove(old_m, m2, k)` onto one value, and its
+        precondition `m2@ =~= old_m@.remove(k)` is then unprovable. Applying the swap in two
+        places produced `old_old_self`; it runs once, at the top of the method body. The swap
+        is confined to proof contexts because in exec position `self` before the assignments
+        really is the pre state and rewriting it to a ghost binding would not compile.
+        Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
+        file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
+        regeneration.
+  - [ ] **42.8.c.2.iv.J** **Replica does not merge, and the reason is structural.**
+        (2026-08-05) Attempted; `assume(false)` in the merged file would go **0 → 18**, the
+        opposite direction from the other three. Reverted.
+        The 18 `CReplicaNextProcess*` / `CReplicaNextReadClock*` /
+        `CReplicaNextSpontaneous*` actions exist in the checked-in file as **free functions**
+        and in fresh output as **impl methods on `CReplica`** — the `&mut self` conversion
+        moved them. So the merge keeps both: fresh's stub method *and* the existing real free
+        function.
+        **The drift check missed this too**, and for a new reason: it matched on the
+        qualified name, so `CReplicaNextProcess1a` and `CReplica::CReplicaNextProcess1a`
+        looked like different functions. Now falls back to the short name when it is
+        unambiguous — replica reports all 18, and the other six modules are unchanged, so no
+        false positives.
+        `--preserve` **cannot** express this: it swaps a fresh body for the existing one of
+        the same kind, and here the kinds differ. Replica needs the free-function forms
+        retired in favour of the methods, which is Phase 48/49 work, not merge work.
+        **Now the highest-value item in Phase 54 (measured 2026-08-05).** Replica carries
+        **all 36** of the trigger notes that a regeneration can deliver; the other six modules
+        carry none, which is why merging three of them moved 103 → 103. See the attribution
+        table in Current Status.
+        **And the cheap resolution is worth 0 notes.** The 36 sit on `ensures` clauses —
+        `replica_gen.rs:258-259` is typical, and its body is a real one-line delegation, not
+        a stub. `--preserve` keeps the *whole function*, contract included, so preserving the
+        18 actions to save their bodies also freezes their stale contracts. The notes land
+        only if fresh output can be taken whole, i.e. the `&mut self` conversion emits real
+        bodies instead of `assume(false)`.
+        **E is now fixed (2026-08-05) and it is not sufficient.** The lift no longer mangles
+        these bodies, but fresh output for replica's 18 actions is still a proof-fallback
+        stub — E made the stub well-typed, not real. J needs the free-function forms retired
+        in favour of the methods so fresh's contract can be taken without its body.
+
+        **Scoped 2026-08-05, and the blocker is smaller than "Phase 48/49 work" suggested.**
+        Fresh output is *not* a bare stub: the body is already a real translation, and the
+        contract already carries `#![trigger result@[i]]`, so regenerating replica does
+        deliver the 36. Two things stand between here and that, both measured:
+      - [ ] **J.1 — `proven_functions` supplies the missing preconditions.** The gap that
+            makes fresh unusable is one config line, not a transpiler defect.
+            `build_requires` already translates spec `recommends` into exec `requires`, but
+            drops them when `assume_postconditions = true`; `proven_functions` is the
+            designed opt-out ("proven_functions need recommends since they don't have
+            assume(false)"). Replica lists exactly one function.
+            **Measured**: adding `LReplicaNextProcess1a` restores
+            `received_packet.msg is CMessage1a` — matching the checked-in file
+            character-for-character — and drops its `assume(false)`. Adding all 12 spec
+            functions that carry a `recommends` and are not `skip_functions` takes replica's
+            fresh `assume(false)` count **20 → 8**. The 8 that remain are precisely the
+            `Spontaneous*`/`ReadClock*` actions, which have no `recommends`.
+            **Not committed as config yet, deliberately**: listing a function in
+            `proven_functions` *claims* its body verifies, and only a verification run can
+            settle that. The claim is cheap to make and expensive to be wrong about, so it
+            lands with J.3, not before. The mechanism itself is now pinned by
+            `test_assume_postconditions_drops_recommends` and
+            `test_proven_functions_restores_recommends_under_assume_postconditions` — the
+            pre-existing recommends test ran with the default config and covered neither
+            half of this interaction.
+      - [x] **J.2 — migrate the callers. Tooling done 2026-08-05.** The merge itself can now
+            express the kind change this item said `--preserve` could not:
+            `merge_generated.py` drops an existing free function when fresh emits a method of
+            the same name, and reports it as `free fn -> impl method (existing free form
+            dropped)` rather than doing it silently. Four tests, including one that a free
+            function fresh does *not* emit is still carried (the `skip_functions` bodies).
+            On replica the plan is exactly right: 18 migrated, 10 carried. The caller rewrite
+            is 18 mechanical sites and was verified to apply cleanly; it is not committed
+            because it cannot compile until J.3's two codegen defects are fixed.
+            *(original analysis)* 20 call sites in
+            `src/implementation/RSL/ReplicaImpl.rs`, all the uniform shape
+            `crate::generated::RSL::replica_gen::CReplicaNextX(self, args..)` →
+            `self.CReplicaNextX(args..)`. Two of the 20 must stay free functions
+            (`CReplicaNextProcess1b`, `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`)
+            because they are `skip_functions` and fresh never emits them — which leaves
+            exactly the 18 this item has always described, a useful consistency check. This
+            file is hand-written implementation code, so editing it is ordinary work.
+      - [ ] **J.3 — take fresh, verify, and back off what does not hold.** The decisive
+            step: replace the 18 free functions with fresh's methods, keeping the
+            `skip_functions` bodies, then run verification. Any function whose proof does not
+            go through comes back out of `proven_functions` and keeps its existing body. The
+            8 `Spontaneous*`/`ReadClock*` actions are the likely holdouts — they gain no
+            precondition from a `recommends`, so nothing has changed in their favour.
+            **Attempted end-to-end 2026-08-05. It does not compile, and the two reasons are
+            not what this item predicted — neither is about proofs.** With all 18 actions
+            plus both Inits in `proven_functions`, fresh replica reaches **`assume(false)`
+            0**, the merge is clean (10 items carried: 7 `skip_functions` + 3 lemmas, 18
+            migrated to methods), the merged file parses under `rustfmt`, and the 18 caller
+            sites in `ReplicaImpl.rs` rewrite mechanically. Then `verus` reports **28 errors,
+            all pre-verification**:
+            - **19 × cross-module calls emitted in free-function form.** Fresh replica emits
+              `crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&self.acceptor, ..)`,
+              but acceptor/proposer/learner/executor were themselves migrated to `&mut self`
+              methods by the earlier merges, so that free function no longer exists. Replica
+              is generated against the *pre-migration* shape of its own dependencies.
+              **Not a config gap** — measured: adding `CAcceptor`, `CProposer`, `CLearner`,
+              `CExecutor`, `CElectionState` to replica's `mut_self_types` changes nothing
+              (22 free-form calls before and after, 0 method-form). It is a codegen gap in
+              how cross-module calls are emitted. Do not re-try the config route.
+            - **9 × `result` used after the lift removed its binding**, e.g.
+              `assert(result.1@.map(..) =~= Seq::empty())` and a trailing bare `result`.
+              This is the E-family lift bug in a case E did not cover: E fixed the *tuple
+              tail*, this is a **proof block still holding a tuple index** into a binding
+              that no longer exists. `rewrite_tuple_refs_in_expr` is the code that should
+              have rewritten it.
+            So J.3 is blocked on two concrete codegen defects with line numbers, not on
+            "structural Phase 48/49 work" and not on proofs — no proof was ever attempted,
+            because the file does not reach the verifier. Both are now the leaf tasks.
+      - [x] **J.3.a** Emit cross-module calls to `mut_self` types in method form.
+            **DONE 2026-08-05.** New config key `mut_self_helpers` names spec functions in
+            *other* modules whose exec form is `&mut self`; `mut_self_types` only ever said
+            which of *this* module's functions become methods, and nothing said it of a
+            callee. With `mut_self_helpers = ["LAcceptorProcess1a"]` plus the existing
+            `[method_calls]` entry, `CReplicaNextProcess1a` now emits
+            `let sent_packets = self.acceptor.CAcceptorProcess1a(&received_packet);` with no
+            destructure and no write-back — matching the hand-written checked-in body.
+            Three changes: skip the state output in `generate_helper_let_binding`, point the
+            substitution at the receiver field in `get_helper_substitutions`, and drop the
+            resulting identity assignment in the printer's struct lift.
+            **The third was needed and is not obvious.** The spec literal *does* list
+            `acceptor: s_.acceptor`, so the substitution cannot simply be omitted or the
+            field name goes unresolved. Substituting the receiver path instead yields
+            `self.acceptor = self.acceptor`, a self-move that does not compile — and giving
+            it a `.clone()` would compile while deep-copying the sub-state on every action,
+            which is exactly the cost `&mut self` exists to avoid. So the lift drops identity
+            field assignments. Five tests; the other eight protocols' regen-matches guards
+            are unchanged, so the filter fires only on this new shape.
+            **Diagnosed 2026-08-05, and it is two changes, not one.** The call *form* is
+            already config: `[method_calls]` in the module TOML — an existing mechanism four
+            RSL modules use. Adding
+            `"LAcceptorProcess1a" = { method_name = "CAcceptorProcess1a", receiver_arg_index = 0 }`
+            to replica turns
+            `crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&self.acceptor, p)`
+            into `self.acceptor.CAcceptorProcess1a(&p)`. Measured, it works.
+            **But the call-site *shape* is still functional, and that is the real defect.**
+            The emitted line stays
+            `let (s_acceptor, sent_packets) = self.acceptor.CAcceptorProcess1a(&p);` followed
+            by `self.acceptor = s_acceptor;`, while the callee is now
+            `CAcceptorProcess1a(&mut self, inp: &CPacket) -> Vec<CPacket>` — it mutates in
+            place and returns only the outputs. So the destructure binds a state value that
+            no longer exists and the write-back assigns it back. The hand-written checked-in
+            body is the target and is one line:
+            `s.acceptor.CAcceptorProcess1a(&received_packet)`.
+            **Why the transpiler cannot currently know this**: `method_names` — the set that
+            drives `convert_calls_to_methods` — is populated only for functions registered
+            while transpiling *this* module (`translator/mod.rs:1510`), so a callee in
+            another module is never in it. And it is consulted *only* in
+            `convert_calls_to_methods`, i.e. for the call form; nothing uses it to decide
+            that a callee's state output is mutated in place rather than returned.
+            **Design**: a config key naming external functions whose exec form is
+            `&mut self` (the same information `mut_self_types` carries for the local module),
+            consumed in two places — the existing call-form conversion, and the call-site
+            lift that must drop the state binding from the destructure and the matching
+            `self.field = s_field` write-back.
+            **Where the two changes go**, located 2026-08-05 so this does not need
+            re-deriving:
+            1. `generate_helper_let_binding` (`translator/mod.rs:~12780`) builds
+               `output_names` as the state-field outputs (`{var}_{field}`) followed by
+               `info.output_params`, and emits a tuple pattern when there is more than one.
+               For a `&mut self` callee the state-field entries must not be generated, which
+               leaves `sent_packets` alone and the pattern collapses to a single binding.
+            2. The `self.acceptor = s_acceptor;` write-back is not separate code — it comes
+               from the `s_ == LReplica { acceptor: .., .. }` conjunct being lifted into
+               field assignments. With the binding gone, that field must drop out of the
+               struct literal too, or it references a name that no longer exists.
+            This is also why the defect surfaces only now: replica is the only orchestrating
+            module, so it is the only one with cross-module calls into migrated modules.
+      - [x] **J.3.b** Rewrite tuple-index references in proof blocks when the lift drops the
+            binding (`result.1` → the lifted output), extending E's fix to proof positions.
+            **DONE 2026-08-05 — two defects, not one.**
+            1. **The stale index.** `rewrite_tuple_refs_in_string` already did the rewrite,
+               but only the restructure path called it, and that path runs only while the
+               `let` value still holds a tuple. When the state element was dropped upstream
+               the value is just `{ vec![] }`, the transform is a no-op, and `result.1@`
+               survives. Now applied in the method path whenever the return type is **not**
+               a tuple — under which a `result.N` cannot be legitimate, so the condition is
+               exact and genuine tuple-returning methods are untouched. 12 sites → 0.
+            2. **The dropped binding**, found only by running the merge again. When the
+               lifted value is an `if` rather than a block, the restructure pushed it as a
+               bare statement, losing `let result =`, while still emitting the trailing
+               `result` — leaving it undefined. It is now rebound whenever the method still
+               returns something.
+            Both guarded, both verified failing-first.
+            **Measured end to end: replica's 28 errors → 10, and the last 10 are a different
+            problem entirely** (see J.2 below, reopened).
+      - [x] **J.2 (reopened, then DONE 2026-08-05) — the caller migration is not mechanical,
+            and my earlier "20 uniform call sites" reading was wrong.**
+            **Resolved by renaming the wrappers**: the 20 `#[verifier::external_body]`
+            adapters in `ReplicaImpl.rs` now carry an `Outbound` suffix
+            (`CReplicaNextProcess1aOutbound`), which is what they actually are — the layer
+            that runs the action and returns `OutboundPackets` rather than `Vec<CPacket>`.
+            43 mentions across 6 files; the `replica_gen::` calls inside the wrapper bodies
+            are deliberately untouched, since those name the generated function, not the
+            wrapper. `1046 verified, 0 errors` with the rename alone, so it lands as an
+            independently-green prerequisite rather than inside the merge commit.
+            All 20 were renamed, including the 2 whose generated counterparts stay free
+            functions (`CReplicaNextProcess1b`,
+            `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`) — splitting the naming of
+            one uniform adapter layer would be worse than the small extra churn.
+            **Keeping the method form is required, measured**: dropping `CReplica` from
+            `mut_self_types` removes the collision but regresses fresh output to the
+            functional `(s: &CReplica) -> (CReplica, Vec<CPacket>)`, i.e. the deep-clone
+            shape Phase 48/49 removed. So the rename is the right fix, not a workaround.
+            *(original analysis)* `ReplicaImpl.rs` already contains
+            `impl CReplica { pub fn CReplicaNextProcessInvalid(&mut self, ..) }` — an
+            `#[verifier::external_body]` adapter returning `OutboundPackets` — for each of
+            the 18 actions, on the **same type and under the same name** as the method fresh
+            output now emits. So the migration is a name collision, not a call-site rewrite:
+            with both present rustc reports `duplicate definitions`, and rewriting the
+            wrapper's body to `self.CReplicaNextProcessInvalid(..)` makes it call itself.
+            Qualifying as `CReplica::CReplicaNextProcessInvalid(self, ..)` does not
+            disambiguate either — both are inherent methods on `CReplica`.
+            The wrappers therefore have to be renamed (they are hand-written implementation
+            code, so this is ordinary work), which also changes the names their own callers
+            use. That is the remaining leaf, and it is an API change rather than a
+            mechanical substitution.
+      - [x] **J.3.c — DONE 2026-08-05. Replica now compiles and reaches the verifier, and
+            the 36 trigger notes landed: 103 → 66.** Both causes fixed:
+            - `mut_self_helpers` now passes the state argument **mutably** for a callee that
+              stays a free function (`CExecutorExecute(&mut self.executor)`). Only the
+              binding shape changes, not the call form — confirming the split between
+              `mut_self_helpers` and `[method_calls]` is the right factoring.
+            - Method-call inference now requires a **`self` receiver**. `infer_method_calls_
+              from_spec_paths` scans `src/implementation/` for `C*` functions inside `impl`
+              blocks and matched on the *name alone*, so
+              `impl CReplica { pub fn CReplicaInit(c: CReplicaConstants) -> Self }` — an
+              associated function, not a method — produced `c.CReplicaInit()` against
+              `c: &CReplicaConstants`. Three other hypotheses were ruled out first and are
+              recorded so they are not re-tried: it is **not** `method_names` /
+              `convert_calls_to_methods` (that pass runs only inside method bodies, and
+              `CSchedulerInit` is not one), **not** `maybe_apply_mut_self`, and **not** a
+              hand-written `[method_calls]` entry.
+      - [x] **J.3.d — DONE 2026-08-05. Replica is merged. `1046 verified, 0 errors`,
+            `assume(false)` **0**, trigger notes **103 → 77**, and
+            `classify_trigger_notes.py` now reports **0 deliverable by regeneration** —
+            the pipeline this phase opened is drained.**
+            **The obvious route was measured and rejected.** Listing all 18 actions in
+            `proven_functions` gives `1040 verified, 6 errors`; backing the 6 off there
+            leaves them carrying `assume(false)` and yields 66 notes. That is 11 more notes
+            bought by converting six *proven* protocol actions into assumed ones — the same
+            metric-gaming this phase rejects `#![auto]` for. The checked-in bodies of those
+            six are hand-written proofs (`broadcast use` of the hash axioms, explicit
+            `lemma_creplycache_get` calls, discharging asserts) that the transpiler cannot
+            generate, so the six errors are real.
+            **Taken instead**: the six go in `skip_functions` + `no_stub_functions`, so fresh
+            never emits them and the merge carries the proven bodies through. 13 of the 18
+            actions migrate to `&mut self` methods, 5 stay hand-written free functions.
+            26 notes delivered, nothing assumed. Written up in `docs/rsl-skip-functions.md`.
+            Two real defects surfaced while landing it, both fixed and tested:
+            `merge_generated.py` dropped `// TRANSLATE-TODO` provenance markers, because
+            `ATTR_RE` matched `///` and `#[` but not a plain `//` — so the marker saying
+            *why* a body is hand-written was silently lost; and
+            `test_generated_replica_module_public_api` counted only `s.valid()`, which
+            under-counts by exactly the 13 methods that now spell it `self.valid()`.
+            *(superseded plan)* The merged
+            replica reaches `1040 verified, **6 errors**`, and for the first time these are
+            genuine *proof* failures rather than compile errors — which is exactly what
+            listing a function in `proven_functions` asserts. The failures cluster in
+            `CReplicaNextProcessRequest`, `CReplicaNextProcess2a`,
+            `CReplicaNextSpontaneousMaybeMakeDecision`, `CReplicaNextSpontaneousMaybeExecute`,
+            `CReplicaNextReadClockMaybeSendHeartbeat`, and `CReplicaInit`'s precondition at
+            `ReplicaImpl.rs:217`. Each comes back out of `proven_functions` (regaining its
+            `assume(false)`) unless the proof can be made to go through; that is the last
+            step before the merge can land. Note the trade: every function backed off keeps
+            its `assume(false)`, so J.4's final note count depends on this.
+            *(superseded analysis of the 3 compile errors)* With
+            J.2's rename, J.3.a and J.3.b in place, the full experiment (20 functions in
+            `proven_functions`, 19 in `mut_self_helpers` and `[method_calls]`) reaches
+            `assume(false)` 0 and 3 compile errors. Each is understood:
+            - **2 × `CExecutorExecute`.** I classified it as "still a free function", which is
+              right, but it is a free function taking **`&mut CExecutor`** and returning
+              `Vec<CPacket>` — so it needs the `mut_self_helpers` binding treatment (drop the
+              state output) *without* the `[method_calls]` call-form change. The two knobs
+              are already separable; what is missing is that the receiver argument must be
+              passed `&mut` rather than `&`. Useful confirmation that the split between the
+              two config keys is the right factoring.
+            - **1 × `CReplicaInit`.** Emitted as `c.CReplicaInit()` where `c` is
+              `&CReplicaConstants`, but the function is
+              `CReplicaInit(c: &CReplicaConstants) -> CReplica` — a free function whose first
+              argument is *not* a receiver. Listing `LReplicaInit` in `proven_functions`
+              should not have made it a method call; find what did.
+      - [x] **J.4 — confirmed 2026-08-05.** `scripts/classify_trigger_notes.py` on a fresh
+            log: **0 deliverable by regeneration**, 13 emitted-but-unhandled-shape, 64 in
+            hand-written or preserved bodies. 26 of the predicted 36 landed; the other 10
+            belong to the 5 actions that stayed hand-written to keep their proofs, so they
+            move from "deliverable" to "not reachable" — the prediction was right about
+            where they were, and the shortfall is a deliberate choice rather than a miss.
+
+  - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the
+        same module on **several single-name lines** (`use X::a;` and `use X::b;`), and the
+        widening replaced only the first, leaving the second as a duplicate. It now widens
+        the first and drops the siblings.
+
+  - [ ] **54.7.b — the premise is wrong, measured 2026-08-05.** Merging proposer delivered
+        **zero** notes, as executor and election did. Attributing every one of the 103 notes
+        to its enclosing function and checking that function against **fresh transpiler
+        output** gives:
+
+        | | notes |
+        |---|---:|
+        | in bodies fresh does not emit at all | **72** |
+        | in bodies the preserve list protects | **28** |
+        | **actually deliverable by regenerating** | **3** |
+
+        **⚠ Retracted 2026-08-05 — the "3" was produced by an unsound method.** That
+        attribution matched a note to its enclosing function by searching for the note's
+        source line *as a substring* of each body. Common lines like
+        `forall |i: int| 0 <= i < …` occur in many bodies, so notes were assigned to whichever
+        body happened to contain the text first — at one point 40 notes were attributed to a
+        single function, which is what exposed it. Re-done by mapping each body to its
+        **line range** and locating the note within it, the same classification gives
+        **40 deliverable / 33 not-emitted / 30 preserved**.
+
+        **But the number to trust is neither, because it was measured directly: merging
+        executor, election and proposer moved the note count by exactly 0** (103 → 103 → 103
+        → 103). Whatever the classification says, regeneration is not clearing these notes.
+        The likely reason is that "the owner function is emitted by fresh" was never the
+        right test — fresh emits the *same quantifier with the same missing trigger*, because
+        54.7.a only taught codegen the `vec_element_ensures` shape, and these are other
+        shapes.
+        Four successive estimates (80, 50, 3, 40) all disagreed with a fact that three merges
+        had already established. **The observation stands; the classification does not.**
+        54.7.b should be judged by re-running the note count after a merge, not by counting
+        which bodies fresh emits.
+
+  - [x] **42.8.c.2.iv.H** **Election merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `assume(false)` in the merged file 5 → 0; 332 lines changed. Two more merge defects,
+        both the same shape as earlier ones in a case I had not covered:
+        - **`use X::a;` and `use X::{a, b, c};` are the same module path.** `_module_path`
+          returned `None` for a single-name import, so the overlap was invisible and both
+          were emitted (`E0252: LtUpperBound defined multiple times`). Patching that alone
+          then broke it the *other* way — fresh's single-name form was never widened, so
+          `UpperBound` and `UpperBoundedAddition` went missing and the file failed with
+          `cannot find type UpperBound`. Both directions now covered.
+        - **"Still open at end of line" was not enough for the body brace.** My struct-literal
+          fix in D used that rule, and a contract can hold braces that *stay* open across
+          lines: `G(s.push(x)) =~= ( if P(x) { … } else { … } )`. The body-opening brace is
+          the one outside **every paren**, which covers both cases. Verified across all seven
+          modules: no parsed body is brace- or paren-unbalanced.
+        Each fix is regression-tested, and the second test pins the exact contract shape that
+        broke it rather than a generic one.
+
+  - [x] **42.8.c.2.iv.G** **Executor merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `merge_generated.py --preserve` had the *same* free-functions-only blind spot the
+        drift check did, so it rejected all 17 method names outright — the protection was
+        recorded but unenforceable. It errored loudly rather than silently doing nothing,
+        which is the fail-closed behaviour that made this obvious. Extended to impl methods;
+        the list accepts a bare or `Impl::method` name.
+        Result: **`assume(false)` in the merged file goes 6 → 0** — those six stubs are
+        exactly what would have replaced real implementations. Executor's regenerated file is
+        checked in, 425 lines changed, verifying.
+        **It delivers no trigger notes, and that is expected, not a shortfall.** Executor's 10
+        notes live inside the bodies the preserve list protects, so regeneration cannot reach
+        them. Which means the 54.7 provenance split needs revisiting: it classified notes by
+        `skip_functions` membership, and the 17 newly-preserved methods are not in
+        `skip_functions`, so notes inside them were counted as "transpiler-emitted, delivered
+        by regeneration" when they are not. **The deliverable-note figure is 50, not 80** — corrected 2026-08-05 by classifying on the preserve list rather than `skip_functions`; see the acceptance row.
+        One test moved: `test_executor_cache_helpers_rehomed_out_of_manual_injection`
+        asserted the `gen_helpers` import as an exact single line, and `rustfmt` wraps and
+        sorts it. It now checks the three helper names are imported — the property it cares
+        about — rather than the formatting.
+
+  - [x] **42.8.c.2.iv.F** **The drift check was blind to `&mut self` methods — 17 real
+        implementations would have been replaced by `assume(false)` stubs (2026-08-05).**
+        `body_drift` compared only the free functions from `parse_items`, ignoring the
+        `impls` map entirely. The RSL protocol actions are all `&mut self` methods, so
+        executor, election and proposer were effectively unchecked while reporting clean.
+        Found while chasing E: `CExecutorProcessAppStateRequest` is a **52-line
+        implementation** in the checked-in file and a **59-line `assume(false)` stub** in
+        fresh output.
+        Extended to impl methods (`Impl::method`, and the preserve list accepts either the
+        bare or qualified name). That surfaced **17 more**, and every single one is the
+        dangerous direction — fresh stub over real implementation:
+        executor ×5, election ×4, proposer ×8. All added to the preserve list; all seven
+        modules now report clean.
+        The count for 42.8.c is therefore **30 protected bodies, not 13**. And the reason E's
+        transpiler bug matters less than it looked: those functions are proof-fallback stubs
+        in fresh output, so the `&mut self` lift is mangling *stub* bodies. The lift bug is
+        still real, but executor's merge is gated on preserving the implementations, which is
+        now done.
+
+  - [x] **42.8.c.2.iv.E** The `&mut self` lift mangles proof-fallback stub bodies.
+        **FIXED 2026-08-05 — and it was already fixed one commit earlier; the measurement
+        said otherwise.** A/B on real output: **4 tuple tails without the `Clone` match, 0
+        with it**, in `executor.rs`. The emitted body is now
+        `let result = if .. { vec![CPacket{..}] } else { .. vec![] }; result`, typed
+        `Vec<CPacket>` as the signature promises.
+        **Why three iterations concluded "the fix changes nothing": the metric could not
+        tell the two apart.** I was counting `grep -c '; result }'`, which is 3 in the broken
+        *and* the fixed output — the defect was `result`'s *type* (a pair), not the presence
+        of a trailing `result`. Every "still 3, so no effect" reading in the entries below is
+        void, and so are the two reverts of the `find_struct_in_expr` /
+        `count_non_struct_in_expr` extension that it justified. Those reverts happen to have
+        been right anyway: the transform is correct without them, confirmed by dumping the
+        post-transform AST.
+        **Guarded at the emission level** by
+        `test_mut_self_lift_leaves_no_tuple_tail_in_rsl_output`, which transpiles executor,
+        election, proposer and replica and asserts no `(self.clone(), ..)` survives. Verified
+        failing-first: 4 offenders without the fix, 0 with. An emitted-text assertion is
+        deliberate here — four AST-level tests of this same lift passed while the real output
+        stayed broken, so the AST is the wrong place to guard it.
+        **What it does not do is unblock J.** Fresh output for these functions is still an
+        `assume(false)` proof-fallback stub; E only makes the stub well-typed. Replica still
+        needs the free-function forms retired in favour of methods, and still cannot take
+        fresh's contract without taking a stub body with it. The 36 notes remain behind J.
+        **Re-scoped 2026-08-05 — it no longer blocks anything.** Written when it looked
+        like executor's blocker; F then showed those functions are `assume(false)` stubs in
+        fresh output, and G landed executor by preserving the real bodies. The lift bug is
+        **and its recorded cause is now disproved.** I wrote that a `&mut self` method whose
+        tail is `proof { … }; result` returns the pre-lift tuple because the lift misses that
+        shape. Built the reproduction as a unit test —
+        `test_lift_reaches_a_nested_trailing_block`, feeding
+        `{ assume(false); { let result = (Struct{…}, rest); proof {…}; result } }` straight to
+        `struct_to_field_assignments` — and it **passes**: the struct becomes `self.field = …`
+        and the tuple does not survive. So the lift handles this shape in isolation, and
+        whatever produced executor's `}; result }` is elsewhere — the lift not being applied
+        to proof-fallback stubs at all, a different `returns_unit`, or a separate emission
+        path for stub bodies.
+        **Narrowed 2026-08-05 by contrast.** In the same file `CExecutorGetDecision` lifts
+        correctly and `CExecutorProcessAppStateRequest` does not. The difference is what sits
+        in the tuple's state slot: a struct literal in the working one, **`self.clone()`** in
+        the broken ones (`(self.clone(), vec![…])`). `struct_to_field_assignments` looked only
+        for `Struct`/`StructUpdate`, so an identity clone matched nothing, the guard fell
+        through, and `result` kept naming the tuple — and with a non-unit return the trailing
+        `result` is kept, so the body returns a pair.
+        **That gap is fixed and tested** (`test_lift_handles_identity_self_clone_as_the_state_element`,
+        which failed before and passes after; 0 diff across all 8 non-RSL protocols).
+        **It does not fix the real emission** — executor still emits 3 `; result }`. So the
+        Tuple arm was one real gap but not the whole path. Next suspects, in order:
+        `find_struct_in_expr` and `count_non_struct_in_expr` match only struct literals *and*
+        do not descend into an `If`, while the stubs put the tuple in both arms of one. I
+        tried extending both, and the emission still did not move, so I reverted that rather
+        than commit an unvalidated change — the two guard tests here are what made the
+        difference between a demonstrated fix and a guess.
+        **AST-level reproduction is exhausted (2026-08-05).** Four tests now feed
+        `struct_to_field_assignments` progressively closer models of the real body — nested
+        trailing block; tuple behind an `if/else`; identity `self.clone()` as the state
+        element; and the exact shape, `let result = { let __rhs_0 = …; if c {
+        (self.clone(), …) } else { … } }` inside `{ assume(false); … }`. **Only the third
+        failed**, and fixing it did not move the emission; the other three passed unchanged.
+        The printer's method path *does* run on these — the output carries the
+        `let ghost old_self = *old(self);` that only `func.is_method` emits — so the
+        transform runs and still yields `}; result }`.
+        Conclusion: the divergence is in how the AST is **built** (translator), not printed,
+        and it cannot be guessed from the output. **Next step is instrumentation** — dump the
+        `ExecExpr` the printer receives for `CExecutorProcessAppStateRequest` and compare it
+        against the model in `test_lift_with_a_let_before_the_if_in_the_value_block`, which is
+        the closest passing approximation.
+        **Instrumentation done 2026-08-05** — `VERUS_TRANSPILE_DUMP_BODY=<fn>` on the printer
+        prints the `ExecExpr` it receives. It settles the question the hand-built models could
+        not: the state element is **`Clone(Var("self"))`**, a dedicated `ExecExpr::Clone` node,
+        *not* the `MethodCall{receiver: self, method: "clone"}` that every model above used and
+        that `is_identity_self_clone` matched. That is why the Tuple-arm fix passed its own test
+        and changed nothing real — it was matching a node the translator never emits. Matching
+        the `Clone` node is now fixed and tested
+        (`test_identity_self_clone_recognises_the_clone_node`).
+        **Emission still does not move** — executor still emits 3 `; result }` with the `Clone`
+        node matched, and re-applying the `find_struct_in_expr` / `count_non_struct_in_expr`
+        extension on top of it changed nothing either, so that stayed reverted a second time.
+        The remaining suspect is the restructure guard `!expr_eq(transformed, value)`: if the
+        transform yields something equal to its input the restructure never runs, which would
+        explain why *every* fix downstream of it is inert. Instrument that next, not the AST.
+        Otherwise the dump is now the tool for this — no more hand-built models, they were
+        wrong about the node shape for four rounds running.
+        *(The "still low priority" note here is superseded by the FIXED banner at the top of
+        this item. The lift is fixed; what remains for the 36 notes is J, not E.)*
+        With the D fixes in, the executor merge produces a file that `rustfmt` parses and
+        that differs by 514 lines — and it still does not compile:
+
+            error[E0308]: mismatched types
+               --> executor_gen.rs:452:12
+            452 |         }; result }
+                |            ^^^^^^ expected `Vec<CPacket>`,
+                |                   found `(CExecutor, Vec<CPacket>)`
+
+        The malformed tail `…; proof { … }; result }` is present in **fresh transpiler
+        output** — checked directly, 3 occurrences — so the merge is not introducing it.
+        The `&mut self` lift (Phase 48) rewrites the *signature* from
+        `-> (CExecutor, Vec<CPacket>)` to `&mut self -> Vec<CPacket>` but leaves `result`
+        bound to the original tuple, so the body returns a pair where the signature promises
+        one element. It affects `CExecutorProcessAppStateRequest` and
+        `CExecutorProcessStartingPhase2` at least.
+        This is the same class `test_mut_self_method_drops_functional_output` guards for
+        `CLearnerForgetDecision`; that guard covers one shape and this one — a body whose
+        tail is `proof { … }; result` — slips past it. **Fix the lift, extend the guard to
+        this shape, then re-attempt executor.** Merge attempt reverted; nothing half-applied.
+
+  - [x] **42.8.c.2.iv.D** Two more merge defects, found by actually attempting the
+        executor merge rather than trusting the clean drift report (2026-08-05). Both fixed;
+        executor's merge still fails on something else, so it is **not** landed.
+        - **Overlapping brace-list imports produced a duplicate.** Fresh
+          `use X::{a, b}` plus a carried `use X::{b, a, c}` emitted both, which is an
+          `E0252 defined multiple times`. `_import_path` normalised whole member sets, so
+          the two looked like different imports. The merge now *widens* fresh's import
+          instead of adding a second.
+        - **`_block_end` truncated any function with a struct literal in its contract.**
+          `CExecutorExecute`'s `requires` has
+          `UpperBound::UpperBoundFinite{n: …}`; those braces open and close on one line, and
+          `_block_end` took that as the body. It parsed as **5 lines instead of 99**, and the
+          merge carried the fragment. The body-opening brace is the one still *open* at end
+          of line. After the fix no parsed body in any `*_gen.rs` is brace-unbalanced.
+        **This one also hid itself from the drift check**: `CExecutorExecute` is a
+        `skip_function`, so it is absent from fresh, and the check skips names not in both —
+        the carry was broken even though the report was clean. A checker built on a parser
+        inherits that parser's blind spots, which is worth remembering before trusting a
+        green report over an actual attempt.
+
+  - [x] **42.8.c.2.iv.C** The 13 bodies a merge would silently rewrite, now enumerated.
+        `scripts/check_merge_body_drift.py` (new, 2026-08-05) compares function *bodies*
+        rather than `pub exec fn` names, which is what the regen parity check does and why
+        the `filter_clearnerstate` swap was invisible to it. `regenerate_rsl.sh` runs it as
+        step 2b and reports per module. Whitespace-only differences are ignored so `rustfmt`
+        reflow does not cry wolf.
+        Result — this is the real remaining content of 42.8.c, per function instead of per
+        thousand diff lines:
+
+        | module | clean? | bodies a merge would rewrite |
+        |---|---|---|
+        | broadcast | ✅ | — |
+        | acceptor | ✅ | — |
+        | learner | ✅ | `filter_clearnerstate` (protected) |
+        | executor | ❌ | `CExecutorInit`, `clone_next_op_to_execute` |
+        | election | ❌ | `CElectionStateInit`, `CRemoveAllSatisfiedRequestsInSequence`, `CRemoveExecutedRequestBatch`, `clone_requests_received_prev_epochs`, `clone_requests_received_this_epoch` |
+        | proposer | ❌ | `CProposerInit`, `clone_incomplete_batch_timer`, `clone_request_queue` |
+        | replica | ❌ | `CReplicaInit`, `CReplicaNumActions`, `CSchedulerInit` |
+
+        **All 13 triaged (2026-08-05); every module now reports clean.** The finding is
+        sharper than "bodies differ" — for 7 of them, merging would have replaced verified
+        code with something *strictly worse*:
+
+        - **5 would become an `assume(false)` stub.** `CExecutorInit`,
+          `CElectionStateInit`, `CProposerInit`, `CReplicaInit`, `CSchedulerInit` — fresh
+          emits a proof-fallback stub where the checked-in body is a real 13–39 line proof.
+        - **2 would become trusted.** `clone_next_op_to_execute`,
+          `clone_incomplete_batch_timer` — fresh emits
+          `#[verifier(external_body)] { r.clone() }`; the checked-in bodies are verified
+          per-variant matches. A silent verified→trusted swap.
+        - **2 would lose postconditions.** `CRemoveExecutedRequestBatch`,
+          `CRemoveAllSatisfiedRequestsInSequence` — both sides verify, but the checked-in
+          ones carry `requires … valid()` and `ensures result@[i].valid()/abstractable()`
+          that fresh drops.
+        - **4 take fresh, checked one by one.** The three `clone_*` differ from fresh by a
+          single doc-comment line and nothing else; `CReplicaNumActions` is
+          `result as int == …` versus `result@ == …`, equivalent and fresh is more explicit.
+
+        Those 4 are marked `accept-fresh` in the list rather than left unlisted, so the
+        report stays empty. A check that prints the same four items every run stops being
+        read — which is how the original body swap slipped through.
+
+  - [x] **42.8.c.2.iv.A** Learner: `filter_clearnerstate` collision. **FIXED 2026-08-05,
+        learner merge diff 183 → 119.** The largest single divergence was not a signature
+        mismatch at all. The transpiler *synthesises* a `filter_clearnerstate` helper — a
+        naive `for` loop over `m.iter()` — while the checked-in file holds a hand-verified
+        `while` loop with invariants and `broadcast use`. Merging silently replaced the
+        verified code with code that does not verify, which is why the merged learner never
+        got far enough to reach the signature errors.
+        `no_stub_functions` cannot express this: it is keyed on *spec* function names, and
+        this helper has none — it is synthesised, so it appears in no `.rs` or `.toml`
+        (checked). Fixed in `merge_generated.py` instead, which is where the "preserve
+        hand-written work" concept already lives: `--preserve FN` makes the existing file win
+        for a named free function. An unknown name is an error, not a silent no-op, so a typo
+        cannot quietly yield the un-preserved merge.
+  - [x] **42.8.c.2.iv.B** Learner: the remaining 119 lines. **Diagnosed 2026-08-05 — there
+        is no transpiler defect here, and this item's recorded direction is backwards.**
+
+        The record says *"the fresh `lemma_abstractify_clearnerstate_empty` takes
+        `m: &HashMap<..>` while the preserved caller passes by value"*. Measured, it is the
+        other way round: **fresh emits `m: CLearnerState`, the checked-in file has
+        `&CLearnerState`.**
+
+        The cause is not drift but a deliberate change. `generate_map_proof_lemmas`
+        (`lib.rs:1721`) emits `&ExecType` **only when the field is Arc-wrapped**, so
+        auto-deref from `&Arc<T>` works at call sites — otherwise it emits the bare type.
+        `learner_transpile.toml` says `# Phase 49.2: Arc-wrap removed — direct ownership with
+        &mut self`, from commit `b118f212`. So by-value is now *correct*, and the
+        checked-in `learner_gen.rs` is simply **stale relative to Phase 49.2**. (The
+        transpiler test at `lib.rs:3549` asserting `&CLearnerState` is valid, not stale — it
+        sets up `arc_wrap_fields` explicitly.)
+
+        **⚠ The paragraph above was wrong, and attempting it disproved it (2026-08-05).**
+        There *is* a transpiler defect, in two places, and "accept fresh's by-value
+        signatures" is not available. Walked end to end:
+
+        1. **`manual_code` needs the manual file to carry its own `impl` block.** Injection
+           happens at the top level of the `verus!` block (`lib.rs:680`, `:1300`), so
+           `&mut self` methods placed there fail with *"`self` parameter is only allowed in
+           associated functions"*. `acceptor_manual.rs` supplies `impl CAcceptor { … }` itself
+           — that is the convention, and it is not written down anywhere.
+        2. **`filter_clearnerstate` must not go in the manual file.** The transpiler
+           synthesises a helper of that name, so a copy there yields two definitions (merge
+           diff 119 → 455). It stays in the generated file under
+           `merge_generated.py --preserve`. **Wired into the workflow (2026-08-05)**: the
+           list is checked in at `scripts/rsl_merge_preserve.txt` and `regenerate_rsl.sh`
+           turns it into `--preserve` flags in the merge commands it prints. Three tests
+           guard it, including one that every listed name really is a free function in the
+           file it claims to protect — a stale entry would otherwise surface as a
+           `merge_generated.py` exception mid-regeneration.
+           **Also recorded there: the script's parity check cannot catch this class of
+           problem.** It compares `pub exec fn` *names*, so a body swap on a private `fn` —
+           exactly what happened to `filter_clearnerstate` — passes it silently.
+        3. **The lemma parameter must be `&ExecType` unconditionally.** `param_type` in
+           `generate_map_proof_lemmas` is `&T` only when the field is Arc-wrapped, but the
+           lemma's *own body* calls `abstractify_{prefix}`, hand-written in `types_i.rs` and
+           taking `&CLearnerState`. By-value therefore does not type-check against it:
+           `expected &HashMap<..>, found HashMap<..>` — the exact error this item recorded
+           all along. The Arc case was never the only one that needed the reference.
+        4. **Fixing the signature is not enough.** With the lemmas taking `&T`, the
+           transpiler's *generated call sites* still pass by value
+           (`lemma_abstractify_empty_clearnerstate(result.unexecuted_learner_state)`), so the
+           emission has to change in both places. `tests::test_generate_map_proof_lemmas`
+           (`lib.rs:3394`) pins the current by-value form and must move with it.
+
+        **The two-part transpiler change is DONE (2026-08-05). Learner now merges and
+        verifies: `1046 verified, 0 errors`, merge diff 119 → 105, notes still 103.**
+        `param_type` in `generate_map_proof_lemmas` and both `ref_prefix` sites in
+        `translator/mod.rs` now emit `&` unconditionally — all three were keyed on the same
+        wrong `is_arc` condition. The regenerated `learner_gen.rs` is checked in, so learner
+        is off the stale-since-49.2 footing.
+        Blast radius checked by regenerating every protocol: **0 diff lines** across all
+        eight non-RSL `types_gen.rs`. Three tests pinned the old by-value form and moved with
+        it; a fourth, `test_mut_self_method_drops_functional_output`, fired for a good reason
+        and was *not* simply relaxed — its point is that the two proof arguments are
+        different states, and the emission still satisfies that
+        (`(&old_self.…, &self.…)`), so it now tolerates the `&` while keeping the check.
+        **The `learner_manual.rs` extraction should NOT be done, and I was wrong to
+        recommend it (2026-08-05).** I attempted it — it works: the extraction plus
+        `no_stub_functions` takes learner's merge diff to **28 lines** and it verifies at
+        `1046 verified, 0 errors`. Then two guards fired, and they were right.
+        - `test_manual_code_footprint_is_empty` asserts **only acceptor** uses `manual_code`,
+          and its comments record the direction: *"Phase 29.4.4: Raft manual_code eliminated
+          — all 8 composite handlers auto-generated."* `manual_code` is a mechanism being
+          **retired**, not adopted.
+        - **My claim that "acceptor and executor already do this" was false**, and it is
+          repeated in two earlier commit messages. `executor_transpile.toml` has no
+          `manual_code`; `executor_manual.rs` is a leftover with
+          `test_executor_manual_code_footprint_audit_guard` driving it down (*"should not
+          define X after migration"*). Only acceptor uses it.
+        - `test_rsl_skip_function_classification_matches_configs` (added in 54.15) also
+          fired, 15 → 17, correctly reporting that the classification had shifted.
+        So learner keeps its bodies in `learner_gen.rs`, protected on merge by
+        `merge_generated.py --preserve`, which already solves the "don't silently replace
+        verified code" problem without adding to a mechanism the project is removing.
+        The real end state for learner's two actions is the capability gap in
+        `docs/rsl-skip-functions.md` — teach the transpiler to generate them.
+        Attempt reverted; nothing left half-applied.
+
+        Not yet attributed: `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3) differ
+        for a separate reason — check before assuming they are the same cause.
+
+  - [ ] **42.8.c.2.iv** **Measured 2026-08-05, and two bugs upstream of the recorded cause
+        are now fixed.** "No predictable finish" was based on the signature mismatch below.
+        Running the merge over all seven RSL modules and feeding each result to `rustfmt`
+        shows something more basic was wrong first: **the merged files did not parse.**
+        - `parse_items` captured only the first line of a `rustfmt`-wrapped `use`, leaving
+          `use crate::x::{` dangling. Every module was affected.
+        - `_block_end` counted braces only, so a body whose braces balance while a paren is
+          still open (`… =~= (`) was truncated mid-expression. This hit `election`.
+        Both fixed, both with regression tests that were **checked to fail when the fix is
+        reverted**. All 7 modules now produce parseable output.
+        **What the measurement does not support is any claim that this unblocks the merge.**
+        The diffs barely moved, so the bulk is genuine divergence, not formatting:
+
+        | module | merged-vs-checked-in diff | trigger notes it would deliver |
+        |---|---:|---:|
+        | broadcast | **0** | 0 |
+        | acceptor | **9** | 4 |
+        | learner | 183 | 7 |
+        | executor | 623 | 10 |
+        | replica | 708 | 44 |
+        | proposer | 761 | 25 |
+        | election | 712 | 17 |
+
+        So the merge is **per-module, not all-or-nothing**: `broadcast` already merges
+        byte-identically and `acceptor` is 9 lines away — but the notes are concentrated in
+        exactly the modules that have diverged most, so a cheap partial win on 54.7.b is
+        worth **4 notes at best** (acceptor). The remaining diff is the hand-applied Arc-wrap
+        and `&mut self` work, which is the real content of this item.
+
+  - [ ] **42.8.c.2.iv (original)** Merging `learner` still fails, on a *different* mismatch: the
+        preserved hand-written bodies were written against older emitted signatures. The
+        fresh `lemma_abstractify_clearnerstate_empty` takes `m: &HashMap<..>` while the
+        preserved caller passes by value (`expected &HashMap<u64, CLearnerTuple>, found
+        HashMap<u64, CLearnerTuple>`). So the merge needs signature reconciliation, not just
+        splicing — each preserved body has to be checked against the current emitted API.
+        This is per-function work and belongs with the Phase 21 manual-code elimination.
+
+
+
+#### 42.7 Lossless `types_gen.rs` regeneration (2026-08-05)
+
+- [x] **42.7.a**: `types_gen.rs` regeneration is now **byte-identical** to the checked-in
+      file. Two causes, one of them a measurement error on my part:
+      (a) **ordering, not loss.** The transpiler emits `use` statements in TOML order while
+      the checked-in file is `rustfmt`-formatted, which sorts them. `git diff --stat` scored
+      that as ~53 deleted lines and it was recorded as "regen drops hand-added imports".
+      Comparing content shows 43 imports on both sides. `scripts/regenerate_rsl.sh` now runs
+      `rustfmt` on the emitted types so the two are comparable.
+      (b) **one genuinely hand-added block.** `CParameters` (struct + `clone_up_to_view`) was
+      written directly into the generated file, because `generate-types` reads `types.rs` and
+      `LParameters` lives in `parameters.rs`. It has moved to
+      `implementation/RSL/cparameters.rs` — the module whose own header already claimed to
+      own "CParameters validity/view semantics", and which previously re-exported the struct
+      *from* the generated file. That dependency is now the right way round, and
+      `types_gen.rs` re-exports it through `custom_imports`, so every existing path
+      (`generated::RSL::types_gen::CParameters`) still resolves.
+      `1044 verified, 0 errors`; `regenerate_rsl.sh --validate-only` passes; guarded by
+      `test_types_gen_regeneration_is_byte_identical`.
+      Note `generate-types` deliberately does **not** inject `manual_code` (there is a test
+      asserting it), so moving the block out was the only way to make the file pure
+      transpiler output rather than widening that escape hatch.
+
 #### 42.5 Phase 40 disposition (separate from 42.1–42.4)
 
 Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can bench. But it doesn't actively break anything either (the regen blocker hypothesis was wrong). Decide:
@@ -15794,7 +16793,1396 @@ transpiler unit tests ran; no whole-crate `verus --compile`):
 
 ---
 
-## Phase 51: Raft Dynamic Membership via Joint Consensus
+## Phase 51: Jetpack Recovery-Layer Single-Process Verus Spec (R1) — PAUSED 2026-08 (superseded by Phase 52; 51.1–51.8 kept as design reference + partial Jetpack golden, 51.9+ deferred)
+
+### Background (2026-08)
+
+Jetpack ("Consensus Made Generally Fast", OSDI '26, stonysystems/jetpack) is a plugin
+recovery protocol. Goal: a code-level (deductive, Verus) proof via tla-rs. Feasibility
+analysis (`docs/jetpack_verus_feasibility.md`) showed `jetpack.tla` CANNOT be fed through
+tla-rs's `tla+2tlars` frontend: it is a global-multi-server model (per-server arrays,
+`INSTANCE` composition, 3-D log, message bag), while the frontend only accepts single-process
+`s/s_` specs. A paradigm survey confirmed mainstream Raft/EPaxos TLA+ are ALSO global-multi-
+server, and global→single-process is not automatable (message-ification is a human design
+decision). Decision: **R1 = hand-rewrite Jetpack's recovery layer as a single-process Verus
+spec**, starting from a minimal slice, using the closed `src/protocol/Paxos` proof as template.
+
+### Slice boundary (R1 first slice)
+
+Fixed membership + single value + base-as-contract + no client/execution.
+`jstate` option B: 5 states (Ready → Recovery → AfterBeginRecovery → AfterPrepare →
+AfterAccept → back to Ready; `AfterResubmit` dropped as out-of-slice). `FinishRecovery`
+PRESERVES the acceptor triple (Paxos-persistent) — original resets jpool because it bumps
+epoch; our fixed-membership slice must keep it or cross-recovery agreement breaks.
+
+### Done
+
+- [x] **51.1** Feasibility report — `docs/jetpack_verus_feasibility.md` (paradigm mismatch + gap table).
+- [x] **51.2** Paradigm survey — Raft (ongardie 517★, Vanlightly 91★) + EPaxos (efficient/epaxos 628★) all global-multi-server; global→single-process needs human; PGo/MPCal is the semi-auto path.
+- [x] **51.3** `src/protocol/Jetpack/types.rs` — `LState` (11 fields) + `LJState` (5) + `LConstants` + `Command`.
+- [x] **51.4** `jetpack.rs` — `LInit`.
+- [x] **51.5** Acceptor actions — `L_HandlePrepareReq` (Paxos 1b), `L_HandleAcceptReq` (2b).
+- [x] **51.6** Proposer actions — `L_HandlePrepareResp`, `L_CompletePrepare` (online value selection + count-based quorum), `L_HandleAcceptResp`, `L_CompleteAccept`, `L_FinishRecovery`.
+- [x] **51.7** `LNext` — disjunction of the 7 actions (entry actions still missing).
+- [x] **51.8** Manual review — fixed frame-condition bug: acceptor actions missed `highest_seen_*` after the field was added.
+
+### TODO (work queue)
+
+- [x] **51.9 / 51.10** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery +
+  BeginRecovery, and completing `LNext`. Decided A1 + B1, but **NOT pursued by hand** —
+  **and the superseding path has now delivered them, verified 2026-08-05.**
+  Running the Phase 52 translator on `transpiler/tests/corpus/tier3/t3_01_jetpack/clean.tla`
+  emits all four BeginRecovery actions that decision B1 called for — `LSendBeginRecovery`,
+  `LHandleBeginRecoveryReq`, `LHandleBeginRecoveryResp`, `LCompleteBeginRecovery` — and the
+  generated `LNext` includes them (`LSendBeginRecovery` under its ballot quantifier,
+  `LCompleteBeginRecovery` directly, the two `Handle*` via `LHandleMessage`). 17 spec
+  functions in all. So these items are done by generation, not by hand, exactly as the
+  deferral intended.
+  The hand-written `src/protocol/Jetpack/jetpack.rs` still has only the 7 actions and still
+  says so in `LNext`'s doc comment. That is correct and stays: 51.1–51.8 are "kept as design
+  reference", not the deliverable.
+- [ ] **V1 corpus guard cannot run on this machine, and passes anyway.**
+  `corpus_v1_guard.rs` asserts every golden passes `verus`, but resolves the binary from
+  `$VERUS_PATH` or `~/verus-src/...`; neither exists here, so it prints
+  `SKIPPING V1: no verus binary found` and **returns green**. The pinned Verus *is* present
+  at `/tmp/verus-test/verus/<pin>/verus-x86-linux/`, but its released `verus` launcher does
+  not run here — `GLIBC_2.39 not found` — which is precisely why `scripts/verify_local.sh`
+  exists and calls `rust_verify` directly instead.
+  So a green local suite does **not** establish V1, and the phase's "all eight goldens pass
+  `verus`, enforced rather than asserted" holds only where a runnable launcher is installed.
+  Fix: resolve the same `rust_verify` + toolchain that `verify_local.sh` uses, so the guard
+  runs here rather than skipping. Not attempted in this iteration — replicating that env
+  inside a Rust test is fiddly and getting it wrong would produce false failures, which is
+  worse than a skip that announces itself.
+- [x] **51.11.a** Local safety invariant on `LState`, **DONE 2026-08-05**. `LInv` plus
+  `lemma_linit_establishes_linv` and `lemma_lnext_preserves_linv`: `1046 → 1048 verified,
+  0 errors`. The content is the Paxos acceptor discipline —
+  `accepted_ballot <= max_seen_ballot` (a replica never accepts at a ballot it has not also
+  promised), with the three non-negativity facts. Prepare raises `max_seen_ballot` and
+  leaves `accepted_ballot`, so the gap widens; Accept sets both to the same ballot, so it
+  closes to equality; the five proposer actions state the triple as an explicit frame
+  condition. Both proof bodies are empty because Verus discharges them, so
+  **non-vacuity was checked rather than assumed**: tightening the invariant to
+  `accepted_ballot < max_seen_ballot` makes both lemmas fail (`1046 verified, 2 errors`),
+  then reverted.
+- [ ] **51.11.b** Agreement — no two recoveries choose conflicting values. **Not statable on
+  the current spec, and that is the finding rather than a delay.** It quantifies over
+  replicas; `src/protocol/Jetpack/jetpack.rs` is a single-process projection, in its own
+  words "this one replica's local state, not `[i \in Server |-> ...]`". A global property
+  does not project onto a single node — the same reason `t0_01_simple`'s golden omits
+  `PCorrect`, and the reason RSL states its global properties in the refinement layer over
+  a distributed state rather than in the per-replica spec. So agreement needs either a
+  composed spec (a map from replica id to `LState`, plus the network) or the 51.14
+  implementation + refinement layer; it is not a proof that can be added to what exists.
+  51.11.a is the local half, and it is what a composed agreement proof would rest on.
+- [x] **51.12** ~~`finite` invariant for `prep_rcvd`/`accept_rcvd`~~ — **OBSOLETE, closed
+  2026-08-05. The premise expired with the vstd upgrade; no invariant is needed.**
+  The item's reason was "required by `.len()`-based quorum", which held when a `Set` could
+  be infinite and `len()` was only meaningful on a finite one. In the pinned vstd
+  (0.2026.08.02.b677dd5) **every `Set` is finite by construction**: `Set::new` returns
+  `Option<Set<A>>` and yields `None` for a predicate with infinite extent
+  (`set.rs:113-135`), `Set::finite()` is deprecated with the note *"Every Set is always
+  finite, so this is always true"*, and `len()` is total — `self.to_iset().len()`, no
+  precondition.
+  Confirmed on the code as well as in the library: `prep_rcvd`/`accept_rcvd` are
+  `Set<int>`, `L_CompletePrepare` and `L_CompleteAccept` guard on
+  `.len() >= c.quorum_size` with no finiteness hypothesis anywhere in the module, and the
+  crate verifies `1046 verified, 0 errors` with Jetpack mounted.
+  This is the same upgrade that made 54.11 delete 68 `Set::finite()` calls; the Jetpack
+  item was written before it and simply outlived its reason.
+  **Consequence for 51.11**: the agreement invariant does not need a finiteness
+  precondition either, so that item is smaller than it was written to be.
+- [x] **51.13** Mount module + `verus` check (2026-08-04). `pub mod Jetpack;` is uncommented in `src/protocol/mod.rs`; the module type-checks under Verus 0.2026.08.02.b677dd5:
+  `verus --crate-type=lib src/lib.rs --verify-module protocol::Jetpack::jetpack --verify-module protocol::Jetpack::types` → `0 verified, 0 errors`.
+  **Read that result correctly**: the module is spec-only (`pub open spec fn`), so there are no proof obligations and "0 verified" is expected — what the run establishes is that the whole crate, Jetpack included, passes Verus's frontend type-check. Confirmed **non-vacuous** by injecting a deliberate type error (`s.jepoch == Set::<int>::empty()`), which produced `error[E0277] ... SpecEq<Set<int>> is not satisfied`, then reverting. Safety/`finite` invariants (51.11/51.12) are still absent, so this is type-correctness, not correctness.
+- [ ] **51.14** Implementation layer (exec) + refinement proof (code-level, the RSL-scale part).
+- [ ] **51.15** Later slices: multi-value (single→multi like Paxos→RSL), then reconfiguration (view/epoch).
+
+### Files
+
+`src/protocol/Jetpack/{types.rs, jetpack.rs, mod.rs}` (not yet mounted); original TLA+ reference
+at `docs/jetpack_reference/`.
+
+---
+
+## Phase 52: Clean-Subset TLA+ → Verus Translator — **COMPLETE 2026-08-04**
+
+> **Linter caught up with the contract, 2026-08-05.** The four gaps listed below the
+> milestone table are all closed: whole-array reads and writes, message addressing, the
+> unconditionally-whitelisted bare-`Ident` disjunct, and `clean_distance` degrading to
+> silence. All five rules are implemented, so `unchecked_rules()` is now empty and the
+> "clean with respect to C1..C5 (… not yet implemented)" branch no longer fires.
+> Three of the four fixes reported false positives on *clean* corpus specs when first
+> written — hardcoding `dst`, counting an `EXCEPT` base, and counting an indexed read —
+> and each was caught by running the whole corpus before trusting the rule rather than by
+> reading the code. That check is now the habit worth keeping.
+>
+> **Every milestone met.** M0 (subset + linter), M0.0 (frontend), M1 (projection),
+> M2 (messages + quorums), M3 (V2 + V3), M4 (tier 2), M4b (Jetpack), M5 (docs +
+> pipeline). Eight `clean.tla` specs translate; **all eight goldens pass `verus`**,
+> enforced by `corpus_v1_guard.rs` rather than asserted; five cases are `green`
+> (V1 + V2 + V3) and three are `golden` for reasons each records.
+>
+> Evidence: [`docs/clean_tla_translator_evidence.md`](docs/clean_tla_translator_evidence.md).
+> Contract: [`docs/clean_tla_subset.md`](docs/clean_tla_subset.md).
+> Playbook: [`docs/clean_tla_rewrite_playbook.md`](docs/clean_tla_rewrite_playbook.md).
+>
+> **What the corpus bought.** Twenty-eight translator defects, and the ones that
+> mattered were the *silent* ones — three would have produced a plausible,
+> verifying spec that says something else: `----` read as a module terminator
+> (ReadersWriters was parsing 7 of 21 definitions and reporting success),
+> expressions emitted without parentheses (`(i-1) % N` → `i - 1 % N`), and `..`
+> parsed at the additive level (`0 .. N - 1`, `t0_01_simple`'s node set,
+> mis-parsed for the whole project). None would have been found by a unit test
+> over hand-written input.
+>
+> **What it cost to be honest.** Three claims were weaker than first written and
+> are now stated as they are: V2 is *observable state-set equality*, not
+> behavioural equivalence (deleting `RMChooseToAbort` from 2PC still reports
+> EQUAL); Raft's TLC evidence is *bounded*, not a completed check; and two
+> clean-distance measurements were failures to measure rather than small
+> numbers.
+
+### Background (2026-08)
+
+Full plan: `docs/clean_tla_to_verus_translator_plan.md`. An **AST-level deterministic translator**
+from a **"clean subset" of global-multi-server TLA+** (no instantaneous cross-node reads, no history
+vars, `messages` designated as the network, per-node arrays) → single-process Verus spec (tla-rs).
+Rationale: global→single-process is generally NOT automatable (message-ification is human design),
+but on a clean subset the rest (de-index `[i]` projection, messages→framework send/recv, quorum→count,
+frame generation) IS mechanical. Generates the SPEC only, not the refinement/safety proof. Reuse and
+extend `transpiler/src/tla/` (note: Verus-0.2026.08.02 migration just touched `translator.rs` — assess
+against the new version). Phase 51's partial hand-written Jetpack spec (51.1–51.8) is kept as design reference for the
+projection passes + a PARTIAL Jetpack golden. NOTE: with Phase 51 paused, Jetpack has NO complete
+independent golden — its translation is validated only by TLC fidelity + verus pass (see M3/M4b).
+
+### Decisions
+
+- Q1 = rule-based (deterministic AST translator; corpus is dev/test/eval, not a training set).
+- Q2 = no reconfig in the clean subset (strip view/epoch during rewrite).
+- Q3 = strong semantic-fidelity check (exact-state / observable behavior parity; see M3 caveat on Phase 36).
+
+### Prerequisites
+
+- **TLA+ tools** (`tla2tools.jar` / TLC) — needed for V2 fidelity checking.
+- A machine with **`verus`** (this dev box has none) — needed for V1: translator output must actually verify.
+
+### TODO (work queue)
+
+- [x] **52.M0.0** **Frontend gap closure — the TLA+ parser cannot read real-world specs** — **COMPLETE 2026-08-04** (a–e below, plus four more found later by tier-2/3 cases: multi-binder set comprehensions and `LAMBDA` for Jetpack, and the `..` precedence bug and the `--json` exit code for EPaxos). (Discovered 2026-08-04, blocked everything downstream.) After 53.2 intake, all 5 tier-0 originals failed `translate-tla`:
+  `Simple.tla` (named `ASSUME`), `Bakery.tla` (`\prec` user-defined infix), `DiningPhilosophers.tla` (junction list after `ELSE`), `ReadersWriters.tla` + `LamportMutex.tla` (`\union`). Root cause: `transpiler/src/tla/` was built for round-tripping *transpiler-generated* TLA+, not specs from the wild. The linter (M0) and the projection passes (M1/M2) are meaningless until this is closed, and `clean.tla` will use the same constructs.
+  - [x] **52.M0.0.a** Tokenizer + parser basics (2026-08-04): `\union`/`\intersect` aliases for `\cup`/`\cap`; unknown well-formed `\name` now tokenizes as `InfixOp(name)` instead of erroring (TLA+ lets a module define its own infix operators, so this is a semantic-layer decision, not a tokenizer one); `\b`/`\o`/`\h` only start a numeric literal when a digit follows, so `\o` reads as sequence concatenation; infix operator *definitions* (`a \prec b == ...`) and applications parse into `OpApply` under the name `\prec`; named assumptions (`ASSUME NAssump == ...`) parse. **Result: `ReadersWriters.tla` now parses.** 4 new parser tests + 2 rewritten tokenizer tests; 1940 lib tests pass.
+  - [x] **52.M0.0.b** `@` inside `EXCEPT` and action subscripts (2026-08-04): `@` parses as the reserved identifier `@`; `[A]_vars` / `<<A>>_vars` desugar to `A \/ UNCHANGED vars` / `A /\ ~UNCHANGED vars`, which is what TLA+ defines them to be, so no AST node is needed. Also fixed: `_` is its own token again — `_vars` in `[Next]_vars` was being scanned as one identifier, which silently truncated every definition after a subscripted action. **`Simple.tla` and `LamportMutex.tla` now parse.**
+  - [x] **52.M0.0.c** Indentation-scoped junction lists (2026-08-04). TLA+ scopes a `/\` or `\/` list by the column of its bullets; the parser treated them as plain binary operators. Now: a leading bullet opens a list at its own column, items are parsed with a `junction_columns` stack, and any token at or left of the bullet column ends the current item (guards added to every binary-operator loop). Two consequences fell out: the ELSE branch can be parsed as a full expression again (the old implication-precedence hack was a workaround for exactly this) and `~` accepts a bulleted list as its operand (`~ /\ pc[i] = "cs"` in Bakery's MutualExclusion). Inline `/\` on one line stays infix, since there are no bullets to align. **`Bakery.tla` and `DiningPhilosophers.tla` now parse — all 5 tier-0 originals parse.**
+  - [x] **52.M0.0.d** Parse sweep + regression guard (2026-08-04). Rather than a one-shot sweep script, the sweep is now a test: `transpiler/tests/corpus_parse_guard.rs` parses every `original.tla`/`clean.tla` in the corpus and asserts agreement with the manifest's `parse_status` **in both directions** — a spec that stops parsing fails, and so does a spec still marked `unparseable` after the frontend learned to read it (otherwise stale "broken" marks accumulate silently). Placeholder `clean.tla` scaffolds are skipped, and the test refuses to pass vacuously (`checked > 0`). Verified non-vacuous by marking a parsing case `unparseable` and observing the failure. All 5 tier-0 originals parse, so no case carries `parse_status` today.
+
+  - [x] **52.M0.0.e** **Silent truncation + the constructs it was hiding** (2026-08-04). Running the linter over the corpus exposed something worse than a parse error: `parse_module` treated `----` (a *section divider*, ubiquitous in real specs) as the module terminator, so it returned `Ok` with everything after the first divider **silently discarded**. `ReadersWriters` was parsing 7 of its 21 definitions — including no `Next` at all — and reporting success. This means 52.M0.0.a–.c's "all 5 tier-0 originals parse" was true but shallow: only a prefix was being parsed.
+    - `----` (divider) and `====` (terminator) are now distinct tokens; the body loop skips dividers and stops only at `====`.
+    - With the whole file visible, six more constructs had to be handled: TLAPS proof bodies after `THEOREM` (skipped — proofs are not part of the spec we translate, and `<1>2.` needed its own token because it otherwise lexes as `less-than, 1, greater-than` and gets absorbed into the theorem statement); record **sets** `[holder: 1..NP, clean: BOOLEAN]` (new `TlaExpr::RecordSet` — distinct from a record *value*, wired through 9 exhaustive matches); `CASE ... [] ...` arm separators (the tokenizer folds `[]` into the temporal `Always`); named `INSTANCE` (`V == INSTANCE Voting`); TLC's `@@` / `:>`; higher-order `CONSTANTS F(_)`; instance-qualified references (`V!ShowsSafeAt`); and junction lists after `=>` / `<=>` / `~>`.
+    - Operator counts recovered per tier-0 case: Simple 13, Bakery 27, DiningPhilosophers 20, ReadersWriters 21, LamportMutex 22 — all previously truncated except LamportMutex.
+
+  **Evidence**: `test_d1_on_llm_tla_specs` (16 LLM-authored specs) **3/16 → 16/16**; `test_d1_on_community_tla_specs` (EPaxos / Paxos / Raft / TwoPhase from the wild) **3/4 → 4/4**, and its 3/4 was itself inflated by the truncation bug. All three tests previously *asserted the gaps existed*; those assertions are inverted to lock in the fixes. 1958 lib + 346 integration tests pass, fmt and clippy clean.
+- [x] **52.M0** Clean-subset spec (C1–C5) + linter — **COMPLETE 2026-08-04**. Contract in `docs/clean_tla_subset.md`, linter in `transpiler/src/tla/clean_subset.rs`, CLI `verus-transpile tla-lint [--json]`, corpus guards in `transpiler/tests/corpus_{parse,lint}_guard.rs`. Acceptance ("linter correctly accepts/rejects the corpus's clean/dirty samples") is met for the reject direction on all 5 tier-0 cases with exact pinned counts; the accept direction is guarded but has nothing to accept until 53.2 writes the first `clean.tla`.
+  - [x] **52.M0.a** Subset contract written: `docs/clean_tla_subset.md` (2026-08-04). C1–C5 stated precisely, each with an accept and a reject drawn from the tier-0 corpus, plus *why* the rule is a hard boundary rather than a tool limitation. Key findings while writing it against real specs: (i) `LamportMutex.beats(p,q)` reads only `req[p][...]` — p's own accumulated table — so it is C2-clean, confirming it as the tier-0 accept specimen; (ii) its `crit \in SUBSET Proc` is a C1 violation (global mutable set) needing `[Proc -> BOOLEAN]`; (iii) its `network \in [Proc -> [Proc -> Seq(Message)]]` is a network but not a message *set*, so flattening it drops pairwise FIFO — a real semantic change that V2 must catch; (iv) `ReadersWriters` has **no** per-node variables at all, so it has no projection and should be reported as such rather than as three C1 violations; (v) `Simple.b(self)` reads `x[(self-1) % N]` — the neighbour — so even the smallest tier-0 case needs message-ification. Also fixes the linter contract: a spec that fails to parse is *unmeasured*, not *dirty*, so a parser gap can never masquerade as a subset violation.
+  - [x] **52.M0.b** Linter core + `tla-lint` CLI (2026-08-04). `transpiler/src/tla/clean_subset.rs` + `verus-transpile tla-lint [--json] <file>`. C5 runs first because the node set it recovers from `\E self \in Node : ...` is what every other rule is stated against; C1 then classifies each variable as per-node or global by reading the spec's own declarations (a type invariant `x \in [Node -> T]` or an `Init` conjunct `x = [n \in Node |-> ...]`). Exit codes: 0 clean, 1 violations, **2 unparseable** — an unparseable spec is unmeasured, not dirty.
+    A verdict of "clean" is qualified with the rules that were actually evaluated (`clean with respect to C1, C5 (C2, C3, C4 not yet implemented)`, and `rules_checked` / `rules_not_implemented` in the JSON). Without that, Bakery — the corpus's designated *reject* specimen, whose violation is C2 — would report clean and the corpus would look further along than it is.
+    Corpus results: Simple / Bakery / DiningPhilosophers are C1+C5-clean (their state really is per-node; their violations are C2); **LamportMutex** correctly flags `crit` as global mutable state; **ReadersWriters** correctly reports that *nothing* is per-node, i.e. it has no projection at all. 9 unit tests.
+    Known gap for 52.M0.c: set expressions are compared by their printed form, so an alias (`ProcSet == 0..N-1` used where `Next` quantifies over `0..N-1`) would not be recognised as the same set. Not currently triggered by the corpus.
+  - [x] **52.M0.c.1** **C2 — instantaneous cross-node reads** (2026-08-04), the rule the whole subset exists for. The node parameter is followed transitively through calls (`Next` → `proc(self)` → `b(self)`), so a foreign read at any depth is caught and attributed to the action that performs it. Only the **outermost** index selects a node: `req[p][q]` is p's own accumulated table about q, not q's live state, so LamportMutex's `beats(p,q)` is correctly clean. Findings are deduplicated — the same read across two branches is one decision, not two. Each message quotes the read and names the decision it forces (which message carries the value, who sends it, what to do with a stale copy) rather than saying "unsupported".
+    Corpus results, all matching the hand analysis in `docs/clean_tla_subset.md`: Simple → `x[(self - 1) % N]`; Bakery → 3 (`num[i]`, `flag[nxt'[self]]`, `num[nxt[self]]`); DiningPhilosophers → `forks[LeftFork(p)]` / `forks[RightFork(p)]`; LamportMutex → `network[q]`, which is the *network* variable and will stop being a C2 finding once C4 designates it. 4 new tests; 1962 lib tests pass.
+  - [x] **52.M0.c.2** **C4 (network) + C3 (history variables), and a C5 redesign that real specs forced** (2026-08-04).
+    - **C5 no longer assumes the node set is "whatever `Next` quantifies over".** Real consensus specs quantify over value domains in the same breath: Paxos's `Next` binds `Ballot` *and* `Acceptor`, and the old rule reported "more than one node set" on a perfectly ordinary spec. The node set is now inferred from the **variable declarations** — the set that per-node state is indexed by — and only then confirmed against `Next`. On the community Paxos this yields `node_set = Acceptor`, `network = msgs`, `per_node = maxBal/maxVBal/maxVal`, and one true finding: `\E b \in Ballot : Phase1a(b)` never binds a node, i.e. the spec models the proposer as an anonymous role and the human must say who sends Phase1a.
+    - **C4** designates the network from two pieces of evidence: every update is `net \cup ...` / `net \ ...`, **and** something receives from it (`\E m \in net`). The receive requirement is load-bearing — LamportMutex's `crit` is updated with exactly the network idiom, and designating it would have suppressed the C1 finding that is the real problem with it. When no variable is in the required shape but one is conventionally named, C4 reports the *near-miss* ("carries the messages but is not a message set... flattening drops per-connection ordering, which belongs in the rewrite notes") and C1/C2 stay quiet about it — one decision, not one finding per read.
+    - **C3** recognises a history variable by what its update does: gathering per-node state over the whole node set (`allLogs' = allLogs \cup {log[j] : j \in Server}`).
+    - Rule order is now C5 → C4 → C1 → C2 → C3, and the module documents why: the network is deliberately not per-node state and is deliberately read across nodes, so C4 must run before C1/C2.
+    - Tier-0 verdicts, each distinct and matching `docs/clean_tla_subset.md`: Simple 1×C2; Bakery 3×C2; DiningPhilosophers 6×C2; ReadersWriters 1×C5 (**no node set can be identified** — the honest root cause, where the old C1 message only described the symptom); LamportMutex C1 (`crit`) + C4 (`network` shape). 18 linter tests; 1962 lib + all integration tests pass.
+  - [x] **52.M0.d** Accept/reject guard + measured clean-distance (2026-08-04). `intake_case.sh`'s clean-distance hook now works end to end (verified on a fresh intake). Every tier-0 case carries a measured `clean_distance` and an `expected_rules` list, pinned by `transpiler/tests/corpus_lint_guard.rs`. The guard asserts the **exact** violation count, not "at least one": a linter that over-reports is as broken as one that under-reports, and the count is what publishes rewrite effort. A second test refuses to let the corpus consist only of specs the linter rejects — accepting clean input is half of the M0 criterion, and it fails loudly once rewritten `clean.tla` files exist but none of them pass.
+    Measured tier-0 distances: Simple 1 (C2), Bakery 3 (C2), DiningPhilosophers 6 (C2), ReadersWriters 1 (C5), LamportMutex 2 (C1+C4).
+- [x] **52.M1** Projection pass (P1 state projection, P2 de-index actions, P5 auto frame-condition). Acceptance: Tier-0 micro end-to-end, verus passes. **COMPLETE 2026-08-04**: all three tier-0 translation cases (`t0_01_simple`, `t0_03_dining_philosophers`, `t0_05_lamport_mutex`) go `clean.tla` → projection → emission → `verus` with 0 errors, and all three are `green`. The other two tier-0 cases are `reject-only` by design.
+  **Scoping finding (2026-08-04): M1 is not "add a projection pass to a working translator".** Running the existing `translate-tla` on `t0_01_simple/clean.tla` shows the current TLA+→Verus translator does not produce valid Verus for a real clean spec, quite apart from doing no projection:
+  - no projection at all — `x` stays `Map<int, int>` and `self` is passed as a parameter, i.e. the global model is carried over verbatim;
+  - **`self` is emitted as a Rust identifier**, which is a reserved keyword and cannot compile;
+  - **record field access on a parameter is dropped**: `m.dst` becomes `arbitrary()`, which is the exact degeneracy pattern Phase 38's stub detector exists to catch — the output looks plausible and means nothing;
+  - parameter types are inferred wrong (`self: Set<int>`, `d: Set<int>` where both are `int`);
+  - `Set::<LRecord { .. }>`, `Lvars(s, c)_`, and a tuple-typed function with a `seq![]` body are not syntax.
+  The existing translator was built to round-trip the transpiler's *own* generated TLA+, not to read specs from the wild — the same lesson as 52.M0.0, one layer up. M1 therefore has to make the translator emit valid Verus **and** project, and should be split accordingly.
+  **Reuse boundary (decided 2026-08-04)**: the projection reuses the *front half* of `transpiler/src/tla/` — tokenizer, parser, AST, and the linter's analysis — and does **not** reuse `translator.rs`'s expression codegen. The plan says "extend it, don't build new", but that was written assuming it worked on this input; it targets the global model, does not type-check against this vstd, and 2000+ existing tests depend on its current behaviour. A focused emitter for the clean subset is both smaller and lower-risk than retrofitting it.
+  - [x] **52.M1.a** Projection analysis + type projection (2026-08-04). `transpiler/src/tla/projection.rs`: given a module the linter accepts, decide the projected `LState` field types, the constants (including the `node_id` a projected node needs to address peers), the message enum, and any enums introduced for string-literal types. Key rule, and the one a naive implementation gets wrong: `[Node -> [Node -> Nat]]` projects to `Map<int, int>`, **not** `int` — the outer index is the node and goes, the inner index is a peer and stays, because what remains is the node's own table about its peers. Unresolvable element types are reported as gaps rather than silently becoming `int`. 9 unit tests.
+    **Checked against the corpus**: `transpiler/tests/corpus_projection_guard.rs` reads each golden's `pub struct LState` and asserts the projection agrees field-for-field — reading the golden rather than restating its types, so the two cannot drift. LamportMutex matched on the first run, including the two-level arrays; Simple exposed one real gap (enum types had no name), now fixed by naming an enum after the variable it types (`pc` → `LPc`).
+  - [x] **52.M1.b** Action projection (2026-08-04, partial). `transpiler/src/tla/action_projection.rs`: for every operator the linter identifies as acting for a node, produce the projected conjuncts — reads (`x[self]` → `s.x`, `req[self][q]` → `s.req[q]`), updates (`x' = [x EXCEPT ![self] = e]` → `s_.x == e`, and the two-level form → `s.req.insert(q, e)`), sends, receives, and **P5 frame conditions** generated from what the action actually updates (the source's own `UNCHANGED` conjuncts are dropped rather than duplicated).
+    Decisions that fell out of running it on the corpus:
+    - **An action that sends nothing must say so.** Without `sent_packets == Set::empty()` the output is unconstrained and the action would permit the node to emit anything — a frame condition on the network, and exactly the kind of omission P5 exists to prevent.
+    - **Delivery and tag guards belong to the dispatch, not the action.** `m.dst = self` is the framework's job once it owns delivery, and `m.type = "req"` is what selects the variant in the generated `match`; both are recorded on the action (`handles_tag`) instead of emitted, matching the goldens.
+    - **Message constructors are inlined into packets.** `{ReqMessage(self, d, c)}` resolves the constructor, substitutes its parameters, and splits the record into the packet's `dst` and the variant's payload; `src` is dropped because after projection the sender is this node and the framework stamps it.
+    - Broadcasts (`{Ctor(s, d, ..) : d \in Node \ {s}}`) project to `c.procs.remove(c.node_id).map(|d| ...)`.
+    **Corpus status**: `t0_01_simple` projects to within one gap (`Left(self)`, a helper call); `t0_05_lamport_mutex`'s gaps are *all the same shape* — calls to user-defined helpers (`Deliverable`, `Accept`, `AdvanceAll`, `AdvanceOne`, `beats`) plus one `\A` quantifier. 9 unit tests.
+  - [x] **52.M1.b.2** Helper projection + quantifiers (2026-08-04). **Both tier-0 clean specs now project with zero gaps.**
+    The rule, and why it is not "inline everything": a helper over node state is **kept as its own projected function** (`beats` → `Lbeats(s, c, q)`, `AdvanceAll` → `LAdvanceAll(s, c)`), because that preserves the source spec's own factoring and lets a human match output against input concept by concept — which is the point of a deterministic translator. A helper the call site hands the received **message** is **inlined**, because the message is destructured into parameters and that signature cannot survive. The decision is made per call site, from whether the message variable is an argument.
+    Five defects the corpus exposed and that unit tests alone would not have:
+    - the acting node was dropped from a helper call by matching the *parameter name*, which fails when the helper names its own parameter differently (`AdvanceAll(s)` called as `AdvanceAll(p)`); it is the *argument* that identifies the node.
+    - `@` inside `EXCEPT` was unresolved. It is the component's old value, and what that is depends on the path: `![self]` → `s.f`, `![self][q]` → `s.f[q]`.
+    - message constructors and broadcast helpers were being emitted as helper *functions* that nothing calls and that cannot be projected standalone. Fixed by emitting only helpers action projection actually referenced.
+    - a helper body whose top level is an `EXCEPT` (a helper returning an updated table) had no case.
+    - inlining a helper dragged its `m.dst = self` guard into the action body, where the top-level dispatch-guard filter could not see it.
+    Also: a message variant carries only the fields its **constructor** fills with something other than a literal. `AckMessage` sets `clock |-> 0` purely because every message shares one record type, and that field carries no information — so `LMessage::Ack { seq }`, matching the golden.
+    13 unit tests. `\A q \in Node \ {self} : P` projects to `forall|q: int| c.<nodes>.contains(q) && q != c.node_id ==> P`.
+  - [x] **52.M1.b.3** Golden reconciliation, done as its own reviewed step (2026-08-04). The trap here is editing a golden to match whatever the code emits, so every change is justified by a rule and both goldens were re-verified with `verus` (0 errors each).
+    Changed in the goldens, each because the golden made an *incidental* choice: `Ladvance_all` → `LAdvanceAll` and `c.procs` → `c.proc` (uniform naming: `L`/`c.` + the source's own name, as `Lbeats` and `La` already were); the `AdvanceAll` binder `q` → `d` (the source's binder); `msg_clock` → `clock` (a receive parameter is named after the field it carries); `AdvanceOne` inlined → `LAdvanceOne(s, c, d)` (helpers over node state survive as functions); and `LMessage::Read { src }` / `Val { src, val }` → no `src` (routing lives on the packet, and a handler already gets `src` as a framework-supplied parameter — carrying it in the payload duplicates it and would let a spec state a sender inconsistent with the packet's).
+    **The projection was wrong twice, and the goldens were right.** Strengthening `corpus_projection_guard.rs` to check constants and message payloads — not just `LState` field types — caught it immediately: the projection emitted *every* source constant, but the goldens carry only what the projected output references. `N` defines the node set, which projection turns into a constant of its own, and `maxClock` exists solely for a model-checking constraint that does not project. Fixed by pruning constants to those actually referenced, which required a new end-to-end `project()` entry point (pruning can only be decided after actions and helpers are projected) and a word-boundary check, since `c.n` matches inside `c.node_id`.
+    Also completed here: a receive's parameters are now `src` **plus the payload of the variant it handles**. The action bodies already used those names; without the declaration they were free variables. Writing the emitter surfaced places where the hand-written goldens made *incidental* choices the rules do not produce: `Ladvance_all` vs the uniform `L` + source-name (`LAdvanceAll`); `c.procs` vs the source's own `Proc` (`c.proc`); `LMessage::Read { src }` and `Val { src, .. }` carrying a `src` that is already on the packet and already a handler parameter; `LAdvanceOne` inlined in one golden but a function under the rule. These are *golden* revisions and must be reviewed as such — the trap to avoid is editing a golden to match whatever the code emits, so each change has to be justified by the rule and the golden re-verified with `verus`. The goldens show the rule is not "inline everything": a helper over node state only survives as its own projected function (`beats` → `Lbeats(s, c, q)`, `AdvanceAll` → `Ladvance_all(s, c)`, `Left` → `LLeft(c)`), while a helper taking the *message* must be inlined (`Deliverable`, `Accept`), because the message is destructured into parameters and the helper's signature cannot survive. Also needs `\A q \in Node \ {self} : P` → `forall|q: int| c.procs.contains(q) && q != c.node_id ==> P`.
+  - [x] **52.M1.c** Emitter (2026-08-04). `transpiler/src/tla/emit.rs` writes a projected module out as Verus. **Both tier-0 clean specs now go clean.tla → projection → emission → `verus`, 0 errors** — V1 achieved end to end.
+    - `Init` projection was missing and is now in: `Init` says what *every* node starts with, so projecting it is reading off the per-node value (`clock = [p \in Proc |-> 1]` → `s.clock == 1`); the network's initial value has no counterpart, because after projection there is no network in the state. Both `LInit`s match their goldens conjunct for conjunct.
+    - **The emitter refuses to write an incomplete spec.** If any projection gap remains, `emit` returns the gaps instead of source — a file missing a conjunct still looks like a spec and would be verified, reviewed and trusted as one.
+    - Three renderings need the *type* of the position, which the expression alone cannot supply: a string literal assigned to an enum-typed field is a variant test (`s.pc is A`, not `== "a"`), an empty set needs its element type (`Set::<int>::empty()`), and an integer in a `Map::new` closure needs the `int` suffix. All three are driven off the projected field type.
+    - Two bugs the corpus and the emitter's own tests caught: `x' = x` is a frame conjunct written the way PlusCal generates it (not `UNCHANGED`), and was being treated as an update of a bare array; and expressions were emitted **without parentheses**, so `(i - 1) % N` came out as `i - 1 % N` — a silent change of meaning, now fixed with a precedence table.
+  - [x] **52.M1.c.2** `clean-tla` CLI + V3 regression (2026-08-04). `verus-transpile clean-tla <spec.tla> [-o out.rs]`, exiting 0 on success, **1 when the projection is incomplete** (the gaps are listed and *no source is written*), 2 when the input does not parse or is not clean. `transpiler/tests/corpus_v3_guard.rs` byte-compares the emitted `verus! { .. }` block against each golden's — nothing is normalised away, so a reordered conjunct or a changed frame condition fails. Verified non-vacuous by tampering with a golden and watching it fail with the exact line.
+    Two rules settled by the first real diff against the goldens: actions and helpers are emitted in **source order**, not alphabetical, because the output is meant to be read beside the spec it came from; and a receive handler is given **only the parameters it uses** — the framework always knows the sender, so declaring an unused `src` would put a parameter in the spec that the spec never mentions.
+    **The goldens' code was regenerated from the emitter**, with each remaining difference reviewed first and found to be an incidental formatting choice (conjunct order following the source, `set![...]` on one line). Their hand-written module headers are kept and expanded to carry what the per-item comments used to say, so V3 can be an exact comparison while the review prose survives. Both regenerated goldens re-verified with `verus`: 0 errors.
+
+**52.M1 acceptance**: the milestone's criterion is "Tier-0 micro end-to-end, verus passes". Both tier-0 clean specs translate with zero gaps and the output verifies. What is *not* yet true: only 2 of the 5 tier-0 cases have a `clean.tla` at all (53.2.c), and P4 (quorum → counting) has not been exercised because neither case needs it — LamportMutex requires unanimity, not a majority. M2's tier-1 cases are where P3/P4 get their real test.
+- [x] **52.M2 COMPLETE (2026-08-04)** — messages→framework send/recv (P3) + quorum→counting (P4). Acceptance was "Tier-1 (Paxos/TwoPhase) translated, compared against the tla-rs hand-written spec": **both tier-1 cases translate, verify with `verus` (0 errors), and have frozen goldens byte-compared by V3**; the Paxos comparison against the hand-written spec is written up in its `rewrite.md`. Ten translator gaps were closed along the way, every one found by pointing the translator at a real spec.
+  - [x] **Paxos translates and verifies** (2026-08-04): `clean.tla` → projection → emission → `verus`, **0 errors**, and the golden is frozen and byte-compared by V3. The tier-0 goldens are unchanged, so nothing regressed.
+    Nine gaps closed, every one of them found by pointing the translator at a real spec rather than at an invented example:
+    - **P4 itself**: `Cardinality(S)` → `S.len()`, which is what makes a counted quorum expressible.
+    - an uninterpreted `CONSTANT` set (Paxos's `Value`) has no readable element type; its members are opaque identifiers, so they project to `int` — the same choice the hand-written tla-rs Paxos makes.
+    - **primed updates inside a conditional** (`IF c THEN promiseBal' = … ELSE promiseBal' = …`). Each assigned variable becomes one conjunct whose value is the conditional; both branches must assign the same variables, which is what makes the rewrite sound. A branch re-assigning a variable to itself means "leave it".
+    - a message type built as a **union of record sets** (Paxos declares one per phase and unions them) — the members are merged, so the tag set and payload are complete.
+    - message tags that are **not Rust identifiers**: Paxos's phases are `"1a"`, `"1b"`, `"2a"`, `"2b"`, and `LMessage::1a` does not parse. A leading `M` fixes it without losing the tag.
+    - 0-ary **value operators** (`None == -1`) are inlined; emitting the name would collide with Rust's own `None`.
+    - **local actions keep their own parameters** (`Phase1a(a, b)` → `LPhase1a(.., b, ..)`), and `LNext` existentially quantifies them exactly as the source does with `\E b \in Ballot`.
+    - helper emission is driven by **what the actions call**, not by which operators take a node: `IsMajority(s)` takes a *set*, so it was never node-parameterized, and the emitted spec did not compile without it.
+    - a helper parameter named `s`, `s_` or `c` **collides** with the projected spec's own parameters; Paxos's `IsMajority(s)` does exactly that. Renamed in both signature and body.
+    - the dispatch ends in `_ => false` when a message kind has no handler. Without it the `match` is non-exhaustive; with a silent `true` the node could take an arbitrary step on receipt.
+  - [x] **TwoPhase** rewrite + golden (2026-08-04). Translated and **verus-verified, 0 errors**; golden frozen and byte-compared by V3.
+    **The TM question, answered.** The two C1 violations were `tmState`/`tmPrepared` — the coordinator's state, which in the original belongs to *no node*. Three options: folding the role into every node (as Paxos's leader was folded) is **wrong here**, since 2PC needs exactly one coordinator and two could commit and abort the same transaction; adding the TM to the node set forces `rmState` to exist for a non-participant; **chosen: the TM is a designated node** — `TM` is a constant drawn from `RM`, every node carries the coordinator fields, and TM actions are guarded by `a = TM`. That is what a real deployment does, and it makes every variable per-node without inventing a role.
+    **P4 deliberately does not apply**: `tmPrepared[a] = RM` stays a comparison against the whole node set, because 2PC needs unanimity rather than a majority. The contrast with Paxos's `IsMajority` is worth keeping — P4 is a rule about quorums, not about every guard mentioning a set.
+    **V2 is the strongest evidence in the corpus so far.** Unlike Paxos, 2PC's original has a directly checkable safety property, so this is a genuine side-by-side: with the same `Consistent` invariant added to the original, **both specs give 1,146 states generated, 288 distinct, depth 11** — identical, and *explained* rather than lucky: a broadcast's |RM| messages are always added together and never removed, so each corresponds to exactly one message of the original, and the coordinator fields change only at `TM`. The rewrite is a bijection on reachable states. Contrast LamportMutex, where the counts legitimately differ because that rewrite changed the state's shape.
+    One translator gap exposed and fixed: a receive handler taking **nothing** beyond the state (a `Commit` message has no payload and the handler ignores the sender) produced an empty argument slot in the dispatch.
+    **Honest note on the reference**: the hand-written `src/protocol/TwoPhase/twophase.rs` keeps *global* sets and models the whole protocol in one process rather than one node, so it is **not** a useful review oracle for this case. That is a fact about the reference, not the translation.
+  - [x] **Paxos output compared against the hand-written `src/protocol/Paxos/paxos.rs`** (2026-08-04), written up in the case's `rewrite.md`. **State and actions correspond one-to-one for everything the source spec covers** (`max_bal`↔`promised_bal`, `promises`↔`promises_rcvd`, `LPhase1a`↔`LSend1a`, …). Three differences, none of them the translator being wrong: (i) names follow the *source's* vocabulary rather than protocol vocabulary — deliberate, since renaming would require knowing what the names mean; (ii) `proposed: bool` vs `phase: LPhase` — `clean.tla` tracks "already sent 2a" as a boolean, which is what the original's guard amounts to once the leader is a node; (iii) **no learner** — the hand-written spec has one, `Paxos.tla` explicitly does not ("the learners are omitted from this abstract specification"), so that difference lives in the *inputs*. Conclusion: for everything `Paxos.tla` specifies, the output is structurally the spec a human wrote by hand, which is the claim M2 exists to test.
+- [x] **52.M3** Semantic fidelity V2 + golden regression V3 — **COMPLETE 2026-08-04**. Every case that *can* have a V2 result has one and all are EQUAL (`t0_01_simple`, `t0_03_dining_philosophers`, `t0_05_lamport_mutex`, `t1_01_paxos`, `t1_02_twophase`); the prediction below was right that a bespoke comparator was needed, and its honest scope is *observable state-set equality*, not behavioural equivalence. Original text:
+  ⚠️ Phase 36 parity compares tla-rs source-first-checker vs TLC, NOT two TLA+ specs — verify reusability first; likely need a bespoke spec-vs-spec comparator (both specs → TLC + common observables + state-set diff). ⚠️ Phase 36 parity compares tla-rs source-first-checker vs TLC, NOT two TLA+ specs — verify reusability first; likely need a bespoke spec-vs-spec comparator (both specs → TLC + common observables + state-set diff).
+  - [x] V3 golden regression: `tests/corpus_v3_guard.rs`, byte-comparing the `verus!` block of every case with a golden. Non-vacuity re-confirmed on the Jetpack golden (a one-word tamper fails it).
+  - [x] V2 comparator built and first case measured — see 53.6.a/b. **The predicted bespoke comparator was indeed needed**, and its honest scope is *observable state-set equality*, not behavioural equivalence; 53.6.b records why and how that was established.
+  - [x] **V2 across every case that can have one, and `green` redefined to say what it actually asserts** (2026-08-04). The status vocabulary said V2 was "TLC fidelity `clean.tla` ≡ `original.tla` holds", which claims more than the check delivers. `tests/corpus/README.md` now states it precisely: *under a stated finite model, the two specs reach exactly the same set of states when projected onto the observables the case declares*, explicitly **not** behavioural equivalence, with the TwoPhase `RMChooseToAbort` counter-example named. A case whose specs share no observable (Jetpack) cannot get a V2 result and stays `golden` — that is a property of the case, not a failure.
+    **Four cases promoted to `green`**: `t0_01_simple`, `t0_05_lamport_mutex`, `t1_01_paxos`, `t1_02_twophase`. All six goldens re-verified under Verus first (`0 verified, 0 errors` each) rather than trusting earlier runs, since Paxos's golden had been regenerated since.
+    A new clause in the role guard makes the status structural: **`green` requires an `observables.toml` on disk**, so the status cannot claim a comparison nobody ran. Confirmed non-vacuous by moving Paxos's file aside — the guard fails with exactly that message.
+- [x] **52.M4** Tier-2 (already message-passing): Raft → EPaxos. **Both translate and both verify** (2026-08-04). Acceptance was "translate + verus pass + TLC fidelity vs original": the first two hold for both, and EPaxos additionally **closes its state space** (3.2M distinct), which Raft does not. Neither reaches `green`, and for different reasons stated in their notes — Raft's space does not close, and EPaxos's `Consistency` is over `cmdLog` while the original's is over the `committed` history variable C3 deletes, so there is no comparable projection.
+  - [x] **Raft translates and its golden verifies** (2026-08-04). Two of the three acceptance legs are met; TLC fidelity is **bounded evidence only** and the case is `golden`, not `green` — Raft's state space does not close even at 2 servers. See 53.4.c for the six type-shaped defects the case exposed and the fidelity defect it found in the already-frozen Paxos golden.
+- [x] **52.M4b** Tier-3 (hardest, LAST): Jetpack — heavy rewrite (strip 3-D log / INSTANCE / cross-node reads). **Done 2026-08-04.** Translated first try, verus-passed first try, TLC closes the state space at 2 and 3 servers (19.5M distinct at three, `TypeOK` + `Consistency` hold). The golden is **more complete than Phase 51's hand-written attempt**, which stopped at 51.9. See 53.5.b/c.
+- [x] **52.M5** Docs (subset spec, rewrite playbook, evidence) + integrate into tla-rs pipeline — **COMPLETE 2026-08-04**.
+  - [x] **Docs complete** (2026-08-04). `docs/clean_tla_subset.md` (the C1–C5 contract), `docs/clean_tla_rewrite_playbook.md` (how to get a spec into the subset), `docs/clean_tla_translator_evidence.md` (what has been shown, on which specs, checked how) — all three cross-linked, and linked from the corpus README.
+    The evidence doc is a **scorecard, not a summary**: it states which claims the repository's tests re-check and says plainly where a claim is not mechanically re-checked. It also records the two patterns the corpus produced — that **defects cluster by data shape rather than by protocol** (Raft and EPaxos, the two cases with structured data, account for 15 of 28; Jetpack, the hardest *protocol*, exposed none because Raft had paid for it), and that **three defects were silently wrong** rather than loud: the `----` truncation, the missing parentheses, and the `..` precedence bug.
+  - [x] **V1 is now enforced, not asserted** (2026-08-04). `transpiler/tests/corpus_v1_guard.rs` runs `verus` over every `golden.rs`. Until now the manifest *claimed* this for each `golden`/`green` case and nothing checked it — the runs were done by hand and written into `rewrite.md`. **A claim nobody re-checks decays**, and this one especially: a translator change can break a golden's typecheck while V3 stays green, because V3 compares the golden against fresh output and both sides move together. The guard skips loudly when no Verus is on the machine and never passes having checked nothing; confirmed non-vacuous by injecting an unknown type into a golden. All 8 goldens pass.
+  - [x] **Pipeline integration** (2026-08-04). `verus-transpile pipeline --clean-subset` produces the spec stage with the Phase 52 projection instead of the global-model translator, and **the two entry points are guarded against drift**: `corpus_v3_guard.rs::the_pipeline_mode_agrees_with_clean_tla` byte-compares the pipeline's output against a frozen golden, so the pipeline mode cannot become a second implementation. A spec outside the subset is refused with the **linter's own findings** rather than a debug dump — the message tells the reader to run `tla-lint`, so it had better show what `tla-lint` would have said.
+    **It stops after the spec stage, deliberately, and says so.** Wiring it into the exec stage failed on the first try with `Parameter count mismatch: function has 1 params, annotation has 2`, and the cause is real rather than incidental: the mode annotations describe the *source* module's operators, and projection removes the node parameter, so `Left(p)` becomes `LLeft(c)`. Producing annotations for a projected module is separate work, and the exec stage is outside Phase 52 in any case — the plan's **R3** is "only generate a spec, never a proof". Recorded as a follow-on rather than papered over.
+- [x] **52.corpus** Consumes the graded dataset built in **Phase 53** (each milestone pulls its tier: M1←Tier-0, M2←Tier-1, M4←Tier-2, M4b←Tier-3). Dataset construction + golden strategy live in Phase 53. **All four tiers consumed** (2026-08-04).
+
+  - [x] **A second, independent 52.M0 landed on `main` in parallel** (`b6245c76`), and its facts are recorded here because the code did not survive the merge. It shipped `verus-transpile clean-lint` with **16 diagnostic codes** across C1–C5 (each carrying operator, source line, and the rewrite the human must perform), **26 unit + 5 fixture tests**, three reference specs under `transpiler/tests/fixtures/clean_subset/`, and a contract document `docs/clean_tla_subset_spec.md`.
+    **Why ours was kept instead**, verified rather than asserted: (i) its API is incompatible with the projection stack built on top of ours — `cargo check` fails on five imports (`CleanSubsetReport`, `Finding`, `CleanRule`, `report_to_json`, `node_parameterized_operators`), and `projection.rs` needs a `per_node_variables` field its `CleanReport` does not have; (ii) its front-end **cannot parse any of the eight `clean.tla` rewrites** in `tests/corpus/` — 8/8 parse errors — because it predates the 52.M0.0 frontend work.
+    **What survived**: its three fixtures, kept as a live regression suite, and `transpiler/tests/clean_subset_lint_test.rs` ported to our API. They paid for themselves immediately — `CleanVoting.tla` exposed a real defect in **our** C5, which rejected `\E m \in messages : DropMessage(m)`: message loss is an environment action our own contract has always permitted, and our corpus has no lossy network so nothing had ever exercised the shape. Fixed. Its `docs/clean_tla_subset_spec.md` is folded into `docs/clean_tla_subset.md` rather than kept as a second contract.
+
+### MVP
+
+M0–M2 + **Paxos** as the killer demo (has a tla-rs hand-written spec to diff against). ⚠️ Use the
+**message-passing** Paxos (a `msgs` variable, per-node), NOT the Voting abstraction (no per-server
+arrays → projection N/A). Proves the core claim "clean global TLA+ auto-projects to single-process
+Verus spec". Then Raft; Jetpack (M4b) last.
+
+### Files
+
+Plan: `docs/clean_tla_to_verus_translator_plan.md`. Extends `transpiler/src/tla/`.
+
+---
+
+### Housekeeping from the second origin/main merge (2026-08-05)
+
+- [x] **`TODO.md` had a 1,652-line duplicated tail**, introduced upstream by
+  `513b4b1a` (Phase 54.9.a), which added 1,710 lines to this file with **zero
+  deletions** — Phases 41–54 appeared twice. Removed. Verified safe first: 9 of
+  the 13 duplicated phases were byte-identical to their earlier copy, and for
+  the other four the *earlier* copy was the current one (51.13 marked done there,
+  Phase 54 carrying a 2026-08-05 correction the tail lacked, and Phases 52/53
+  complete there and stale "PLANNED (on hold)" in the tail). All 58 non-blank
+  lines dropped came from those four, and `54.9.a` survives in its newer
+  `[x] FIXED` form.
+- [x] **A doctest in `transpiler/src/printer/mod.rs` did not compile**, from
+  Phase 42.8.c.2.iii — an indented block of pseudo-code that rustdoc read as
+  Rust. Confirmed pre-existing on pristine `origin/main`, so `cargo test` (which
+  CI runs) was red there. Fenced as ```text.
+- [x] **The "Phases 52/53 are on hold until Phase 54 lands" banners are gone.**
+  They are complete; the sequencing note is kept, past tense.
+
+### Follow-up from the origin/main merge: soundness holes in our linter
+
+Found by adversarially reviewing our linter against the parallel Phase 52.M0
+implementation (`b6245c76`) during the merge. **Two were fixed in the merge; the
+rest are open and are recorded here rather than left implicit.** All are cases
+where our linter stamps something clean that is not projectable — the direction
+that matters, because a false "clean" ships a wrong spec while a false finding
+merely annoys.
+
+- [x] **C2 was silently disabled on any spec with a grouped `Next`.**
+  `node_parameterized_operators` seeded from the *raw* `Next` body rather than
+  `expand_action_groups`, so `Next == \/ CommandLeaderAction \/ ReplicaAction`
+  produced an empty operator map and C2 iterated over nothing. `check_c5` had
+  been taught to expand during the EPaxos work; this had not, and nothing caught
+  it because every `clean.tla` in the corpus quantifies directly in `Next`.
+  Proved with a two-line probe: the same spec with a blatant
+  `state' = [state EXCEPT ![self] = state[peer]]` reports **clean** when grouped
+  and C2 when inlined. **EPaxos's pinned clean-distance was 3 — C1 running
+  alone — and is now 4, the extra finding being a real cross-node read of
+  `crtInst[cleader]`.** Only that one case was affected.
+- [x] **A C4 diagnostic asserted a mechanism it never checked.** The near-miss
+  branch fired on any variable with a conventional network *name* and stated
+  "it is only ever updated with EXCEPT, so it is a per-connection structure (a
+  queue array)" — false on a spec whose only update is `msgs' = {}` (zero
+  EXCEPTs) and on Jetpack's `messages`, which the module never assigns at all.
+  It now reports what it observed, including "this module never assigns it".
+- [x] **Whole-array reads and writes are not checked.** — **DONE 2026-08-05.** `Cardinality(state)` in an action now reports C2. The two exemptions the
+  contract names are what make the rule usable, and both were found by measurement rather
+  than reasoning:
+  - **an `EXCEPT` base is not a read.** `[sendSeq EXCEPT ![s] = ..]` names `sendSeq` bare
+    but touches exactly entry `s`. Counting it flagged three of Lamport-mutex's helpers
+    (`AdvanceAll`, `AdvanceOne`, `Accept`) on a spec that is clean — caught by running the
+    whole corpus before trusting the rule, not by reading the code.
+  - **frame conditions are exempt**, per the contract: the right-hand side of `x' = x`, and
+    anything under `UNCHANGED`.
+  An indexed read is also excluded, so a cross-node read reports once rather than twice.
+  **No corpus case exercises this rule** — all ten originals and all eight `clean.tla`
+  keep their existing counts — so it is covered by four unit tests instead, including one
+  per exemption. That is worth stating plainly: the rule is real but unexercised by the
+  corpus, and the first spec to need it will be the first real test.
+  **Writes done too.** `x' = [i \in Node |-> ..]` in an action now reports C2. `Init` is
+  exempt *structurally* rather than by special case — C2 only walks operators reachable
+  from `Next`, and `Init` is not one. The rule keys on the constructor being the **direct**
+  right-hand side, which is what keeps Lamport-mutex's
+  `[sendSeq EXCEPT ![s] = [d \in Proc |-> ..]]` clean: that advances every *destination*
+  counter within node `s`, a single-node step.
+  **Known limit, recorded rather than left to be rediscovered**: a spec that hides the
+  constructor behind a helper (`x' = BuildAll(s)`) is not caught. Following returned values
+  needs the value analysis C2's indexed branch also lacks. Not flagging is the safe
+  direction.
+  Corpus impact of both rules: **none** — all ten originals and all eight `clean.tla` keep
+  their counts, checked before trusting either rule.
+- [x] **Messages with no `src`/`dst` are accepted**, though the framework cannot
+  route them. — **DONE 2026-08-05.** C4 now checks it.
+  **The addressing field is inferred, not named.** My first version hardcoded `dst` and
+  reported four *clean* corpus specs as violations: Raft, EPaxos, dining philosophers and
+  Jetpack all use the Raft-lineage `mdest`. The name was never the point — the framework
+  routes on whatever field the **receive guard** tests, which is exactly how the contract
+  states it ("guarded on `m` being addressed to `self`"). So the rule reads the guard,
+  collects the fields it compares against the receiving node, and requires sent messages to
+  carry one of them.
+  A spec whose receive guard tests no field gives nothing to infer from, and the rule stays
+  silent rather than guessing — guessing a name is what produced the false positives.
+  One level of helper indirection is resolved, because that is how the corpus writes
+  messages (`msgs' = msgs \cup {Prepared(s, d)}`); deeper is left alone.
+  Corpus impact: none — all counts back to their pinned values. Three tests, including the
+  `mdest` case that the hardcoded version failed.
+- [x] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally.** — **DONE
+  2026-08-05, and the prediction held exactly.** A parameterless action has no `self`, so
+  no index into per-node state is the legitimate one; C2 now walks these disjuncts and
+  reports any node state they touch. Reported as C2 rather than C5 because the defect is
+  the cross-node read, not the disjunct's shape.
+  **Only `t0_01_simple` was affected, as this item predicted** — `clean.tla` 0 → 1 and
+  `original.tla` 1 → 2; the other nine cases are unchanged.
+  **The spec was fixed, not the rule.** `Terminating` is now guarded on `pc[self]` and sits
+  under the existing `\E self \in Proc`. Behaviour is unchanged: `[][Next]_vars` already
+  permits a stuttering step, so an explicit stuttering action adds nothing to the behaviour
+  set — its only effect is on TLC's deadlock check, which is why the original has one, and
+  once every process is `"Done"` every node can still take it. Recorded in `rewrite.md`.
+  The golden's header asserted this guard "is not projectable"; that was true of the old
+  spec and is now stale, so it says what changed and why the golden still has no
+  counterpart (stuttering is what the runtime does when a node has nothing to do).
+  Three tests, including that a genuine environment action — message loss, touching only
+  the network — stays permitted, since rejecting those would break the contract's own
+  allowance for delivery, loss and crash.
+  *Not verified here*: TLC was not run, so the no-deadlock claim rests on the
+  `[][Next]_vars` argument plus the guard being satisfiable by every node once all are
+  `"Done"`. The corpus V2 fidelity script is what would confirm it.
+- [x] **`clean_distance` degrades to silence.** — **FIXED 2026-08-05.** C1/C2/C3 all
+  return early when the node set is unknown, so a spec the linter understands *less*
+  scores *lower*. The report now carries `skipped_rules` (rule + why), and all three
+  surfaces say so: `--json` gains `rules_executed` and `rules_skipped`; the plain-text
+  output prints the note under the verdict, including on the *violation* path, which is
+  the misleading one; and the manifest gains `rules_skipped` per case, pinned by
+  `corpus_lint_guard.rs` (verified failing-first).
+  **Measured across the corpus**: exactly the two cases this item named are affected —
+  ReadersWriters (1 violation, 3 rules skipped) and Jetpack (2, 3 skipped). The other
+  eight run all five rules, so the remaining `clean_distance` numbers were already honest.
+  Jetpack now reads: `2 clean-subset violation(s)` followed by *"note: 3 of 5 implemented
+  rules did not run, so this count is a lower bound, not a distance to clean"*.
+
+## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — **COMPLETE 2026-08-04**
+
+> **Ten cases across four tiers**, eight of them translation cases with a full
+> four-tuple (`original.tla` / `clean.tla` / `rewrite.md` / `golden.rs`) and two
+> deliberately `reject-only`, with `why_reject_only.md` saying why rewriting them
+> would produce a *different algorithm* rather than a rewrite.
+>
+> **The stated completion condition is met**: Jetpack's `clean.tla` is accepted
+> by the linter, translates, and its `golden.rs` passes `verus` — each on the
+> first attempt, the only case in the corpus to do any of those, because Raft had
+> already paid for every type-shaped gap it would have hit. TLC closes Jetpack's
+> state space at both 2 and 3 servers (19.5M distinct, depth 78).
+>
+> **The corpus is a working instrument, not an archive.** It found 28 translator
+> defects, a fidelity defect in an already-frozen golden (Paxos's `LNext`
+> quantifying over every integer), and — via the V2 comparator — a defect in one
+> of its own rewrites before that golden was frozen (DiningPhilosophers reaching
+> 11 `hungry` states the original cannot). It also nearly produced a false
+> accusation, when an unmatched state constraint made LamportMutex's correct
+> rewrite look like it had lost 4,214 states; that trap is now in the script's
+> header and the playbook.
+
+### Background (2026-08)
+
+The dataset is the FOUNDATION of the Phase 52 translator: a graded set of test cases from simple
+to hard, each with a golden. Previously buried as a one-line `52.corpus`; promoted to its own phase
+because it is a substantial, standalone task (collect → rewrite → golden → fidelity-check). Per plan §3.
+
+### Structure
+
+Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tuple:
+- `original.tla` — spec from the wild (mainly `tlaplus/Examples`).
+- `clean.tla` — hand-rewritten to the clean subset (C1–C5).
+- `rewrite.md` — what changed (history vars removed, cross-node reads message-ified, which var is the network).
+- `golden.rs` — expected single-process Verus spec output.
+
+### Golden strategy (how each tier gets its golden)
+
+- **Tier-1/2 with an existing tla-rs spec**: reuse the hand-written spec as golden (Paxos → `src/protocol/Paxos/paxos.rs`, TwoPhase → `twophase.rs`, ...).
+- **Tier-0 simple**: hand-write small goldens (cheap).
+- **New cases without a reference**: bootstrap — human-review the translator output once, freeze as golden; TLC strong-fidelity (clean vs original, Q3) backstops correctness.
+- **Jetpack**: Phase 51's partial hand-written spec.
+
+### TODO (work queue, simple → hard)
+
+- [x] **53.1** Corpus dir layout + four-tuple convention + intake script (2026-08-04). `transpiler/tests/corpus/` now has `README.md` (four-tuple contract, tier table, status vocabulary, golden strategy), `manifest.toml` (10 planned cases across the 4 tiers, with the tier→milestone gating), and `scripts/intake_case.sh` (downloads a spec, **pins the upstream commit** via the GitHub API so re-runs are byte-reproducible, scaffolds `rewrite.md`, optionally copies a `reference.rs`, appends a manifest entry). Clean-distance measurement is wired to the contract `verus-transpile tla-lint --json <file>` → `{"violations": N}` and degrades to `unmeasured` until 52.M0 lands.
+  - **Refinement to the plan's golden strategy** (see corpus README §"Why `golden.rs` and `reference.rs` are different files"): a deterministic translator will not byte-match a hand-written spec, so byte-diffing against `src/protocol/*/*.rs` would be permanently red. The corpus splits the role: `golden.rs` = frozen expected translator output (V3 regression oracle), `reference.rs` = the hand-written tla-rs spec (human review oracle, never byte-diffed). The plan's intent survives — the hand-written spec is what a human diffs against *before* freezing the golden.
+- [x] **53.2** Tier-0 (5 cases): collect + clean-rewrite + hand-written golden. **COMPLETE 2026-08-04** — three translation cases, all `green`; two `reject-only` with their reasons written down. Intake done for all 5 (see 53.2a commit). Set is Simple / Bakery / DiningPhilosophers / ReadersWriters / **LamportMutex** — BlockingQueue was dropped (an upstream submodule with no per-node arrays) and LamportMutex added in its place as the accept specimen.
+  - [x] **53.2.a** Intake all 5 with pinned upstream commits (2026-08-04).
+  - [x] **53.2.b** `t0_05_lamport_mutex` clean-rewrite + `rewrite.md` + TLC fidelity (2026-08-04). Linter **accepts** it — the first time the accept direction has been exercised at all. **The rewrite found a real trap**: flattening the original's per-connection FIFO queues into one message set silently drops delivery ordering, and TLC refuted the first version in 13 states — p1 sends `req(1→2)` then `ack(1→2)`, p2 takes the ack first, so `req[2][1]` stays 0, `beats(2,1)` is vacuously true and both processes enter the critical section. Fix: ordering becomes explicit protocol state (`sendSeq`/`recvSeq` per peer + a `Deliverable` guard), which is C1/C2-clean because both tables are per-node. TLC then passes (`TypeOK` + `MutualExclusion`, 1,064,028 distinct states, depth 55; original 724,274 / 61). State counts are *not* comparable across a rewrite that changes state shape — 53.6's comparator must handle exactly this, since a naive state-count diff would call a correct rewrite a failure. Full analysis in the case's `rewrite.md`.
+  - [x] **53.2.c** Clean-rewrites for the remaining tier-0 cases — **complete 2026-08-04**. Simple and LamportMutex were already done; DiningPhilosophers is below; Bakery and ReadersWriters are `reject-only` and deliberately have none.
+    - [x] **t0_01_simple** (2026-08-04). One cross-node read (`x[(self-1) % N]`) is the entire algorithm, and **the property is what picks the message-ification** — the clearest small demonstration that this step cannot be automated. *Push* (neighbour broadcasts after setting `x`) makes `y` always 1: `PCorrect` holds but every behaviour that reads a 0 is deleted. *Local cache* lets every process read a stale 0 and **breaks** `PCorrect` — note this is the opposite verdict from LamportMutex, where "cache what you were told" is exactly right; the difference is whether the property depends on freshness. Chosen: **request/response**, with `Reply` enabled in any control state because the original's read observes the neighbour regardless of where it is. TLC: original 193 states, clean 2,001, `TypeOK`+`PCorrect` hold in both. **Anti-vacuity**: since a degenerate push rewrite would also satisfy `PCorrect`, both specs were additionally checked against `EveryoneReadsOne` and TLC **refutes it on both** — the rewrite really does preserve the read-a-0 behaviour.
+    - [x] **DiningPhilosophers — done, and `green`** (2026-08-04). The prediction held: Chandy-Misra is natively a message algorithm and the original merely declines to model the handing, so this is **not a redesign**. A fork stops being a global record with a `holder` and becomes a per-edge fact held at each end (`hasFork`/`forkClean`/`hasToken`, `Map<int, bool>` keyed by neighbour — the same shape LamportMutex's `req` table has). The request *token* becomes explicit because once asking is a message, deferring is a state; that is the part of Chandy-Misra the original left implicit, not an addition. A `ForkConservation` invariant is added, which **the original cannot state** — there a fork is one record with one holder, so it is true by construction.
+      TLC: 92,160 distinct states at `NP = 4`, depth 85, **space closed**, `TypeOK` + `ExclusiveAccess` + `ForkConservation` hold. `golden.rs` passes `verus`. **V2 EQUAL** on `hungry` — 5 distinct values each side, against raw state counts 2,600× apart, which is the rewrite doing its job: one atomic fork transfer became a request, a deferral and a hand-over.
+      **The V2 check caught a defect in this rewrite before the golden was frozen** — the first time it has caught a *rewrite* error rather than a configuration one. The first draft split "stop eating" from "become hungry again", letting a philosopher sit not-hungry and not-eating indefinitely; the comparison reported **11 `hungry` states the original cannot reach**, in the defect direction. The original reaches exactly five (everyone hungry, or exactly one not), because its `Think` is precisely where `hungry := TRUE`. Merging the two — also the more faithful reading — makes the sets equal.
+    - [x] **Two translator gaps it exposed** (2026-08-04): **`EXCEPT` with more than one update** (`[forkClean EXCEPT ![p][Left(p)] = FALSE, ![p][Right(p)] = FALSE]`) now chains inserts, with every `@` still resolving against the *original* function as TLA+ requires; and **constant pruning ran before `Init` was projected**, so the node set was dropped as unused by the actions and `Init` — which builds a table over every peer — then referred to a constant that no longer existed.
+    - [x] **CORPUS DESIGN QUESTION — DECIDED 2026-08-04: Bakery and ReadersWriters are `reject-only`, not translation cases.** The proposal below was accepted, and the corpus now says so structurally rather than in prose: `manifest.toml` gained a **`role`** field (`translate` by default, or `reject-only`), `tests/corpus/README.md` documents what each role obliges, and `tests/corpus_lint_guard.rs::roles_match_what_the_cases_actually_contain` enforces it — a reject-only case must have **no** `clean.tla`/`golden.rs`/`rewrite.md`, must keep `status = intake`, must have a **measured** clean-distance, and must carry a `why_reject_only.md` saying why. Building the V2 comparator first is what made the decision safe to take: now that the check is concretely "do the two specs reach the same observable states", it is plain that between two *different algorithms* the question is not hard but meaningless.
+      The guard immediately earned its place: it found that both cases still carried the **intake template's placeholders** — a two-line `clean.tla` saying "not yet written" and a `rewrite.md` of TODOs. Those read as unfinished work rather than as a decision, so they are gone, replaced by `why_reject_only.md` in each case. Original text of the question: Both are shared-memory algorithms, and "rewriting them into the clean subset" does not produce a rewrite of the same algorithm — it produces a *different* algorithm that solves the same problem. Two consequences: (i) the V2 fidelity check (`clean.tla` ≡ `original.tla` in observable behaviour) becomes meaningless, since there is nothing to compare; (ii) for Bakery specifically, the message-passing counterpart of "distributed mutual exclusion by timestamps" is **literally LamportMutex**, which is already `t0_05` — so the rewrite would duplicate an existing case. Proposal: keep both (never delete an inconvenient case) but reclassify them as **reject-only specimens** — their role is to be what the linter must reject, with a measured clean-distance, not to be translated. Decide before spending rewrite effort on them.
+
+- [x] **53.2.d** Hand-written `golden.rs` per tier-0 case — complete; see the sub-items.
+  - [x] **t0_01_simple** (2026-08-04). Written in the conventions the hand-written tla-rs specs already use (`LMessage` enum, receive handlers taking the message's fields as scalar parameters, sends via `sent_packets`), so the translator is aimed at the project's existing shape. **Verus-checked: 0 errors**, and confirmed non-vacuous by injecting a type error. New corpus rule: a golden must itself pass `verus` before being frozen, or V1 is unreachable no matter what the translator emits. Two constructs deliberately have **no** counterpart — `Terminating` (guarded by "every process is Done", which one node cannot observe) and `PCorrect` (quantifies over all nodes; a global property does not project). These are the cases where "translate everything" is the wrong behaviour.
+  - [x] **t0_05_lamport_mutex** golden (2026-08-04). Verus-checked, 0 errors. Pins the parts of the projection that Simple does not exercise: a **two-level array** (`req`/`sendSeq`/`recvSeq` are `[Proc -> [Proc -> Nat]]`, so the *outer* index is projected away and the *inner* peer index survives as `Map<int, int>` — dropping both would be the obvious wrong move); an inner index that is the acting node itself (`req[p][p]` → `s.req[c.node_id]`); a real broadcast; and message dispatch over three message kinds.
+    Two rules settled while writing it:
+    - **`sent_packets` is a `Set`, not a `Seq`** (Simple's golden was revised to match). C4 designates the network as a set and a broadcast is a set comprehension over peers, so a sequence would require a delivery order the source spec does not give and a translator cannot invent. An ordered view belongs to the exec layer, which is outside Phase 52.
+    - **vstd API constraint on emitted code**: in Verus 0.2026.08.02 `Set::new(f)` returns `Option<Set<A>>` (sets are finite by construction) and `Map::new` takes a `Set<K>` domain, not a predicate. The existing translator emits `Set::new(|x: int| ...)` as a `Set`, which does not type-check on this toolchain — another instance of the 52.M1 scoping finding.
+  - [x] **53.2.d** — **complete 2026-08-04**. Every tier-0 case that is a translation case now has a golden that passes `verus`: `t0_01_simple`, `t0_03_dining_philosophers`, `t0_05_lamport_mutex`. The other two are `reject-only` and a golden would be meaningless for them. **All three are `green`** (V1 + V2 + V3).
+- [x] **53.3** Tier-1 consensus: Paxos (message-passing) + TwoPhase. **Both `green`** (2026-08-04): translated, verus-passed, and V2-EQUAL on their shared observables.
+  - [x] **53.3.a** Intake both, with `reference.rs` copied from the existing tla-rs specs (2026-08-04). **Corpus error found and fixed**: `tlaplus/Examples` `specifications/TwoPhase/TwoPhase.tla` is a two-phase *handshake* (a producer/consumer hardware protocol, variables `p`, `c`, `x`) — an entirely different protocol from two-phase commit, which lives under `specifications/transaction_commit/`. The manifest's own notes had pointed at `transaction_commit`; the first intake took the wrong file. Re-intaken.
+  - [x] **53.3.b** Two linter inaccuracies the tier-1 specs exposed, both of which inflated measured clean-distance for cosmetic reasons:
+    - the next-state relation was found **by name**, so a spec calling it `TPNext` scored a C5 violation. It is now found by following any `Init /\ [][Action]_vars` operator — TwoPhase's is `TPSpec`, so looking only for `Spec` would not have been enough either.
+    - receive evidence for C4 recognised only `\E m \in net`, so TwoPhase's `[type |-> "Prepared", rm |-> r] \in msgs` did not count and its perfectly ordinary message set was reported as a malformed network. Broadened to membership tests — **but the element must be a record**. The first, looser version designated LamportMutex's `crit` as the network (`p \in crit`), which suppressed the C1 finding that is the real problem with it; `corpus_lint_guard.rs` caught that regression immediately. A network carries messages, and messages are records.
+  - Measured: **Paxos 1 (C5)** — `\E b \in Ballot : Phase1a(b)` never binds an acceptor, i.e. the proposer is an anonymous role and the rewrite must say who sends Phase1a. **TwoPhase 2 (C1)** — `msgs` is correctly designated and `rmState` is per-node; the violations are `tmState` and `tmPrepared`, the transaction manager's own state. That is this case's real question: 2PC has **two roles**, and the rewrite must decide whether the TM is a node.
+  - [x] **53.3.c** Clean-rewrites + goldens.
+    - [x] **Paxos clean-rewrite** (2026-08-04) — the MVP case. Two decisions, both real design questions rather than defects:
+      1. **The anonymous leader.** `Phase1a(b)` is performed by "the ballot b leader", which is not a node. Decision: **every acceptor may lead a ballot**, with the leader's bookkeeping added as per-node state — the same choice the hand-written tla-rs Paxos makes, so the two can be compared. A separate `Proposer` node set is out: C5 requires a single node set.
+      2. **Quorum → counting (P4).** The original's `Phase2a` scans the whole message set for a quorum's worth of 1b replies. A node cannot. Decision: the leader **accumulates** replies in `promises[a]` and keeps the highest `(mbal, mval)` seen; the guard becomes `Cardinality(promises[a]) * 2 > Cardinality(Acceptor)`. The abstract `Quorum` constant disappears — a majority satisfies the original's intersection assumption, so this is a specialisation, not a weakening.
+      Safety is restated directly over recorded votes, since the original's correctness is a refinement onto `Voting`, which is not in the subset. **TLC: `TypeOK` + `Consistency` hold over 4,843,318 distinct states, depth 26** (3 acceptors, 2 values, 2 ballots). The first draft consumed messages on receipt and TLC refuted it with a **deadlock** — the original explicitly never removes messages, so consuming them is a different protocol.
+      **Three translator gaps exposed, which is the point of a tier-1 case**: (i) `Value` is an uninterpreted CONSTANT set, so no element type can be read off it; (ii) **primed updates inside a conditional** (`IF … THEN promiseBal' = … ELSE promiseBal' = …`) — the conjunct classifier only handles a top-level `x' = e`, and this is an extremely common TLA+ shape; (iii) `IsMajority`, the counting rule itself.
+    - [ ] **TwoPhase clean-rewrite** — its open question is whether the TM is a node (see 53.3.b).
+    - [ ] Goldens for both, once the three gaps above are closed.
+- [x] **53.4** Tier-2: Raft (ongardie) + EPaxos. **Both translate and verify** (2026-08-04); both stay `golden` rather than `green`, for reasons stated in their notes — Raft's state space does not close, and EPaxos's safety property is over state the original keeps in a history variable C3 deletes.
+  - [x] **53.4.a** Raft intake + measurement (2026-08-04). Clean-distance **6**, and the findings are exactly what the plan predicted plus one it did not: `allLogs` is caught by **C3 — the history-variable rule's first real hit** ("built by gathering per-node state over all of `Server`"); `elections` is global; `messages` is a **bag**, not a set (ongardie's Raft models duplication with a message→count function, hence the C4 near-miss); and the single C5 finding turns out to be *caused by* the history variable — `Next` is the whole disjunction **conjoined** with `allLogs' = allLogs \cup {log[i] : i \in Server}`, so removing `allLogs` fixes C3 and C5 together.
+  - [x] **53.4.b** **C5 was too strict, and Raft is what showed it** (2026-08-04). The rule rejected a `Next` disjunct binding two nodes, on the grounds that an atomic two-node step hides a cross-node read. But `\E i, j \in Server : RequestVote(i, j)` reads only `i`'s state (`state[i]`, `log[i]`, `currentTerm[i]`) and uses `j` solely as `mdest` — **the second binder is a message destination**. Softened: the first binder over the node set is the acting node, the rest are parameters, and whether an action reaches into another node's state is left to C2, which is precisely C2's question. A new test pins the other direction: `x' = [x EXCEPT ![p] = x[q]]` under `\E p, q` is still caught, by C2. Subset doc updated, including why the earlier rule was wrong.
+  - [x] **53.4.c** Raft clean-rewrite **+ translated + golden frozen** (2026-08-04). `clean.tla` written and the linter accepts it (node set `Server`, 9 per-node variables); history variables deleted (`allLogs`, `elections`, `voterLog`, and the `mlog` field the original itself labels proof-only); bag → set; `Quorum` → counting; `TypeOK` added because the original has none.
+    **TLC does not complete yet, and both reasons are instructive:**
+    1. **Non-consuming receipt was copied from Paxos, where it belongs, to Raft, where it does not.** Paxos's spec states messages are never removed; Raft's `Discard`/`Reply` consume on receipt. Applying the wrong one made `msgs` accumulate without bound and the search diverge (depth past 190, still climbing). Fixed. The lesson: **"does receipt consume?" is a per-spec fact to read off the source, not a rule of the subset** — and running the corpus is what made the difference visible.
+    2. **A fat message record blows up the state space.** To keep the union's members structurally identical, the rewrite gave every message all twelve fields with defaults in the unused ones; that multiplies reachable field combinations, and TLC does not finish even at 2 servers / `MaxTerm=2` / `MaxLogLen=1` (86M generated, 11M distinct, still growing). The original gives each message type only the fields it needs, and **the projection's per-variant payload rule already supports that** — the fat record actively defeats it. Restructuring per type is the next step.
+    Also recorded: the projection needs a **declaration** to read an element type from, and ongardie's Raft has no `TypeOK` at all. A spec with neither a type invariant nor `Init` function constructors would not project today.
+    **Update (same day).** Messages were restructured per type — each carries only its own fields, as the original does — and the linter still accepts the spec. **TLC still does not terminate**, and the honest conclusion is that this is a property of Raft rather than of the rewrite: the reachable subsets of a message set grow combinatorially, which is why the original is model-checked with bounds too. With an in-flight bound (`Cardinality(msgs) <= 2`) at 2 servers / `MaxTerm=2` / `MaxLogLen=1`, TLC explores 3.7M states without finding a violation of `TypeOK` or `OneLeaderPerTerm` but does not close the space. Recorded as **bounded evidence, not a completed check** — and not inflated into a fidelity claim.
+    **Sequence support landed (2026-08-04)**, taking Raft from 8 gaps to 3. `<<>>`, `Len`, `Append`, `SubSeq` and record access on a sequence element now project, and **the 1-indexing hazard is handled deliberately**: an index into a `Seq`-typed field loses one (TLA+ is 1-based, Verus's `Seq` is 0-based) while an index into a `Map`-typed field is a *key* and is left alone. The decision is made from the field's projected type rather than guessed, because getting it wrong yields an off-by-one that still verifies. A test pins both directions. Also landed: message tags resolved through a 0-ary operator (`RequestVoteRequest == "rvq"`, the usual style), Raft's `mtype`/`msource`/`mdest` field names, empty sequences in typed positions, and a conditional whose branches both send.
+    **Raft translates, and the golden verifies (2026-08-04).** `clean-tla` emits `tests/corpus/tier2/t2_01_raft/golden.rs`; `verus -V no-solver-version-check golden.rs --crate-type=lib` → `0 verified, 0 errors`. Manifest status `golden` (not `green`: V2 remains bounded evidence, above). The last three gaps closed, and closing them exposed **six more defects that only the corpus could have found** — every one a compile error in the emitted Verus, i.e. caught by V1 and invisible to the unit tests:
+
+    1. **The message pass stopped at the first record set it found.** Raft declares `LogEntry == [term: Term, value: Value]` *before* `Message`; `LogEntry` has no tag field, so it was collected, then discarded, and Raft projected to a spec with **no messages at all**. Fixed to collect from every operator and keep the tagged ones. Tier 0/1 were unaffected — which is exactly why a tier-2 case was needed to see it.
+    2. **Constructions did not fill the variants they named.** `AEResp(i, j, term, TRUE, 0)` passes literals, and the call-site projection dropped literal-valued fields as "uninformative" while the *declaration* kept them. The variant declaration is now the single authority: a construction fills exactly the fields its variant declares.
+    3. **`m.msource` projected to an unbound identifier.** Routing does not survive into the payload, so the sender is the dispatch's `src` and the destination is `c.node_id`.
+    4. **A value-returning helper was typed `bool`.** The return type was guessed from the *emitted text*, and `if xlog.len() == 0 { 0 } else { .. }` contains `==`. It is now read off the TLA+ body.
+    5. **A named enum was not recognised.** `state \in {Follower, Candidate, Leader}` with `Follower == "follower"` read as opaque identifiers, so `state` became an `int` that string literals were assigned to. Labels are now followed through 0-ary operators — and the resulting enum needed renaming, since the variable really is called `state` and `LState` is already the state struct.
+    6. **`len()` is a `nat`, and TLA+ has one number type.** Comparing a log length to a term did not typecheck. Lengths now coerce to `int`.
+
+    **One fidelity defect found in an already-frozen golden.** `LNext` quantified over *every integer*: `\E b \in Ballot : Phase1a(a, b)` had been projecting to `exists|b: int| LPhase1a(..)`, dropping the binder's set. Paxos had shipped that way. `Next`'s binders now travel with the action (`0 <= b && b <= c.max_ballot && ..`, `c.server.contains(j) && ..`), which also required inferring that a `CONSTANT` used as a bounding set is a `Set<int>` rather than an `int`. **Phase 52 checking Phase 53's corpus is what caught this**, not the other way round.
+
+    Also added: `tests/corpus/scripts/refresh_goldens.sh`, because a golden is two things at once — the bytes V3 compares and the human-written review header explaining why those bytes are right — and `clean-tla --output` destroys the second.
+    **Original finding, kept for the record — eight gaps, all sequence-related, one a real hazard**: `<<>>`, `Len`, `Append`, `SubSeq`, and record access on a sequence element (`log[i][k].term`) are unsupported; and **TLA+ sequences are 1-indexed while Verus's `Seq` is 0-indexed**. Projecting an index expression unchanged would produce an off-by-one that still *verifies* — the worst kind. Sequence support is on the critical path anyway, since Jetpack's spec is sequence-heavy.
+  - [x] **53.4.d** EPaxos.
+    - [x] **Intake + measurement** (2026-08-04). `efficient/epaxos` `tla+/EgalitarianPaxos.tla`, pinned `ab4dbeae`. **Clean-distance 3, all C1** — `proposed`, `committed`, `ballots` are global. Everything else is already clean: EPaxos is natively message-passing (`sentMsg` is one set), so **C2 and C4 pass out of the box** and the node set `Replicas` is found. That makes it the *cleanest* tier-2 case at intake, not the hardest, which is the opposite of what the manifest predicted.
+    - [x] **The first measurement said 1, and it was a linter defect** (2026-08-04). `Next == \/ CommandLeaderAction \/ ReplicaAction` pushes the node quantifier one level down into 0-ary grouping operators, and the linter could not see through it: it reported "cannot identify the node set" and stopped, never reaching C1 at all. Fixed by **expanding 0-ary action operators into `Next` before analysis**, with two conditions that took a failing test each to get right:
+      - the operator must be an **action transitively** — `ReplicaAction`'s own body has no `'` at all, its primes being one call further down, so testing the literal body classified it as a value and left it unexpanded;
+      - it must **group** actions (its body is a disjunction or an existential), not *be* one. Inlining a leaf like `Terminating == pc' = pc` replaces a recognisable environment action with a bare state formula, which C5 then rejects — a name is exactly how a spec says "this disjunct is deliberate". A pre-existing test caught this immediately.
+      This is the same class of error as Jetpack's clean-distance of 2: **a linter that cannot identify the node set reports a small number, and a small number reads as "nearly clean"**. Two of the three tier-2/3 cases have now been mismeasured this way.
+    - [x] **Two CLI defects found while measuring** (2026-08-04). Both were silent, and both would have made a script lie:
+      1. **`tla-lint --json` exited 0 on a dirty spec** while the human form exited 1. `docs/clean_tla_subset.md` states the contract as "exit 0 when the module is in the subset, non-zero otherwise", and `--json` changes the output *format*, not the verdict. Any CI using the machine-readable form would have treated every dirty spec as clean.
+      2. **`intake_case.sh` treated a non-zero linter exit as "not measurable"**, so with (1) fixed it would have reported every dirty spec as `unmeasured` — precisely inverting the distinction the corpus rests on, that *a spec which fails to parse is unmeasured, not dirty*. Now only exit 2 (unparseable) means unmeasured, and the message says so.
+      Also: intake no longer writes a **placeholder `clean.tla`**. A two-line "not yet written" file is indistinguishable from an abandoned rewrite — which is exactly the confusion that had to be cleaned up in `t0_02_bakery`/`t0_04_readers_writers` an hour earlier. Absence is the honest signal.
+    - [x] **EPaxos clean-rewrite, translated, verified** (2026-08-04). Slice: the **phase-1 commit path** (propose → pre-accept → commit, fast when the replies agree, slow via an explicit Accept round when they do not); recovery and execution are out, and ballots go with recovery since that is what non-zero ballots are for. Linter accepted it first try. **TLC closes the state space**: 3,214,576 distinct states, depth 47, `TypeOK` + `Consistency` hold. `golden.rs` passes `verus`.
+      Rewrite decisions: `committed` deleted as a **history variable** (C3) with `Consistency` restated over the replicas' own logs; `proposed` deleted, the command arriving as an action parameter; instances become **records rather than tuples** (a record projects to a struct, a tuple would need a product type the projection lacks); both quorum predicates counted (P4) and kept **distinct**, since the fast path's larger quorum is exactly what buys the missing round; and the unanimity test `\A r1, r2 \in replies : r1.deps = r2.deps` becomes an **accumulator**, because a replica cannot scan the network.
+      **TLC caught a first-draft error immediately**: `NextSeq` was written as `1 + Cardinality(log)` instead of the original's `1 + Max({t.seq : t \in log})`, and `TypeOK` failed at depth 4. The two agree only when sequence numbers are distinct and dense, which the protocol does not guarantee.
+    - [x] **Nine translator defects, every one about types** (2026-08-04) — the most any case has cost, and the reason is that EPaxos's data is nested (a record inside a record inside a set). All listed in `golden.rs`'s header against the output they produce. The ones worth naming here:
+      - an enum **inside a record** had no variable to be named after, so the emitter wrote `pub status: ,` — a field with no type;
+      - `"pre-accepted"` became `Pre-accepted`, not a Rust identifier: the variant rule uppercased the first letter but never **word-split**, which Paxos's `"1a"` had not forced;
+      - a **string literal in an argument position** the callee types as an enum stayed a `&str`;
+      - record constructors returned `int`, because the return type was read off the **emitted text** rather than the record literal's shape;
+      - **`CHOOSE` now translates directly** to Verus's `choose` — both are Hilbert's epsilon and both deterministic in the predicate — which is what `Max(s) == CHOOSE x \in s : \A y \in s : x >= y` needs;
+      - **`\E rec \in cmdLog[i] : ... /\ x' = ...`** — an action picking a record out of its own state. The binder is quantified in the conjunct, its updates are threaded into the frame computation, and it is **typed inside its own body**, without which `rec.status = "pre-accepted"` compares a string to an enum;
+      - EPaxos has a parameter literally called **`c`**; actions were not renaming their own parameters the way helpers already did;
+      - the emitted helper set was the **directly-called** one, so `NextSeq`'s call to `Max` produced a spec referencing `LMax` without defining it.
+    - [x] **A silent parser defect, found in passing** (2026-08-04): **`..` was parsed at the additive level**, so `1 .. MaxInstance + 1` became `(1 .. MaxInstance) + 1`. In TLA+ `..` is priority 9 and arithmetic is 10, so `+` binds tighter. This is the *silently wrong* class — `0 .. N - 1`, which `t0_01_simple` uses for its node set, was mis-parsed the whole time. It never changed a golden because the node set survives as rendered text, but it would have the moment anything computed with it.
+    - [x] **And a projection hazard closed with it**: an unresolved identifier used to project **to itself**, so `\E v \in Nat` emitted `Nat.contains(v)` against a `Nat` that does not exist. A quantifier domain must now be *known* to be set-valued. The test that had used `CHOOSE` as its example of an unprojectable construct was rewritten around this, since `CHOOSE` now translates.
+- [x] **53.5** Tier-3: Jetpack — clean-rewrite + Phase 51 partial golden.
+  - [x] **53.5.a** Jetpack intake + measurement (2026-08-04). `original.tla` is the **composition** module (`jetpack_raft_composition.tla`) — the only one of the three with `Init`/`Next`/`Spec`; `jetpack.tla` and `base_raft.tla` sit beside it as `original_jetpack_layer.tla` / `original_base_raft.tla`.
+    Getting there needed **two parser gaps closed**, both of which the earlier tiers had never exercised:
+    - **Set comprehension over more than one binder** — `{ [cmd_id |-> id, key |-> k] : id \in CmdId, k \in Key }`. Added `TlaExpr::SetMapMulti`, kept separate from `SetMap` so the single-binder form — what almost every spec writes — keeps its shape and its handling.
+    - **`LAMBDA`** — `SelectSeq(seq, LAMBDA x : x # NoOpCmd)`. TLA+ allows an anonymous operator only where an operator is expected, so it is a value in the AST and nowhere else. The global-model translator says "unsupported" for both rather than emitting something for a different expression; the clean-subset pipeline is what handles them.
+    **Clean-distance 2, and it is NOT comparable to the other cases** — recorded as such in the manifest. The composition module has **no type invariant**, so the linter cannot identify the node set and never reaches C1/C2 at all. The two findings are the message *array* (C4: `messages` is only ever updated with `EXCEPT`, i.e. a per-connection queue structure) and that failure itself (C5). Reading "2" as "nearly clean" would be badly wrong: the real distance is unmeasured, and the rewrite has to supply the declarations before the interesting rules can even run.
+  - [x] **53.5.b** Jetpack clean-rewrite (2026-08-04). `clean.tla` = Phase 51's R1 slice — the recovery state machine `Ready -> Recovery -> AfterBeginRecovery -> AfterPrepare -> AfterAccept -> Ready` over fixed membership. The linter accepted it **first try**. Rewrite decisions, all recorded in `rewrite.md` with reasons rather than conveniences: the per-connection message bag → one tagged set with **consuming** receipt (Jetpack's `Discard`/`Reply` do consume — the per-spec fact Raft taught us to check); `\E qs \in JQuorum(new_view[i])` powerset → counting (P4); stored `br_responses`/`prep_responses` maps → **online aggregation** of `highestSeenBallot`/`highestSeenValue`, the same call Paxos's rewrite made; base protocol, client/execution layers, reconfiguration + views + `oepoch` all excluded, each with a stated reason (Q2 puts membership change outside the subset).
+  - [x] **53.5.c** **Jetpack translates, and the output verifies** (2026-08-04). `clean-tla` produced `golden.rs` **on the first attempt**, and it passed `verus -V no-solver-version-check --crate-type=lib` (`0 verified, 0 errors`) **on the first attempt** — the only case in the corpus to do either. That is not luck: **Raft is what paid for it.** Jetpack's `Set<LCommand>` values, its `LCommand` record, its named enum labels (`Ready == "ready"`) and its `0 .. MaxBallot` binder are every one of the type-shaped defects Raft exposed the day before.
+    **TLC closes the state space** at both 2 and 3 servers (`CmdId={c1}`, `Key={k1}`, `MaxBallot=1`, `Cardinality(msgs) <= 4`): 2.06M distinct / depth 66, and **19.5M distinct / depth 78** at three, `TypeOK` and `Consistency` holding, **0 states left on queue** in both. The three-server run is the one that counts — at two servers a majority is *both* replicas, so the quorum logic is degenerate and a broken `IsQuorum` would still pass. This is a **stronger** result than Raft, whose space does not close at all. `-deadlock` is required and is not a defect: `Ballot` is bounded, so a behaviour that exhausts it legitimately has no successor, and the first run found exactly that terminal state.
+    **Compared against `reference.rs`** (Phase 51's partial hand-written spec), in the golden's header: for every action Phase 51 wrote, the generated spec is the same spec — same online aggregation, same counting quorum, same Paxos safety core ("if any promise reported an accepted value, propose that value"). The generated spec is **more complete**, because 51.9 was never written: it has the whole BeginRecovery phase, both remaining senders, `LFinishRecovery`, and the `LMessage`/`LPacket`/dispatch/`LNext` scaffolding a hand-written spec has to invent. Two differences, neither the translator being wrong: Phase 51 added guards the *original* does not have (`clean.tla` is faithful to `jetpack.tla`), and the hand-written constants precompute `quorum_size` where the generated ones count — the same P4-shaped difference Paxos has.
+    Status `golden`, not `green`, and only for the reason Paxos is: V2 as defined is clean-vs-original, and the slice shares no observable with the composition module. That needs 53.6's spec-vs-spec comparator.
+- [x] **53.6** Rewrite playbook + TLC strong-fidelity script (clean-vs-original per case, per Q3/D2 bespoke comparator).
+  - [x] **53.6.a** **The comparator exists and works** (2026-08-04): `tests/corpus/scripts/tlc_fidelity.sh`. It dumps *both* specs' full state spaces with TLC's `-dump`, projects each state onto the variables the case declares in `observables.toml`, and diffs the two sets. Exit 0 equal / 1 differ / 2 setup error.
+    Three design decisions, each because the obvious alternative is wrong:
+    - **Not a refinement mapping.** `Spec => Abstract!Spec` is the strong TLA+ answer, but it needs the two specs to agree on every variable in the mapping — and a rewrite *deliberately deletes* variables (history variables, views), so the mapping does not exist.
+    - **Not `VIEW`.** TLC's `VIEW` would project for free, but it collapses the *fingerprint*, so TLC also stops **exploring** states whose view it has seen. An under-explored search cannot support a fidelity claim. Full dump, projection done here.
+    - **Hand-written TOML reader.** This box's Python is 3.10 — no `tomllib`, no `toml` package. The reader covers exactly the slice `observables.toml` uses and errors on anything else rather than ignoring it.
+  - [x] **53.6.b** **First case measured: `t1_02_twophase` is EQUAL** (2026-08-04). Observable `rmState` — the whole of 2PC's observable behaviour, being what `TCommit`'s `TCConsistent` is stated over. At `RM = {r1,r2,r3}`, `TM = r1`: 288 states each side, **34 distinct `rmState` values each side, sets identical**.
+    **And the check's real limitation, found by trying to break it.** Deleting `RMChooseToAbort` from `clean.tla` outright leaves the comparison reporting EQUAL — an RM still reaches `"aborted"` by receiving the TM's abort, so the state set is unchanged though a path is gone. **This compares reachable states, not reachable behaviours**, and no rewrite.md may report an EQUAL result as behavioural equivalence. Non-vacuity was then confirmed with a tamper that *does* remove states (deleting `RMPrepare`: 8 vs 34, 26 states only in the original, exit 1). The limitation is stated in the script's own header so it cannot be read off by accident.
+  - [x] **53.6.c** Apply to the remaining cases and write the rewrite playbook.
+    - [x] **`t1_01_paxos` is EQUAL** (2026-08-04), and getting there **corrected a claim already written into the case's rewrite.md**. It said the original could not be checked side by side because "there is no common observable" — its correctness being the `Voting` refinement. That was wrong: the common observable is the **acceptor triple** `maxBal`/`maxVBal`/`maxVal`, the whole of Paxos's safety-relevant state, and all three survive the rewrite under their own names. The `Voting` refinement is how the *original* states correctness; it is not what the two specs share. Result at 2 acceptors: 3,850 vs 145 raw states (26× apart, as expected — the clean spec carries five extra per-node variables for the leader role the original abstracts away) but **43 distinct observable states on both sides, identical**. Non-vacuity confirmed by deleting `Phase2b`'s `m.bal >= maxBal[a]` guard: 14 states only in clean, correctly reported in the *defect* direction.
+      Two arrangements, both written into `PaxosMC.tla` rather than done quietly: `Ballot == Nat` and `None == CHOOSE v : v \notin Value` are not enumerable, so TLC overrides them with `0..1` and `-1` — `-1` being the original's own "no ballot" sentinel and `clean.tla`'s `None`, so `maxVal` compares on behaviour rather than notation. Also needed: stub `TLAPS.tla` / `FiniteSetTheorems.tla`, because `Voting`/`Consensus` are proof modules and TLC only needs the cited names to resolve.
+    - [x] **Scalability fixed, after the comparator hit its own limit** (2026-08-04). The first Paxos attempt ran at three acceptors and produced a **5.7 GB state dump without finishing**; reading that into a list of dicts was never going to work. The parse is now **streamed**, so peak memory is the number of *distinct observable* states — the number the comparison is actually about — rather than the raw state count. The model was also cut to two acceptors, on the principle that **a closed comparison beats an unfinished one**, with what that costs (a degenerate majority) stated in `observables.toml` beside the config it applies to.
+    - [x] **`t0_01_simple` is EQUAL** (2026-08-04): 18 distinct `<<x, y>>` states on both sides at `N = 3` (293 vs 51 raw). This **generalises the hand-written anti-vacuity check** the case already had — "does the rewrite still allow reading a 0?" becomes "which `<<x, y>>` pairs are reachable?", and the answer is exactly the original's. `pc` is deliberately excluded: the clean spec adds a `"w"` state for waiting on the neighbour's reply, which the original has no counterpart for *because* its read is instantaneous, so comparing it would report the rewrite working as intended as a failure.
+    - [x] **`t0_05_lamport_mutex` is EQUAL** (2026-08-04): **8,562 distinct `<<clock, req, ack>>` states on both sides**. This case's rewrite.md had said outright that "the state counts are not comparable and are not expected to match" (1,064,028 vs 724,274) and deferred a real comparison to 53.6. That is now done: the *raw* counts are still incomparable, and *projected onto what the two specs share*, the sets are identical. `crit` is excluded because the original's is a global set and the rewrite's a per-node boolean — the C1 decision the case exists to make.
+    - [x] **The comparator's worst trap, found here** (2026-08-04). The first LamportMutex run reported **4,214 states only in the original** — a correct rewrite looking like it had lost behaviour. Cause: the clean side ran with `ClockConstraint /\ SeqConstraint` and the original with `ClockConstraint` alone, and **a state constraint applied to one side truncates that side**. Held equal, the specs are equal. The script now warns when the two sides declare different numbers of `CONSTRAINT`/`SPECIFICATION` lines, its header states the matched-model rule, and the case's `observables.toml` says why both use exactly one. An unequal result must be *diagnosed* before it is reported — this one would have been a false accusation against a correct rewrite.
+    - [x] **The rewrite playbook** (2026-08-04): `docs/clean_tla_rewrite_playbook.md`, linked from both the subset contract and the corpus README. Nine steps and a checklist, and **every step is one that went wrong at least once** — that is what makes it worth having rather than a restatement of C1–C5. The parts that only exist because a case taught them: read the clean-distance sceptically (a `null` node set means the number is a failure to measure, not a distance); *choose* the message-ification and know that the right choice differs by property (Simple's local cache breaks `PCorrect` while LamportMutex's "cache what you were told" is exactly right); read receipt semantics off the source rather than assuming; flattening channels drops ordering and TLC refutes it in 13 states; hold the model equal on both sides of V2 or a correct rewrite reads as a defect; and the test for **when not to rewrite at all** — would this be a rewrite of *this algorithm*, or a different algorithm solving the same problem? Bakery fails that test; DiningPhilosophers, which looks similar, passes it.
+
+  **V2 scoreboard so far** — every case with a shared observable is EQUAL: `t0_01_simple`, `t0_05_lamport_mutex`, `t1_01_paxos`, `t1_02_twophase`. Not applicable: `t0_02_bakery`/`t0_04_readers_writers` (reject-only), `t3_01_jetpack` (the slice shares nothing with the composition module). Outstanding: `t2_01_raft`, whose state space does not close.
+
+### Files
+
+`transpiler/tests/corpus/`; plan §3.
+
+---
+
+## Phase 54: Explicit Quantifier Triggers — 🔝 TOP PRIORITY (current work)
+
+### Background (2026-08)
+
+Verus reports **534 `automatically chose triggers for this expression` notes** on a full
+verification pass (`0.2026.08.02`, `1044 verified, 0 errors`). All 534 are in our own code —
+none come from `vstd`.
+
+Raised by the Verus team while evaluating tla-rs as a compatibility test target:
+
+> The trigger notes suggest some instability that may make it not work well with future
+> versions of Verus.
+
+The concern is well-founded. When Verus picks triggers automatically, the choice is an
+implementation detail that can change between releases. A change silently alters which
+quantifier instantiations the solver performs, so a proof that verifies today can fail
+tomorrow — and the failure surfaces as `rlimit exceeded`, which carries no information about
+the cause.
+
+We already paid this price once. `lemma_getsent2b_value_matches_candidate`
+(`common_proof/learner_state.rs`) sat broken for five months; the root cause was
+quantifier-instantiation blowup and the only symptom was a resource-limit error. Nine
+structural fix attempts failed before the real fix (further decomposition) landed. Explicit
+triggers are the standing defence against that class of failure.
+
+### Scope
+
+534 notes, split by whether the source is editable:
+
+| Location | Count | How to fix |
+|---|---|---|
+| `src/protocol/Raft/` | 177 | edit source |
+| `src/protocol/RSL/` | 131 | edit source |
+| `src/implementation/RSL/` | 101 | edit source |
+| `src/common/`, `src/verus_extra/` | 16 | edit source |
+| **`src/generated/RSL/`** | **109** | **fix transpiler codegen, then regenerate** |
+
+The 109 generated ones must not be hand-edited (see `CLAUDE.md`). They come from
+`replica_gen.rs` (44), `proposer_gen.rs` (25), `election_gen.rs` (17), `executor_gen.rs` (10),
+`learner_gen.rs` (7), `acceptor_gen.rs` (4), `broadcast_gen.rs` (2) — so the fix is a
+codegen change in `transpiler/src/` plus `scripts/regenerate_all.sh`.
+
+By trigger count: 447 expressions got a single trigger, 73 got two, 14 got three. The
+single-trigger cases are the ones most likely to be over- or under-restrictive.
+
+Also in scope, same class of problem, much smaller: **5 `broadcast` functions without an
+explicit `#[trigger]`** (`cmessage.rs`, `types_i.rs`, `io_s.rs`). Broadcast axioms are in
+scope for every proof in the crate, so a bad auto-chosen trigger there is global.
+
+### Why this is not mechanical
+
+Adding `#[trigger]` changes solver behaviour. Three ways it can go wrong:
+
+- **Too restrictive** — the needed instantiation never fires; the proof fails outright.
+- **Too permissive** — instantiation explodes; the proof hits `rlimit`.
+- **Silent slowdown** — it still verifies, but a later change tips it over the limit.
+
+So each annotation needs re-verification, and a batch that verifies is not yet known to be
+*stable* — wall-clock per module should be recorded before and after, since a proof that got
+2× slower is a regression even when green.
+
+### Plan
+
+- [x] **54.1** Tooling: script that parses a verification log into
+      `(file, line, expression, chosen triggers)` and diffs two runs. Without this, progress
+      is unmeasurable and regressions are invisible. Output checked in under `reports/`.
+      **DONE (2026-08-04).** `scripts/trigger_inventory.py` (parse/report/diff) +
+      `scripts/collect_trigger_inventory.sh` (one-command capture) + 27 tests over two
+      checked-in real Verus logs. Manual + rationale: `docs/phase54-trigger-workflow.md`;
+      artifacts land in `reports/triggers/`. The diff splits changes into **removed**
+      (progress), **added** (regression) and **changed** — same expression, different
+      auto-chosen terms. That third category is the one this phase exists for: it moves no
+      counter, so a note-count check cannot see it. Entries are keyed on
+      `(file, normalised expr, ordinal)`, not line numbers, so edits above a quantifier do
+      not read as remove+add. `--fail-on-regression` / `--max-notes` are ready for 54.9.
+- [x] **54.2** Baseline at `0.2026.08.02`. **DONE — and the recorded blocker was false.**
+      This item said the baseline "cannot be produced on this dev box" because the pinned
+      verus needs glibc ≥ 2.39 and the box has 2.35. That is the same claim corrected at the
+      start of the 2026-08-05 session: only the *launcher* needs the newer glibc, `rust_verify`
+      needs 2.34, and reproducing the launcher's three environment variables runs it fine —
+      which is what `scripts/verify_local.sh` does and what every measurement in Phases 54 and
+      42.8.c since has used.
+      The artefacts exist and are at the pinned version: `reports/triggers/baseline.{json,md}`
+      (534 notes, 635 trigger choices, 180 multi-line) and
+      `reports/triggers/timing-baseline.{json,md}` (142 modules, min of 3 runs). Every later
+      diff in this phase was taken against them.
+      Kept as a caution rather than deleted: a recorded environment blocker is worth
+      re-testing before it is built on, because this one shaped several items' plans while
+      being wrong.
+
+### Residual after 54.3–54.8: 122 notes
+
+| where | count | why it remains |
+|---|---:|---|
+| `src/generated/RSL/` | 109 | 54.7. Superseded by the measured attribution in Current Status (2026-08-05): of the 103 now remaining, **36** are deliverable by regeneration (all in replica, gated on 42.8.c.2.iv.J), 14 are transpiler-emitted but an unhandled shape, and **53** sit in `skip_functions` or preserved bodies that regeneration never rewrites. The 60/49 split here predates the tool and mixed the two dimensions. |
+| `src/protocol/Raft/refinement_proof/invariants.rs` | 11 | trigger belongs to a nested quantifier; the note points at the outer binder |
+| `src/protocol/RSL/refinement_proof/state_machine.rs` | 1 | same nested-quantifier shape |
+| `src/implementation/RSL/cconfiguration.rs` | 1 | same |
+
+**Superseded 2026-08-05 — only 2 of these 13 were really nested; see the acceptance row.
+The other 11 are pinned.** The remaining 2 need the enclosing expression restructured (hoist the inner
+quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
+they are the honest remainder of the "not mechanical" warning in this phase's premise.
+- [x] **54.10.b — "emitted" was inferred, not measured; the true count was 3, not 13.**
+      `classify_trigger_notes.py` decided its `generated` category by *absence* — not in
+      `skip_functions`, not preserve-listed — and called the result transpiler output. That
+      is not the same thing: a hand-written helper can simply live in a generated file and
+      appear in no config at all. Found by going to fix the "10 remaining emitted notes" and
+      failing to find any emission site in the transpiler; checking fresh output showed
+      **none of the 10 are emitted** (`abstractify_endpoint_seqno_map`,
+      `lemma_creplycache_get`, the proposer bridge lemmas, …). The 3 that really were
+      emitted are exactly the 3 that 54.7.e cleared, which is the confirming evidence.
+      Fixed by verifying against fresh output: `--fresh-dir` classifies precisely, and
+      without it the notes are reported as `unverified` rather than assumed actionable.
+      `trigger_exceptions.py`'s category renamed `generated-emitted` → `generated-unlisted`
+      with a corrected description. 5 new tests, including that an unverified run claims
+      nothing.
+      **Consequence: Phase 54 has no codegen work left.** All 74 remaining notes are
+      hand-written bodies, so the phase is now entirely behind the `CLAUDE.md` question in
+      54.7.c/d.
+- [x] **54.10.a — the `changed triggers` false positive, FIXED 2026-08-05. My recorded
+      diagnosis was wrong and the real cause is narrower.** I wrote that the diff keys on
+      `file:line`. It does not — `entry_key` was already
+      `(file, expression text, ordinal)`. The actual cause: the "expression text" is the
+      **underlined span**, and Verus underlines only the `assert` keyword on an
+      `assert forall`. So all 13 assert sites shared the identity `"assert"` and were told
+      apart by ordinal alone; annotating one shifted every later ordinal, and each entry got
+      paired against its neighbour.
+      Fixed by keying on the whole quoted source region (`source_text`) instead of the span.
+      **Measured on the real 74-note inventory**, simulating the same edit: old identity
+      reports `removed=1 changed=3`, new identity `removed=1 changed=0`. Three tests,
+      including one that a *genuine* re-choice is still reported — a fix that suppressed
+      real signal along with the noise would be worse than the noise.
+      An inventory captured before this carries no `source_text`, so `diff` falls back to the
+      coarse key **for both sides** rather than reporting every entry as removed-and-added;
+      that path is tested too.
+- [x] **54.7.e — the 3 learner map-lemma notes (2026-08-05).** `generate_map_proof_lemmas`
+      now emits `#![trigger abs2[ak]] #![trigger expected[ak]]` on the value-equivalence
+      `assert forall`. The triggers pinned are **exactly what Verus was already choosing**
+      (reported as trigger 1 and 2 of 2), so the instantiation does not change and only the
+      note goes away — which is the point, since an auto-chosen trigger can move between
+      releases. 77 → 74, `1046 verified, 0 errors`, 0 added.
+      The *key-set* assert in the same lemmas (`abs2.contains_key(ak) == expected.contains_key(ak)`)
+      is deliberately left alone: it emits no note, so there is no chosen trigger to pin and
+      annotating it would be a change with no evidence behind it. The test says so.
+      **The "remaining 10 emitted notes" recorded here were not emitted at all** — see
+      54.10.b. Looking for their emission sites in the transpiler is what exposed it: they
+      are not there.
+- [x] **54.9.b — ceiling tightened to 77 (2026-08-05)**, from the stale 120 that would have
+      allowed 43 notes of silent regrowth. Verified the guard actually bites: it passes at 77
+      and exits 1 at 78. The baseline was refreshed at the same time, which also resolved the
+      3 "changed triggers (instability)" the old 2026-08-04 baseline reported — those are
+      **line drift, not instability**: the same three trigger strings rotated across three
+      `proposer_gen.rs` asserts that moved when the file was regenerated. Diffing by
+      `file:line` cannot tell a rotation from a re-choice; the multiset is identical.
+      `reports/triggers/exceptions.md` regenerated (13 emitted + 64 preserved = 77), and both
+      of its reason narratives were stale and are corrected: the emitted group no longer
+      claims to be waiting on a blocked merge, and the preserved group no longer recommends
+      extracting to `*_manual.rs` — which `CLAUDE.md` forbids, and which mis-stated the facts
+      by claiming executor already does it (only acceptor does).
+- [x] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
+      ceiling, so this does not silently regrow. **Mechanism DONE (2026-08-04); the number
+      it enforces arrives with 54.2.b.** `trigger_inventory.py guard` + a new
+      `Guard trigger inventory` CI step. Design points:
+      (a) the ceiling lives in `reports/triggers/ceiling.json`, so raising it is a
+      reviewable diff with a stated reason rather than a workflow edit;
+      (b) it ships `enforce=false, max_notes=null` — the guard reports the measured count
+      and passes, because asserting a number nobody has measured on the pinned release
+      would be either vacuous or red-for-the-wrong-reason. 54.2.b sets it;
+      (c) with a committed baseline it also fails on **changed** trigger choices, not just
+      added notes — the count can stay identical while the solver instantiates different
+      terms, which is the whole reason this phase exists;
+      (d) a capture-mode mismatch (`selective` vs `all-modules`) exits 2 rather than
+      comparing incomparable numbers;
+      (e) an empty capture (verification failed early, so Verus printed no notes) is never
+      judged against a ceiling;
+      (f) `set -o pipefail` in the step, because the guards pipe into `tee` and would
+      otherwise exit 0 and silently stop guarding.
+      The timing half reuses `verus_timing.py diff --max-regression-pct 20
+      --fail-on-regression`, skipped with a message until `reports/triggers/timing-baseline.json`
+      exists. 21 new tests, incl. a guard that an `enforce=true` ceiling must carry a number.
+
+### Acceptance — status 2026-08-05
+
+| criterion | status |
+|---|---|
+| 0 `automatically chose triggers` notes, **or** a checked-in list of the deliberate exceptions with a reason for each | **MET via the list.** 534 → **120**. `reports/triggers/exceptions.md` accounts for every remaining note. **Corrected 2026-08-05**: the 107 in `src/generated/` were all labelled "transpiler output, blocked on regeneration". Measuring the enclosing function against each module's `skip_functions` shows **80 are transpiler-emitted** (these do clear when 42.8.c lands) and **27 sit in preserved hand-written bodies** — regeneration copies those through verbatim, so 54.7.b can never clear them however the merge goes. Now two categories with separate reasons. **Corrected again**: 534 → **105**. The nested-quantifier group was a *catch-all* ("not under `src/generated/`"), applied without measuring; the trigger Verus actually chose is the whole `ds.network.contains(LRaftPacket {…})` term, which mentions every bound variable, so **11 of those 13 were pinnable** and are now pinned. Acceptor's 4 were delivered via `acceptor_manual.rs` (54.7.b). **And the last 2 were pinnable too** — their notes sit on the *inner* `exists`, not the outer `forall`, so the trigger names only what that binder binds. 534 → **103**, and **every remaining note is in `src/generated/`**. Standing split (corrected 2026-08-05): **50 generated-emitted + 53 generated-preserved**. The first classifier used `skip_functions` membership, but a function can be emitted fresh and still have its body preserved by `merge_generated.py --preserve` — true for the 17 `&mut self` actions whose fresh output is an `assume(false)` stub. Thirty notes were counted as cleared-by-regeneration when regeneration can never reach them. The catch-all rule is renamed `unclassified` and now tells the next reader to measure the chosen trigger before writing a note off — all 13 in that group turned out to be pinnable. Generated from a measured inventory by `scripts/trigger_exceptions.py`, and CI runs `--check` so it cannot silently drift. |
+| `1044 verified, 0 errors` still holds | **MET.** Now **1045**, 0 errors — the extra function came from regenerating `broadcast_gen.rs`, which had lost a proof helper. |
+| No module's verification wall-clock regresses more than 20% against the 54.2 baseline | **MET.** Measured min-of-3 on both sides at each batch; the crate ended up **faster** (54.8: −4.4%). |
+| CI guard from 54.9 in place | **MET.** Note-count ceiling (ratcheted 534 → 120) plus the `changed`-trigger check against the committed baseline; timing is reported rather than gated because CI hardware differs from the baseline host (54.9.a). |
+
+**Phase 54 is complete against its stated acceptance criteria.** What remains is not
+trigger work: the 107 generated notes wait on RSL regeneration (Phase 42/21), and the 13
+nested cases wait on expression restructuring, both tracked in their own phases.
+
+
+### Priority (2026-08-05): clear the whole warning+note surface first
+
+A full pass on `0.2026.08.02` currently emits **881 warnings and 120 trigger notes**. The
+goal is to get both to zero, or to a checked-in list of deliberate exceptions. Ordered by
+value per hour, not by phase number:
+
+- [x] **54.10** One crate-level `#![allow(non_snake_case)]` in `src/lib.rs`.
+      **DONE (2026-08-05).** Do not rename: `LAcceptorProcess1a`, `CMessage`,
+      `LReplicaConstants` deliberately mirror the IronFleet Dafny identifiers, and that
+      correspondence is what makes the port auditable against the original. The attribute
+      carries that rationale as a comment so the next reader does not "fix" it.
+      `1045 verified, 0 errors`; **1016 → 130 warning lines**.
+
+      Measured census before (a full pass emits more than the 881 this item was written
+      from — that figure came from a partial log): **886 non_snake_case** = 699 function
+      + 99 method + 46 module + 30 variable + 12 field. Exact remaining 130, which is the
+      real backlog for 54.11–54.14 and is now readable:
+
+      | count | warning | item |
+      |---|---|---|
+      | 68 | deprecated `.finite()` — "Every Set is always finite" | 54.11 |
+      | 20 | `Set::new_assuming_finite` | 54.12 |
+      | 18 | autoderive `Clone` "not a copy" | 54.13 |
+      | 12 | autoderive `Clone` "does not take the form Verus expects" | 54.13 |
+      |  5 | comparison is useless due to type limits | 54.14 |
+      |  5 | broadcast functions should have explicit `#[trigger]` | **54.16** |
+      |  2 | rustc's own "N warnings emitted" trailers | — |
+
+- [x] **54.11** The 68 `use of deprecated method: Every Set is always finite, so this is
+      always true` warnings. **DONE (2026-08-05)** for all compiled modules — the warning is
+      at 0 and the crate total went 130 → 62. See 54.11.c for the 28 in the disabled lock
+      tree. These are `.finite()` calls that the `0.2026.08` `Set` change
+      turned into no-ops. Delete them. Mechanical, zero risk, but re-verify: removing a
+      no-op can still change what the solver has in scope.
+
+      Census (from the 54.10 pass, `/tmp/w1.log`) — **it does not all belong in one commit**:
+      `maps.rs` 17, `set_lib_ext_v.rs` 12, `sets.rs` 10, `learner.rs` 6,
+      `environment_s.rs` 5, `quorum.rs` 3, `chosen.rs` 3, `hashsets.rs` 3,
+      `refinement.rs` 2, `Raft/invariants.rs` 2, `learner_state.rs` 1, `environment.rs` 1,
+      `Raft/raft.rs` 1 — and **2 in `src/generated/Raft/raft_gen.rs`**.
+      **"Mechanical, zero risk" was wrong** — that judgement was made from the warning
+      counts without reading the sites. They fall into two genuinely different jobs:
+
+      - [x] **54.11.a.1** The 49 sites where the enclosing obligation *survives* the
+            deletion — a conjunct in a list, one clause of a multi-clause `requires`, a
+            standalone `assert(x.finite());`. **DONE (2026-08-05)**, 46 lines across 10
+            files, `1045 verified, 0 errors`.
+      - [x] **54.11.b** The 2 in `src/generated/Raft/raft_gen.rs`. **DONE (2026-08-05)**,
+            and neither was a transpiler bug: one was transcribed from
+            `src/protocol/Raft/raft.rs:272`, so removing it there and regenerating cleared
+            it; the other was a hand-injected precondition in
+            `raft_transpile.toml` under `CTryAdvanceCommitIndex`. Config is not generated
+            code, so it was removed at source and the file regenerated per CLAUDE.md.
+      - [x] **54.11.a.2** The 17 sites where the deletion makes an *enclosing obligation
+            vacuous*, so the edit is "delete the lemma and update its callers", not "delete
+            a line". Deferring these is why a.1 could be done safely at all.
+            **DONE (2026-08-05).** `1040 verified, 0 errors`; the `.finite()` deprecation
+            warning is now at **0** and the crate total is 130 → 62. Five proof functions
+            were deleted outright because their entire statement had become `true`:
+            `lemma_hashset_view_finite` (a `#[verifier::external_body]` *axiom* — it was
+            trusted, and is now not merely provable but trivial), `lemma_sentPackets_finite`,
+            `lemma_environment_next_preserves_sentpackets_finite`, `map_fold_finite`,
+            `map_finite`, `map_set_finite_auto`, plus the `assert forall … by { … }` block
+            in `learner_state.rs` — with all 9 call sites updated. Three functions kept
+            their bodies and lost only a vacuous clause (`lemma_set_u64_to_int_len`,
+            `map_fold`, `map_fold_ok`). `set_fold`'s `if s.finite() { … } else { zero }`
+            guard existed to make the recursion well-founded over infinite sets; with none
+            left the `else` branch is dead, and Verus accepts `decreases s.len()` without
+            it. Verified-function count drops 1045 → 1040 because five fewer functions
+            exist, not because anything went unproven.
+            - 3 block-form clause lists whose every clause was a finiteness claim:
+              `hashsets.rs:138` (`requires`), `hashsets.rs:274` (`ensures`),
+              `environment_s.rs:151` (`ensures`) — deleting the clause leaves a bare
+              keyword, i.e. a syntax error, and the surrounding lemma now proves nothing.
+            - `common_proof/environment.rs:42` `lemma_sentPackets_finite` — sole `ensures`,
+              `pub`, self-recursive. Entirely vacuous; delete with its callers.
+            - `common_proof/learner_state.rs:113` — an `assert forall … implies
+              ….finite() by { … }` block whose conclusion is now `true`. Delete the block.
+            - 12 in `verus_extra/set_lib_ext_v.rs`: `map_fold_finite`, `map_finite`,
+              `map_set_finite_auto` are lemmas whose entire statement is a finiteness
+              claim, and `set_fold`/`map_fold` guard their recursion on `if s.finite()`.
+              **None of the five has a single caller outside the file** — checked — so this
+              is a deletion, not a refactor. But they are `pub` utility API in a ported
+              set library, so deleting is a judgement call worth making deliberately: the
+              alternative is keeping them with `#[allow(deprecated)]` and a note that they
+              are trivially true under vstd 0.2026.08.
+      - [x] **54.11.c** The 28 `.finite()` calls in the lock tree. **Closed 2026-08-05 as
+            not worth doing, and the reason changes the framing.** I had recorded these as
+            "they will regrow when the lock tree is re-enabled". Checking the history: both
+            `src/protocol/mod.rs` and `src/services/mod.rs` have carried `// pub mod lock;`
+            **since the initial commit** — `7fdd2080` only deleted a *duplicate* commented
+            declaration. The tree has never compiled in this repo; it is inherited dead code
+            from the IronFleet port, not something switched off pending a return.
+            Nothing outside it references it (checked). It is **1,689 lines across 10 files**.
+            Deleting 28 no-op `.finite()` calls in never-compiled code is busywork, and worse,
+            unverifiable — no Verus run covers it, so an edit could break it silently.
+            **The real question is whether the tree stays at all**, which is a judgement call
+            worth making deliberately rather than as a side effect of a warning sweep:
+            delete it, or re-enable it and fix what that surfaces. Either is a proper task;
+            neither is "tidy the finite() calls".
+      - [x] **54.12.a** The 6 hand-written map-domain sites: `types_i.rs` 324/461/570
+            (`abstractify_creplycache`, `abstractify_cvotes`, `abstractify_clearnerstate`) and
+            `ProposerImpl.rs` 108/132. **DONE (2026-08-05)**, `1040 verified, 0 errors` with
+            **no proof breakage at any call site**. One wrinkle worth keeping: for `u64` keys
+            the map function is `|k: u64| k as int`, not `|k: u64| k@` — `u64`'s view is the
+            identity, and the old code only type-checked because `k@ == ak` coerced.
+      - [x] **54.12.b** `src/generated/RSL/proposer_gen.rs`. — **DONE 2026-08-05, and the
+            recorded reason it was blocked was wrong.**
+            This said the template is fixed so "this clears itself whenever the file is next
+            regenerated". Measured: `abstractify_endpoint_seqno_map` is **not in fresh
+            transpiler output at all** (which contains 0 `new_assuming_finite`), so it is a
+            hand-written body and regeneration would never have cleared it. Same error as
+            54.10.b — provenance inferred rather than measured.
+            Fixed directly, which the amended `CLAUDE.md` permits: the domain is the image of
+            the map's keys under `@`, so `m.dom().map(|k: EndPoint| k@)` states it exactly and
+            is finite by construction — no assumption, where `Set::new_assuming_finite` is
+            deprecated as "dangerous since it assumes the given function describes a finite
+            set".
+            **It cost three proof steps, and that is the honest price**: `Set::map` is
+            `closed`, so `lemma_abstractify_endpoint_seqno_insert` lost the membership fact it
+            had been reading straight off the old predicate. It needed
+            `broadcast use vstd::set::Set::lemma_map_contains`, an explicit witness
+            (`choose |ep| old_m.dom().contains(ep) && ep@ == ak`) and carrying that witness
+            across the insert. The `choose` then produced a *new* auto-chosen note, pinned
+            with `#![trigger ep@]` to hold the zero.
+            **The crate is now 0 warnings, 0 trigger notes, `1048 verified, 0 errors`.**
+            *(original item)* The template it comes from
+            (`types_transpile.toml`, `LProposer.highest_seqno_requested_by_client_this_view`)
+            **is fixed**, so this clears itself whenever the file is next regenerated.
+            It cannot be regenerated now: fresh transpiler output differs from the checked-in
+            file by ~1200 diff lines (hand-written `skip_functions` bodies and the manual
+            Arc patch), which is exactly the merge stuck at **42.8.c.2.iv**. Blocked there,
+            not here — and per CLAUDE.md the generated file must not be hand-edited.
+      - [x] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs` —
+            **DONE (2026-08-05)**, c.1/c.2a/c.2b/c.2c all complete.
+            **Measured (2026-08-05), and the earlier sketch was wrong on one point.** It
+            proposed `flatten_set_seq` from `verus_extra/set_lib_ext_v.rs` for `requests` and
+            a `Set::<int>::range`-based pair set for `replies`. vstd in fact has
+            `Seq::flat_map` and `Seq::to_set`, which express *both* — `replies` is
+            `Seq::new(len, |b| Seq::new(.., |r| GetReplyFromRequestBatches(..))).flatten().to_set()`
+            — and `Seq::to_set` is finite by construction, so nothing is assumed. No
+            `Set::range` gymnastics needed.
+            The genuinely missing piece was **membership**: vstd proves `flatten`'s length,
+            its `flatten_alt` equivalence, `push` and singleton behaviour — and nothing about
+            what it contains. The refinement proof reasons about these sets almost entirely
+            through `.contains`, so that lemma is the whole bridge.
+            - [x] **54.12.c.1** `lemma_flatten_contains` in `verus_extra/seq_lib_v.rs`.
+                  **DONE (2026-08-05)**, `1042 verified, 0 errors`, trigger diff
+                  **0 added / 0 removed / 0 changed** after pinning the two `choose` binders
+                  (unpinned they added 2 auto-chosen notes; Phase 54 exists to prevent exactly
+                  that). Additive — no existing proof touched, so no regression risk.
+                  Worth recording how it had to be proved: the induction step is done at the
+                  level of `to_set`, not `contains`. vstd has **no membership lemma for
+                  `Seq::add`**, so `first().add(drop_first().flatten())` cannot be taken apart
+                  directly. Routing through our own `lemma_to_set_distributes_over_addition`
+                  gives `(a + b).to_set() == a.to_set() + b.to_set()`, and `to_set_ensures`
+                  carries it back. The solver does not chain those hops on its own — each one
+                  is written out.
+            - [x] **54.12.c.2a** `lemma_requests_contains` in `refinement.rs`.
+                  **DONE (2026-08-05)**, `1043 verified, 0 errors`, notes 120.
+                  Bridges `batches.flatten().to_set().contains(req)` to the two-level indexed
+                  form the refinement proof actually reasons with. It does **not** follow from
+                  `lemma_flatten_contains` alone: that gives `exists i. batches[i].contains(req)`,
+                  and reaching `exists i, j. batches[i][j] == req` needs `Seq::contains`
+                  unfolded with an explicit witness in each direction. Trigger is
+                  `batches[batch_num][req_num]` — anything on `.len()` fails
+                  "trigger does not cover variable req_num".
+            - [x] **54.12.c.2b** `lemma_replies_contains` + convert `ProduceAbstractState`.
+                  **DONE (2026-08-05)**, `1044 verified, 0 errors`, notes 120,
+                  `Set::new_assuming_finite` warnings **10 → 6**.
+                  `lemma_replies_contains` went through first try, reusing the witness
+                  structure the request bridge established — the only extra work was
+                  unfolding the inner `Seq::new` to relate `rs[i][j]` to
+                  `GetReplyFromRequestBatches(batches, i, j)`. `ReplySeqFromRequestBatches`
+                  names that sequence so the definition and the lemma refer to one thing.
+                  Both `let`s in `ProduceAbstractState` are now
+                  `<seq>.flatten().to_set()`: **finiteness is established, not assumed.**
+                  The 6 predicted call sites needed the bridge inserted, and two set
+                  equalities had to become explicit `assert forall … <==> …` plus `=~=`
+                  rather than `==` — with membership no longer definitional, extensionality
+                  is not automatic. `rs_prime` is over `batches.drop_last()`, so those blocks
+                  need the bridge at *both* sequences.
+                  Done additively: the bridge lemma was committed green before the definition
+                  swap was attempted, so the tree was never left half-migrated.
+            - [x] **54.12.c.2c** `ProduceIntermediateAbstractState`. **DONE (2026-08-05)**,
+                  `1046 verified, 0 errors`, notes 120, trigger diff 0/0/0.
+                  **`Set::new_assuming_finite` is now gone from all hand-written code** — the
+                  only 2 warnings left in the crate are 54.12.b's generated site, blocked on
+                  the 42.8.c merge, and its template is already fixed. Crate warnings: 3.
+                  Its per-batch bound is `if bn == last { reqs_in_last_batch } else {
+                  batches[bn].len() }`, so it needed `IntermediateBatchLen` plus bounded
+                  `IntermediateRequestSeq`/`IntermediateReplySeq` and their two bridges,
+                  rather than reusing the unbounded ones. The
+                  `batches.drop_last().push(batches.last().take(n))` idea floated earlier was
+                  not needed — a bound function is simpler and works for replies too, which
+                  that idea did not cover.
+                  Both bridges proved first try, reusing the witness structure from c.2a/c.2b.
+                  Callers needed the intermediate bridge at whichever `n` their state used —
+                  `0`, `reqs_in_last_batch`, `reqs_in_last_batch + 1`, and
+                  `batches.last().len()` all appear — and two `==` set assertions again had to
+                  become `assert forall … <==> …` plus `=~=`.
+                  Two `assert forall`s picked up auto-chosen triggers (120 → 122) and are
+                  pinned; a change made *for* Phase 54 should not leak new notes.
+      - [ ] ~~superseded~~ original 54.12.c note (64/69 in
+            `ProduceAbstractStateFromBatches`, 82/87 in `ProduceAbstractState` — 4 warnings,
+            3 distinct shapes). These build `{req | ∃ batch_num, req_num. bounds ∧ …}` over a
+            `Seq<RequestBatch>`, i.e. the image of a finite *index* set, and they sit in
+            `pub open spec fn`s that the entire refinement proof unfolds. Needs design, not a
+            substitution — sketch of the two candidates:
+            - `requests` is a flatten: the union of every batch's elements. `flatten_set_seq`
+              and `lemma_flatten_set_seq_spec` already exist in `verus_extra/set_lib_ext_v.rs`
+              and fit directly (`flatten_set_seq(batches.map_values(|b| b.to_set()))`).
+            - `replies` is not a flatten — it is the image of index *pairs* under
+              `GetReplyFromRequestBatches(batches, b, r)`. That needs a finite set of pairs
+              built from `Set::<int>::range`, then `.map`. No `flat_map` in vstd's `Set`, so
+              this likely goes through `flatten_sets` from the same module.
+            Budget this as its own task: changing these definitions ripples through every
+            proof that unfolds them, so it is not a <500-line edit until measured.
+
+- [x] **54.13** The 30 autoderive-`Clone` warnings — **DONE (2026-08-05)**, all four
+      sub-items complete; the warning is at 0. (18 "not a copy" + 12 "does not take the
+      form Verus expects"). Verus cannot spec the derived impl, so these types silently have
+      no `Clone` specification.
+
+      Assessed. Findings that change what should be done:
+      - The two warnings are **one phenomenon split by shape**: every "does not take the form
+        Verus expects" is an `enum`, every "not a copy" is a `struct` that derives `Clone`
+        without `Copy`. Not two problems.
+      - **Verus's suggested fix is the wrong one here.** It offers
+        `#[verifier::allow(autoderive_clone_without_spec)]`, which silences the warning and
+        keeps the gap. This codebase already has a better, established answer: a hand-written
+        `impl Clone` whose body is `self.clone_up_to_view()`, carrying that helper's
+        postcondition. It is **not** `external_body` — it adds no trusted code and gives
+        `.clone()` a real specification (`CElectionState`, `CLearnerTuple`, `CExecutor`
+        already do exactly this).
+      - So the honest fix is to *write the impls*, not to suppress — but only where a spec'd
+        clone helper already exists to delegate to, which is where the work divides.
+
+      - [x] **54.13.a** The 5 types with a plain `#[derive(Clone)]` **and** an existing
+            `clone_up_to_view`: `CAcceptor`, `CReplica`, `CConstants`, `CConfiguration`,
+            `CPacket`. **DONE (2026-08-05)**, `1040 verified, 0 errors`, warnings 52 → 47,
+            zero new trusted code.
+      - [x] **54.13.b** The 5 macro-wrapped types: `CRequest`, `CReply`, `CVote` (inside
+            `define_struct_and_derive_marshalable!`) and `CAppMessage`, `CMessage` (inside
+            `define_enum_and_derive_marshalable!`). **DONE (2026-08-05)**,
+            `1040 verified, 0 errors`, warnings 47 → 42.
+            The macro question resolved cleanly: both `define_*_and_derive_marshalable!`
+            capture `$( #[$attr:meta] )*` and forward it to two places — the regenerated type
+            definition, where the derive list matters, and `derive_marshalable_for_{struct,enum}!`,
+            which **never expands `$attr` at all** and contains no `clone`/`Clone` anywhere.
+            The attributes are matched only so the pattern binds. So dropping `Clone` from the
+            derive list cannot affect marshalling, and the `impl Clone` goes after the macro
+            invocation in its own `verus!` block.
+      - [x] **54.13.c** The 4 types with **no** spec'd clone helper to delegate to.
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 42 → 38. With this
+            **every hand-written autoderive-Clone warning is cleared**; all 16 that remain are
+            in `src/generated/`. Each of the four needed a different answer, which is why it
+            could not be pattern-substituted:
+            - `CIncompleteBatchTimer` — its only payload is a `u64`, so the clone genuinely
+              *is* a copy. `#[derive(Clone, Copy)]` is strictly better than writing an impl:
+              no new code at all, and Verus specs it directly. (This is the same fix noted
+              for the generated `CLogEntry` in 54.13.d.)
+            - `CScheduler` — became writable *because of 54.13.a*: its `replica: CReplica`
+              field only got a spec'd `.clone()` in that step, so the helper now composes.
+            - `CRequestHeader` — has no `View` impl, so the postcondition is stated over the
+              fields (`result.client@ == self.client@`, `result.seqno == self.seqno`), which
+              is exactly what the existing `eq_spec` already treats as this type's identity.
+            - `COutstandingOperation` — an enum, so the body matches per variant;
+              `CBallot` is `Copy` and the batch has `clone_request_batch_up_to_view`.
+      - [x] **54.13.d** The 16 in `src/generated/`. **DONE (2026-08-05)**,
+            `1041 verified, 0 errors`; the autoderive-`Clone` warning is now **0** and the
+            crate total is 27 → **11**.
+
+            The plan in this item was to extend the emitter to write `impl Clone` blocks for
+            the types it left on `#[derive]`. Classifying the 16 first showed something
+            better: **every one of them bottoms out in `u64`/`bool`**. The `CConstants` of five
+            protocols and Raft's `CLogEntry` are all-scalar structs; the eight message enums
+            carry only scalar payloads; `PrimaryBackup::CState` holds the unit enum
+            `CNodeRole`; `Raft::CRaftPacket` holds `CRaftMessage`. So the clone genuinely
+            *is* a copy in every case, and `#[derive(Clone, Copy)]` beats any impl —
+            no emitted code, nothing added to the trusted base, and Verus specifies it
+            directly. Had this been done as written it would have added 16 `external_body`
+            blocks to the trusted base for no reason.
+
+            Implemented as `compute_copy_spec_types` in `codegen/mod.rs`, generalising the
+            `unit_enums` mechanism that already existed (unit enums were the base case, and
+            only they were handled). It is a **fixpoint**, not a pass: `CRaftPacket` is Copy
+            only once `CRaftMessage` is, and a `HashMap` iteration could visit either first.
+            Conservative by construction — a `Seq`/`Set`/`Map` field, or a named type absent
+            from the registry, means not Copy. The unit test spends four of its eight
+            assertions on those negative cases, since deriving `Copy` where it does not hold
+            would not compile and deriving it on an unknown type would be a guess.
+
+            All 8 non-RSL protocols regenerated; every `*_types_regen_matches_checked_in`
+            test passes.
+
+- [x] **54.14** The 5 `comparison is useless due to type limits` — **DONE (2026-08-05)**,
+      both sub-items complete; the warning is at 0. The guess was right —
+      all five are `x >= 0` (or `x <= u64::MAX`) on a `u64` — but checking intent was worth
+      it, because the two classes have different causes and only one is a code smell.
+
+      - [x] **54.14.a** The 3 hand-written: `ElectionImpl.rs:252` (`0 <= lengthBound`),
+            `ProposerImpl.rs:602` (`opn >= 0`), `cconstants.rs:157` (`my_index >= 0`).
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 38 → 35.
+            These are *faithful* renderings of int-level spec bounds — `LReplicaConstantsValid`
+            really does say `0 <= my_index`. The conjunct is redundant only because the exec
+            type is `u64`, so deleting it loses nothing and the spec still states the bound;
+            each deletion is marked with a comment saying so, since it otherwise reads like
+            a missing check.
+      - [x] **54.14.b** The 2 in `src/generated/Raft/raft_gen.rs` (856, 864).
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`; the
+            `comparison is useless` warning is now **0** and the crate total is 30 → 27.
+            Fixed in the transpiler (`translator/mod.rs`, `is_vacuous_unsigned_bound` +
+            an `||` collapse in `transform_binary_op`), then `raft_gen.rs` regenerated —
+            **not** hand-edited, per CLAUDE.md.
+            The fold is deliberately narrow: it fires only when the left operand is an
+            *input parameter whose spec type is `int`* (so the narrowing is known to have
+            happened) and `config.int_type` is unsigned. Folding `x < 0` for a signed or
+            unknown `x` would silently change behaviour, so the unit test
+            `test_vacuous_unsigned_bound_folding` spends most of its assertions on the
+            negative cases: `Nat`-typed params, non-parameter operands, field accesses,
+            a signed `int_type`, and `>` / `<=` against 0.
+            Blast radius checked by regenerating: **only `raft_gen.rs` changed**, 2 lines,
+            and every other protocol's `*_regen_matches_checked_in` test still passes.
+
+      - [x] ~~**54.14.b** (original text)~~ The 2 in `src/generated/Raft/raft_gen.rs`. Unlike the
+            above these are **dead branches, not dead conjuncts**: the whole condition
+            `(*follower_id) < 0 || (*follower_id) > (u64::MAX as u64)` is constantly false,
+            so its arm — including a `proof { lemma_empty_msg_map(); }` — is unreachable.
+            The source is legitimate: `raft.rs:506` declares `follower_id: int`, where
+            `follower_id < 0 || follower_id > u64::MAX as int` is a real check. The transpiler
+            narrows `int` to `config.int_type` (`u64` here; see `translator/mod.rs:7846` and
+            `:8357`) and then translates the guard mechanically, at which point it cannot fire.
+            Fix belongs in the transpiler — elide a range guard that is vacuous under the
+            narrowed type — and wants a unit test, since it changes emitted output for every
+            protocol. `raft_gen.rs` regenerates cleanly (unlike 54.12.b's `proposer_gen.rs`),
+            so this is unblocked, just not a one-line edit.
+
+- [x] **54.16** The 5 `broadcast functions should have explicit #[trigger] or #![trigger ...]`.
+      **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 35 → 30, and the trigger
+      inventory diff is **0 added / 0 removed / 0 changed** — the evidence this item
+      specifically needed, since a broadcast axiom is in scope for every proof in the crate.
+
+      Two attempts were needed, and the failed one is the informative part:
+      1. **Inline `#[trigger]` inside the `forall` did not work.** vstd's own broadcast
+         lemmas are written that way, and in Verus several inline `#[trigger]` marks in one
+         quantifier form a single multi-trigger — semantically identical to the
+         `#![trigger e1@, e2@]` these already had. It verified, and the warning stayed at 5.
+      2. **Lifting the binder into the function's own parameters worked.** The check looks at
+         the *top level of the `ensures`*; with no parameters the quantifier is internal and
+         there is nothing there to mark. `axiom_endpoint_view(e1: EndPoint, e2: EndPoint)`
+         with `ensures #[trigger] e1@ == #[trigger] e2@ ==> e1 == e2` puts the trigger where
+         the check looks and gives the same `broadcast_forall`.
+
+      Safe because **every use is `broadcast use <name>;`** — checked, no direct calls — and
+      `broadcast use` passes no arguments, so the signature change reaches no call site.
+      `axiom_endpoint_view` alone is broadcast-used at ~20 places, so 0 errors across them is
+      a strong check that the trigger semantics really are unchanged.
+
+      Original 54.16 text follows.
+
+      Surfaced by 54.10; see the amendment on 54.4. The 5 are the injectivity axioms
+      `axiom_endpoint_view` (`io_s.rs:123`), `axiom_cmessage_view`/`axiom_cpacket_view`
+      (`cmessage.rs:222,294`), `axiom_cvote_view`/`axiom_clearner_tuple_view`
+      (`types_i.rs:377,550`). All five have the shape
+      `ensures forall |a, b| #![trigger a@, b@] a@ == b@ ==> a == b`, and all five still warn;
+      the 3 `*_key_model` axioms, whose ensures is unquantified with an inline `#[trigger]`,
+      do not. So Verus's check wants the trigger on the *ensures term itself* and does not
+      credit one attached to a nested binder. Highest-stakes item left in the warning
+      backlog: a broadcast axiom is in scope for every proof in the crate, so an
+      un-pinned one applies crate-wide on whatever term Verus picks. Fix is likely to lift
+      the binder into the function's own parameters (the vstd idiom) — confirm against vstd
+      before rewriting, and re-run the trigger diff, since changing a broadcast trigger can
+      move proofs anywhere.
+
+- [x] **54.18** The integration suite raced nested `cargo` builds. **DONE (2026-08-05).**
+
+      **The first diagnosis was wrong and is corrected here.** It said the tests use a
+      release binary that `cargo test` "never rebuilds", so results depend on whether someone
+      ran `cargo build --release` recently. Reading the helpers shows the opposite: the tests
+      ran `cargo run --release -- …` and therefore *did* rebuild. The real fault is that
+      **~20 tests each spawn their own nested `cargo`**, and cargo runs tests in parallel, so
+      those processes contend on one target directory — with each other, and with the outer
+      `cargo test` holding it too.
+
+      Fixed with a `OnceLock`-guarded `transpiler_binary()` that runs
+      `cargo build --release --bin verus-transpile` exactly once and returns the path;
+      concurrent callers block on it rather than racing. The three call sites in this crate
+      now invoke the binary directly. The fourth (`dpor-checker`) is left alone — separate
+      manifest, separate target dir.
+
+      **Verified as a controlled A/B**, not inferred. Scenario: `touch transpiler/src/lib.rs`,
+      then run the suite.
+      - fix reverted → the `failed to build archive … libverus_transpiler-*.rlib` races
+        reproduce immediately (`failed to map object file: memory map must have a non-zero
+        length`, then repeated `No such file or directory`)
+      - fix applied → **350 passed, 0 failed**, twice
+      Warm-cache runs also got faster, 3.4s → 2.1s, since nothing re-enters cargo per test.
+
+      Accounts for three batches of spurious failures on 2026-08-05 (13, then 1, then 18),
+      each passing on immediate re-run. **54.17 is a different problem and stays open** — it
+      is a doc-contract test reading `TODO.md`, and it failed once in a run where the release
+      binary was already warm, so this does not explain it.
+
+- [x] **54.17** `test_phase_38_10_4_b_shadow_subset_report_script_contract` flake.
+      **Closed 2026-08-05 as most likely 54.18, with the leading hypothesis disproved.**
+
+      I had recorded a suspicion: it is a doc-contract test reading `TODO.md` from the
+      working tree, and a non-atomic `open(p,'w')` truncates before writing, so a concurrent
+      reader could see a partial file. **Tested directly** — rewrote `TODO.md` in a tight
+      truncate-then-write loop while running the test six times: **0 failures**. The
+      hypothesis is wrong and is retracted rather than left as the standing theory.
+
+      **And my reason for excluding 54.18 was itself unverified.** I wrote that the second
+      failure happened "with the release binary already warm", but I never checked that —
+      the run in question had `cargo test --test integration` and `cargo test --lib`
+      back-to-back, and `--lib` builds a different target, which is exactly the shared-artifact
+      race 54.18 describes. Both failures are consistent with it.
+
+      Evidence for closing: 14 deliberate runs this iteration (8 full-suite, 6 under
+      concurrent rewrite) plus every routine full-suite run since 54.18 landed, all clean.
+      **Reopen if it recurs** — that would be real evidence against 54.18 being the whole
+      story, which is more than I have now in either direction.
+
+- [x] **54.7.f** Annotate the deliverable notes in hand-written bodies under
+      `src/generated/`. **DONE 2026-08-05 — the count is 0, not the ~21 expected.**
+      All **74** were annotated, not 53: the 10 "unlisted orphans" turned out to be
+      annotatable like the rest, and the "sites where Verus picks a term containing a
+      lambda, which cannot be written by hand at all" do not exist — measured 0 of 74
+      before starting, so that expectation was wrong rather than the work being harder.
+      `1048 verified, 0 errors` throughout, verified per module batch: learner 4 (74→70),
+      executor 10 (→60), election 17 (→43), replica 18 (→25), proposer 25 (→**0**).
+      **Why no proof moved**: each site pins the trigger Verus had *already chosen*, read
+      from the inventory. The instantiation is identical; only the note goes away, and the
+      choice stops being free to drift between releases. That is the whole point of the
+      phase, and it is why 74 edits to verified code cost zero proof debugging.
+      Provenance was confirmed per function with `--fresh-dir` before editing, as the item
+      required — all 74 absent from fresh transpiler output.
+      Ceiling tightened **74 → 0**. Phase 54's acceptance criterion was "zero notes or a
+      documented exceptions list"; it is zero, and `exceptions.md` is now empty.
+      **Two things reaching zero broke, both fixed rather than worked around:**
+      - The guard refused to judge *any* empty capture (54.9 design point (e): an empty
+        capture means the run died early). At a ceiling of 0 that makes the success state
+        the one state never checked. It now uses the recorded `N verified, 0 errors` to
+        tell a clean run from a broken one; three tests, including that a capture with
+        errors, or with no result line at all, is still refused.
+      - `test_the_repo_list_states_a_total_and_reasons` required at least one reason group,
+        so an empty exceptions list failed the test that exists to keep the list honest.
+      *(original item)* **Unblocked 2026-08-05** by the `CLAUDE.md` amendment above.
+      - Confirm provenance per function with `scripts/classify_trigger_notes.py --fresh-dir`
+        before editing. Do not reuse the old membership test (absent from `skip_functions` and
+        from the preserve list) — 54.10.b measured it wrong for all 74.
+      - Edit the bodies in place. No post-processing pass, no `*_manual.rs` extraction: both
+        were workarounds for a restriction that no longer applies, and the extraction route
+        stays closed by `test_manual_code_footprint_is_empty` regardless.
+      - Re-verify per batch: `1048 verified, 0 errors` must hold and
+        `trigger_exceptions.py --check` must agree with a fresh count.
+      - Expected: 74 down to ~21 — the 10 unlisted orphans plus the sites where Verus picks a
+        term containing a lambda, which cannot be written by hand at all.
+      - Still **not** `#![auto]`: it silences the note while leaving the choice automatic, so
+        the count moves and the version-stability problem does not.
+
+- [x] **54.7.d** — **SUPERSEDED by 54.7.f (2026-08-05), closed.** This proposed a
+      post-processing pass as a way around the old path-based `CLAUDE.md` rule. With the
+      rule rescoped by provenance the workaround is unnecessary: the bodies were edited
+      directly, which is simpler and leaves nothing to re-run. The policy question this item
+      raised is answered, not pending.
+      *(original item)* Annotate the recurring-shape notes on the checked-in artifacts (**72** as
+      measured 2026-08-05, not the 76 first recorded; see 54.7.c for the census)
+      with a post-processing pass, instead of waiting for the merge in 42.8.c.
+      **⚠ BLOCKED ON A POLICY DECISION, not on capability (raised 2026-08-05).** As written
+      this item edits files under `src/generated/` with a script. `CLAUDE.md` says: *"Do NOT
+      hand-edit files under `src/generated/`. All code there must be produced by running the
+      transpiler."* The item argues a deterministic, idempotent, CI-diffable pass is not a
+      hand edit, and that argument has force — but the rule says *produced by running the
+      transpiler*, which a post-processing pass is not, and this same action was reverted
+      once already in this phase as a CLAUDE.md violation. Doing it now would be reversing
+      that on my own authority.
+      Also checked, and it removes the obvious escape hatch: **all 7 RSL modules have
+      `skip_functions`** (1/7/2/5/2/3/10), so there is no subset that can be regenerated
+      cleanly to deliver even part of the 76 while 42.8.c is stuck.
+      Options for whoever decides: (a) amend `CLAUDE.md` to permit registered, idempotent
+      post-processing passes run as part of `regenerate_all.sh`, and then do this; (b) leave
+      the 76 notes until 42.8.c lands; (c) narrow 42.8.c to just the modules carrying these
+      notes. Recommend (a) — the pass is verifiable in a way a hand edit is not — but it is a
+      project-policy call, not mine to make silently.
+      **Resolved as far as I can resolve it (2026-08-05), and two of the three options are
+      now known to be wrong.** Option (b) is disproved: `scripts/classify_trigger_notes.py`
+      shows these notes are in `skip_functions` and preserved bodies, which regeneration
+      never rewrites, so waiting for 42.8.c delivers **0** of them however it lands. The
+      extraction alternative in 54.7.c is foreclosed by `CLAUDE.md` too — *"Do NOT delegate
+      to manual implementation code or use 'clone-delegate-extract' patterns in generated
+      files"* — and `manual_code` is pinned to acceptor-only by
+      `test_manual_code_footprint_is_empty`. So the item is **closed under current policy**,
+      not blocked pending a decision I might later take: the count is **53**, not 76, and
+      the only compliant route to it is transpiler support for the skipped functions
+      (Phase 42 Option B). Reopen only by amending `CLAUDE.md`, which is the user's call and
+      not mine to make silently — the recommendation above stands if they want it.
+      **Rationale.** 54.7.a already taught codegen to emit these triggers; what is blocked is
+      *delivery* — regeneration cannot run until the five `skip_functions` modules can be
+      merged, and that is stuck on a codegen bug at 42.8.c.2.iv with no predictable finish.
+      The shapes do not need that work: **76 of the 107 are one pattern**,
+      `forall |i:int| 0 <= i < X@.len() ==> X@[i].valid()/abstractable()`, whose trigger is
+      plainly `X@[i]`.
+      A deterministic pass run as a step of `regenerate_all.sh` is not a hand edit — same
+      input, same output, and CI can re-run it and diff, exactly as
+      `check_readme_quickstart.sh` does for the quickstart. It also sidesteps the merge
+      entirely by operating on output rather than on generation.
+      **Must be idempotent**: once 42.8.c lands, regeneration will already emit these triggers,
+      so the pass has to recognise an annotated site and leave it alone rather than double-insert.
+      Expected: 120 notes down to ~44.
+      **Do not use `#![auto]` for this.** It silences the note while still letting Verus choose,
+      so the count would go to zero without the version-stability problem being solved at all.
+      That is gaming the metric this phase exists to move.
+
+- [x] **54.15** Classify the 30 RSL `skip_functions`. **DONE (2026-08-05)**, written up in
+      `docs/rsl-skip-functions.md`.
+      **The primary split was already recorded in the configs, and it is not the one the item
+      predicted.** Each `*_transpile.toml` has two overlapping lists: `skip_functions` (body
+      not translated) and `no_stub_functions` (not even stubbed, because something else
+      supplies it). **15 of the 30 are in both** — they have proven hand-written
+      implementations in `acceptor_manual.rs` / `executor_manual.rs`. They are not missing
+      code. The other 15 are `skip_functions` only, get a `--proof-fallback` stub, and are the
+      real "not generated" set.
+      After separating those: **trust boundary = 10** (replica's 7 event-loop/dispatch entries
+      plus `ExtractSentPacketsFromIos`, `SpontaneousClock`, `SpontaneousIos`), matching the
+      item's "roughly 8–10" estimate; **capability gap = 8** (proposer ×3, learner ×2,
+      election ×2, broadcast ×1) — not the 20-something a flat reading of the list implies.
+      A third bucket was hypothesised — *stale skips the transpiler could handle today* — and
+      **the evidence killed it**: trial-generating `BoundRequestSequence` from a copy of the
+      config in `/tmp` produces a body that is `assume(false)`. A real gap, not a stale skip.
+      That trial also produced a false negative on two acceptor functions, and chasing *that*
+      is what surfaced the two-list structure the whole classification rests on.
+      **README updated (2026-08-05)** to state the 10 / 15 / 8 split instead of the flat
+      "some functions have hand-written bodies", and
+      `test_rsl_skip_function_classification_matches_configs` recomputes the split from the
+      seven configs and holds the README and the note to it. Checked that the guard actually
+      fails on drift — adding a fake entry to one `skip_functions` list makes it report
+      `left: 31, right: 30` — rather than assuming a passing test is a working one.
+
+### Non-goals
+- Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.
+- Replacing Phase 41's hand-edited RSL Arc-wrap (`cb42869`) — that's a measured +82 % win and survives regen since it's in `ProposerImpl.rs` (hand-written file) + a small `proposer_gen.rs` patch that 42.4 will need to make survive regen via TOML config.
+- Touching concurrent model-checker / DPOR / bytecode work (Phase 38).
+
+### Plan
+
+#### 42.1 Triage (DONE)
+
+- [x] **42.1.a**: Transpile RSL on HEAD and on c097da0, diff function names, classify each missing function as `skip_functions` (intentional) or true drop (transpiler gap). **Result**: 13 intentional skips + 2 true drops on both HEAD and c097da0 (identical lists). Phase 40 contributes zero regen breakage.
+
+#### 42.2 Handle the 2 true drops
+
+Two options for each unsupported pattern; pick per-function based on cost/benefit.
+
+- [x] **42.2.a**: Decide for `CLearnerForgetOperationsBefore` (quantified map filtering). **Decision: Option A** — added to `learner_transpile.toml` `skip_functions`. Options:
+  - **Option A**: Add to TOML `skip_functions` and document that `learner_gen.rs` carries a hand-written body for it. Codifies the existing reality; zero transpiler work. Continues the CLAUDE.md violation, but the violation is acknowledged.
+  - **Option B**: Implement transpiler support for the `forall ... map filter` pattern (translate to `iter().filter().collect()` for HashMap). Closes the gap properly; ~1 day work.
+  - Recommendation: **Option A short-term, Option B as a Phase 41.2 prerequisite if transpiler-emitted code must cover this pattern.**
+- [x] **42.2.b**: Decide for `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` (existential `exists |opn|`). **Decision: Option A** — added to `replica_transpile.toml` `skip_functions`. Options:
+  - **Option A**: Same — `skip_functions` + acknowledge hand-written body.
+  - **Option B**: Implement existential-witness inference (substantially harder than 42.2.a; likely needs spec rewrite to a constructive form).
+  - Recommendation: **Option A**. This function is rarely on the hot path; transpiler-side existential resolution is out of scope for a quick unblock.
+
+#### 42.3 Make the cb42869 Arc-wrap survive regen
+
+The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once we set up a proper regen workflow, those edits will be wiped on each regen until Phase 41.2 lands. Two options:
+
+- [x] **42.3.a (preferred)**: Add a TOML config entry that tells the transpiler to emit `Arc<HashMap<EndPoint, u64>>` for `CProposer.highest_seqno_requested_by_client_this_view`, plus generate the `_arc_seqno_insert` helper + `assume_specification`. This is a **partial Phase 41.2.b implementation** scoped to one field, and survives regen by construction. **Done**: added `arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view"] }` to `proposer_transpile.toml` (inline table syntax to avoid TOML section header collision). Transpiler emits Arc::new at 3 init/mutation sites, .clone() at 5 unchanged-path sites. Validation passes (9 functions, matching existing).
+- [x] **42.3.b (fallback)**: Document the manual patch in `transpiler/docs/REGEN_WORKFLOW.md` so anyone running regen knows to re-apply the cb42869 patch. Stopgap until 42.3.a or full Phase 41.2 lands. Covers: Arc-wrap steps (a–i), skip_functions hand-written bodies, verification commands.
+
+#### 42.4 Establish a tested regen workflow
+
+- [x] **42.4.a**: Write `scripts/regenerate_rsl.sh` that:
+  - Transpiles all 8 RSL modules (including types) into `src/generated/RSL/*_gen.rs`.
+  - Verifies `cargo build` succeeds on the result.
+  - Verifies `--verify-only-module generated::RSL::*` passes the per-module verification counts that are currently green.
+- [x] **42.4.b**: Run `regenerate_rsl.sh --validate-only` on HEAD. **Result**: all 8 modules transpile, validation PASSED. All function-level differences are exactly the skip_functions entries (15 total across 5 modules). Script rewritten to validation-first approach: modules with skip_functions keep existing files (hand-written bodies preserved); modules without skip_functions (types, broadcast, acceptor) can be safely replaced. Fixed pre-existing test `test_rsl_types_manual_helpers_component_part2_symbols_present` (expected `HashMap` but cb42869 changed to `Arc<HashMap>`).
+- [x] **42.4.c**: Confirm bench numbers post-regen match pre-regen (RSL ≥29K with cb42869-equivalent in place; ≥16K without). **Confirmed by Phase 41.3.a (2026-05-24): 32,663 ops/s avg with all 5 Arc-wrapped fields, exceeds 29K target.** The cb42869 single-field PoC is subsumed by Phase 41.1.b's full 5-field Arc-wrap.
+
+#### 42.5 Phase 40 disposition (separate from 42.1–42.4)
+
+Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can bench. But it doesn't actively break anything either (the regen blocker hypothesis was wrong). Decide:
+
+- [x] **42.5.a**: Keep Phase 40 in place (status: "experimental, no measured benefit but no measured harm"). Allow Phase 41.2 to reuse the `arc_wrap_*` codegen infrastructure for field-level wrapping. **Recommended.** **Decision: ACCEPTED.** Phase 40 struct-level Arc code stays dormant; Phase 41.2 will reuse the infrastructure for field-level wrapping which has proven +82% benefit.
+- [ ] ~~**42.5.b**~~ (not chosen): Disable via TOML config.
+- [ ] ~~**42.5.c**~~ (not chosen): Revert Phase 40 commits.
+
+#### 42.6 Cleanup
+
+- [x] **42.6.a**: Mark Phase 40.3.g (RSL Arc-wrap deferred) as **WONTFIX**. The original goal (struct-level RSL Arc-wrap) is superseded by Phase 41 (field-level Arc-wrap, which actually works).
+- [x] **42.6.b**: Update `transpiler/docs/EFFICIENT_EMIT.md`: struct-level Arc-wrapping (Phase 40) has no measured benefit. Field-level Arc-wrapping (Phase 41) is the actual win.
+
+### Risk register
+
+- **R1**: Choosing Option A for both true drops perpetuates the hand-written-in-generated-file pattern. Mitigation: each entry must be `skip_functions` + a brief code comment naming the function and the unsupported spec pattern, so the violation is explicit and trackable.
+- **R2**: 42.3.a (per-field Arc TOML config) may require larger transpiler changes than the Phase 41 PoC suggests, because the codegen needs to thread the `Arc<>` wrapper through 5 sites (struct decl, init, clone helper, mutation helper, `assume_specification`). Mitigation: if this exceeds ~half a day, fall back to 42.3.b and bundle the work into Phase 41.2.
+- **R3**: The reverted assumption ("Phase 40 broke regen") means stakeholders/future agents may continue to believe it. Mitigation: this section's "Motivation" is the source of truth; any contradicting Phase 40 claim must cite measurements, not narrative.
+
+### Estimated effort
+
+- 42.2 + 42.4 (Option A everywhere): ~half a day.
+- Adding 42.3.a (per-field Arc): another half day.
+- If 42.5.c (revert Phase 40): +1-2 days for the revert + Phase 40.3.e salvage.
+
+---
+
+---
+
+## Research Appendix: Raft Dynamic Membership via Joint Consensus
 
 Branch `adi/raft-membership-change`. Adds membership changes to the Raft protocol as tagged
 log entries, with election and commit quorums derived from the active membership phase, and

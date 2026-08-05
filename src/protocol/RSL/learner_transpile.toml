@@ -85,5 +85,4 @@ custom_imports = [
     "use crate::generated::RSL::types_gen::*;",
     "use crate::protocol::RSL::learner::*;",
     "use crate::protocol::RSL::types::*;",
-    "use vstd::std_specs::hash::KeysAdditionalSpecFns;",
 ]

@@ -14,40 +14,8 @@ use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
-use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
-
-// --- Direct mutation helpers (Phase 49.2: Arc removed) ---
-
-#[verifier::external_body]
-fn learnerstate_clear_and_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
-    ensures state@ == Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup)
-{
-    state.clear();
-    state.insert(opn, tup);
-}
-
-#[verifier::external_body]
-fn learnerstate_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
-    ensures state@ == old(state)@.insert(opn, tup)
-{
-    state.insert(opn, tup);
-}
-
-#[verifier::external_body]
-fn learnerstate_remove(state: &mut CLearnerState, opn: &COperationNumber)
-    ensures state@ == old(state)@.remove(*opn)
-{
-    state.remove(opn);
-}
-
-#[verifier::external_body]
-fn learnerstate_set(state: &mut CLearnerState, new_val: CLearnerState)
-    ensures state@ == new_val@
-{
-    *state = new_val;
-}
 
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
@@ -139,7 +107,7 @@ ensures
             else { assert(old_m@.contains_key(kw) && kw as int == ak); }
         }
     }
-    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
+    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
         let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;
         if ak == k as int { assert(kw == k); assert(m2@[kw] == v); }
         else { assert(m2@[kw] == old_m@[kw]); }
@@ -189,7 +157,7 @@ ensures
             assert(old_m@.contains_key(kw) && kw as int == ak);
         }
     }
-    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
+    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
         let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;
         let kw_orig = choose |kw2: u64| old_m@.contains_key(kw2) && kw2 as int == ak;
         assert(kw_orig == kw);
@@ -228,7 +196,7 @@ ensures
             assert(k == opn);
         }
     }
-    assert forall |ak: int| abs.contains_key(ak) implies abs[ak] == expected[ak] by {
+    assert forall |ak: int| #![trigger abs[ak]] #![trigger expected[ak]] abs.contains_key(ak) implies abs[ak] == expected[ak] by {
         let k = choose |k: u64| m@.contains_key(k) && k as int == ak;
         assert(k == opn); assert(m@[k] == tup);
     }
@@ -341,8 +309,59 @@ ensures
 
 }
 
-// Phase 47.3.a.2: All learner functions converted to &mut self
+#[verifier::external_body]
+fn learnerstate_clear_and_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
+    ensures state@ == Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup)
+{
+    state.clear();
+    state.insert(opn, tup);
+}
+
+#[verifier::external_body]
+fn learnerstate_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
+    ensures state@ == old(state)@.insert(opn, tup)
+{
+    state.insert(opn, tup);
+}
+
+#[verifier::external_body]
+fn learnerstate_remove(state: &mut CLearnerState, opn: &COperationNumber)
+    ensures state@ == old(state)@.remove(*opn)
+{
+    state.remove(opn);
+}
+
+#[verifier::external_body]
+fn learnerstate_set(state: &mut CLearnerState, new_val: CLearnerState)
+    ensures state@ == new_val@
+{
+    *state = new_val;
+}
+
 impl CLearner {
+    pub exec fn CLearnerForgetDecision(&mut self, opn: &u64)
+    requires
+        old(self).valid(),
+    ensures
+        self.valid(),
+        LLearnerForgetDecision(old(self)@, self@, *opn as int),
+    {
+        let ghost old_self = *old(self);
+        if self.unexecuted_learner_state.contains_key(&opn) {
+                        let mut __unexecuted_learner_state = clone_clearnerstate(&self.unexecuted_learner_state);
+            __unexecuted_learner_state.remove(&opn);
+            { self.constants = self.constants.clone_up_to_view(); self.max_ballot_seen = self.max_ballot_seen.clone(); self.unexecuted_learner_state = __unexecuted_learner_state }
+
+        } else {
+            
+        };
+        proof {
+            if old_self.unexecuted_learner_state@.contains_key(*opn) {
+                lemma_abstractify_clearnerstate_remove(&old_self.unexecuted_learner_state, &self.unexecuted_learner_state, (*opn))
+            };
+        }
+
+    }
 
 /// 5-branch conditional: ballot comparison + HashMap insert/update with HashSet union.
 pub exec fn CLearnerProcess2b(&mut self, packet: &CPacket)
@@ -389,7 +408,7 @@ ensures
         };
         proof {
             assert(tup.received_2b_message_senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
-            assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+            assert forall |p: EndPoint| #![trigger tup.received_2b_message_senders@.contains(p)] tup.received_2b_message_senders@.contains(p)
                 implies p.abstractable()
             by {
                 assert(Set::<EndPoint>::empty().insert(ghost_src).contains(p));
@@ -419,7 +438,7 @@ ensures
         };
         proof {
             assert(tup.received_2b_message_senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
-            assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+            assert forall |p: EndPoint| #![trigger tup.received_2b_message_senders@.contains(p)] tup.received_2b_message_senders@.contains(p)
                 implies p.abstractable()
             by {
                 assert(Set::<EndPoint>::empty().insert(ghost_src).contains(p));
@@ -450,7 +469,7 @@ ensures
                 assert(self.unexecuted_learner_state@[opn_2b].valid());
                 assert(crequestbatch_is_valid(&existing.candidate_learned_value));
                 assert(packet.src.abstractable());
-                assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+                assert forall |p: EndPoint| #![trigger tup.received_2b_message_senders@.contains(p)] tup.received_2b_message_senders@.contains(p)
                     implies p.abstractable()
                 by {
                     if existing.received_2b_message_senders@.contains(p) {
@@ -542,24 +561,6 @@ ensures
     }
 }
 
-pub exec fn CLearnerForgetDecision(&mut self, opn: &u64)
-requires
-    old(self).valid(),
-ensures
-    self.valid(),
-    LLearnerForgetDecision(old(self)@, self@, *opn as int),
-{
-    let ghost old_self = old(self)@;
-    if self.unexecuted_learner_state.contains_key(&opn) {
-        learnerstate_remove(&mut self.unexecuted_learner_state, &opn);
-    }
-    proof {
-        if old(self).unexecuted_learner_state@.contains_key(*opn) {
-            lemma_abstractify_clearnerstate_remove(&old(self).unexecuted_learner_state, &self.unexecuted_learner_state, *opn)
-        };
-    }
-}
-
 /// Quantified filter on HashMap: keep entries where key >= ops_complete.
 pub exec fn CLearnerForgetOperationsBefore(&mut self, ops_complete: &u64)
 requires
@@ -593,7 +594,7 @@ ensures
             }
         }
 
-        assert forall |ak: int| abs_filtered.contains_key(ak) implies
+        assert forall |ak: int| #![trigger abs_filtered[ak]] #![trigger abs_orig[ak]] abs_filtered.contains_key(ak) implies
             abs_filtered[ak] == abs_orig[ak]
         by {
             let j_f = choose |j: u64| self.unexecuted_learner_state@.contains_key(j) && j as int == ak;
@@ -608,7 +609,6 @@ ensures
         assert(LLearnerForgetOperationsBefore(old_self, self@, *ops_complete as int));
     }
 }
-
-} // impl CLearner (Phase 47.3.a.2)
+}
 
 } // verus!

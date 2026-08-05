@@ -120,8 +120,8 @@ verus! {
     }
 
     #[verifier(external_body)]
-    pub broadcast proof fn axiom_endpoint_view()
-        ensures forall |e1:EndPoint, e2:EndPoint| e1@ == e2@ ==> e1 == e2
+    pub broadcast proof fn axiom_endpoint_view(e1: EndPoint, e2: EndPoint)
+        ensures #[trigger] e1@ == #[trigger] e2@ ==> e1 == e2
     {
 
     }
@@ -280,7 +280,7 @@ verus! {
             ensures
                 net_client.state() is Receiving,
                 net_client.history() == Seq::<NetEvent>::empty(),
-                net_client.my_end_point() == end_point,
+                net_client.my_end_point() == end_point@,
         {
             NetClient{
                 state: Ghost(State::Receiving),

@@ -1643,13 +1643,23 @@ macro_rules! derive_marshalable_for_enum {
             ),+
           }
         }
+        #[verifier(spinoff_prover)]
         exec fn _is_marshalable(&self) -> bool {
           match self {
             $(
               $newenum::$variant $( { $($member),* } )? => {
-                &&& true
-                $( $(&&& $member._is_marshalable())* )?
-                $( &&& no_usize_overflows!(1, $($member.serialized_size()),*) )?
+                let res = {
+                  &&& true
+                  $( $(&&& $member._is_marshalable())* )?
+                  $( &&& no_usize_overflows!(1, $($member.serialized_size()),*) )?
+                };
+                proof {
+                  // Isolate each variant's serialization arithmetic. Without this
+                  // boundary, recent Verus versions repeatedly instantiate sequence
+                  // axioms for every variant in one oversized query.
+                  assert(res == self.is_marshalable()) by {}
+                }
+                res
               }
             ),+
           }
@@ -1727,6 +1737,8 @@ macro_rules! derive_marshalable_for_enum {
           }
           Some((x, end))
         }
+        $( #[$rlimitattr] )?
+        #[verifier(spinoff_prover)]
         proof fn lemma_serialization_is_not_a_prefix_of(self: &Self, other: &Self)
         // req, ens from trait
         {

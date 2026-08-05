@@ -5,7 +5,6 @@ use vstd::{modes::*, prelude::*, seq::*, *};
 
 verus! {
     proof fn eq_map<A, B>(x:Map<A, B>, y:Map<A, B>) -> (ret: bool)
-        requires x.dom().finite(), y.dom().finite()
         ensures ret ==> x =~= y
     {
       &&& (forall |a: A| x.contains_key(a) <==> y.contains_key(a))
@@ -13,27 +12,23 @@ verus! {
     }
 
     pub open spec fn domain<U, V>(m: Map<U,V>) -> Set<U>
-        recommends m.dom().finite()
     {
         m.dom()
     }
 
     pub proof fn predicate_domain<U, V>(m: Map<U,V>)
-        requires m.dom().finite()
         ensures forall |i: U| domain(m).contains(i) <==> m.contains_key(i),
     {}
 
     pub open spec fn union<U, V>(m: Map<U,V>, m_: Map<U,V>) -> Map<U,V>
-        recommends domain(m).disjoint(domain(m_)), m.dom().finite(), m_.dom().finite(),
+        recommends domain(m).disjoint(domain(m_)),
      {
-        Map::new(|i: U| domain(m).union(domain(m_)).contains(i),
+        Map::new(domain(m).union(domain(m_)),
                  |i: U| if m.contains_key(i) { m[i] } else {m_[i]})
     }
 
     pub proof fn predicate_union<U, V>(m: Map<U,V>, m_: Map<U,V>)
         requires domain(m).disjoint(domain(m_)),
-                m.dom().finite(),
-                m_.dom().finite(),
         ensures
             forall |i: U| union(m, m_).contains_key(i) <==> #[trigger] m.contains_key(i) || #[trigger] m_.contains_key(i),
             forall |i: U| m.contains_key(i) ==> union(m, m_)[i] == #[trigger] m[i],
@@ -42,7 +37,6 @@ verus! {
 
     pub proof fn lemma_non_empty_map_has_elements<S,T>(m:Map<S,T>)
         requires m.len() > 0,
-                 m.dom().finite(),
         ensures exists |x: S| m.contains_key(x)
         {
             predicate_domain(m);
@@ -55,8 +49,6 @@ verus! {
 
     pub proof fn lemma_MapSizeIsDomainSize<S,T>(dom:Set<S>, m:Map<S,T>)
         requires dom =~= domain(m),
-                    dom.finite(),
-                    m.dom().finite(),
         ensures m.len() == dom.len()
         decreases m.len(), dom.len()
     {
@@ -82,9 +74,7 @@ verus! {
 
     pub proof fn lemma_maps_decrease<S,T>(before: Map<S,T>, after: Map<S,T>, item_removed:S)
       requires before.contains_key(item_removed),
-               after =~= Map::new(|s: S| before.contains_key(s) && s != item_removed, |s: S| before[s]),
-               before.dom().finite(),
-               after.dom().finite(),
+               after =~= Map::new(before.dom().remove(item_removed), |s: S| before[s]),
       ensures  after.len() < before.len()
     {
       assert(!(after.contains_key(item_removed)));
@@ -136,9 +126,8 @@ verus! {
 
   pub proof fn lemma_map_remove_one<S,T>(before:Map<S,T>, after:Map<S,T>, item_removed:S)
   requires
-          before.dom().finite(), after.dom().finite(),
           before.contains_key(item_removed),
-           after =~= Map::new(|s: S| before.contains_key(s) && s != item_removed, |s: S| before[s]),
+           after =~= Map::new(before.dom().remove(item_removed), |s: S| before[s]),
   ensures after.len() + 1 == before.len()
 {
   lemma_maps_decrease(before, after, item_removed);
@@ -151,14 +140,14 @@ verus! {
 }
 
 pub open spec fn RemoveElt<U,V>(m:Map<U,V>, elt:U) -> Map<U,V>
-  recommends m.contains_key(elt), m.dom().finite()
+  recommends m.contains_key(elt)
   decreases m.len()
 {
   m.remove(elt)
 }
 
 pub proof fn lemma_RemoveElt<U, V>(m: Map<U, V>, elt: U)
-  requires m.contains_key(elt), m.dom().finite()
+  requires m.contains_key(elt)
   ensures RemoveElt(m, elt).len() == m.len() - 1,
   !(RemoveElt(m, elt).contains_key(elt)),
    forall |elt_:U| #![auto] RemoveElt(m, elt).contains_key(elt_) <==> m.contains_key(elt_) && elt_ != elt,

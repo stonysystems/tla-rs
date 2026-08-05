@@ -1,0 +1,29 @@
+# V2 strong fidelity: what `clean.tla` and `original.tla` must agree on.
+#
+# `rmState` is the whole of 2PC's observable behaviour — it is what `TCommit`'s
+# `TCConsistent` is stated over, and what a client of the protocol sees. Every
+# other variable is bookkeeping the rewrite deliberately reshaped: `tmState` and
+# `tmPrepared` became per-node fields of the designated TM, and `msgs` gained
+# `src`/`dst`, so neither compares across the two specs.
+#
+# Run: tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier1/t1_02_twophase <tla2tools.jar>
+
+[clean]
+module = "TwoPhaseClean"
+config = """
+CONSTANTS
+  RM = {r1, r2, r3}
+  TM = r1
+SPECIFICATION Spec
+"""
+
+[original]
+module = "TwoPhase"
+config = """
+CONSTANT RM = {r1, r2, r3}
+SPECIFICATION TPSpec
+"""
+extra_modules = ["TCommit.tla"]
+
+[observables]
+rmState = "rmState"

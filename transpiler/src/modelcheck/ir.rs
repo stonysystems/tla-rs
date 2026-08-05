@@ -134,7 +134,7 @@ pub fn discover_lnext_branches(next_fn: &SpecFunction) -> TranspileResult<Vec<Tr
         let existential_bindings = branch_expr
             .existential_bindings
             .into_iter()
-            .chain(extra_existentials.into_iter())
+            .chain(extra_existentials)
             .collect::<Vec<_>>();
         // Deduplicate existential variables by name: nested existentials produce
         // duplicate names when inner scopes shadow outer ones (e.g., `exists |node|

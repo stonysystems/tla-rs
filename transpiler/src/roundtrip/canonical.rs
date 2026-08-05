@@ -165,6 +165,20 @@ impl Canonicalizer {
                 var: var.clone(),
                 set: Box::new(self.canonicalize_expr(set)),
             },
+            TlaExpr::Lambda { params, body } => TlaExpr::Lambda {
+                params: params.clone(),
+                body: Box::new(self.canonicalize_expr(body)),
+            },
+            TlaExpr::SetMapMulti { expr, bindings } => TlaExpr::SetMapMulti {
+                expr: Box::new(self.canonicalize_expr(expr)),
+                bindings: bindings
+                    .iter()
+                    .map(|b| TlaQuantBound {
+                        var: b.var.clone(),
+                        set: b.set.as_ref().map(|s| self.canonicalize_expr(s)),
+                    })
+                    .collect(),
+            },
 
             // Functions
             TlaExpr::FnConstruct { var, domain, body } => TlaExpr::FnConstruct {
@@ -188,6 +202,17 @@ impl Canonicalizer {
             },
 
             // Records: optionally sort fields
+            TlaExpr::RecordSet(fields) => {
+                let mut canonical_fields: Vec<(String, TlaExpr)> = fields
+                    .iter()
+                    .map(|(name, value)| (name.clone(), self.canonicalize_expr(value)))
+                    .collect();
+                if self.config.sort_record_fields {
+                    canonical_fields.sort_by(|a, b| a.0.cmp(&b.0));
+                }
+                TlaExpr::RecordSet(canonical_fields)
+            }
+
             TlaExpr::Record(fields) => {
                 let mut canonical_fields: Vec<(String, TlaExpr)> = fields
                     .iter()

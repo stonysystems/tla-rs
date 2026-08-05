@@ -75,7 +75,7 @@ verus! {
         lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, clock, log_truncation_point, sent_packets);
         if LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets) {
             let opn = s.next_operation_number_to_propose;
-            let p_1b: RslPacket = choose |p_1b: RslPacket|
+            let p_1b: RslPacket = choose |p_1b: RslPacket| #![trigger s.received_1b_packets.contains(p_1b)]
                 s.received_1b_packets.contains(p_1b)
                 && LValIsHighestNumberedProposal(p_1b.msg->votes[opn].max_val, s.received_1b_packets, opn)
                 && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
@@ -148,7 +148,7 @@ verus! {
         lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, clock, log_truncation_point, sent_packets);
 
         if LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets) {
-            let p_1b: RslPacket = choose |p_1b: RslPacket|
+            let p_1b: RslPacket = choose |p_1b: RslPacket| #![trigger s.received_1b_packets.contains(p_1b)]
                 s.received_1b_packets.contains(p_1b)
                 && LValIsHighestNumberedProposal(p_1b.msg->votes[opn].max_val, s.received_1b_packets, opn)
                 && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
@@ -238,7 +238,7 @@ verus! {
                 p.msg->bal_2a.proposer_id == proposer_idx,
                 // //   var s := b[i].replicas[proposer_idx].replica.proposer;
                 (BalLt(p.msg->bal_2a, b[i].replicas[proposer_idx].replica.proposer.max_ballot_i_sent_1a)
-                || (&& b[i].replicas[proposer_idx].replica.proposer.max_ballot_i_sent_1a == p.msg->bal_2a
+                || (b[i].replicas[proposer_idx].replica.proposer.max_ballot_i_sent_1a == p.msg->bal_2a
                         && b[i].replicas[proposer_idx].replica.proposer.current_state != 1
                         && b[i].replicas[proposer_idx].replica.proposer.next_operation_number_to_propose > p.msg->opn_2a)),
         decreases i
@@ -357,7 +357,7 @@ verus! {
                     b[i].replicas[idx].replica,
                     sent_packets,
                 ));
-                assert(exists |truncate_opn: OperationNumber|
+                assert(exists |truncate_opn: OperationNumber| #![trigger s.last_checkpointed_operation.contains(truncate_opn)] #![trigger LAcceptorTruncateLog(s, s_, truncate_opn)]
                     s.last_checkpointed_operation.contains(truncate_opn)
                     && IsLogTruncationPointValid(
                         truncate_opn,
@@ -367,7 +367,7 @@ verus! {
                     && (truncate_opn > s.log_truncation_point ==> LAcceptorTruncateLog(s, s_, truncate_opn))
                     && (truncate_opn <= s.log_truncation_point ==> s_ == s)
                 );
-                let truncate_opn = choose |truncate_opn: OperationNumber|
+                let truncate_opn = choose |truncate_opn: OperationNumber| #![trigger s.last_checkpointed_operation.contains(truncate_opn)] #![trigger LAcceptorTruncateLog(s, s_, truncate_opn)]
                     s.last_checkpointed_operation.contains(truncate_opn)
                     && IsLogTruncationPointValid(
                         truncate_opn,
@@ -468,7 +468,7 @@ verus! {
         assert(LEnvironment_Next(e, e_));
         assert(e.nextStep == LEnvStep::LEnvStepHostIos { actor, ios });
         assert(LEnvironment_PerformIos(e, e_, actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+        assert(forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(match_ios_recv(LIoOp::Receive { r: p }, e.sentPackets));
         assert(e.sentPackets.contains(p));
         lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
@@ -824,8 +824,8 @@ verus! {
             LIsAfterLogTruncationPoint(p.msg->opn_2a, q),
             LSetOfMessage1bAboutBallot(q, p.msg->bal_2a),
             LAllAcceptorsHadNoProposal(q, p.msg->opn_2a) || LValIsHighestNumberedProposal(p.msg->val_2a, q, p.msg->opn_2a),
-            forall|p1, p2: RslPacket| q.contains(p1) && q.contains(p2) && p1 != p2 ==> p1.src != p2.src,
-            forall|p1: RslPacket| q.contains(p1) ==> c.config.replica_ids.contains(p1.src),
+            forall|p1, p2: RslPacket| #![trigger q.contains(p1), q.contains(p2)] q.contains(p1) && q.contains(p2) && p1 != p2 ==> p1.src != p2.src,
+            forall|p1: RslPacket| #![trigger q.contains(p1)] q.contains(p1) ==> c.config.replica_ids.contains(p1.src),
         decreases i
     {
         if i == 0 {
@@ -858,7 +858,7 @@ verus! {
         assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
         lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts);
 
-        assert forall|p_1b: RslPacket| q_new.contains(p_1b) implies b[i].environment.sentPackets.contains(p_1b)
+        assert forall|p_1b: RslPacket| #![trigger q_new.contains(p_1b)] q_new.contains(p_1b) implies b[i].environment.sentPackets.contains(p_1b)
         by {
             lemma_PacketInReceived1bWasSent(b, c, i - 1, idx, p_1b);
             lemma_PacketStaysInSentPackets(b, c, i - 1, i, p_1b);
@@ -870,8 +870,8 @@ verus! {
         assert(LIsAfterLogTruncationPoint(p.msg->opn_2a, q_new));
         assert(LSetOfMessage1bAboutBallot(q_new, p.msg->bal_2a));
         assert(LAllAcceptorsHadNoProposal(q_new, p.msg->opn_2a) || LValIsHighestNumberedProposal(p.msg->val_2a, q_new, p.msg->opn_2a));
-        assert(forall|p1, p2: RslPacket| q_new.contains(p1) && q_new.contains(p2) && p1 != p2 ==> p1.src != p2.src);
-        assert(forall|p1: RslPacket| q_new.contains(p1) ==> c.config.replica_ids.contains(p1.src));
+        assert(forall|p1, p2: RslPacket| #![trigger q_new.contains(p1), q_new.contains(p2)] q_new.contains(p1) && q_new.contains(p2) && p1 != p2 ==> p1.src != p2.src);
+        assert(forall|p1: RslPacket| #![trigger q_new.contains(p1)] q_new.contains(p1) ==> c.config.replica_ids.contains(p1.src));
 
         return q_new;
     }

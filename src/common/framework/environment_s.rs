@@ -81,7 +81,6 @@ verus! {
         ) -> bool
       {
         &&& e.sentPackets.len() == 0
-        &&& e.sentPackets.finite()
         &&& e.time >= 0
       }
 
@@ -103,7 +102,7 @@ verus! {
                                         ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
                                             .map_values(|io: LIoOp<IdType, MessageType>| io->s)
                                             .to_set())
-        &&& (forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets) )
+        &&& (forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets) )
         &&& e_.time == e.time
       }
 
@@ -137,33 +136,6 @@ verus! {
             LEnvStep::LEnvStepAdvanceTime => LEnvironment_AdvanceTime(e, e_),
             LEnvStep::LEnvStepStutter => LEnvironment_Stutter(e, e_),
         }
-      }
-
-      /// Generic one-step preservation: if sentPackets is finite and LEnvironment_Next holds,
-      /// then sentPackets is finite in the next state.
-      pub proof fn lemma_environment_next_preserves_sentpackets_finite<IdType, MessageType>(
-          e: LEnvironment<IdType, MessageType>,
-          e_: LEnvironment<IdType, MessageType>,
-      )
-          requires
-              e.sentPackets.finite(),
-              LEnvironment_Next(e, e_),
-          ensures
-              e_.sentPackets.finite()
-      {
-          match e.nextStep {
-              LEnvStep::LEnvStepHostIos{actor, ios} => {
-                  broadcast use vstd::seq_lib::seq_to_set_is_finite;
-                  broadcast use vstd::set::group_set_axioms;
-                  let new_set = ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
-                      .map_values(|io: LIoOp<IdType, MessageType>| io->s).to_set();
-                  assert(new_set.finite());
-                  assert(e.sentPackets.union(new_set).finite());
-              },
-              LEnvStep::LEnvStepDeliverPacket{p} => {},
-              LEnvStep::LEnvStepAdvanceTime => {},
-              LEnvStep::LEnvStepStutter => {},
-          }
       }
 
       /// If a packet appears in the new sentPackets but not the old ones,
@@ -202,7 +174,7 @@ verus! {
       // #[verifier(opaque)] -> can't make it opaque for the proof to work???
       pub open spec fn EnvironmentNextTemporal<IdType,MessageType>(b:Behavior<LEnvironment<IdType, MessageType>>) -> temporal
       {
-        stepmap(Map::new(|i: int| i == i, |i: int| LEnvironment_Next(b[i], b[nextstep(i)])))
+        stepmap(IMap::new(|i: int| i == i, |i: int| LEnvironment_Next(b[i], b[nextstep(i)])))
       }
 
       pub proof fn lemma_EnvironmentNextTemporal<IdType,MessageType>(b:Behavior<LEnvironment<IdType, MessageType>>)

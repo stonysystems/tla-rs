@@ -18,7 +18,7 @@ verus! {
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        broadcast use vstd::map::group_map_axioms;
+        broadcast use vstd::map::group_map_lemmas;
 
         let keys = hashmap_keys_to_vec(votes);
         let mut result: HashMap<u64, CVote> = HashMap::new();
@@ -50,7 +50,7 @@ verus! {
         }
         // Prove cvotes_is_valid(&result)
         proof {
-            assert forall |k: u64| result@.contains_key(k) implies
+            assert forall |k: u64| #![trigger COperationNumberIsValid(k)] result@.contains_key(k) implies
                 COperationNumberIsValid(k) && result@[k].valid() by {
                 assert(votes@.contains_key(k));
                 lemma_cvotes_valid_key(votes, k);
@@ -63,7 +63,7 @@ verus! {
             let ltp = *log_truncation_point as int;
 
             // Conjunct 1: result entries are from votes with same values
-            assert forall |opn: int| abs_result.contains_key(opn) implies
+            assert forall |opn: int| #![trigger abs_result[opn]] #![trigger abs_votes[opn]] abs_result.contains_key(opn) implies
                 abs_votes.contains_key(opn) && abs_result[opn] == abs_votes[opn] by {
                 let k = choose |k: u64| result@.contains_key(k) && k as int == opn;
                 assert(votes@.contains_key(k));
@@ -103,7 +103,7 @@ verus! {
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        broadcast use vstd::map::group_map_axioms;
+        broadcast use vstd::map::group_map_lemmas;
 
         // Phase 1: Filter votes keeping only keys >= log_truncation_point
         let keys = hashmap_keys_to_vec(votes);
@@ -140,7 +140,7 @@ verus! {
 
         // Prove cvotes_is_valid(&result)
         proof {
-            assert forall |k: u64| result@.contains_key(k) implies
+            assert forall |k: u64| #![trigger COperationNumberIsValid(k)] result@.contains_key(k) implies
                 COperationNumberIsValid(k) && result@[k].valid() by {
                 if k == *new_opn && *new_opn >= *log_truncation_point {
                     // new_vote_cloned.valid() == new_vote.valid() == true
@@ -197,7 +197,7 @@ verus! {
                 (opn >= ltp && (abs_votes.dom().contains(opn) || opn == new_opn_int)) by {};
 
             // Conjunct 2: value characterization
-            assert forall |opn: int| abs_result.dom().contains(opn) implies
+            assert forall |opn: int| #![trigger abs_result[opn]] abs_result.dom().contains(opn) implies
                 abs_result[opn] == (if opn == new_opn_int { new_vote@ } else { abs_votes[opn] }) by {
                 let k = choose |k: u64| result@.contains_key(k) && k as int == opn;
                 if opn == new_opn_int {
@@ -217,7 +217,7 @@ verus! {
     pub fn CIsLogTruncationPointValid(log_truncation_point: COperationNumber,last_checkpointed_operation:&Vec<COperationNumber>,config:&CConfiguration) -> (isValid: bool)
         requires
             COperationNumberIsValid(log_truncation_point),
-            forall |i: int| 0 <= i < last_checkpointed_operation.len() ==> COperationNumberIsValid(last_checkpointed_operation[i]),
+            forall |i: int| #![trigger last_checkpointed_operation[i]] 0 <= i < last_checkpointed_operation.len() ==> COperationNumberIsValid(last_checkpointed_operation[i]),
             config.valid()
         ensures
             isValid == IsLogTruncationPointValid(AbstractifyCOperationNumberToOperationNumber(log_truncation_point),last_checkpointed_operation@.map(|i, x| (x as int)), config@)
@@ -292,7 +292,7 @@ verus! {
         ensures
         ({
             let ss = s@.map(|i, t:u64| t as int);
-            && res == IsNthHighestValueInSequence(v as int, ss, n as int)
+            res == IsNthHighestValueInSequence(v as int, ss, n as int)
         })
     {
         let ghost ss = s@.map(|i, t:u64| t as int);

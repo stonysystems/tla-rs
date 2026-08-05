@@ -1,0 +1,4 @@
+module counter_spec {
+    LInit(-);
+    LIncrement(+, -);
+}

@@ -833,7 +833,7 @@ impl<'a> ConfigInferer<'a> {
                                     let base = &type_name[spec_prefix.len()..];
                                     format!("{}{}", exec_prefix, base)
                                 } else {
-                                    format!("{}{}", exec_prefix, &type_name)
+                                    format!("{}{}", exec_prefix, type_name)
                                 };
                                 config
                                     .clone_field_types
@@ -1031,7 +1031,7 @@ impl<'a> ConfigInferer<'a> {
                         .remapping
                         .get(&variant.name)
                         .cloned()
-                        .unwrap_or_else(|| format!("{}{}", exec_prefix, &variant.name));
+                        .unwrap_or_else(|| format!("{}{}", exec_prefix, variant.name));
 
                     let exec_variant_path = format!("{}::{}", exec_enum_name, exec_variant_name);
 
@@ -1086,7 +1086,7 @@ impl<'a> ConfigInferer<'a> {
                                         let base = &type_name[spec_prefix.len()..];
                                         format!("{}{}", exec_prefix, base)
                                     } else {
-                                        format!("{}{}", exec_prefix, &type_name)
+                                        format!("{}{}", exec_prefix, type_name)
                                     }
                                 });
                             config

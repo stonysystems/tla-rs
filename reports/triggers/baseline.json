@@ -1,0 +1,16 @@
+{
+  "schema": "trigger-inventory/v1",
+  "label": "0.2026.08.02.b677dd5 full crate (triggers-mode selective), 54.12.b complete",
+  "verus_version": "0.2026.08.02.b677dd5",
+  "source_log": "/tmp/g1/v4.log",
+  "total_notes": 0,
+  "verified": 1048,
+  "errors": 0,
+  "total_triggers": 0,
+  "orphan_trigger_notes": 0,
+  "multiline_notes": 0,
+  "by_file": {},
+  "by_dir": {},
+  "by_trigger_count": {},
+  "entries": []
+}

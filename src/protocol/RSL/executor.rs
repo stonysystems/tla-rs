@@ -96,19 +96,19 @@ verus! {
 
     pub open spec fn RepliesAreReplyType(replies:Seq<RslPacket>) -> bool
     {
-        forall |p:RslPacket| replies.contains(p) ==> p.msg is RslMessageReply
+        forall |p:RslPacket| #![trigger replies.contains(p)] replies.contains(p) ==> p.msg is RslMessageReply
     }
 
 
     pub open spec fn UpdateNewCache(c:ReplyCache, c_:ReplyCache, replies:Seq<Reply>) -> bool
     {
-        &&& (forall |client:AbstractEndPoint| c_.contains_key(client) ==> (c.contains_key(client) && c_[client] == c[client])
-                                                                        || (exists |req_idx:int| 0 <= req_idx < replies.len()
+        &&& (forall |client:AbstractEndPoint| #![trigger c_[client]] #![trigger c[client]] c_.contains_key(client) ==> (c.contains_key(client) && c_[client] == c[client])
+                                                                        || (exists |req_idx:int| #![trigger replies[req_idx]] 0 <= req_idx < replies.len()
                                                                             && replies[req_idx].client == client
                                                                             && c_[client] == replies[req_idx]))
-        &&& (forall |client:AbstractEndPoint| c_.contains_key(client) <==> (LClientsInReplies(replies).contains_key(client) || c.contains_key(client)))
-        &&& (forall |client:AbstractEndPoint| c_.contains_key(client) ==> c_[client] == if c.contains_key(client) {c[client]} else {LClientsInReplies(replies)[client]})
-        &&& (forall |client:AbstractEndPoint| (LClientsInReplies(replies).contains_key(client) || c.contains_key(client)) ==> c_.contains_key(client)
+        &&& (forall |client:AbstractEndPoint| #![trigger c_.contains_key(client)] #![trigger c.contains_key(client)] c_.contains_key(client) <==> (LClientsInReplies(replies).contains_key(client) || c.contains_key(client)))
+        &&& (forall |client:AbstractEndPoint| #![trigger c_[client]] c_.contains_key(client) ==> c_[client] == if c.contains_key(client) {c[client]} else {LClientsInReplies(replies)[client]})
+        &&& (forall |client:AbstractEndPoint| #![trigger c_[client]] (LClientsInReplies(replies).contains_key(client) || c.contains_key(client)) ==> c_.contains_key(client)
                                                                                                 && c_[client] == if c.contains_key(client) {c[client]} else {LClientsInReplies(replies)[client]})
     }
 
