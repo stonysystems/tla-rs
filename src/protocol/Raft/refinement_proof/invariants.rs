@@ -322,6 +322,17 @@ verus! {
         term: int,
     ) -> bool {
         exists |last_idx: int, last_term: int|
+            #![trigger ds.network.contains(LRaftPacket {
+                src,
+                dst,
+                msg: LRaftMessage::VoteResponse {
+                    term,
+                    granted: true,
+                    voter: src,
+                    voter_last_log_index: last_idx,
+                    voter_last_log_term: last_term,
+                },
+            })]
             ds.network.contains(LRaftPacket {
                 src,
                 dst,
@@ -1415,7 +1426,19 @@ verus! {
         }),
     {
         // Extract VoteResponse packet
-        let (last_idx_val, last_term_val) = choose |li: int, lt: int| {
+        let (last_idx_val, last_term_val) = choose |li: int, lt: int|
+            #![trigger ds.network.contains(LRaftPacket {
+                src: ov,
+                dst: d,
+                msg: LRaftMessage::VoteResponse {
+                    term: T,
+                    granted: true,
+                    voter: ov,
+                    voter_last_log_index: li,
+                    voter_last_log_term: lt,
+                },
+            })]
+        {
             ds.network.contains(LRaftPacket {
                 src: ov,
                 dst: d,
@@ -2006,6 +2029,14 @@ verus! {
 
             // Materialize both VoteResponse packets for OneVotePerTermInNetwork
             let (li1, lt1) = choose |li: int, lt: int|
+                #![trigger ds.network.contains(LRaftPacket {
+                    src: w, dst: d1,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: w,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                })]
                 ds.network.contains(LRaftPacket {
                     src: w, dst: d1,
                     msg: LRaftMessage::VoteResponse {
@@ -2023,6 +2054,14 @@ verus! {
                 },
             };
             let (li2, lt2) = choose |li: int, lt: int|
+                #![trigger ds.network.contains(LRaftPacket {
+                    src: w, dst: d2,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: w,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                })]
                 ds.network.contains(LRaftPacket {
                     src: w, dst: d2,
                     msg: LRaftMessage::VoteResponse {
@@ -2053,6 +2092,14 @@ verus! {
 
             // Materialize VoteResponse{T, voter: d1, dst: d2}
             let (li_vr, lt_vr) = choose |li: int, lt: int|
+                #![trigger ds.network.contains(LRaftPacket {
+                    src: d1, dst: d2,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: d1,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                })]
                 ds.network.contains(LRaftPacket {
                     src: d1, dst: d2,
                     msg: LRaftMessage::VoteResponse {
@@ -2078,6 +2125,14 @@ verus! {
             let sv = voters1[0];
             assert(ExistsGrantedVoteResponse(ds, sv, d1, T));
             let (li_sv, lt_sv) = choose |li: int, lt: int|
+                #![trigger ds.network.contains(LRaftPacket {
+                    src: sv, dst: d1,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: sv,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                })]
                 ds.network.contains(LRaftPacket {
                     src: sv, dst: d1,
                     msg: LRaftMessage::VoteResponse {
@@ -2124,6 +2179,14 @@ verus! {
 
             // Materialize VoteResponse{T, voter: d2, dst: d1}
             let (li_vr, lt_vr) = choose |li: int, lt: int|
+                #![trigger ds.network.contains(LRaftPacket {
+                    src: d2, dst: d1,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: d2,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                })]
                 ds.network.contains(LRaftPacket {
                     src: d2, dst: d1,
                     msg: LRaftMessage::VoteResponse {
@@ -2148,6 +2211,14 @@ verus! {
             let sv2 = voters2[0];
             assert(ExistsGrantedVoteResponse(ds, sv2, d2, T));
             let (li_sv2, lt_sv2) = choose |li: int, lt: int|
+                #![trigger ds.network.contains(LRaftPacket {
+                    src: sv2, dst: d2,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: sv2,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                })]
                 ds.network.contains(LRaftPacket {
                     src: sv2, dst: d2,
                     msg: LRaftMessage::VoteResponse {
@@ -4098,6 +4169,17 @@ verus! {
                 assert(voters.len() >= 1);
                 assert(ExistsGrantedVoteResponse(ds, voters[0], d, T));
                 let v0_summary = choose |summary: (int, int)|
+                    #![trigger ds.network.contains(LRaftPacket {
+                        src: voters[0],
+                        dst: d,
+                        msg: LRaftMessage::VoteResponse {
+                            term: T,
+                            granted: true,
+                            voter: voters[0],
+                            voter_last_log_index: summary.0,
+                            voter_last_log_term: summary.1,
+                        },
+                    })]
                     ds.network.contains(LRaftPacket {
                         src: voters[0],
                         dst: d,
@@ -4195,6 +4277,17 @@ verus! {
             && voters[a] == w;
         assert(ExistsGrantedVoteResponse(ds, w, d, T));
         let vote_summary = choose |summary: (int, int)|
+            #![trigger ds.network.contains(LRaftPacket {
+                src: w,
+                dst: d,
+                msg: LRaftMessage::VoteResponse {
+                    term: T,
+                    granted: true,
+                    voter: w,
+                    voter_last_log_index: summary.0,
+                    voter_last_log_term: summary.1,
+                },
+            })]
             ds.network.contains(LRaftPacket {
                 src: w,
                 dst: d,
@@ -5144,6 +5237,17 @@ verus! {
             ExistsGrantedVoteResponse(ds_, src, dst, term),
     {
         let (last_idx, last_term): (int, int) = choose |li: int, lt: int|
+            #![trigger ds.network.contains(LRaftPacket {
+                src,
+                dst,
+                msg: LRaftMessage::VoteResponse {
+                    term,
+                    granted: true,
+                    voter: src,
+                    voter_last_log_index: li,
+                    voter_last_log_term: lt,
+                },
+            })]
             ds.network.contains(LRaftPacket {
                 src,
                 dst,
