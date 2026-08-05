@@ -24,8 +24,11 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 
 ## Current Status (last updated 2026-08-05)
 
-**🔝 CURRENT PRIORITY: Phase 54.7.c — decide where the hand-written code in
-`src/generated/RSL/` belongs.** 42.8.c is done as far as merging can take it.
+**🔝 CURRENT PRIORITY: Phase 42.8.c.2.iv.J — unblock the replica merge.** Measured below:
+it carries **all 36** of the trigger notes a regeneration can actually deliver, and no other
+module has any. 54.7.c/54.7.d, the previous priority, are **closed under current policy**
+rather than pending — `CLAUDE.md` forecloses both of their proposed answers, and the notes
+they cover (53) are unreachable by regeneration by construction.
 
 **42.8.c final (2026-08-05).** Six of seven RSL modules are reconciled and the crate is at
 `1046 verified, 0 errors`, notes 103, warnings 3.
@@ -42,26 +45,45 @@ the measured fact, and it outranks four successive estimates of the deliverable 
 50, 3, 40) — see 54.7.b, where the "3" is retracted as the product of an unsound
 attribution. Notes are not going to fall out of regeneration.
 
-**Shape census (2026-08-05), which sharpens the decision.** Of the 103 notes, **72 are the
-single shape `forall |i: int| 0 <= i < X@.len() ==> X@[i].valid()/abstractable()`** — the
-exact `vec_element_ensures` pattern **54.7.a already taught codegen to annotate**, whose
-trigger is plainly `X@[i]`. They are: replica 40, election 13, proposer 11, executor 8.
-The remaining 31 spread over 22 shapes, none more than 3.
+**Attribution, measured 2026-08-05 by `scripts/classify_trigger_notes.py` (21 tests).**
+The count has been estimated five times now — 80, 50, 3, 40, 72 — so this one is done by a
+checked-in tool that attributes each note to its containing function *by line range* and
+classifies that function two ways: where the body comes from, and whether the expression is
+the one shape codegen annotates. Both dimensions are needed; the earlier "72" used only the
+second and so counted notes that no regeneration can reach.
 
-That closes the loop on why three merges delivered nothing: **the shape is handled; these
-instances are not produced by codegen.** They are hand-written bodies that happen to live in
-`src/generated/`, so regeneration never rewrites them and the codegen fix cannot reach them.
+| origin | vec-element | other | total | can regeneration deliver it? |
+|---|---|---|---|---|
+| **transpiler-emitted** | **36** | 14 | 50 | 36 yes; the 14 need new codegen |
+| preserved (`rsl_merge_preserve.txt`) | 23 | 7 | 30 | no — the merge keeps the existing text |
+| `skip_functions` (hand-written) | 14 | 9 | 23 | no — the transpiler emits nothing at all |
+| | 73 | 30 | 103 | |
 
-It also puts a number on the decision: **72 one-line annotations**, all the same mechanical
-edit, all deterministic — which is precisely what 54.7.d proposed doing with a registered
-idempotent pass, and what `scripts/apply_triggers.py` already knows how to emit. Whether
-that is permitted is the `CLAUDE.md` question in 54.7.d; whether the code should be there at
-all is 54.7.c. Both are the same call, and it is worth 72 of the 103 notes.
+**All 36 deliverable notes are in `replica`** — which is exactly why three merges delivered
+nothing: executor, election and proposer had **zero** notes in that cell, so 103 → 103 was
+the correct outcome, not a disappointment. The earlier reading, "the shape is handled and
+these instances are not produced by codegen", is half right: 53 of the 103 are indeed
+hand-written or preserved, but 50 *are* transpiler output.
 
-**So 54.7.c is the live question**: ~70 of the 103 notes sit in hand-written bodies that
-merely *live* inside `src/generated/`. Either that code moves out (and becomes editable
-under the normal rules), or the notes stay and the exceptions list says so permanently.
-That is a project-policy call, and it is the same call 54.7.d needs.
+**The 36 hinge on how 42.8.c.2.iv.J is resolved, and the cheap resolution is worth 0.**
+They sit on `ensures` clauses, not in bodies — e.g. `replica_gen.rs:258-259`, whose body is
+a real one-line delegation. `merge_generated.py --preserve` keeps the *whole function*,
+contract included. So preserving replica's 18 actions to protect their bodies also preserves
+their stale contracts and delivers nothing; the 36 land only if fresh output can be taken
+whole, which means the `&mut self` conversion must emit real bodies rather than
+`assume(false)` stubs. That makes J worth 36 of 103 notes and promotes it from "Phase 48/49
+cleanup" to the highest-value item in Phase 54.
+
+**So the policy question in 54.7.c/54.7.d is worth 53 notes, not 72** — and `CLAUDE.md`
+forecloses both of its proposed answers, not just one. Beyond *"Do NOT hand-edit files under
+`src/generated/`"* it also says *"Do NOT delegate to manual implementation code or use
+'clone-delegate-extract' patterns in generated files"*, which rules out moving the bodies
+out as squarely as it rules out annotating them in place. `manual_code` is separately pinned
+to acceptor-only by `test_manual_code_footprint_is_empty`, and proposer/election explicitly
+removed theirs. Under current policy the only route to those 53 is transpiler support for
+the skipped functions (Phase 42 Option B). Recorded as decided rather than left open: I am
+following `CLAUDE.md` as written, so 54.7.c/d stay closed to me and the exceptions list says
+so permanently. Reopening them means amending `CLAUDE.md`, which is the user's call.
 
 Also still open and needing a decision rather than work: **54.7.d** (post-processing
 `src/generated/` conflicts with `CLAUDE.md`).
@@ -14904,6 +14926,17 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         `--preserve` **cannot** express this: it swaps a fresh body for the existing one of
         the same kind, and here the kinds differ. Replica needs the free-function forms
         retired in favour of the methods, which is Phase 48/49 work, not merge work.
+        **Now the highest-value item in Phase 54 (measured 2026-08-05).** Replica carries
+        **all 36** of the trigger notes that a regeneration can deliver; the other six modules
+        carry none, which is why merging three of them moved 103 → 103. See the attribution
+        table in Current Status.
+        **And the cheap resolution is worth 0 notes.** The 36 sit on `ensures` clauses —
+        `replica_gen.rs:258-259` is typical, and its body is a real one-line delegation, not
+        a stub. `--preserve` keeps the *whole function*, contract included, so preserving the
+        18 actions to save their bodies also freezes their stale contracts. The notes land
+        only if fresh output can be taken whole, i.e. the `&mut self` conversion emits real
+        bodies instead of `assume(false)` — which is 42.8.c.2.iv.E's territory. That is the
+        argument for finishing E rather than leaving it at "low priority".
 
   - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
         `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the
@@ -15059,7 +15092,12 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         explain why *every* fix downstream of it is inert. Instrument that next, not the AST.
         Otherwise the dump is now the tool for this — no more hand-built models, they were
         wrong about the node shape for four rounds running.
-        Still low priority: it only damages stub bodies the preserve list replaces.
+        **No longer low priority (re-scoped 2026-08-05).** The old reason — "it only damages
+        stub bodies the preserve list replaces" — holds for the three merged modules but not
+        for replica: preserving a body also preserves its contract, so replica's 18 actions
+        cannot be merged via `--preserve` without freezing the stale `ensures` that carry
+        **36** of the 103 trigger notes. Fixing this lift is what lets J take fresh output
+        whole. E is now the path to the largest deliverable in Phase 54, not a curiosity.
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:
 
@@ -17005,7 +17043,7 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 
 | where | count | why it remains |
 |---|---:|---|
-| `src/generated/RSL/` | 109 | 54.7: 60 need a regeneration that is blocked on Phase 42 (lossy RSL regen); 49 sit in preserved hand-written bodies pending the 54.7.c decision |
+| `src/generated/RSL/` | 109 | 54.7. Superseded by the measured attribution in Current Status (2026-08-05): of the 103 now remaining, **36** are deliverable by regeneration (all in replica, gated on 42.8.c.2.iv.J), 14 are transpiler-emitted but an unhandled shape, and **53** sit in `skip_functions` or preserved bodies that regeneration never rewrites. The 60/49 split here predates the tool and mixed the two dimensions. |
 | `src/protocol/Raft/refinement_proof/invariants.rs` | 11 | trigger belongs to a nested quantifier; the note points at the outer binder |
 | `src/protocol/RSL/refinement_proof/state_machine.rs` | 1 | same nested-quantifier shape |
 | `src/implementation/RSL/cconfiguration.rs` | 1 | same |
@@ -17473,6 +17511,18 @@ value per hour, not by phase number:
       the 76 notes until 42.8.c lands; (c) narrow 42.8.c to just the modules carrying these
       notes. Recommend (a) — the pass is verifiable in a way a hand edit is not — but it is a
       project-policy call, not mine to make silently.
+      **Resolved as far as I can resolve it (2026-08-05), and two of the three options are
+      now known to be wrong.** Option (b) is disproved: `scripts/classify_trigger_notes.py`
+      shows these notes are in `skip_functions` and preserved bodies, which regeneration
+      never rewrites, so waiting for 42.8.c delivers **0** of them however it lands. The
+      extraction alternative in 54.7.c is foreclosed by `CLAUDE.md` too — *"Do NOT delegate
+      to manual implementation code or use 'clone-delegate-extract' patterns in generated
+      files"* — and `manual_code` is pinned to acceptor-only by
+      `test_manual_code_footprint_is_empty`. So the item is **closed under current policy**,
+      not blocked pending a decision I might later take: the count is **53**, not 76, and
+      the only compliant route to it is transpiler support for the skipped functions
+      (Phase 42 Option B). Reopen only by amending `CLAUDE.md`, which is the user's call and
+      not mine to make silently — the recommendation above stands if they want it.
       **Rationale.** 54.7.a already taught codegen to emit these triggers; what is blocked is
       *delivery* — regeneration cannot run until the five `skip_functions` modules can be
       merged, and that is stuck on a codegen bug at 42.8.c.2.iv with no predictable finish.
