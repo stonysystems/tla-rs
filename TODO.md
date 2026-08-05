@@ -17101,7 +17101,29 @@ value per hour, not by phase number:
             protocol. `raft_gen.rs` regenerates cleanly (unlike 54.12.b's `proposer_gen.rs`),
             so this is unblocked, just not a one-line edit.
 
-- [ ] **54.16** The 5 `broadcast functions should have explicit #[trigger] or #![trigger ...]`.
+- [x] **54.16** The 5 `broadcast functions should have explicit #[trigger] or #![trigger ...]`.
+      **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 35 → 30, and the trigger
+      inventory diff is **0 added / 0 removed / 0 changed** — the evidence this item
+      specifically needed, since a broadcast axiom is in scope for every proof in the crate.
+
+      Two attempts were needed, and the failed one is the informative part:
+      1. **Inline `#[trigger]` inside the `forall` did not work.** vstd's own broadcast
+         lemmas are written that way, and in Verus several inline `#[trigger]` marks in one
+         quantifier form a single multi-trigger — semantically identical to the
+         `#![trigger e1@, e2@]` these already had. It verified, and the warning stayed at 5.
+      2. **Lifting the binder into the function's own parameters worked.** The check looks at
+         the *top level of the `ensures`*; with no parameters the quantifier is internal and
+         there is nothing there to mark. `axiom_endpoint_view(e1: EndPoint, e2: EndPoint)`
+         with `ensures #[trigger] e1@ == #[trigger] e2@ ==> e1 == e2` puts the trigger where
+         the check looks and gives the same `broadcast_forall`.
+
+      Safe because **every use is `broadcast use <name>;`** — checked, no direct calls — and
+      `broadcast use` passes no arguments, so the signature change reaches no call site.
+      `axiom_endpoint_view` alone is broadcast-used at ~20 places, so 0 errors across them is
+      a strong check that the trigger semantics really are unchanged.
+
+      Original 54.16 text follows.
+      
       Surfaced by 54.10; see the amendment on 54.4. The 5 are the injectivity axioms
       `axiom_endpoint_view` (`io_s.rs:123`), `axiom_cmessage_view`/`axiom_cpacket_view`
       (`cmessage.rs:222,294`), `axiom_cvote_view`/`axiom_clearner_tuple_view`
