@@ -2560,6 +2560,83 @@ verus! {
         }
     }
 
+    /// Interval generalisation of the one-step-ahead result: if a stretch of
+    /// the log carries at most one Configuration entry, the phase derived at
+    /// the far end is at most one legal joint-consensus step beyond the phase
+    /// derived at the near end.
+    ///
+    /// `lemma_latest_log_election_phase_is_at_most_one_step_ahead` is the
+    /// special case `earlier_len = commit_index`, `later_len = log.len()`. The
+    /// general form is needed to relate a leader's *election snapshot* phase —
+    /// which is what its saved membership phase, and hence its vote quorum, is
+    /// measured against — to phases derived at other prefixes.
+    pub proof fn lemma_bounded_boundary_interval_progresses_legally(
+        log: Seq<LLogEntry>,
+        earlier_len: int,
+        later_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            raft_membership_log_is_well_formed(log, initial_phase),
+            0 <= earlier_len <= later_len <= log.len(),
+            forall |a: int, b: int|
+                earlier_len <= a < later_len
+                && earlier_len <= b < later_len
+                && log[a].payload is Configuration
+                && log[b].payload is Configuration
+                ==> a == b,
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase_from_raft_log(
+                    log, earlier_len, initial_phase),
+                active_membership_phase_from_raft_log(
+                    log, later_len, initial_phase),
+            ),
+    {
+        if forall |index: int|
+            earlier_len <= index < later_len
+            ==> !(log[index].payload is Configuration)
+        {
+            lemma_configuration_free_interval_preserves_active_phase(
+                log, earlier_len, later_len, initial_phase);
+            lemma_phase_progression_reflexive(
+                active_membership_phase_from_raft_log(
+                    log, earlier_len, initial_phase),
+            );
+        } else {
+            let boundary = choose |index: int|
+                earlier_len <= index < later_len
+                && log[index].payload is Configuration;
+
+            assert forall |index: int|
+                earlier_len <= index < boundary
+                implies !(log[index].payload is Configuration)
+            by {
+                if log[index].payload is Configuration {
+                    assert(index == boundary);
+                    assert(false);
+                }
+            };
+
+            assert forall |index: int|
+                boundary + 1 <= index < later_len
+                implies !(log[index].payload is Configuration)
+            by {
+                if log[index].payload is Configuration {
+                    assert(index == boundary);
+                    assert(false);
+                }
+            };
+
+            lemma_configuration_free_interval_preserves_active_phase(
+                log, earlier_len, boundary, initial_phase);
+            lemma_adjacent_committed_raft_prefixes_progress_legally(
+                log, boundary + 1, initial_phase);
+            lemma_configuration_free_interval_preserves_active_phase(
+                log, boundary + 1, later_len, initial_phase);
+        }
+    }
+
     /// Every prefix of the actual tagged Raft log is a legal
     /// joint-consensus membership history.
     pub open spec fn raft_membership_log_is_well_formed(
