@@ -15820,7 +15820,7 @@ proves safety of the resulting system.
 
 ### Verification evidence
 
-- Selected ten-module regression: **197 verified, 0 errors** (`--rlimit 20`,
+- Selected ten-module regression: **201 verified, 0 errors** (`--rlimit 20`,
   `--triggers-mode silent`). Was 188 before this phase's later work.
 - `src/protocol/Raft/refinement_proof/invariants.rs` is verified **by function**, never as a
   whole module — see "Practical notes" below.
@@ -15835,33 +15835,29 @@ proves safety of the resulting system.
   (`lemma_dynamic_membership_committed_histories_are_safe`). This routes through the
   certificate machinery and does **not** depend on the Phase 34 assumes.
 - Agreement at certified membership boundaries for any server that has committed past them.
-- Configuration Leader Completeness under Stable membership over the whole server set.
+- **Configuration Leader Completeness**: every strictly later-term leader contains each
+  certified configuration boundary at its original physical log index
+  (`lemma_certified_configuration_leader_completeness_throughout_behavior`).
+- **All-entry Dynamic Leader Completeness**: every strictly later-term leader contains every
+  dynamically certified `Data` or `Configuration` entry at its original physical log index
+  (`lemma_dynamic_leader_completeness_throughout_behavior` and
+  `lemma_dynamically_committed_entry_survives_in_later_leader`).
+- Both completeness properties are conjuncts of `RaftSafetyInvariant`, established by
+  `RaftDistributedInit`, preserved by every `RaftDistributedNext` case, and lifted to every
+  reachable state by the behavior induction in `induction.rs`.
 
-### Proved modulo a stated obligation
+### Remaining proof boundary
 
-- Configuration Leader Completeness under **joint consensus**, for newly elected leaders
-  (`lemma_new_leader_holds_certified_boundaries`), plus preservation for existing leaders
-  (`lemma_configuration_leader_completeness_quiet_step`).
-- The obligation is `NoDivergentUncommittedConfiguration`: no server carries a `Configuration`
-  entry at a position where a certificate's committer carries a `Data` entry. Its
-  Stable-membership half is discharged
-  (`lemma_no_divergent_configuration_under_stable_membership`); the joint half is open.
+The dynamic-membership theorem is complete within the repository's existing Raft trust
+boundaries. The all-entry proof discharges `CertifiedLogEntryTransfersToVotedLeader` through
+the inherited `lemma_overlap_voter_entry_transfer`, the same log-transfer reasoning used by
+the static-Raft proof. Removing that inherited assumption boundary is separate, research-scale
+work; Milestone C adds no new `assume`, `admit`, or `external_body` shortcut.
 
-### Open work
-
-1. **Joint half of `NoDivergentUncommittedConfiguration`** — requires showing a leader cannot
-   hold an entry conflicting with one committed under a *joint* quorum. That is Leader
-   Completeness itself, reached via term induction, i.e. the same `d_rli ≤ k` strict-term wall
-   that blocks the Phase 34 assumes. Research-scale; not reachable by building differently.
-2. **Behaviour-level lift of the index induction** — `lemma_certified_boundaries_present_below`
-   verifies at `--rlimit 20`, but composing it with `RaftSafetyInvariant`'s 48 conjuncts and
-   the induction's quantified hypotheses exceeds any practical rlimit. Four approaches failed:
-   binding the state to a variable, splitting into two lemmas, forcing explicit conjunct
-   unfolding, and `#[verifier::spinoff_prover]` (which cut 2m16s → 51s but still exceeded).
-   This is an encoding problem, not a logical gap.
-3. **Milestone C** (all-entry dynamic Leader Completeness) — its Stable fragment is proved
-   (`lemma_stable_certified_entry_present_in_later_leader`); its joint case inherits obligation
-   1 verbatim, so starting it closes nothing until 1 is resolved.
+Committed-history agreement remains stronger evidence independent of that boundary: it follows
+directly from immutable, unique `LogCommitCertificate` coverage of every committed physical
+index. Dynamic Leader Completeness additionally establishes that those certified entries survive
+in every strictly later-term leader.
 
 ### Hypotheses that are NOT invariants — read before reusing these lemmas
 
@@ -15889,9 +15885,10 @@ proves safety of the resulting system.
   `lemma_ordered_leader_election_snapshots_have_legal_bridge` and
   `lemma_leader_log_long_enough_inductive` (all rlimit, still failing at `--rlimit 100`). This
   is why the regression is ten modules and excludes `invariants.rs`.
-- `lemma_leader_completeness_inductive` is deliberately kept **out** of `RaftSafetyInvariant`
-  and lifted by its own induction (`lemma_leader_completeness_holds_throughout_behavior`), so
-  the certificate-based committed-history theorem stays independent of the Phase 34 assumes.
+- The legacy fixed-majority `lemma_leader_completeness_inductive` remains available for
+  compatibility, but the membership proof uses `CertifiedConfigurationLeaderCompleteness` and
+  `DynamicLeaderCompleteness` in `RaftSafetyInvariant`. Certificate-based committed-history
+  agreement remains independent of the inherited transfer assumption.
 
 ### Native serialization gap
 
