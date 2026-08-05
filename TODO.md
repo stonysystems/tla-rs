@@ -15791,3 +15791,111 @@ transpiler unit tests ran; no whole-crate `verus --compile`):
   land green again.
 - Optional future work: teach the `&mut self` body transform to lift intermediate functional
   state (`s_mid = helper(s, ..)`) into `*self = s_mid`, which would let Raft rejoin `&mut self`.
+
+---
+
+## Phase 51: Raft Dynamic Membership via Joint Consensus
+
+Branch `adi/raft-membership-change`. Adds membership changes to the Raft protocol as tagged
+log entries, with election and commit quorums derived from the active membership phase, and
+proves safety of the resulting system.
+
+### Design
+
+- **Phases**: `Stable { config }` and `Joint { old_config, new_config }`. A quorum is a
+  majority of `config`, or a majority of *both* configs during a joint phase
+  (`is_quorum_for_phase`, `src/protocol/Raft/membership.rs`).
+- **Membership lives in the log**: log payloads are tagged `Data { value }` or
+  `Configuration { phase }`. The active phase is derived by scanning a log prefix for the
+  last `Configuration` entry (`active_membership_phase_from_raft_log`).
+- **Commit quorums** use the phase from the server's *committed* prefix; **election quorums**
+  use the phase from the candidate's *entire* log, so a candidate never campaigns under a
+  configuration older than one it already carries. Confirmed as intended behaviour by Zihao.
+- **Commit boundaries**: one commit advancement may batch `Data` entries but must stop at the
+  first `Configuration` entry, so a quorum computed under an old configuration cannot skip
+  several membership changes.
+- **Ghost certificates**: `ConfigurationCommitCertificate` / `LogCommitCertificate` record,
+  per committed log index, the entry, the committer, the governing phase, and the quorum.
+  These are proof-only; they do not affect wire messages or runtime state.
+
+### Verification evidence
+
+- Selected ten-module regression: **197 verified, 0 errors** (`--rlimit 20`,
+  `--triggers-mode silent`). Was 188 before this phase's later work.
+- `src/protocol/Raft/refinement_proof/invariants.rs` is verified **by function**, never as a
+  whole module — see "Practical notes" below.
+- No `assume`/`admit`/`external_body` is added anywhere in this phase. The inherited Phase 34
+  assumes are untouched.
+
+### Proved unconditionally (behaviour level)
+
+- Quorum overlap across every legal `Stable → Joint → Stable` progression.
+- **Committed histories never conflict**: two servers cannot commit different physical entries
+  at the same log index, under dynamic joint-consensus quorums
+  (`lemma_dynamic_membership_committed_histories_are_safe`). This routes through the
+  certificate machinery and does **not** depend on the Phase 34 assumes.
+- Agreement at certified membership boundaries for any server that has committed past them.
+- Configuration Leader Completeness under Stable membership over the whole server set.
+
+### Proved modulo a stated obligation
+
+- Configuration Leader Completeness under **joint consensus**, for newly elected leaders
+  (`lemma_new_leader_holds_certified_boundaries`), plus preservation for existing leaders
+  (`lemma_configuration_leader_completeness_quiet_step`).
+- The obligation is `NoDivergentUncommittedConfiguration`: no server carries a `Configuration`
+  entry at a position where a certificate's committer carries a `Data` entry. Its
+  Stable-membership half is discharged
+  (`lemma_no_divergent_configuration_under_stable_membership`); the joint half is open.
+
+### Open work
+
+1. **Joint half of `NoDivergentUncommittedConfiguration`** — requires showing a leader cannot
+   hold an entry conflicting with one committed under a *joint* quorum. That is Leader
+   Completeness itself, reached via term induction, i.e. the same `d_rli ≤ k` strict-term wall
+   that blocks the Phase 34 assumes. Research-scale; not reachable by building differently.
+2. **Behaviour-level lift of the index induction** — `lemma_certified_boundaries_present_below`
+   verifies at `--rlimit 20`, but composing it with `RaftSafetyInvariant`'s 48 conjuncts and
+   the induction's quantified hypotheses exceeds any practical rlimit. Four approaches failed:
+   binding the state to a variable, splitting into two lemmas, forcing explicit conjunct
+   unfolding, and `#[verifier::spinoff_prover]` (which cut 2m16s → 51s but still exceeded).
+   This is an encoding problem, not a logical gap.
+3. **Milestone C** (all-entry dynamic Leader Completeness) — its Stable fragment is proved
+   (`lemma_stable_certified_entry_present_in_later_leader`); its joint case inherits obligation
+   1 verbatim, so starting it closes nothing until 1 is resolved.
+
+### Hypotheses that are NOT invariants — read before reusing these lemmas
+
+- `s.election_membership_phase == Some(election_membership_phase_for_state(s, c))` holds **only
+  at the moment of promotion**. A leader stores the phase it was elected under;
+  `election_membership_phase_for_state` reads the *current* log. Once a leader appends a
+  `Configuration` via `LAppendConfigurationEntry`, the two diverge permanently. This is why the
+  joint-consensus result is stated for newly elected leaders — see
+  `lemma_receive_vote_and_become_leader_records_latest_log_phase`, where the promotion rule
+  supplies the equality directly.
+- `has_recorded_election_log_provenance` is weaker than that equality: it only says the stored
+  phase derives from *some* log prefix. Strengthening it to name `log.len()` would make it
+  false, for the reason above.
+
+### Practical notes
+
+- **Do not verify `invariants.rs` as a whole module.** It OOM-kills an 8 GB WSL VM (Verus
+  spawns roughly one Z3 per core). Verify by function with `--verify-function`. Cap CPUs with
+  `taskset -c 0-5` for expensive runs.
+- `invariants.rs` has **six pre-existing failures**, all reproducible on the pre-phase
+  checkpoint `fc28fab6`: `lemma_lnext_leader_quorum_preserved` (postcondition — it asserts the
+  fixed-majority `votes_granted.len() >= quorum_size`, which phase-based quorums cannot
+  satisfy), plus `lemma_vote_sets_disjoint`, `lemma_election_safety_candidate_to_leader`,
+  `lemma_election_safety_inductive`,
+  `lemma_ordered_leader_election_snapshots_have_legal_bridge` and
+  `lemma_leader_log_long_enough_inductive` (all rlimit, still failing at `--rlimit 100`). This
+  is why the regression is ten modules and excludes `invariants.rs`.
+- `lemma_leader_completeness_inductive` is deliberately kept **out** of `RaftSafetyInvariant`
+  and lifted by its own induction (`lemma_leader_completeness_holds_throughout_behavior`), so
+  the certificate-based committed-history theorem stays independent of the Phase 34 assumes.
+
+### Native serialization gap
+
+Logical and generated replication carry `Configuration` payloads, but the native serializer
+still uses a compatibility encoding that writes the legacy scalar `value` instead of the full
+membership phase and server vectors. Out of scope for the proof work; required before any
+real deployment of membership changes.
