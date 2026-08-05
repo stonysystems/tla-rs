@@ -97,7 +97,7 @@ Note: 4-thread aggregate throughput is lower than 1-thread because client thread
 - New `LNext` has 5 composite branches instead of 11 atomic ones
 - Refinement proof: composite `LNext` refines atomic `LNext`
 
-See [docs/phase27-motivation.md](docs/phase27-motivation.md) for detailed pre-Phase-27 analysis.
+See [docs/phase27-motivation.md](../docs/phase27-motivation.md) for detailed pre-Phase-27 analysis.
 
 ## 5. Transpiler Enhancement (Phase 29 — Ongoing)
 

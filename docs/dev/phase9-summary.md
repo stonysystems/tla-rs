@@ -185,13 +185,13 @@ Phase 9 complete when:
 1. **`transpiler/src/codegen/mod.rs`** - Type generation (View, validity)
 2. **`transpiler/src/translator/mod.rs`** - Expression transformation
 3. **`transpiler/src/printer/mod.rs`** - Code output
-4. **`src/generated/RSL/election_gen.rs`** - Reference with manual fixes
-5. **`docs/dev/translation-rules.md`** - Complete rules specification
+4. **`src/generated/RSL/election_gen.rs`** - Historical generated output; never hand-edit
+5. **`docs/tla-rs-book.md`** - Current translation and proof-generation guidance
 
 ## Key Resources
 
-- **Translation Rules**: `docs/dev/translation-rules.md` - Complete specification
-- **Manual Reference**: `src/generated/RSL/election_gen.rs` - Working example
+- **Current guidance**: `docs/tla-rs-book.md`, Chapters 17–20
+- **Generated output policy**: `AGENTS.md`; fix the source/configuration/transpiler and regenerate
 - **TODO Plan**: `TODO.md` Phase 9 - Detailed task breakdown
 - **Existing Implementations**: `src/implementation/RSL/*.rs` - Patterns to match
 

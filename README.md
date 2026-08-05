@@ -140,9 +140,9 @@ scons --skip-verus
 scons bin/IronRSLServerUDP.dll
 ```
 
-> A complete, reproducible spec → generate → verify → compile → run walkthrough for a fresh
-> checkout (with toolchain pins and exact commands) lives in
-> [`docs/REPRODUCE_WORKFLOW.md`](docs/REPRODUCE_WORKFLOW.md).
+> The complete spec → generate → verify → compile → run walkthrough, including
+> toolchain pins and exact commands, is in
+> [*The tla-rs Book*](docs/tla-rs-book.md) (Chapters 2, 7, 10, and 16).
 
 ## Running
 
@@ -204,8 +204,8 @@ scripts/bench_generic.sh epaxos 8 1 4
 scripts/bench_generic.sh pbft   8 1 4   # 4-node; see the script for cert setup
 ```
 
-See [`docs/REPRODUCE_WORKFLOW.md`](docs/REPRODUCE_WORKFLOW.md) for the full run recipe,
-including PBFT's 4-node certificate generation.
+See [*The tla-rs Book*](docs/tla-rs-book.md), Chapter 10, for the full run recipe,
+including PBFT's four-node certificate generation.
 
 ## Transpiler
 
@@ -305,18 +305,22 @@ To select the calling convention, set `mut_self_types` in the protocol's `_trans
 mut_self_types = ["CProposer"]   # emit &mut self methods on CProposer
 ```
 
-See `transpiler/docs/EFFICIENT_EMIT.md` for the `&mut self`-vs-functional decision matrix and
-`docs/REPRODUCE_WORKFLOW.md` for how to reproduce these measurements.
+See `transpiler/docs/EFFICIENT_EMIT.md` for the dated `&mut self`-versus-functional
+performance record and [*The tla-rs Book*](docs/tla-rs-book.md), Chapter 25, for the
+current measurement workflow.
 
 ### Documentation
 
-- `transpiler/docs/ANNOTATION_FORMAT.md` - Mode annotation syntax
-- `transpiler/docs/PATTERNS.md` - Supported transformation patterns, with runnable examples
-  in `transpiler/verus_examples/`
-- `transpiler/docs/EFFICIENT_EMIT.md` - `&mut self` vs functional convention, perf history
-- `transpiler/docs/LIMITATIONS.md` - Known limitations, workarounds, and performance analysis
-- `transpiler/docs/MIGRATION_GUIDE.md` - Migration from manual implementations
-- `docs/REPRODUCE_WORKFLOW.md` - End-to-end spec → generate → verify → compile → run guide
+- [`docs/tla-rs-book.md`](docs/tla-rs-book.md) - Current user guide, developer guide,
+  CLI/configuration references, support matrix, and proof-pattern catalog
+- [`docs/model_checker_status.md`](docs/model_checker_status.md) - Test-coupled model-checker
+  capability and evidence status
+- [`docs/clean_tla_subset.md`](docs/clean_tla_subset.md) - Normative C1–C5 clean-subset
+  contract used by the TLA+ projection path
+- `transpiler/docs/EFFICIENT_EMIT.md` - Dated calling-convention performance and design record
+
+Documents named by development phases and files under `docs/dev/` are historical
+investigation records, not current user instructions. Start with the book.
 
 ## Code Organization
 
@@ -338,8 +342,8 @@ Types are prefixed by layer: `L*` for logical/protocol types (`LReplica`, `LProp
 
 - Raft's refinement proof still carries a few `assume`s, mostly around leader completeness;
   every other protocol's proof is assumption-free
-- RSL is not fully auto-generated: some functions have hand-written bodies
-  (`skip_functions`); see `transpiler/docs/REGEN_WORKFLOW.md`
+- RSL still has skipped or externally implemented generated paths; see the generated-artifact
+  lifecycle and trust-boundary coverage in *The tla-rs Book*
 - `&mut self` codegen cannot handle intermediate whole-state assignments; protocols using
   that pattern (Raft) stay on the slower functional convention
 - Marshalling lacks a spec function for the non-deserializable check

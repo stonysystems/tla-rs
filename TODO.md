@@ -2,6 +2,12 @@
 
 A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-style specifications into verified executable implementations.
 
+> **Documentation note:** This file is also a historical engineering ledger. Some completed
+> entries name standalone guides that were removed after their maintained content was
+> consolidated into [`docs/tla-rs-book.md`](docs/tla-rs-book.md). Those names record what
+> existed during the phase; use Git history for the old artifact and the book for current
+> guidance.
+
 ## Tools & Environment
 
 Repo-of-record versions (README / `.github/workflows/ci.yml`):
