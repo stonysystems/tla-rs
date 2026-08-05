@@ -30,13 +30,21 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 codegen pipeline this phase opened is drained, and the ceiling is tightened to 77 so it
 cannot silently regrow.
 
-**What is left, and it is only two things:**
+**What is left:**
 **All 74 sit in hand-written bodies.** Verified against fresh transpiler output on
 2026-08-05 (54.10.b), not inferred: `classify_trigger_notes.py --fresh-dir` reports
-**0 emitted**. There is no codegen work left in this phase — `CLAUDE.md` forecloses both
-answers 54.7.c/d proposed (editing in place, and extracting to `*_manual.rs`), so the only
-compliant route for any of the 74 is teaching the transpiler to generate the function.
+**0 emitted**. There is no codegen work left in this phase.
 Recorded in `docs/rsl-skip-functions.md`.
+
+**🔝 POLICY CHANGE (2026-08-05, by the user): the block on those 74 is lifted.**
+`CLAUDE.md` now scopes the generated-code rule by **provenance rather than path**.
+Transpiler-emitted code still may not be hand-edited; hand-written bodies preserved inside
+`src/generated/` **may be edited directly**, because regeneration copies them through verbatim,
+so the divergence risk the rule guards against does not apply to them. 54.7.c's "closed under
+current policy" no longer holds — its facts were right, only the policy was. **Do 54.7.f next**
+(the 53 deliverable notes). Confirm provenance per function with
+`classify_trigger_notes.py --fresh-dir` rather than inferring it from the config; that
+inference was already measured wrong for all 74.
 
 **42.8.c final (2026-08-05).** Six of seven RSL modules are reconciled and the crate is at
 `1046 verified, 0 errors`, notes 103, warnings 3.
@@ -17962,6 +17970,21 @@ value per hour, not by phase number:
       concurrent rewrite) plus every routine full-suite run since 54.18 landed, all clean.
       **Reopen if it recurs** — that would be real evidence against 54.18 being the whole
       story, which is more than I have now in either direction.
+
+- [ ] **54.7.f** Annotate the **53 deliverable notes** in hand-written bodies under
+      `src/generated/`. **Unblocked 2026-08-05** by the `CLAUDE.md` amendment above.
+      - Confirm provenance per function with `scripts/classify_trigger_notes.py --fresh-dir`
+        before editing. Do not reuse the old membership test (absent from `skip_functions` and
+        from the preserve list) — 54.10.b measured it wrong for all 74.
+      - Edit the bodies in place. No post-processing pass, no `*_manual.rs` extraction: both
+        were workarounds for a restriction that no longer applies, and the extraction route
+        stays closed by `test_manual_code_footprint_is_empty` regardless.
+      - Re-verify per batch: `1048 verified, 0 errors` must hold and
+        `trigger_exceptions.py --check` must agree with a fresh count.
+      - Expected: 74 down to ~21 — the 10 unlisted orphans plus the sites where Verus picks a
+        term containing a lambda, which cannot be written by hand at all.
+      - Still **not** `#![auto]`: it silences the note while leaving the choice automatic, so
+        the count moves and the version-stability problem does not.
 
 - [ ] **54.7.d** Annotate the recurring-shape notes on the checked-in artifacts (**72** as
       measured 2026-08-05, not the 76 first recorded; see 54.7.c for the census)
