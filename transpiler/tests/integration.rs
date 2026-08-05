@@ -1068,6 +1068,44 @@ fn test_chain_replication_config_loading() {
 
 /// Helper: verify that transpiler output for a protocol matches the checked-in *_gen.rs.
 /// Catches stale generated files (e.g., missing proof lemma calls after config changes).
+/// Phase 54.18: build the release binary once, then invoke it directly.
+///
+/// These tests used to each spawn `cargo run --release -- ...`. Around twenty
+/// of them do, and cargo runs tests in parallel, so those nested cargo
+/// processes contend on the same target directory -- with each other and with
+/// the outer `cargo test`, which is holding it too. The symptom was whole
+/// batches of regen tests failing together with
+/// `failed to build archive ... libverus_transpiler-*.rlib`, and passing on an
+/// immediate re-run once the artifacts were warm. That reads like a real
+/// regression and costs real time to dismiss.
+///
+/// `OnceLock::get_or_init` runs the build exactly once; concurrent callers
+/// block until it finishes rather than racing it.
+fn transpiler_binary() -> &'static std::path::Path {
+    static BIN: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BIN.get_or_init(|| {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let out = std::process::Command::new("cargo")
+            .args(["build", "--release", "--bin", "verus-transpile"])
+            .current_dir(manifest)
+            .output()
+            .expect("failed to spawn `cargo build --release`");
+        assert!(
+            out.status.success(),
+            "cargo build --release --bin verus-transpile failed:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let path = manifest.join("target/release/verus-transpile");
+        assert!(
+            path.exists(),
+            "cargo build --release reported success but {} is missing",
+            path.display()
+        );
+        path
+    })
+    .as_path()
+}
+
 fn assert_regen_matches_checked_in(
     protocol_dir: &str, // e.g. "ChainReplication"
     spec_file: &str,    // e.g. "chain.rs"
@@ -1078,11 +1116,8 @@ fn assert_regen_matches_checked_in(
     let repo_root = resolve_repo_root_for_integration();
     let checked_in_path = repo_root.join(format!("src/generated/{}/{}", protocol_dir, gen_file));
 
-    let output = std::process::Command::new("cargo")
+    let output = std::process::Command::new(transpiler_binary())
         .args([
-            "run",
-            "--release",
-            "--",
             "--input",
             repo_root
                 .join(format!("src/protocol/{}/{}", protocol_dir, spec_file))
@@ -1265,11 +1300,8 @@ fn assert_types_regen_matches_checked_in(
     let repo_root = resolve_repo_root_for_integration();
     let checked_in_path = repo_root.join(format!("src/generated/{}/types_gen.rs", protocol_dir));
 
-    let output = std::process::Command::new("cargo")
+    let output = std::process::Command::new(transpiler_binary())
         .args([
-            "run",
-            "--release",
-            "--",
             "generate-types",
             "--input",
             repo_root
@@ -2686,10 +2718,8 @@ fn test_election_recursive_functions_generate_loop_code() {
     std::fs::write(&tmp_toml, &base_toml).expect("Failed to write temp TOML");
     let tmp_out = std::env::temp_dir().join("test_election_recursive_out.rs");
 
-    let output = std::process::Command::new("cargo")
+    let output = std::process::Command::new(transpiler_binary())
         .args([
-            "run",
-            "--",
             "-i",
             spec_path,
             "-a",

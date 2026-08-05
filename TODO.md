@@ -17154,23 +17154,34 @@ value per hour, not by phase number:
       before rewriting, and re-run the trigger diff, since changing a broadcast trigger can
       move proofs anywhere.
 
-- [ ] **54.18** The integration suite depends on a **separately-built release binary**, and
-      that is a real harness defect, not bad luck. Many tests (`*_regen_matches_checked_in`,
-      the scaffold/roundtrip ones) shell out to `transpiler/target/release/verus-transpile`,
-      but `cargo test` builds the *debug* profile and never rebuilds it. So results depend on
-      whether someone ran `cargo build --release` recently, and a run that races a rebuild
-      compares fresh spec input against a stale binary's output.
-      Observed three times on 2026-08-05, each alongside
-      `failed to build archive ... libverus_transpiler-*.rlib`: 13 failures, then 1, then 18
-      — every one passing on immediate re-run with no source change in between. The 18-failure
-      run took 48s against a normal 3.4s, which is the rebuild.
-      This is **distinct from 54.17**: that one is a doc-contract test reading `TODO.md` and
-      is still undiagnosed. This one is understood, and it is the more damaging of the two,
-      because 18 simultaneous red tests read like a real regression and cost real time to
-      dismiss.
-      Fix: make the release binary a build dependency of the tests — a `build.rs` step, or
-      have the helper that locates `verus-transpile` run `cargo build --release` (once, behind
-      a `OnceLock`) instead of assuming the artifact is current and fresh.
+- [x] **54.18** The integration suite raced nested `cargo` builds. **DONE (2026-08-05).**
+
+      **The first diagnosis was wrong and is corrected here.** It said the tests use a
+      release binary that `cargo test` "never rebuilds", so results depend on whether someone
+      ran `cargo build --release` recently. Reading the helpers shows the opposite: the tests
+      ran `cargo run --release -- …` and therefore *did* rebuild. The real fault is that
+      **~20 tests each spawn their own nested `cargo`**, and cargo runs tests in parallel, so
+      those processes contend on one target directory — with each other, and with the outer
+      `cargo test` holding it too.
+
+      Fixed with a `OnceLock`-guarded `transpiler_binary()` that runs
+      `cargo build --release --bin verus-transpile` exactly once and returns the path;
+      concurrent callers block on it rather than racing. The three call sites in this crate
+      now invoke the binary directly. The fourth (`dpor-checker`) is left alone — separate
+      manifest, separate target dir.
+
+      **Verified as a controlled A/B**, not inferred. Scenario: `touch transpiler/src/lib.rs`,
+      then run the suite.
+      - fix reverted → the `failed to build archive … libverus_transpiler-*.rlib` races
+        reproduce immediately (`failed to map object file: memory map must have a non-zero
+        length`, then repeated `No such file or directory`)
+      - fix applied → **350 passed, 0 failed**, twice
+      Warm-cache runs also got faster, 3.4s → 2.1s, since nothing re-enters cargo per test.
+
+      Accounts for three batches of spurious failures on 2026-08-05 (13, then 1, then 18),
+      each passing on immediate re-run. **54.17 is a different problem and stays open** — it
+      is a doc-contract test reading `TODO.md`, and it failed once in a run where the release
+      binary was already warm, so this does not explain it.
 
 - [ ] **54.17** `test_phase_38_10_4_b_shadow_subset_report_script_contract` is **flaky**.
       Seen failing twice on 2026-08-05, passing on immediate re-run both times, and **not
