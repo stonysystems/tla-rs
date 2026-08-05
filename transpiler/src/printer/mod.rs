@@ -154,6 +154,22 @@ impl Printer {
             } else {
                 method_body
             };
+            // Phase 42.8.c.2.iv.J.3.b: a proof block can still index the pre-lift
+            // tuple -- `assert(result.1@.map(..) =~= Seq::empty())` where `result`
+            // is now the single remaining output. The restructure path already
+            // rewrites these, but it only runs when the `let` value still holds a
+            // tuple; when the state element was dropped upstream the value is just
+            // `{ vec![] }`, the transform is a no-op, and the stale index survives.
+            //
+            // A non-tuple return type makes this unambiguous: `result.N` cannot be
+            // a legitimate index into a value that is not a tuple, so every such
+            // reference is a leftover of the lift. Methods that really do return a
+            // tuple are left alone.
+            let method_body = if !returns_unit && !matches!(&func.return_type, ExecType::Tuple(_)) {
+                Self::rewrite_tuple_refs_in_expr(&method_body, Some(0), "result", 1)
+            } else {
+                method_body
+            };
             self.print_expr(&method_body);
         } else {
             self.print_expr(&func.body);
@@ -394,8 +410,22 @@ impl Printer {
                                         }
                                     }
                                     _ => {
-                                        // Single expression (assignments only)
-                                        new_stmts.push(transformed);
+                                        // A single expression. When the method still
+                                        // returns something -- the value is an `if`
+                                        // whose branches each yield the remaining
+                                        // output -- it has to stay bound, because the
+                                        // trailing `result` below is still emitted.
+                                        // Pushing it bare dropped the binding and left
+                                        // `result` undefined (Phase 42.8.c.2.iv.J.3.b).
+                                        if returns_unit {
+                                            new_stmts.push(transformed);
+                                        } else {
+                                            new_stmts.push(ExecExpr::Let {
+                                                pattern: tail_var.clone(),
+                                                ty: None,
+                                                value: Box::new(transformed),
+                                            });
+                                        }
                                     }
                                 }
 
@@ -2438,6 +2468,89 @@ mod tests {
         assert!(
             !rendered.contains("Tuple"),
             "`result` still names the pre-lift tuple:\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.b. A proof block can outlive the tuple it indexes.
+    /// The restructure path rewrites `result.1` to `result`, but it only runs when
+    /// the `let` value still holds a tuple; when the state element was dropped
+    /// upstream the value is just `{ vec![] }`, the transform is a no-op, and the
+    /// stale index survives into code that does not compile.
+    #[test]
+    fn test_stale_tuple_index_in_proof_is_rewritten_for_a_non_tuple_return() {
+        let func = ExecFunction {
+            name: "CReplicaNextProcessInvalid".to_string(),
+            params: vec![],
+            return_type: ExecType::Vec(Box::new(ExecType::Named("CPacket".to_string()))),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            is_method: true,
+            receiver_type: Some("CReplica".to_string()),
+            body: ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "result".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::VecLit(vec![])),
+                },
+                ExecExpr::ProofBlock {
+                    stmts: vec![ExecExpr::Assert(Box::new(ExecExpr::Var(
+                        "result.1@.map(|i: int, p: CPacket| p@) =~= Seq::empty()".to_string(),
+                    )))],
+                },
+                ExecExpr::Var("result".to_string()),
+            ]),
+        };
+        let out = Printer::default().print_function(&func);
+        assert!(
+            !out.contains("result.1"),
+            "the stale tuple index must be rewritten: {}",
+            out
+        );
+        assert!(
+            out.contains("result@.map"),
+            "it should become a plain `result@`: {}",
+            out
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.b. When the lifted value is an `if` rather than a
+    /// block, the restructure pushed it as a bare statement and dropped the
+    /// `let result =` binding -- while still emitting the trailing `result`, which
+    /// is then undefined. Only methods that still return something are affected;
+    /// a unit-returning one has no trailing var to strand.
+    #[test]
+    fn test_if_shaped_value_keeps_its_binding_when_the_method_returns() {
+        let body = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::If {
+                    cond: Box::new(ExecExpr::Var("c".to_string())),
+                    then_branch: Box::new(ExecExpr::Tuple(vec![
+                        ExecExpr::Struct {
+                            name: "CReplica".to_string(),
+                            fields: vec![("f".to_string(), ExecExpr::Var("x".to_string()))],
+                        },
+                        ExecExpr::VecLit(vec![]),
+                    ])),
+                    else_branch: Some(Box::new(ExecExpr::Tuple(vec![
+                        ExecExpr::Struct {
+                            name: "CReplica".to_string(),
+                            fields: vec![("f".to_string(), ExecExpr::Var("y".to_string()))],
+                        },
+                        ExecExpr::VecLit(vec![]),
+                    ]))),
+                }),
+            },
+            ExecExpr::Var("result".to_string()),
+        ]);
+        let out = Printer::default()
+            .print_expr_to_string(&Printer::struct_to_field_assignments(&body, false));
+        assert!(
+            out.contains("let result ="),
+            "the binding must survive an if-shaped value: {}",
+            out
         );
     }
 

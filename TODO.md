@@ -15072,8 +15072,38 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
                struct literal too, or it references a name that no longer exists.
             This is also why the defect surfaces only now: replica is the only orchestrating
             module, so it is the only one with cross-module calls into migrated modules.
-      - [ ] **J.3.b** Rewrite tuple-index references in proof blocks when the lift drops the
+      - [x] **J.3.b** Rewrite tuple-index references in proof blocks when the lift drops the
             binding (`result.1` → the lifted output), extending E's fix to proof positions.
+            **DONE 2026-08-05 — two defects, not one.**
+            1. **The stale index.** `rewrite_tuple_refs_in_string` already did the rewrite,
+               but only the restructure path called it, and that path runs only while the
+               `let` value still holds a tuple. When the state element was dropped upstream
+               the value is just `{ vec![] }`, the transform is a no-op, and `result.1@`
+               survives. Now applied in the method path whenever the return type is **not**
+               a tuple — under which a `result.N` cannot be legitimate, so the condition is
+               exact and genuine tuple-returning methods are untouched. 12 sites → 0.
+            2. **The dropped binding**, found only by running the merge again. When the
+               lifted value is an `if` rather than a block, the restructure pushed it as a
+               bare statement, losing `let result =`, while still emitting the trailing
+               `result` — leaving it undefined. It is now rebound whenever the method still
+               returns something.
+            Both guarded, both verified failing-first.
+            **Measured end to end: replica's 28 errors → 10, and the last 10 are a different
+            problem entirely** (see J.2 below, reopened).
+      - [ ] **J.2 (reopened) — the caller migration is not mechanical, and my earlier
+            "20 uniform call sites" reading was wrong.** `ReplicaImpl.rs` already contains
+            `impl CReplica { pub fn CReplicaNextProcessInvalid(&mut self, ..) }` — an
+            `#[verifier::external_body]` adapter returning `OutboundPackets` — for each of
+            the 18 actions, on the **same type and under the same name** as the method fresh
+            output now emits. So the migration is a name collision, not a call-site rewrite:
+            with both present rustc reports `duplicate definitions`, and rewriting the
+            wrapper's body to `self.CReplicaNextProcessInvalid(..)` makes it call itself.
+            Qualifying as `CReplica::CReplicaNextProcessInvalid(self, ..)` does not
+            disambiguate either — both are inherent methods on `CReplica`.
+            The wrappers therefore have to be renamed (they are hand-written implementation
+            code, so this is ordinary work), which also changes the names their own callers
+            use. That is the remaining leaf, and it is an API change rather than a
+            mechanical substitution.
       - [ ] **J.4 — confirm the 36 notes land**, with
             `scripts/classify_trigger_notes.py` on a fresh verification log.
 
