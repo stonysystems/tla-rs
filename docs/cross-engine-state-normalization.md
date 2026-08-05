@@ -1,4 +1,9 @@
-# Cross-Engine State Normalization Schema (Phase 36.1.2)
+# Cross-Engine State Normalization Schema
+
+> **Status:** Maintained parity contract. The original Phase 36 proposal used SHA-256
+> identifiers and proposed a two-file ordinary export. The implementation now uses canonical
+> source-first state keys, compares canonical `state` values across engines, and writes only
+> `states.jsonl` on the ordinary CLI path. The schema below describes that current behavior.
 
 This document defines the canonical normalization schema used to compare
 reachable state sets between the source-first model checker and TLC.
@@ -137,34 +142,50 @@ Two states are **parity-equal** if and only if their canonical JSON
 representations (after projection and normalization) are identical as
 strings.
 
-The **canonical state ID** is the SHA-256 hex digest of the canonical
-JSON string (minified, no trailing newline). This provides a stable,
-diffable identifier for each distinct state.
+The source-first `id` field is `RuntimeValue::canonical_key()`. It is a stable key for one
+source-first export, but it is not a SHA-256 digest and must not be assumed to match an ID
+chosen by TLC tooling. Cross-engine comparison therefore keys entries by minified canonical
+JSON in the `state` field. `scripts/diff_parity_states.py` implements this rule.
 
 ## 4. Export Format
 
-Each engine exports its reachable state set as a JSON Lines (`.jsonl`)
-file, one state per line, sorted by canonical state ID:
+`verus-transpile model-check --export-parity DIR` currently writes
+`DIR/states.jsonl`, one state per line, sorted by the source-first canonical key:
 
 ```jsonl
-{"id":"a1b2c3...","state":{...},"initial":true,"depth":0}
-{"id":"d4e5f6...","state":{...},"initial":false,"depth":1}
+{"id":"<canonical-key>","state":{...},"initial":true,"depth":0}
+{"id":"<canonical-key>","state":{...},"initial":false,"depth":1}
 ```
 
 Fields:
-- `id`: SHA-256 hex digest of the minified canonical JSON of `state`
+- `id`: source-first canonical state-key string
 - `state`: the canonical JSON value (protocol state only)
 - `initial`: boolean, whether this is an initial state
 - `depth`: BFS depth at which this state was first discovered
 
-The file is sorted by `id` for stable diffing.
+Although the CLI help still says “states + edges,” the ordinary command does not currently
+write `edges.jsonl`. Absence of that file is an implementation gap, not evidence that the
+explored graph has no edges.
 
-## 5. Edge Export (Optional)
+## 5. Debug and Edge Export
 
-For deeper parity debugging, each engine may also export an edge file:
+`--export-parity-debug DIR` streams three files during ordinary BFS/DFS exploration:
+
+| File | Per-line fields |
+|---|---|
+| `generated_states.jsonl` | `state_id`, `state`, `depth`, `initial`, nullable `branch_label`, nullable `predecessor_state_id`, and `classification` |
+| `distinct_states.jsonl` | The same provenance fields except `classification`; one line per first-seen state |
+| `edges.jsonl` | `src`, `dst`, `branch_label`, and successor `depth` |
+
+`classification` is `accepted_distinct` or `duplicate`. Debug edges include transitions to
+duplicate states, which is useful when locating the first divergence. The identifiers in these
+files are still engine-local canonical keys. DPOR does not currently populate the ordinary
+stream needed for an equivalent useful debug export.
+
+The lower-level graph exporter can serialize an edge as:
 
 ```jsonl
-{"src":"a1b2c3...","dst":"d4e5f6...","action":"TMSendPrepare"}
+{"src":"<source-key>","dst":"<destination-key>","action":"TMSendPrepare"}
 ```
 
 Fields:
@@ -172,49 +193,26 @@ Fields:
 - `dst`: canonical state ID of the successor state
 - `action`: action/branch label
 
-Sorted by `(src, dst, action)` for stable diffing.
+When that lower-level path is used, edges are sorted by `(src, dst, action)`.
 
 ## 6. Protocol-Specific Notes
 
-### TwoPhase
-
-- **Source-first state**: `LState { tm_state, tm_prepared, rm_prepared, rm_committed, rm_aborted }`
-- **TLC state**: `state` record with same fields; `msgs` excluded from projection
-- **Enum mapping**: `LTMState::Init` -> `{"_variant":"Init"}`, etc.
-- **Expected parity**: After projecting TLC to `state` only, distinct
-  counts should match. TLC's 64 distinct states likely collapse to
-  fewer once `msgs` is excluded.
-
-### PrimaryBackup
-
-- **Source-first state**: `LState` with view/backup/pending fields
-- **TLC state**: `state` record; `msgs` excluded
-- **Expected parity**: Source-first 60 vs TLC 54 suggests a potential
-  semantic difference (source-first has MORE states, not fewer).
-
-### LeaderElection
-
-- **Source-first state**: `LState` with epoch/leaders/acceptors
-- **TLC state**: `state` record; `msgs` excluded
-- **Note**: Source-first times out at 280 states; parity can only be
-  checked if source-first can exhaust the small model.
-
-### Paxos
-
-- **Source-first state**: `LState` with ballot/vote/decision fields
-- **TLC state**: `state` record; `msgs` excluded
-- **Note**: Source-first times out at 75 states; parity requires
-  source-first to exhaust a smaller model first.
+TwoPhase, PrimaryBackup, LeaderElection, and Paxos parity fixtures all apply the projection
+rules above: compare the protocol `LState`/TLC `state`, exclude wrapper message bookkeeping,
+and map enum variants through `_variant`. Do not copy state counts into this schema. Current,
+dated outcomes belong in `docs/model_checker_status.md`, checked-in parity artifacts, and the
+Phase 36 analyses.
 
 ## 7. Diff Procedure
 
 Given two export files (`source_first.jsonl` and `tlc.jsonl`):
 
-1. Compare the sets of `id` values.
+1. Canonicalize each entry's `state` value and compare those strings; do not compare `id`
+   fields across engines.
 2. Report:
-   - **Source-first-only states**: IDs present in source-first but not TLC.
-   - **TLC-only states**: IDs present in TLC but not source-first.
-   - **Shared states**: IDs present in both.
+   - **Source-first-only states**: canonical states present in source-first but not TLC.
+   - **TLC-only states**: canonical states present in TLC but not source-first.
+   - **Shared states**: canonical states present in both.
 3. For the first witness state in each direction, print the full
    canonical JSON for manual inspection.
 4. If initial-state sets differ, report that separately (initial-state
@@ -224,9 +222,12 @@ Given two export files (`source_first.jsonl` and `tlc.jsonl`):
 
 ## 8. Implementation Checklist
 
-- [ ] Source-first export: add `--export-states <path>` flag to
-  `verus-transpile model-check` that writes `.jsonl` in the format above.
-- [ ] TLC export: add a post-processing script or TLC `-dump` parser
-  that extracts the `state` variable, normalizes, and writes `.jsonl`.
-- [ ] Diff tool: `scripts/diff_parity_states.sh` or Rust test helper.
-- [ ] Regression test: assert zero diff on shared small models.
+- [x] Source-first ordinary export: `model-check --export-parity DIR` writes
+  `states.jsonl` in the format above.
+- [x] Source-first streaming debug export: `--export-parity-debug DIR` writes generated,
+  distinct, and edge JSONL files for ordinary exploration.
+- [x] TLC post-processing: `scripts/tlc_dump_to_parity_jsonl.py` projects and normalizes TLC
+  dumps.
+- [x] Diff tool: `scripts/diff_parity_states.py` compares canonical `state` values.
+- [x] Checked-in small-model parity artifacts and regression coverage exist for shared
+  fixtures; consult `docs/model_checker_status.md` for current outcomes and limitations.

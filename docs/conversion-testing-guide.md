@@ -1,5 +1,10 @@
 # Testing TLA+ / Verus Conversions
 
+> **Status:** This file retains dated conversion matrices consumed by integration tests.
+> For the current workflow, CLI, support matrix, and toolchain, use
+> [*The tla-rs Book*](tla-rs-book.md), especially Chapters 7, 9, 23–24 and
+> Appendices A and D. Counts and commands below are historical unless a test names them.
+
 ## Overview
 
 The tla-rs transpiler supports three conversion directions:
@@ -261,7 +266,8 @@ cargo test roundtrip
 
 A round-trip failure means the canonical ASTs differ after a convert-and-convert-back cycle. Common causes:
 
-- **Unsupported TLA+ construct**: The parser doesn't handle a particular syntax pattern. Check `docs/tla-transpiler-limitations.md` for the full list.
+- **Unsupported TLA+ construct**: The parser does not handle a particular syntax pattern.
+  Check Appendix D of `docs/tla-rs-book.md` for the stage-by-stage support matrix.
 - **Expression translation losing structure**: An intermediate conversion step simplifies or restructures an expression.
 - **Type information mismatch**: Type inference produces different types on the second pass.
 
@@ -308,7 +314,7 @@ scons --verus-path=/path/to/verus
    ```
    Use `+` for input parameters and `-` for output parameters.
 
-3. **Create transpile config**: Write `src/protocol/MyProto/myproto_transpile.toml`. Use an existing config (e.g., `src/protocol/TwoPhase/twophase_transpile.toml`) as a template. See `docs/transpiler-config-reference.md` for all options.
+3. **Create transpile config**: Write `src/protocol/MyProto/myproto_transpile.toml`. Use an existing config (e.g., `src/protocol/TwoPhase/twophase_transpile.toml`) as a template. See Appendix C of `docs/tla-rs-book.md` for all options.
 
 4. **Generate exec code**:
    ```bash
@@ -349,7 +355,7 @@ The TLA+ parser supports a subset of TLA+. Use `--verbose` on the CLI for diagno
 - Vertical conjunction/disjunction lists (bullet `/\` and `\/`) — supported
 - `LET ... IN` expressions — supported for simple cases
 - Recursive operator definitions — may need manual intervention
-- See `docs/tla-transpiler-limitations.md` for the full list of unsupported features
+- See Appendix D of `docs/tla-rs-book.md` for the stage-by-stage support matrix
 
 ### Type inference failures
 
@@ -357,7 +363,7 @@ If generated Verus code uses `int` where you expect a specific type, provide a `
 ```bash
 cargo run -- translate-tla --input spec.tla --output spec.rs --types spec.tla-types
 ```
-See `docs/tla-to-verus-guide.md` for the type annotation format.
+See Chapter 9 and Appendix D of `docs/tla-rs-book.md` for translation and type guidance.
 
 ### Transpiler parse errors on Verus spec files
 
@@ -769,10 +775,8 @@ scons --verus-path=/home/shuai/tools/verus-x86-linux
 
 ## See Also
 
-- `docs/tla-to-verus-guide.md` — Full TLA+ to Verus operator mapping and type annotations
-- `docs/tla_features.md` — TLA+ feature support matrix
-- `docs/tla-transpiler-limitations.md` — Known limitations and workarounds
-- `docs/transpiler-config-reference.md` — Complete TOML config options reference
-- `docs/dev/verus2tla-design.md` — Internal design of the verus2tla module
-- `docs/dev/phase2_roundtrip_design.md` — Round-trip testing framework design
-- `CLAUDE.md` — Project overview and build commands
+- `docs/tla-rs-book.md` — Current user/developer guide and complete references
+- `docs/model_checker_status.md` — Test-coupled model-checker status and evidence index
+- `docs/dev/verus2tla-design.md` — Historical design of the `verus2tla` module
+- `docs/dev/phase2_roundtrip_design.md` — Historical round-trip testing design
+- `AGENTS.md` — Current repository policy and build commands
