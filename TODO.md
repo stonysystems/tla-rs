@@ -14953,8 +14953,27 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         and was *not* simply relaxed — its point is that the two proof arguments are
         different states, and the emission still satisfies that
         (`(&old_self.…, &self.…)`), so it now tolerates the `&` while keeping the check.
-        Still open for learner: the `learner_manual.rs` extraction (items 1 and 2 above),
-        which is what removes learner from the copy-from-backup path.
+        **The `learner_manual.rs` extraction should NOT be done, and I was wrong to
+        recommend it (2026-08-05).** I attempted it — it works: the extraction plus
+        `no_stub_functions` takes learner's merge diff to **28 lines** and it verifies at
+        `1046 verified, 0 errors`. Then two guards fired, and they were right.
+        - `test_manual_code_footprint_is_empty` asserts **only acceptor** uses `manual_code`,
+          and its comments record the direction: *"Phase 29.4.4: Raft manual_code eliminated
+          — all 8 composite handlers auto-generated."* `manual_code` is a mechanism being
+          **retired**, not adopted.
+        - **My claim that "acceptor and executor already do this" was false**, and it is
+          repeated in two earlier commit messages. `executor_transpile.toml` has no
+          `manual_code`; `executor_manual.rs` is a leftover with
+          `test_executor_manual_code_footprint_audit_guard` driving it down (*"should not
+          define X after migration"*). Only acceptor uses it.
+        - `test_rsl_skip_function_classification_matches_configs` (added in 54.15) also
+          fired, 15 → 17, correctly reporting that the classification had shifted.
+        So learner keeps its bodies in `learner_gen.rs`, protected on merge by
+        `merge_generated.py --preserve`, which already solves the "don't silently replace
+        verified code" problem without adding to a mechanism the project is removing.
+        The real end state for learner's two actions is the capability gap in
+        `docs/rsl-skip-functions.md` — teach the transpiler to generate them.
+        Attempt reverted; nothing left half-applied.
 
         Not yet attributed: `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3) differ
         for a separate reason — check before assuming they are the same cause.
