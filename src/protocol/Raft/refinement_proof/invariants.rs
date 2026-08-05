@@ -2116,6 +2116,146 @@ verus! {
         }
     }
 
+    /// An already-elected leader holds a certified boundary it has every
+    /// earlier boundary for — the counterpart of
+    /// `lemma_new_leader_holds_certified_boundaries` for leaders that were not
+    /// promoted by the current step.
+    ///
+    /// The leader's vote quorum is a quorum for its *saved* phase, which is
+    /// measured at its election snapshot, so the governing phase is related to
+    /// the phase at that prefix rather than at the log end. Whichever side the
+    /// snapshot falls on, one legal step separates the two phases and the
+    /// quorums overlap.
+    ///
+    /// Requires the leader's commit index not to have advanced past its own
+    /// election snapshot. A leader that has committed Configuration entries it
+    /// appended itself since winning office can be arbitrarily many boundaries
+    /// beyond the phase its vote quorum was gathered under; that case is not
+    /// covered here.
+    pub proof fn lemma_existing_leader_holds_certified_boundary(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            ElectionLogLenBounded(ds),
+            LeaderElectionSnapshotRecorded(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            ds.server_constants[leader_id].servers
+                == ds.server_constants[
+                    ds.configuration_commit_certificates[index].committer
+                ].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < index
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            0 <= ds.server_states[leader_id].commit_index <= index,
+            index <= ds.server_states[leader_id].log.len(),
+            // The leader has not committed past its own election snapshot.
+            ds.server_states[leader_id].commit_index
+                <= ds.election_log_len[
+                    (leader_id, ds.server_states[leader_id].current_term)],
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let leader = ds.server_states[leader_id];
+        let constants = ds.server_constants[leader_id];
+        let initial_phase = MembershipPhase::Stable {
+            config: constants.servers,
+        };
+        let term = leader.current_term;
+        let key: (int, int) = (leader_id, term);
+
+        assert(LeaderElectionSnapshotRecorded(ds));
+        assert(ds.election_log_len.dom().contains(key));
+        let snapshot = ds.election_log_len[key];
+        assert(ElectionLogLenBounded(ds));
+        assert(snapshot <= leader.log.len());
+
+        let saved_phase = active_membership_phase_from_raft_log(
+            leader.log, snapshot, initial_phase);
+        assert(leader.election_membership_phase == Some(saved_phase));
+
+        assert(AllRaftMembershipLogsWellFormed(ds));
+        assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
+
+        // Which prefix pins the governing phase decides the direction of the
+        // progression; the target endpoints must be chosen accordingly, since
+        // two progressions into a common phase say nothing about the phases
+        // they start from.
+        lemma_minimal_missing_governing_phase_progresses_to_election(
+            ds, index, leader_id);
+
+        assert forall |a: int, b: int|
+            leader.commit_index <= a < leader.log.len()
+            && leader.commit_index <= b < leader.log.len()
+            && leader.log[a].payload is Configuration
+            && leader.log[b].payload is Configuration
+            implies a == b
+        by {
+            assert(uncommitted_suffix_has_at_most_one_configuration(
+                leader.log, leader.commit_index));
+        };
+
+        if ds.configuration_commit_certificates[index].governing_phase
+            == active_membership_phase_from_raft_log(
+                leader.log, leader.commit_index, initial_phase)
+        {
+            // Governing phase sits at the commit index, which is at or below
+            // the snapshot: progress forward to the saved phase.
+            lemma_bounded_boundary_interval_progresses_legally(
+                leader.log,
+                leader.commit_index,
+                snapshot,
+                initial_phase,
+            );
+            lemma_certified_boundary_present_when_phases_are_related(
+                ds, index, leader_id, saved_phase);
+        } else {
+            // Governing phase sits at `index`.
+            if index <= snapshot {
+                lemma_bounded_boundary_interval_progresses_legally(
+                    leader.log,
+                    index,
+                    snapshot,
+                    initial_phase,
+                );
+                lemma_certified_boundary_present_when_phases_are_related(
+                    ds, index, leader_id, saved_phase);
+            } else {
+                lemma_bounded_boundary_interval_progresses_legally(
+                    leader.log,
+                    snapshot,
+                    index,
+                    initial_phase,
+                );
+                lemma_certified_boundary_present_in_one_step_stale_leader(
+                    ds, index, leader_id, saved_phase);
+            }
+        }
+    }
+
     /// The stale-leader direction. Quorum overlap is symmetric, so a leader
     /// elected under a phase that the certificate's governing phase legally
     /// progresses *from* is covered just as well as one that progresses *to*
