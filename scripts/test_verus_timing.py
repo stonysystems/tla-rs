@@ -362,6 +362,79 @@ class TestConfirmation(unittest.TestCase):
         self.assertEqual(d["confirmed_against"], "run-2")
 
 
+class TestHardwareMismatch(unittest.TestCase):
+    """Per-module wall-clock is not comparable across machines.
+
+    Verus verifies modules in parallel, so both the absolute times and the
+    contention pattern track the core count. The committed baseline was
+    measured on a 127-thread box; a GitHub runner has a handful of cores.
+    Comparing them is a category error, and it turned CI red (54.9.a) in a way
+    no threshold could fix -- so the tool now says so and refuses to fail.
+    """
+
+    def inv(self, modules, threads, label="x"):
+        i = vt.build_inventory(synthetic_log(modules), label=label)
+        i["totals"] = dict(i.get("totals") or {})
+        i["totals"]["num-threads"] = threads
+        return i
+
+    def test_same_thread_count_is_not_flagged(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}, 8), self.inv({"m": 1100}, 8))
+        self.assertFalse(d["hardware_mismatch"])
+
+    def test_different_thread_count_is_flagged(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}, 127), self.inv({"m": 1100}, 4))
+        self.assertTrue(d["hardware_mismatch"])
+        self.assertEqual(d["base_threads"], 127)
+        self.assertEqual(d["new_threads"], 4)
+
+    def test_unknown_thread_counts_are_not_flagged(self):
+        # An older inventory without the field must not start failing.
+        a = vt.build_inventory(synthetic_log({"m": 1000}))
+        b = vt.build_inventory(synthetic_log({"m": 1100}))
+        self.assertFalse(vt.diff_inventories(a, b)["hardware_mismatch"])
+
+    def test_report_says_the_runs_are_not_comparable(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}, 127), self.inv({"m": 5000}, 4))
+        text = vt.render_diff(d)
+        self.assertIn("not comparable", text)
+        self.assertIn("127", text)
+
+    def test_cli_refuses_to_fail_across_hardware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = os.path.join(tmp, "a.json")
+            b = os.path.join(tmp, "b.json")
+            with open(a, "w") as f:
+                json.dump(self.inv({"m": 1000}, 127), f)
+            with open(b, "w") as f:
+                json.dump(self.inv({"m": 9000}, 4), f)
+            result = run(["diff", a, b, "--fail-on-regression"], expect=0)
+            self.assertIn("cross-hardware", result.stderr)
+
+    def test_cli_still_fails_on_same_hardware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = os.path.join(tmp, "a.json")
+            b = os.path.join(tmp, "b.json")
+            with open(a, "w") as f:
+                json.dump(self.inv({"m": 1000}, 8), f)
+            with open(b, "w") as f:
+                json.dump(self.inv({"m": 9000}, 8), f)
+            run(["diff", a, b, "--fail-on-regression"], expect=1)
+
+
+class TestCiTimingIsReportOnly(unittest.TestCase):
+    def test_ci_does_not_gate_on_timing(self):
+        path = os.path.join(os.path.dirname(HERE), ".github", "workflows", "ci.yml")
+        with open(path) as f:
+            ci = f.read()
+        block = ci.split("verus_timing.py diff", 1)[1][:400]
+        self.assertNotIn(
+            "--fail-on-regression",
+            block,
+            "CI must not gate on a locally-captured timing baseline",
+        )
+
+
 class TestCli(unittest.TestCase):
     def parse_to(self, tmp, name, log_text):
         log = os.path.join(tmp, name + ".log")

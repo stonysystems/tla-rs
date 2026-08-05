@@ -251,6 +251,14 @@ relative to it: a baseline sitting inside the noisy regime cannot support a
 ratio claim. A large absolute jump from a small base is not lost — the "below
 the noise floor" table is sorted by absolute delta so it surfaces at the top.
 
+**Never compare across machines.** The tool records `num-threads` for both
+sides and prints "these runs are not comparable" when they differ, and
+`--fail-on-regression` refuses to fail in that case. This is why CI *reports*
+timing rather than gating on it: the committed baseline was measured on a
+127-thread box, and a GitHub runner has a handful of cores. A percentage
+between them measures the hardware. The 20% criterion is a local pre-merge
+gate.
+
 Procedure for an annotation batch:
 
 ```bash

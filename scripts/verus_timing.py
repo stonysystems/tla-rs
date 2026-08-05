@@ -455,6 +455,19 @@ def diff_inventories(base, new, max_regression_pct=20.0, min_ms=DEFAULT_MIN_MS,
     below_floor.sort(key=lambda r: -(r["delta_ms"]))
     improvements.sort(key=lambda r: r["delta_ms"])
 
+    base_threads = (base.get("totals") or {}).get("num-threads")
+    new_threads = (new.get("totals") or {}).get("num-threads")
+    # Per-module wall-clock is not comparable across machines: Verus verifies
+    # modules in parallel, so both the absolute times and the contention
+    # pattern depend on the core count. A 127-thread developer box against a
+    # 4-core CI runner is not a regression signal, it is a category error --
+    # and it is invisible unless the numbers say so.
+    hardware_mismatch = (
+        base_threads is not None
+        and new_threads is not None
+        and base_threads != new_threads
+    )
+
     base_total = base["total_verify_ms"]
     new_total = new["total_verify_ms"]
     total_pct = (
@@ -469,6 +482,9 @@ def diff_inventories(base, new, max_regression_pct=20.0, min_ms=DEFAULT_MIN_MS,
             ("max_regression_pct", max_regression_pct),
             ("min_ms", min_ms),
             ("field", field),
+            ("base_threads", base_threads),
+            ("new_threads", new_threads),
+            ("hardware_mismatch", hardware_mismatch),
             ("base_total_verify_ms", base_total),
             ("new_total_verify_ms", new_total),
             ("total_delta_pct", total_pct),
@@ -500,6 +516,18 @@ def render_diff(d):
     out.append("| noise floor | {} ms |".format(d["min_ms"]))
     out.append("| regressions | {} |".format(len(d["regressions"])))
     out.append("")
+    if d.get("hardware_mismatch"):
+        out.append(
+            "> **These runs are not comparable.** The baseline was measured with "
+            "{} thread(s) and this run with {}. Verus verifies modules in "
+            "parallel, so per-module wall-clock tracks the core count and the "
+            "contention pattern; a percentage between them measures the "
+            "hardware, not the proof. Compare like with like, or read the "
+            "numbers as information only.".format(
+                d.get("base_threads"), d.get("new_threads")
+            )
+        )
+        out.append("")
 
     def table(title, rows, note=None):
         if not rows:
@@ -699,6 +727,15 @@ def main(argv=None):
             min_ms=args.min_ms,
         )
     _write(args.out, json.dumps(delta, indent=2) if args.json else render_diff(delta))
+    if args.fail_on_regression and delta.get("hardware_mismatch"):
+        sys.stderr.write(
+            "refusing to fail on a cross-hardware comparison: baseline ran with "
+            "{} thread(s), this run with {}. Re-measure the baseline on this "
+            "machine, or drop --fail-on-regression.\n".format(
+                delta.get("base_threads"), delta.get("new_threads")
+            )
+        )
+        return 0
     if args.fail_on_regression and delta["regressions"]:
         sys.stderr.write(
             "error: {} module(s) regressed more than {:.0f}%: {}\n".format(
