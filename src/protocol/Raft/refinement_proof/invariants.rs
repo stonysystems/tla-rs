@@ -4978,6 +4978,8 @@ verus! {
         &&& ElectionLogLenBounded(ds)
         &&& ElectionLogLenEntryTermBound(ds)
         &&& LeaderElectionSnapshotRecorded(ds)
+        // Dynamic-membership Configuration Leader Completeness
+        &&& CertifiedConfigurationLeaderCompleteness(ds)
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         &&& CurrentTermGeLogTerms(ds)
         &&& LogTermsMonotonic(ds)
@@ -17000,5 +17002,12 @@ verus! {
         lemma_current_term_ge_log_terms_inductive(ds, ds_);
         lemma_log_terms_monotonic_inductive(ds, ds_);
         lemma_terms_non_negative_inductive(ds, ds_);
+
+        // Configuration Leader Completeness is derived from the post-state
+        // rather than preserved transition-by-transition, so it must come last:
+        // every invariant it depends on has to hold of `ds_` first.
+        lemma_transfer_obligation_discharged_by_inherited_lemma(ds_);
+        lemma_dynamic_state_implies_certified_configuration_leader_completeness(
+            ds_);
     }
 }
