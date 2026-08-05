@@ -14980,7 +14980,7 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         sorts it. It now checks the three helper names are imported — the property it cares
         about — rather than the formatting.
 
-  - [ ] **42.8.c.2.iv.F** **The drift check was blind to `&mut self` methods — 17 real
+  - [x] **42.8.c.2.iv.F** **The drift check was blind to `&mut self` methods — 17 real
         implementations would have been replaced by `assume(false)` stubs (2026-08-05).**
         `body_drift` compared only the free functions from `parse_items`, ignoring the
         `impls` map entirely. The RSL protocol actions are all `&mut self` methods, so
@@ -14999,7 +14999,15 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         still real, but executor's merge is gated on preserving the implementations, which is
         now done.
 
-  - [ ] **42.8.c.2.iv.E** **Executor is blocked by a transpiler bug, not by the merge.**
+  - [ ] **42.8.c.2.iv.E** The `&mut self` lift mangles proof-fallback stub bodies.
+        **Re-scoped 2026-08-05 — it no longer blocks anything.** Written when it looked
+        like executor's blocker; F then showed those functions are `assume(false)` stubs in
+        fresh output, and G landed executor by preserving the real bodies. The lift bug is
+        real and still worth fixing — a `&mut self` method whose tail is
+        `proof { … }; result` returns the pre-lift tuple — but it only ever damages stub
+        bodies that the preserve list replaces. Low priority, and
+        `test_mut_self_method_drops_functional_output` should grow this shape when it is
+        fixed.
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:
 
@@ -15021,7 +15029,7 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         tail is `proof { … }; result` — slips past it. **Fix the lift, extend the guard to
         this shape, then re-attempt executor.** Merge attempt reverted; nothing half-applied.
 
-  - [ ] **42.8.c.2.iv.D** Two more merge defects, found by actually attempting the
+  - [x] **42.8.c.2.iv.D** Two more merge defects, found by actually attempting the
         executor merge rather than trusting the clean drift report (2026-08-05). Both fixed;
         executor's merge still fails on something else, so it is **not** landed.
         - **Overlapping brace-list imports produced a duplicate.** Fresh
@@ -15041,7 +15049,7 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         inherits that parser's blind spots, which is worth remembering before trusting a
         green report over an actual attempt.
 
-  - [ ] **42.8.c.2.iv.C** The 13 bodies a merge would silently rewrite, now enumerated.
+  - [x] **42.8.c.2.iv.C** The 13 bodies a merge would silently rewrite, now enumerated.
         `scripts/check_merge_body_drift.py` (new, 2026-08-05) compares function *bodies*
         rather than `pub exec fn` names, which is what the regen parity check does and why
         the `filter_clearnerstate` swap was invisible to it. `regenerate_rsl.sh` runs it as
@@ -15083,7 +15091,7 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         report stays empty. A check that prints the same four items every run stops being
         read — which is how the original body swap slipped through.
 
-  - [ ] **42.8.c.2.iv.A** Learner: `filter_clearnerstate` collision. **FIXED 2026-08-05,
+  - [x] **42.8.c.2.iv.A** Learner: `filter_clearnerstate` collision. **FIXED 2026-08-05,
         learner merge diff 183 → 119.** The largest single divergence was not a signature
         mismatch at all. The transpiler *synthesises* a `filter_clearnerstate` helper — a
         naive `for` loop over `m.iter()` — while the checked-in file holds a hand-verified
@@ -15096,7 +15104,7 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         hand-written work" concept already lives: `--preserve FN` makes the existing file win
         for a named free function. An unknown name is an error, not a silent no-op, so a typo
         cannot quietly yield the un-preserved merge.
-  - [ ] **42.8.c.2.iv.B** Learner: the remaining 119 lines. **Diagnosed 2026-08-05 — there
+  - [x] **42.8.c.2.iv.B** Learner: the remaining 119 lines. **Diagnosed 2026-08-05 — there
         is no transpiler defect here, and this item's recorded direction is backwards.**
 
         The record says *"the fresh `lemma_abstractify_clearnerstate_empty` takes
@@ -16926,275 +16934,20 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       counter, so a note-count check cannot see it. Entries are keyed on
       `(file, normalised expr, ordinal)`, not line numbers, so edits above a quantifier do
       not read as remove+add. `--fail-on-regression` / `--max-notes` are ready for 54.9.
-- [ ] **54.2** Baseline: record per-module verification wall-clock and the full trigger
-      inventory at `0.2026.08.02`. This is the regression baseline for every later batch.
-      **Cannot be produced on this dev box.** The pinned verus
-      (`release/0.2026.08.02.b677dd5`, cached at `/tmp/verus-test/verus/...`) needs
-      **glibc >= 2.39**; this box has 2.35 and the binary aborts before running. `docker` is
-      installed but the daemon refuses this user (`permission denied ... docker.sock`);
-      `bwrap` exists but would need a whole newer-glibc rootfs. Older cached releases (e.g.
-      `0.2026.01.02.6f52890`) do run here and produced the parser fixtures, but their choices
-      are NOT the baseline — substituting them would poison every later comparison. So the
-      capture is routed through CI, which already runs the pinned release on `ubuntu-24.04`.
-  - [x] **54.2.a** CI capture. **DONE (2026-08-04).** The `verify` job now tees the `scons`
-        verification output to `verus-verify.log`, parses it with
-        `scripts/trigger_inventory.py`, prints the summary to the job summary, and uploads
-        `trigger-inventory.{json,md}` as an artifact. `set -o pipefail` keeps `tee` from
-        masking a verification failure; the capture runs `if: always()` with `--allow-empty`
-        and asserts nothing, so it cannot change the job verdict. Guarded by
-        `TestCiWiring` in `scripts/test_trigger_inventory.py` — a silently dropped step
-        would otherwise look exactly like "no triggers left".
-  - [x] **54.2.b** Baseline committed. **DONE (2026-08-04).** Captured locally from the
-        pinned release, not from CI: `1044 verified, 0 errors` in ~40 s, **534 trigger
-        notes**, matching the phase's stated attribution exactly (Raft 177, generated/RSL
-        109, implementation/RSL 101, protocol/RSL 53+44+34=131, common/collections 11,
-        verus_extra 4, common/framework 1). Artifacts: `reports/triggers/baseline.{json,md}`
-        and `timing-baseline.{json,md}`; ceiling set to 534 with `enforce=true`, so 54.9's
-        guard is now live and the `changed`-trigger check has something to compare against.
-        **The "no verifier on this box" conclusion recorded in earlier notes was wrong**:
-        glibc 2.39 blocks only the `verus` *launcher*, not `rust_verify` (needs 2.34). The
-        launcher just sets `RUSTUP_TOOLCHAIN`, `LD_LIBRARY_PATH` and `VERUS_Z3_PATH` and
-        execs `rust_verify`; reproducing those three runs the real verifier. The bundled z3
-        4.16.0 wants glibc 2.38, but the PyPI `z3-solver==4.16.0` wheel is manylinux_2_27 and
-        passes Verus's version check. Wrapped as `scripts/verify_local.sh` so this is a
-        one-liner on any similarly-old host.
-  - [x] **54.2.c** Per-module wall-clock. **DONE (2026-08-04).** `SConstruct` gained
-        `--verus-extra-args` (shlex-split, appended to the verus command line; verified by
-        `scons -n` dry run), CI passes `--verus-extra-args="--time-expanded"`, and
-        `scripts/verus_timing.py` (parse/report/diff) turns the breakdown into per-module
-        `verify/air/smt-init/smt-run` times plus rlimit counts. `diff
-        --max-regression-pct 20 --fail-on-regression` is the phase's acceptance criterion
-        made checkable. Two deliberate choices: a `--min-ms` noise floor (default 500) so a
-        40ms→80ms module is not called a 100% regression — those rows are still printed
-        under "below the noise floor" rather than silently dropped — and improvements
-        reported separately, since a large speedup can mean a trigger became too
-        restrictive. Verus prints the crate root with an empty module name; it is recorded
-        as `<root>` so it cannot be confused with a missing module. 30 tests
-        (`scripts/test_verus_timing.py`), including guards that CI really passes the flag
-        and that `SConstruct` really forwards it.
-      Note the 534 figure was measured in Verus's default `selective` mode, which is what CI
-      captures; `--triggers-mode all-modules` reports more, and counts across modes are not
-      comparable (the mode is recorded in the label and file name so a diff cannot silently
-      mix them).
-- [x] **54.1.b** Work-list scanner (added 2026-08-04, unplanned but needed):
-      `scripts/trigger_sites.py` statically inventories every `forall|`/`exists|` in the
-      tree and classifies it `annotated` / `auto` / `ambiguous` / `unannotated`, so the
-      annotation batches can be planned and split per file without waiting for a CI
-      verification run. Checked in at `reports/triggers/sites.md`. **This is an upper bound
-      on the work, NOT a prediction of note counts** — Verus's default `selective` mode only
-      reports the choices it finds ambiguous, so an unannotated quantifier need not produce
-      a note. Current scan: 1435 sites, 882 unannotated, 445 annotated, 72 `#![auto]`,
-      36 ambiguous. By directory the unannotated load is Raft/refinement_proof 239,
-      implementation/RSL ~150, generated/RSL 111, protocol/RSL 75 + common_proof 74,
-      common/collections 68 — consistent with the note attribution table above.
-      NOTE `src/generated_backup/RSL` (65 sites) is a stale backup tree; exclude it from any
-      batch. 23 tests. One real bug caught by spot-checking during development: a comma
-      between binders (`forall |x1: X, x2: X|`) truncated the scope scan, so annotations
-      after a multi-binder list were misreported as unannotated.
-- [x] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
-      **DONE (2026-08-04). Gate passed; 54.4 may proceed.** All 15 notes eliminated — both
-      directories are now at 0 — with `1044 verified, 0 errors` unchanged and the crate total
-      534 → 519. Evidence: `reports/triggers/54.3-pilot.{json,md}` plus the two diffs
-      (`54.3-pilot-trigger-diff.md`, `54.3-pilot-timing-diff.md`): 15 removed, **0 added,
-      0 changed**, total verify time −0.3%, and every touched module flat or slightly faster
-      (sets 200→196, hashsets 285→279, vecs 186→178, set_lib_ext_v 362→270, count_matches
-      344→349 ms).
-      Method: annotate with **exactly the trigger Verus already chose**, so behaviour is
-      preserved by construction and the diff's `changed` count stays 0. Three things learned
-      that 54.4+ will hit:
-      (a) **`#![trigger ...]` after the binder works on `choose` and `assert forall`**, not
-      just `forall`/`exists`;
-      (b) **a trigger may not contain a lambda** — Verus auto-chose
-      `s.map(<closure>).contains(op)` in `hashsets.rs`, then rejected both
-      `#![trigger ...]` and inline `#[trigger]` with *"triggers cannot contain
-      let/forall/exists/lambda/choose"*. It auto-chooses terms it forbids you to write. The
-      resolution was not an exception after all: annotating the **inner** quantifiers made
-      the outer note disappear on its own, so the site is now clean. Where that trick does
-      not work, hoisting the closure to a named `spec fn` is the fallback — but check the
-      callers first, since this lemma's only caller is generated code;
-      (c) nested `assert forall` needs the outer binder annotated too; annotating only the
-      inner one leaves the outer note in place.
-- [x] **54.3.a** Timing gate made usable (found by the pilot). The first gate run flagged
-      `implementation::RSL::replicaimpl_no_receive_clock` at +24.5% — a module the pilot never
-      touched. Verus verifies modules in parallel (127 threads here) so per-module wall-clock
-      tracks contention: that module measured 1967 / 2448 / 2241 ms across three runs of two
-      code states. A single-sample 20% threshold therefore flags untouched modules, and a
-      gate that cries wolf gets ignored. `verus_timing.py diff --confirm-with <second run of
-      the same code>` now demotes any regression that does not reproduce, reporting it under
-      "Not reproduced by the confirmation run" rather than dropping it. With confirmation the
-      pilot gate is clean. **Superseded by 54.4.a**: `--confirm-with` handles two samples,
-      but the correct procedure is min-of-3 on both sides (see 54.4.a) — the flagged module
-      turned out to be an artifact of a single-run *baseline*, not of the new code.
-- [x] **54.4** The 5 `broadcast` functions. **DONE (2026-08-04). Gate clean.** The
-      injectivity axioms `axiom_cmessage_view`, `axiom_cpacket_view`, `axiom_cvote_view`,
-      `axiom_clearner_tuple_view` (`cmessage.rs`, `types_i.rs`) and `axiom_endpoint_view`
-      (`io_s.rs`) now pin `#![trigger x1@, x2@]` — exactly the multi-trigger Verus was
-      already choosing, confirmed with `--triggers-mode verbose`. `1044 verified, 0 errors`;
-      trigger diff vs 54.3: **0 added, 0 changed**; timing +0.6% total, 0 regressions.
-      Evidence: `reports/triggers/54.4-broadcast.{json,md}`, `54.4-trigger-diff.md`,
-      `54.4-timing-diff.md`.
-      Note the **note count does not move** (519 → 519): these five emit no note in
-      `selective` mode, so they were invisible to the 534 inventory. Their risk is different
-      and larger — a broadcast axiom is in scope for every proof in the crate, so whatever
-      trigger Verus picks silently applies everywhere and can change between releases with
-      no diagnostic at all. Finding them needs `--triggers-mode verbose` (1336 notes vs 534).
-      The other 3 broadcast axioms (`*_key_model`) already carried `#[trigger]`.
-      **Amended 2026-08-05**: everything above holds — the inner `forall` is pinned and the
-      trigger diff is genuinely 0/0 — but 54.4 did *not* silence Verus's own
-      "broadcast functions should have explicit `#[trigger]`" warning, which still fires on
-      exactly these 5. That warning is about a different obligation (the trigger for the
-      broadcast lemma itself, not for the quantifier inside its ensures) and was invisible
-      under the 886 `non_snake_case` warnings until 54.10 cleared them. Tracked as **54.16**.
-- [x] **54.4.a** Timing methodology corrected — the 54.3 gate was measuring noise.
-      Chasing a flagged module (`implementation::RSL::replicaimpl_no_receive_clock`, +30%)
-      to its cause showed the **baseline itself was a single lucky run**: at the very commit
-      the baseline documents, that module measures 2372 / 2438 / 2490 ms across three runs,
-      while the committed baseline recorded 1967. Every later comparison inherited that
-      error. Three fixes, each measured rather than guessed:
-      (a) `verus_timing.py merge` combines N runs by per-module minimum (least-contended
-      estimate); the baseline is now **min of 3 runs** and both sides of a gate must be
-      merged the same way. Two samples are not enough — a Raft module read "+27%" on two
-      samples and +12% on three;
-      (b) the noise floor moved 500 → **1000 ms**, chosen from data: across three
-      identical-code runs, modules ≥500 ms spread up to 22.6% (one exceeds the 20% gate)
-      while modules ≥1000 ms spread at most 16.8% and none exceed it. 1000 ms is the
-      smallest floor at which the gate cannot fire on noise, and it still covers 28 modules
-      including every expensive one;
-      (c) the floor applies to the **base** value, since the percentage is relative to it —
-      a baseline inside the noisy regime cannot support a ratio claim. Large absolute jumps
-      from a small base are not lost: the "below the noise floor" table is sorted by
-      absolute delta.
-      **Procedure for 54.5+**: 3 runs of the new code, `merge`, then `diff` against the
-      merged baseline.
-- [x] **54.5** `src/protocol/RSL/` (131 notes). **DONE (2026-08-04). Both gates clean.**
-      130 of 131 annotated across all 25 files in one batch; crate total 534 → **389**.
-      `1044 verified, 0 errors` on three independent runs. Trigger diff vs the 54.2 baseline:
-      **145 removed, 0 added, 0 changed**; timing (min-of-3 both sides) +0.8%, 0 regressions.
-      Evidence: `reports/triggers/54.5-protocol-rsl.{json,md}`, `54.5-trigger-diff.md`,
-      `54.5-timing-diff.md`.
-      One site skipped and left auto-triggered: `refinement_proof/state_machine.rs:54`, where
-      the chosen trigger belongs to a nested `exists |p|` while the note points at the outer
-      `forall |req|` — annotating the outer binder there is a compile error.
-- [x] **54.5.a** `scripts/apply_triggers.py` — annotates from an inventory, writing back
-      exactly what Verus chose. Built because 54.5–54.8 hold 400+ more sites and hand-editing
-      them would be neither reviewable nor uniform. It skips rather than guesses (already
-      annotated; closure in the term; no binder found; trigger belongs to a nested
-      quantifier), and every skip prints a reason. 15 tests.
-      **Two bugs it had, both caught by verification, both now pinned by tests:**
-      (a) it flattened *alternative* trigger groups into one multi-term trigger.
-      `#![trigger a] #![trigger b]` (either fires) and `#![trigger a, b]` (both needed) mean
-      different things; the flattened form is strictly more restrictive and broke
-      `state_machine.rs`'s postcondition and a `replica.rs` assertion. This is the
-      "too restrictive" failure mode the phase warns about, and it showed up on the first
-      run of the very first batch;
-      (b) its binder-variable check parsed `|opn: OperationNumber|` as binding *two* names,
-      so it rejected every typed binder as "nested". The check itself is sound and necessary
-      — it is what catches case (a)'s sibling, a trigger naming a variable bound by an inner
-      quantifier — but it has to split the binder list on top-level commas and take the name
-      before the colon.
-- [x] **54.5.c** Transpiler parser fix, found by the Rust suite after 54.5 landed. The RSL
-      protocol specs are not only Verus input — they are also **this transpiler's input**, so
-      annotating them broke `test_election_recursive_functions_generate_loop_code` and
-      `test_regenerate_rsl_validate_only_passes` with `Parse error: Expected identifier,
-      found '#'`. `parse_forall_expr` accepted `#![trigger ...]` but `parse_exists_expr` and
-      `parse_choose_expr` did not. Both now accept and discard them, matching what `forall`
-      already did in practice: `Trigger` is parsed and never emitted, because triggers are
-      proof-only and do not affect exec codegen. Adding a `triggers` field to `Expr::Exists`
-      would have touched 92 match sites for no downstream consumer.
-      Lesson for 54.6–54.8: **annotating a spec file can break the transpiler even when Verus
-      is happy**, and `scripts/regenerate_rsl.sh` uses the *release* binary, so a debug-only
-      rebuild leaves the old parser in place and the failure looks unfixed.
-- [x] **54.5.b** Inventory parser fix, found by the 54.5 diff reporting `1 changed`.
-      A trigger's terms can straddle several source lines, each with its own caret run; the
-      parser treated "more than one quoted line" as "no terms" and dropped **29 of the
-      crate's trigger groups**. An empty term list meeting a non-empty one then reported as
-      `changed` — the one diff category that is supposed to mean genuine instability, so a
-      false positive there costs exactly the trust the category exists to earn. Fixed by
-      pairing each quoted line with the marker line that follows it; the baseline was
-      re-parsed from the same log, and after the fix the 54.5 diff reads 0 changed.
-- [x] **54.6** `src/implementation/RSL/` (101 notes). **DONE (2026-08-04). Both gates clean.**
-      100 of 101 annotated across all 10 files; crate total 389 → **289**. `1044 verified,
-      0 errors` on three runs. Trigger diff vs the 54.2 baseline: **245 removed, 0 added,
-      0 changed**; timing (min-of-3 both sides) +1.0%, 0 regressions. Evidence:
-      `reports/triggers/54.6-implementation-rsl.{json,md}`, `54.6-trigger-diff.md`,
-      `54.6-timing-diff.md`.
-      **`gen_helpers.rs` (43 notes) belongs here, not in 54.7** — the open question in the
-      original 54.6 text. It is hand-written: its own header says "Shared helper functions
-      for generated RSL modules", no generator emits it (`regenerate_rsl.sh` does not name
-      it), and its history is ordinary hand edits. Only `src/generated/RSL/` is
-      transpiler-owned, and that is 54.7's scope.
-      One site skipped: `cconfiguration.rs:204`, trigger belongs to a nested quantifier.
-- [x] **54.7.a** Transpiler codegen emits explicit triggers for `vec_element_ensures`.
-      **DONE (2026-08-04).** The transpiler synthesises
-      `forall |i:int| 0 <= i < X@.len() ==> X@[i].pred()` for every entry in
-      `vec_element_ensures`; it now emits `#![trigger X@[i]]` — the term Verus was choosing
-      anyway. Two emission sites (`lib.rs:772`, `translator/mod.rs:10165`). This shape is
-      **60 of the 109** generated notes. Guarded by
-      `test_vec_element_ensures_emits_explicit_trigger`, which asserts the emitted text
-      rather than a regenerated file, for the reason in 54.7.b.
-- [ ] **54.7.b** Regenerate `src/generated/RSL/` and confirm the notes are gone.
-      **PARTIAL DELIVERY (2026-08-05): acceptor done, 120 → 116 notes, `1046 verified,
-      0 errors`.** The route was not the one this item assumed. Acceptor's 4 notes are inside
-      `CAcceptorProcess1a`/`2a`, which are `skip_functions` — so they are *not* transpiler
-      output and regenerating alone would have delivered nothing. But those bodies come from
-      `manual_code = acceptor_manual.rs`, a **hand-written file `CLAUDE.md` does not cover**,
-      which the transpiler inlines. Annotating the four quantifiers there and regenerating
-      put them into `acceptor_gen.rs` through the transpiler, as the policy requires.
-      Acceptor was eligible because its merge is lossless: after the 42.8.c parser fixes,
-      `rustfmt` on the merged output reproduces the checked-in file **exactly**, so the only
-      diff is the four annotations.
-      Not repeatable elsewhere yet: `executor_manual.rs` holds 2 more preserved notes, but
-      executor's merge diff is 623 lines, so annotating it now would only desynchronise the
-      manual source from the generated file. The other 21 preserved notes are in modules with
-      no `manual_code` at all (learner, election, proposer, replica) — their bodies are
-      preserved by copy-from-backup, so the generated file *is* the only source and they stay
-      blocked on the merge.
-      **CORRECTION (2026-08-05): the blocker I recorded here was wrong, and is now much
-      smaller.** I wrote that regeneration "rewrites `types_gen.rs` with 53 lines deleted,
-      dropping hand-added imports". It does not. All **43 imports survive**; the 53-line
-      figure came from reading `git diff --stat`, which counts reordered lines as deletions
-      plus insertions. Compared as content, the fresh output differed from the checked-in
-      file only by (i) `use` ordering and line wrapping, which `rustfmt` normalises, and
-      (ii) one hand-written 27-line `CParameters` struct + `clone_up_to_view` impl.
-      Both are now fixed (Phase 42.7), so `types_gen.rs` regeneration is **byte-identical**.
-      `acceptor_gen.rs` differs in **13 lines**, all comment text plus one import listing two
-      extra names — cosmetic, not import loss.
-      **Second correction (same day): it is not a verification exercise either.** Measured
-      per module, the checked-in files are up to 2.7x larger than fresh output because they
-      carry `skip_functions` bodies and Arc-wrap patches, and `regenerate_rsl.sh` keeps those
-      five files untouched by design. So codegen fixes cannot reach them at all without a
-      merge step — see 42.8.c. Of the 109 generated notes, **2 are now gone** (broadcast,
-      regenerated in 42.8.a), 4 more sit in acceptor's preserved code, and the remaining 103
-      are behind that merge or behind the 54.7.c decision.
-- [ ] **54.7.c** The other **33** of the 109 generated notes are **not transpiler output**.
-      They sit inside `skip_functions` hand-written bodies that regeneration preserves
-      verbatim (`CRemoveExecutedRequestBatch`, the `lemma_*_bridge` proofs, and others across
-      election/executor/learner/proposer/replica). Classified by regenerating into a temp dir
-      and checking which functions the transpiler actually emits: 76 emitted / 33 preserved.
-      They live under `src/generated/` but are hand-maintained, so `CLAUDE.md`'s
-      "do not hand-edit generated files" rule does not obviously bind — that rule exists to
-      stop people patching transpiler *output* instead of the transpiler. Needs an explicit
-      decision before annotating; the honest options are (i) treat preserved bodies as
-      hand-written and annotate them in place, or (ii) move them out of `src/generated/`
-      into a companion module like `gen_helpers.rs`, which is where the equivalent RSL
-      helpers already live.
-- [x] **54.8** `src/protocol/Raft/` (177 notes, 141 in `refinement_proof/invariants.rs`).
-      **DONE (2026-08-04). Both gates clean.** Applied in two steps so a failure would be
-      attributable — the 36 notes in the four smaller files first (verified), then the 141 in
-      `invariants.rs`, the file that also holds the 12 deprecated Phase 34 `assume`s. 166 of
-      177 annotated, 11 skipped as nested-quantifier cases. `1044 verified, 0 errors` on
-      three runs. Timing **-4.4%** — the annotations made the crate *faster*, which is the
-      expected direction when the solver stops searching for triggers.
-      A convergence pass then followed: re-running the applier against the *current*
-      inventory attributed 109 further notes that only became attributable once inner
-      quantifiers were annotated (the effect first seen in 54.3). Final crate total:
-      **534 → 122**, with **412 removed, 0 added, 0 changed** against the 54.2 baseline.
-      Evidence: `reports/triggers/54.8-raft.{json,md}`, `54.8-trigger-diff.md`,
-      `54.8-timing-diff.md`.
-      **Note on the convergence pass**: run with `--filter src/`, it also edited
-      `src/generated/RSL/*.rs`, which `CLAUDE.md` forbids. Reverted — those 109 notes are
-      54.7's scope and their disposition (54.7.c) is an open decision, not something a broad
-      filter should settle. Scope future passes to the directory you mean.
+- [x] **54.2** Baseline at `0.2026.08.02`. **DONE — and the recorded blocker was false.**
+      This item said the baseline "cannot be produced on this dev box" because the pinned
+      verus needs glibc ≥ 2.39 and the box has 2.35. That is the same claim corrected at the
+      start of the 2026-08-05 session: only the *launcher* needs the newer glibc, `rust_verify`
+      needs 2.34, and reproducing the launcher's three environment variables runs it fine —
+      which is what `scripts/verify_local.sh` does and what every measurement in Phases 54 and
+      42.8.c since has used.
+      The artefacts exist and are at the pinned version: `reports/triggers/baseline.{json,md}`
+      (534 notes, 635 trigger choices, 180 multi-line) and
+      `reports/triggers/timing-baseline.{json,md}` (142 modules, min of 3 runs). Every later
+      diff in this phase was taken against them.
+      Kept as a caution rather than deleted: a recorded environment blocker is worth
+      re-testing before it is built on, because this one shaped several items' plans while
+      being wrong.
 
 ### Residual after 54.3–54.8: 122 notes
 
@@ -17649,7 +17402,8 @@ value per hour, not by phase number:
       **Reopen if it recurs** — that would be real evidence against 54.18 being the whole
       story, which is more than I have now in either direction.
 
-- [ ] **54.7.d** Annotate the **76 transpiler-emitted notes** on the checked-in artifacts
+- [ ] **54.7.d** Annotate the recurring-shape notes on the checked-in artifacts (**72** as
+      measured 2026-08-05, not the 76 first recorded; see 54.7.c for the census)
       with a post-processing pass, instead of waiting for the merge in 42.8.c.
       **⚠ BLOCKED ON A POLICY DECISION, not on capability (raised 2026-08-05).** As written
       this item edits files under `src/generated/` with a script. `CLAUDE.md` says: *"Do NOT
