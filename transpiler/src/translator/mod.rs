@@ -13769,6 +13769,53 @@ impl Translator {
         (lhs_expr, rhs_expr)
     }
 
+    /// Phase 54.14.b: is this comparison constantly false once the operand is
+    /// narrowed to an unsigned exec type?
+    ///
+    /// A protocol spec legitimately range-checks an `int` parameter before
+    /// casting it -- `follower_id < 0 || follower_id > u64::MAX as int` in
+    /// `Raft/raft.rs`. Once `int` is narrowed to `config.int_type`, both halves
+    /// are vacuous: rustc reports "comparison is useless due to type limits" and
+    /// the branch they guard is unreachable, dead code that still carries proof
+    /// blocks.
+    ///
+    /// Deliberately narrow. It fires only when the left operand is an input
+    /// parameter whose *spec* type is `int`, so the narrowing is known to have
+    /// happened, and only for an unsigned `int_type`. Any operand whose exec
+    /// type cannot be named this way is left alone -- folding `x < 0` for a
+    /// signed or unknown `x` would be wrong.
+    fn is_vacuous_unsigned_bound(
+        &self,
+        lhs: &Expr,
+        rhs: &Expr,
+        op: &str,
+        ctx: &TransformContext,
+    ) -> bool {
+        if !self.config.int_type.starts_with('u') {
+            return false;
+        }
+        let narrowed_int_param = match lhs {
+            Expr::Ident(name) => matches!(ctx.input_types.get(name), Some(Type::Int)),
+            _ => false,
+        };
+        if !narrowed_int_param {
+            return false;
+        }
+        // strip a trailing `as int` / `as u64`, which the spec writes on the bound
+        let bound = match rhs {
+            Expr::Cast(inner, _) => inner.as_ref(),
+            other => other,
+        };
+        match op {
+            "<" => matches!(bound, Expr::Literal(Literal::Int(0))),
+            ">" => match bound {
+                Expr::Ident(name) => *name == format!("{}::MAX", self.config.int_type),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     fn transform_binary_op(
         &self,
         lhs: &Expr,
@@ -13776,8 +13823,22 @@ impl Translator {
         op: &str,
         ctx: &TransformContext,
     ) -> TranspileResult<ExecExpr> {
+        if self.is_vacuous_unsigned_bound(lhs, rhs, op, ctx) {
+            return Ok(ExecExpr::Literal("false".to_string()));
+        }
         let lhs_expr = self.transform_expr(lhs, ctx)?;
         let rhs_expr = self.transform_expr(rhs, ctx)?;
+        // Phase 54.14.b: a range guard is two vacuous halves joined by `||`, so
+        // collapse rather than emit `false || false`.
+        if op == "||" {
+            let is_false = |x: &ExecExpr| matches!(x, ExecExpr::Literal(l) if l == "false");
+            match (is_false(&lhs_expr), is_false(&rhs_expr)) {
+                (true, true) => return Ok(ExecExpr::Literal("false".to_string())),
+                (true, false) => return Ok(rhs_expr),
+                (false, true) => return Ok(lhs_expr),
+                (false, false) => {}
+            }
+        }
         let (lhs_expr, rhs_expr) = self.normalize_binary_operands(lhs_expr, rhs_expr, ctx);
         let collection_add_helper = if op == "+" {
             self.collection_add_helper(lhs, rhs, ctx)
@@ -19844,6 +19905,84 @@ mod tests {
             }
             _ => panic!("Expected Generic type for Set<int>"),
         }
+    }
+
+    /// Phase 54.14.b. The fold must fire on a genuinely vacuous bound and must
+    /// NOT fire on anything whose exec type we cannot show is unsigned --
+    /// folding `x < 0` for a signed or unknown `x` would silently change
+    /// behaviour, so the negative cases matter more than the positive one.
+    #[test]
+    fn test_vacuous_unsigned_bound_folding() {
+        use crate::ast::{Literal, Type};
+
+        fn ctx_with<'a>(config: &'a TranslatorConfig, name: &str, ty: Type) -> TransformContext<'a> {
+            let mut input_types = HashMap::new();
+            input_types.insert(name.to_string(), ty);
+            TransformContext {
+                config,
+                output_params: Vec::new(),
+                input_params: vec![name.to_string()],
+                output_types: HashMap::new(),
+                input_types,
+                field_substitutions: HashMap::new(),
+                temp_var_counter: std::cell::RefCell::new(0),
+                requires: Vec::new(),
+            }
+        }
+
+        let unsigned = TranslatorConfig {
+            int_type: "u64".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let t = Translator::new(unsigned.clone());
+        let ctx = ctx_with(&unsigned, "follower_id", Type::Int);
+
+        let id = Expr::Ident("follower_id".to_string());
+        let zero = Expr::Literal(Literal::Int(0));
+        let max = Expr::Ident("u64::MAX".to_string());
+        let max_as_int = Expr::Cast(Box::new(max.clone()), Type::Int);
+
+        // fires: `x < 0` and `x > u64::MAX`, with or without the `as int` cast
+        assert!(t.is_vacuous_unsigned_bound(&id, &zero, "<", &ctx));
+        assert!(t.is_vacuous_unsigned_bound(&id, &max, ">", &ctx));
+        assert!(t.is_vacuous_unsigned_bound(&id, &max_as_int, ">", &ctx));
+
+        // does not fire: a real bound, or the comparison the other way round
+        assert!(!t.is_vacuous_unsigned_bound(&id, &Expr::Literal(Literal::Int(1)), "<", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, ">", &ctx));
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, "<=", &ctx));
+
+        // does not fire: the operand is not an int-typed input parameter, so we
+        // cannot claim it was narrowed to an unsigned type
+        let nat_ctx = ctx_with(&unsigned, "follower_id", Type::Nat);
+        assert!(!t.is_vacuous_unsigned_bound(&id, &zero, "<", &nat_ctx));
+        assert!(!t.is_vacuous_unsigned_bound(
+            &Expr::Ident("other".to_string()),
+            &zero,
+            "<",
+            &ctx
+        ));
+        assert!(!t.is_vacuous_unsigned_bound(
+            &Expr::Field(Box::new(id.clone()), "f".to_string()),
+            &zero,
+            "<",
+            &ctx
+        ));
+
+        // does not fire: a signed int_type, where `x < 0` is a real test
+        let signed = TranslatorConfig {
+            int_type: "i64".to_string(),
+            ..TranslatorConfig::default()
+        };
+        let ts = Translator::new(signed.clone());
+        let signed_ctx = ctx_with(&signed, "follower_id", Type::Int);
+        assert!(!ts.is_vacuous_unsigned_bound(&id, &zero, "<", &signed_ctx));
+        assert!(!ts.is_vacuous_unsigned_bound(
+            &id,
+            &Expr::Ident("i64::MAX".to_string()),
+            ">",
+            &signed_ctx
+        ));
     }
 
     #[test]

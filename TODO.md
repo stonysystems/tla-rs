@@ -17088,7 +17088,23 @@ value per hour, not by phase number:
             type is `u64`, so deleting it loses nothing and the spec still states the bound;
             each deletion is marked with a comment saying so, since it otherwise reads like
             a missing check.
-      - [ ] **54.14.b** The 2 in `src/generated/Raft/raft_gen.rs` (856, 864). Unlike the
+      - [x] **54.14.b** The 2 in `src/generated/Raft/raft_gen.rs` (856, 864).
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`; the
+            `comparison is useless` warning is now **0** and the crate total is 30 → 27.
+            Fixed in the transpiler (`translator/mod.rs`, `is_vacuous_unsigned_bound` +
+            an `||` collapse in `transform_binary_op`), then `raft_gen.rs` regenerated —
+            **not** hand-edited, per CLAUDE.md.
+            The fold is deliberately narrow: it fires only when the left operand is an
+            *input parameter whose spec type is `int`* (so the narrowing is known to have
+            happened) and `config.int_type` is unsigned. Folding `x < 0` for a signed or
+            unknown `x` would silently change behaviour, so the unit test
+            `test_vacuous_unsigned_bound_folding` spends most of its assertions on the
+            negative cases: `Nat`-typed params, non-parameter operands, field accesses,
+            a signed `int_type`, and `>` / `<=` against 0.
+            Blast radius checked by regenerating: **only `raft_gen.rs` changed**, 2 lines,
+            and every other protocol's `*_regen_matches_checked_in` test still passes.
+
+      - [x] ~~**54.14.b** (original text)~~ The 2 in `src/generated/Raft/raft_gen.rs`. Unlike the
             above these are **dead branches, not dead conjuncts**: the whole condition
             `(*follower_id) < 0 || (*follower_id) > (u64::MAX as u64)` is constantly false,
             so its arm — including a `proof { lemma_empty_msg_map(); }` — is unreachable.

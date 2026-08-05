@@ -853,7 +853,7 @@ ensures
                 broadcast use vstd::std_specs::hash::group_hash_axioms;
                 lemma_set_map_contains(c.servers@, *follower_id);
             }
-            if (((*follower_id) < 0) || ((*follower_id) > (u64::MAX as u64))) {
+            if false {
                                 proof {
                     lemma_empty_msg_map();
                 }
@@ -861,7 +861,7 @@ ensures
 
             } else {
                 if success {
-                    if (((*match_index) < 0) || ((*match_index) > (u64::MAX as u64))) {
+                    if false {
                                                 proof {
                             lemma_empty_msg_map();
                         }
