@@ -14905,10 +14905,28 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         | proposer | ❌ | `CProposerInit`, `clone_incomplete_batch_timer`, `clone_request_queue` |
         | replica | ❌ | `CReplicaInit`, `CReplicaNumActions`, `CSchedulerInit` |
 
-        Each is one decision: hand-written (add to `scripts/rsl_merge_preserve.txt`) or take
-        the fresh output. The `clone_*` ones look like the same shape as
-        `filter_clearnerstate` — hand-verified loops the transpiler synthesises naively —
-        so check those first.
+        **All 13 triaged (2026-08-05); every module now reports clean.** The finding is
+        sharper than "bodies differ" — for 7 of them, merging would have replaced verified
+        code with something *strictly worse*:
+
+        - **5 would become an `assume(false)` stub.** `CExecutorInit`,
+          `CElectionStateInit`, `CProposerInit`, `CReplicaInit`, `CSchedulerInit` — fresh
+          emits a proof-fallback stub where the checked-in body is a real 13–39 line proof.
+        - **2 would become trusted.** `clone_next_op_to_execute`,
+          `clone_incomplete_batch_timer` — fresh emits
+          `#[verifier(external_body)] { r.clone() }`; the checked-in bodies are verified
+          per-variant matches. A silent verified→trusted swap.
+        - **2 would lose postconditions.** `CRemoveExecutedRequestBatch`,
+          `CRemoveAllSatisfiedRequestsInSequence` — both sides verify, but the checked-in
+          ones carry `requires … valid()` and `ensures result@[i].valid()/abstractable()`
+          that fresh drops.
+        - **4 take fresh, checked one by one.** The three `clone_*` differ from fresh by a
+          single doc-comment line and nothing else; `CReplicaNumActions` is
+          `result as int == …` versus `result@ == …`, equivalent and fresh is more explicit.
+
+        Those 4 are marked `accept-fresh` in the list rather than left unlisted, so the
+        report stays empty. A check that prints the same four items every run stops being
+        read — which is how the original body swap slipped through.
 
   - [ ] **42.8.c.2.iv.A** Learner: `filter_clearnerstate` collision. **FIXED 2026-08-05,
         learner merge diff 183 → 119.** The largest single divergence was not a signature

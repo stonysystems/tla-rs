@@ -247,28 +247,39 @@ class PreserveListIsWiredUp(unittest.TestCase):
     LIST = os.path.join(REPO_ROOT, "scripts", "rsl_merge_preserve.txt")
 
     def _entries(self):
+        """(module, fn) pairs, using the real parser rather than a second one.
+
+        `check_merge_body_drift.load_preserve` is the parser the tooling uses; a
+        copy here would drift from it -- and it already grew a third
+        `accept-fresh` field that a private copy would have rejected.
+        """
+        import check_merge_body_drift as cd  # noqa: PLC0415
+
         out = []
         with open(self.LIST) as fh:
             for line in fh:
                 line = line.split("#", 1)[0].strip()
-                if line:
-                    parts = line.split()
-                    self.assertEqual(
-                        len(parts), 2, f"expected '<module> <fn>', got {line!r}"
-                    )
-                    out.append(tuple(parts))
+                if not line:
+                    continue
+                parts = line.split()
+                self.assertIn(
+                    len(parts), (2, 3), f"unparseable preserve line: {line!r}"
+                )
+                out.append((parts[0], parts[1], parts[2] if len(parts) == 3 else "preserve"))
+        # the real parser must accept the whole file
+        cd.load_preserve(self.LIST)
         return out
 
     def test_list_exists_and_covers_the_known_collision(self):
         self.assertIn(
-            ("learner", "filter_clearnerstate"),
+            ("learner", "filter_clearnerstate", "preserve"),
             self._entries(),
             "filter_clearnerstate must stay protected: the transpiler synthesises a "
             "naive version that would replace the hand-verified one",
         )
 
     def test_every_named_function_exists_in_its_generated_file(self):
-        for module, fn in self._entries():
+        for module, fn, _kind in self._entries():
             path = os.path.join(REPO_ROOT, "src", "generated", "RSL", f"{module}_gen.rs")
             self.assertTrue(os.path.exists(path), f"no generated file for {module}")
             with open(path) as fh:

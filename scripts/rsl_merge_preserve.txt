@@ -15,3 +15,35 @@
 # Format: <module> <free-function-name>, one per line. `#` comments allowed.
 
 learner filter_clearnerstate
+
+# Phase 42.8.c.2.iv.C. Found by scripts/check_merge_body_drift.py: without these,
+# a merge replaces verified code with something strictly worse.
+#
+# Fresh emits an `assume(false)` stub; the checked-in body is a real proof:
+executor CExecutorInit
+election CElectionStateInit
+proposer CProposerInit
+replica CReplicaInit
+replica CSchedulerInit
+#
+# Fresh emits `#[verifier(external_body)] { r.clone() }` -- trusted; the
+# checked-in body is a verified per-variant match:
+executor clone_next_op_to_execute
+proposer clone_incomplete_batch_timer
+#
+# Fresh verifies too, but with *weaker* contracts -- the checked-in bodies carry
+# `requires ... valid()` plus `ensures result@[i].valid()/abstractable()` that
+# fresh drops, so merging would silently remove postconditions callers rely on:
+election CRemoveExecutedRequestBatch
+election CRemoveAllSatisfiedRequestsInSequence
+#
+# Reviewed and taking the transpiler's version. Marked rather than left silent so
+# the drift report stays empty -- a check that always prints the same four items
+# stops being read, which is how the original body swap slipped through.
+#   The three clone_* differ from fresh by a single doc-comment line, nothing else.
+proposer clone_request_queue accept-fresh
+election clone_requests_received_this_epoch accept-fresh
+election clone_requests_received_prev_epochs accept-fresh
+#   CReplicaNumActions: `result as int == LReplicaNumActions()` (fresh) versus
+#   `result@ == ...` (existing) -- equivalent, and fresh is the more explicit form.
+replica CReplicaNumActions accept-fresh

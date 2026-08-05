@@ -22,32 +22,37 @@ OTHER = "pub fn other() {\n    same()\n}"
 
 class BodyDrift(unittest.TestCase):
     def test_detects_a_rewritten_body(self):
-        unprotected, protected = cd.body_drift(wrap(NAIVE, OTHER), wrap(VERIFIED, OTHER))
-        self.assertEqual(unprotected, ["helper"])
-        self.assertEqual(protected, [])
+        unreviewed, preserved, accepted = cd.body_drift(wrap(NAIVE, OTHER), wrap(VERIFIED, OTHER))
+        self.assertEqual(unreviewed, ["helper"])
+        self.assertEqual((preserved, accepted), ([], []))
 
     def test_preserved_names_are_reported_separately(self):
-        unprotected, protected = cd.body_drift(
+        unreviewed, preserved, accepted = cd.body_drift(
             wrap(NAIVE, OTHER), wrap(VERIFIED, OTHER), preserve={"helper"}
         )
-        self.assertEqual(unprotected, [])
-        self.assertEqual(protected, ["helper"])
+        self.assertEqual(unreviewed, [])
+        self.assertEqual(preserved, ["helper"])
+        self.assertEqual(accepted, [])
+
+    def test_accept_fresh_names_are_reported_but_do_not_fail(self):
+        unreviewed, preserved, accepted = cd.body_drift(
+            wrap(NAIVE, OTHER), wrap(VERIFIED, OTHER), accept={"helper"}
+        )
+        self.assertEqual(unreviewed, [])
+        self.assertEqual(accepted, ["helper"])
 
     def test_identical_bodies_are_not_drift(self):
-        unprotected, protected = cd.body_drift(wrap(NAIVE, OTHER), wrap(NAIVE, OTHER))
-        self.assertEqual((unprotected, protected), ([], []))
+        self.assertEqual(cd.body_drift(wrap(NAIVE, OTHER), wrap(NAIVE, OTHER)), ([], [], []))
 
     def test_reflowed_whitespace_is_not_drift(self):
         # rustfmt reflows the merged file; that must not read as a rewrite or the
         # check cries wolf on every regeneration and stops being read.
         reflowed = "pub fn helper(m: &Map) -> Map {\n        naive_for_loop()\n\n}"
-        unprotected, protected = cd.body_drift(wrap(reflowed), wrap(NAIVE))
-        self.assertEqual((unprotected, protected), ([], []))
+        self.assertEqual(cd.body_drift(wrap(reflowed), wrap(NAIVE)), ([], [], []))
 
     def test_functions_absent_from_fresh_are_not_drift(self):
         # The merge carries these over untouched, so they are not at risk.
-        unprotected, protected = cd.body_drift(wrap(OTHER), wrap(VERIFIED, OTHER))
-        self.assertEqual((unprotected, protected), ([], []))
+        self.assertEqual(cd.body_drift(wrap(OTHER), wrap(VERIFIED, OTHER)), ([], [], []))
 
 
 class PreserveList(unittest.TestCase):
@@ -60,16 +65,16 @@ class PreserveList(unittest.TestCase):
 
     def test_filters_by_module(self):
         path = self._write("learner filter_clearnerstate\nexecutor something_else\n")
-        self.assertEqual(cd.load_preserve(path, "learner"), {"filter_clearnerstate"})
-        self.assertEqual(cd.load_preserve(path, "executor"), {"something_else"})
+        self.assertEqual(cd.load_preserve(path, "learner")[0], {"filter_clearnerstate"})
+        self.assertEqual(cd.load_preserve(path, "executor")[0], {"something_else"})
 
     def test_all_modules_when_unspecified(self):
         path = self._write("learner a\nexecutor b\n")
-        self.assertEqual(cd.load_preserve(path), {"a", "b"})
+        self.assertEqual(cd.load_preserve(path)[0], {"a", "b"})
 
     def test_comments_and_blank_lines_ignored(self):
         path = self._write("# a comment\n\nlearner a  # trailing\n")
-        self.assertEqual(cd.load_preserve(path, "learner"), {"a"})
+        self.assertEqual(cd.load_preserve(path, "learner")[0], {"a"})
 
     def test_malformed_line_raises_rather_than_being_skipped(self):
         # A silently ignored bad line would mean a helper thought protected is not.
@@ -77,8 +82,18 @@ class PreserveList(unittest.TestCase):
         with self.assertRaises(ValueError):
             cd.load_preserve(path)
 
+    def test_accept_fresh_is_parsed_into_its_own_set(self):
+        path = self._write("learner a\nlearner b accept-fresh\n")
+        preserved, accepted = cd.load_preserve(path, "learner")
+        self.assertEqual((preserved, accepted), ({"a"}, {"b"}))
+
+    def test_unknown_third_field_raises(self):
+        path = self._write("learner a whatever\n")
+        with self.assertRaises(ValueError):
+            cd.load_preserve(path)
+
     def test_missing_file_is_empty_not_an_error(self):
-        self.assertEqual(cd.load_preserve("/nonexistent/preserve.txt"), set())
+        self.assertEqual(cd.load_preserve("/nonexistent/preserve.txt"), (set(), set()))
 
 
 class ExitStatus(unittest.TestCase):

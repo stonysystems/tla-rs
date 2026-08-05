@@ -29,22 +29,39 @@ import merge_generated as mg  # noqa: E402
 
 
 def load_preserve(path, module=None):
-    """Names to treat as intentionally preserved, optionally for one module."""
+    """(preserved, accepted) function names, optionally for one module.
+
+    A line is `<module> <fn>` to keep the existing body, or
+    `<module> <fn> accept-fresh` to record that the drift was reviewed and the
+    transpiler's version is the one to take. The second kind matters as much as
+    the first: without it the check reports the same reviewed items on every run,
+    and a report that is always noisy stops being read -- which is how the
+    original body swap slipped through in the first place.
+    """
     if not path or not os.path.exists(path):
-        return set()
-    out = set()
+        return set(), set()
+    preserved, accepted = set(), set()
     with open(path) as fh:
         for line in fh:
             line = line.split("#", 1)[0].strip()
             if not line:
                 continue
             parts = line.split()
-            if len(parts) != 2:
-                raise ValueError(f"expected '<module> <fn>', got {line!r}")
-            mod, fn = parts
+            if len(parts) == 2:
+                mod, fn, kind = parts[0], parts[1], "preserve"
+            elif len(parts) == 3:
+                mod, fn, kind = parts
+                if kind != "accept-fresh":
+                    raise ValueError(
+                        f"third field must be 'accept-fresh', got {kind!r} in {line!r}"
+                    )
+            else:
+                raise ValueError(
+                    f"expected '<module> <fn>' or '<module> <fn> accept-fresh', got {line!r}"
+                )
             if module is None or mod == module:
-                out.add(fn)
-    return out
+                (preserved if kind == "preserve" else accepted).add(fn)
+    return preserved, accepted
 
 
 def _normalise(text):
@@ -56,19 +73,24 @@ def _normalise(text):
     return " ".join(text.split())
 
 
-def body_drift(fresh_text, existing_text, preserve=frozenset()):
-    """(unprotected, protected) function names whose bodies differ."""
+def body_drift(fresh_text, existing_text, preserve=frozenset(), accept=frozenset()):
+    """(unreviewed, preserved, accepted) function names whose bodies differ."""
     f_free, _, _ = mg.parse_items(fresh_text)
     e_free, _, _ = mg.parse_items(existing_text)
 
-    unprotected, protected = [], []
+    unreviewed, preserved, accepted = [], [], []
     for name, e_body in e_free.items():
         if name not in f_free:
             continue  # not emitted fresh; the merge carries the existing one
         if _normalise(f_free[name]) == _normalise(e_body):
             continue
-        (protected if name in preserve else unprotected).append(name)
-    return sorted(unprotected), sorted(protected)
+        if name in preserve:
+            preserved.append(name)
+        elif name in accept:
+            accepted.append(name)
+        else:
+            unreviewed.append(name)
+    return sorted(unreviewed), sorted(preserved), sorted(accepted)
 
 
 def main(argv=None):
@@ -85,26 +107,31 @@ def main(argv=None):
     with open(args.existing) as fh:
         existing = fh.read()
 
-    preserve = load_preserve(args.preserve_list, args.module)
-    unprotected, protected = body_drift(fresh, existing, preserve)
+    preserve, accept = load_preserve(args.preserve_list, args.module)
+    unreviewed, preserved, accepted = body_drift(fresh, existing, preserve, accept)
 
-    if protected and not args.quiet:
+    if not args.quiet:
+        if preserved:
+            print("  preserved ({}): {}".format(len(preserved), ", ".join(preserved)))
+        if accepted:
+            print(
+                "  reviewed, taking fresh ({}): {}".format(
+                    len(accepted), ", ".join(accepted)
+                )
+            )
+    if unreviewed:
         print(
-            "  preserved ({}): {}".format(len(protected), ", ".join(protected))
-        )
-    if unprotected:
-        print(
-            "  WOULD BE REWRITTEN ({}): {}".format(
-                len(unprotected), ", ".join(unprotected)
+            "  UNREVIEWED DRIFT ({}): {}".format(
+                len(unreviewed), ", ".join(unreviewed)
             )
         )
         print(
-            "  If any of these is hand-written, add it to the preserve list;\n"
-            "  merging as-is replaces its body with transpiler output."
+            "  Decide each: add `<module> <fn>` to keep the existing body, or\n"
+            "  `<module> <fn> accept-fresh` to record that fresh output is correct."
         )
         return 1
     if not args.quiet:
-        print("  no unprotected body drift")
+        print("  no unreviewed body drift")
     return 0
 
 
