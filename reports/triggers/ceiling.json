@@ -1,7 +1,7 @@
 {
   "schema": "trigger-ceiling/v1",
   "enforce": true,
-  "max_notes": 122,
+  "max_notes": 120,
   "mode": "selective",
   "set_on": "2026-08-04",
   "set_by": "Phase 54.2.b",
@@ -42,6 +42,12 @@
       "max_notes": 122,
       "verus": "0.2026.08.02.b677dd5",
       "note": "54.8 Raft + convergence pass: 412 removed vs baseline, 0 added, 0 changed; residual is 109 generated (54.7) + 13 nested-quantifier cases"
+    },
+    {
+      "date": "2026-08-05",
+      "max_notes": 120,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "42.8.a: broadcast_gen regenerated, 2 generated notes removed via the 54.7.a codegen fix"
     }
   ]
 }

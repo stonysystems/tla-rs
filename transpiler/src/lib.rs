@@ -373,6 +373,20 @@ impl Transpiler {
                 sorted_imports.push(hashset_import);
             }
         }
+        // Phase 42.8: the untyped `clone_hashset` helper (emitted when the
+        // verified variant is off) mentions `HashSet` in its signature, so the
+        // output has to import it. Without this the emitted module does not
+        // compile -- which is why regenerating broadcast_gen.rs failed with
+        // "cannot find type `HashSet` in this scope".
+        if !self.config.translator.use_verified_hashset_clone && self.needs_set_helpers() {
+            let hashset_import = "use std::collections::HashSet;".to_string();
+            if !sorted_imports
+                .iter()
+                .any(|i| i.contains("std::collections::HashSet"))
+            {
+                sorted_imports.push(hashset_import);
+            }
+        }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
