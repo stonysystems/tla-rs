@@ -5940,6 +5940,8 @@ verus! {
         &&& LeaderElectionSnapshotRecorded(ds)
         // Dynamic-membership Configuration Leader Completeness
         &&& CertifiedConfigurationLeaderCompleteness(ds)
+        // All-entry dynamic Leader Completeness
+        &&& DynamicLeaderCompleteness(ds)
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         &&& CurrentTermGeLogTerms(ds)
         &&& LogTermsMonotonic(ds)
@@ -17969,5 +17971,10 @@ verus! {
         lemma_transfer_obligation_discharged_by_inherited_lemma(ds_);
         lemma_dynamic_state_implies_certified_configuration_leader_completeness(
             ds_);
+
+        // All-entry Leader Completeness builds on the Configuration result, so
+        // it comes strictly after it.
+        lemma_log_entry_transfer_obligation_discharged_by_inherited_lemma(ds_);
+        lemma_dynamic_state_implies_all_entry_leader_completeness(ds_);
     }
 }

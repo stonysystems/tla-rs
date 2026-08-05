@@ -194,6 +194,51 @@ verus! {
         lemma_invariant_holds_throughout_behavior(b, behavior_index);
     }
 
+    /// Milestone C, behaviour level and unconditional: all-entry dynamic
+    /// Leader Completeness in every reachable state.
+    ///
+    /// Every leader whose term exceeds a dynamically certified entry's term
+    /// holds that exact entry at its certified index — Data entries and
+    /// Configuration boundaries alike, under joint-consensus membership.
+    pub proof fn lemma_dynamic_leader_completeness_throughout_behavior(
+        b: RaftBehavior,
+        behavior_index: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+        ensures
+            DynamicLeaderCompleteness(b[behavior_index]),
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+    }
+
+    /// Pointwise presentation form: a dynamically committed physical entry
+    /// occurs at the same index in every strictly later-term leader.
+    pub proof fn lemma_dynamically_committed_entry_survives_in_later_leader(
+        b: RaftBehavior,
+        behavior_index: int,
+        log_index: int,
+        entry: LLogEntry,
+        leader_id: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+            DynamicallyCommittedAt(b[behavior_index], log_index, entry),
+            0 <= leader_id < b[behavior_index].num_servers,
+            b[behavior_index].server_states[leader_id].role is Leader,
+            b[behavior_index].server_states[leader_id].current_term
+                > entry.term,
+        ensures
+            b[behavior_index].server_states[leader_id].log.len() > log_index,
+            b[behavior_index].server_states[leader_id].log[log_index] == entry,
+    {
+        lemma_dynamic_leader_completeness_throughout_behavior(
+            b, behavior_index);
+        assert(DynamicLeaderCompleteness(b[behavior_index]));
+    }
+
     /// Behaviour-level agreement at certified membership boundaries, with no
     /// membership-phase hypothesis whatsoever.
     ///
