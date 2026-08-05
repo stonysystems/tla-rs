@@ -140,13 +140,33 @@ impl View for CReplica {
     }
 }
 
-#[derive(Clone)]
 pub struct CScheduler {
     pub replica: CReplica,
     pub nextActionIndex: u64,
 }
 
+impl Clone for CScheduler {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        self.clone_up_to_view()
+    }
+}
+
 impl CScheduler {
+    pub fn clone_up_to_view(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        CScheduler {
+            replica: self.replica.clone(),
+            nextActionIndex: self.nextActionIndex,
+        }
+    }
+
     pub open spec fn valid(&self) -> bool {
         &&& self.replica.valid()
         &&& 0 <= self.nextActionIndex < 10  // LReplicaNumActions() == 10

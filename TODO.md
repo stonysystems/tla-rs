@@ -17051,11 +17051,24 @@ value per hour, not by phase number:
             The attributes are matched only so the pattern binds. So dropping `Clone` from the
             derive list cannot affect marshalling, and the `impl Clone` goes after the macro
             invocation in its own `verus!` block.
-      - [ ] **54.13.c** The 4 types with **no** spec'd clone helper to delegate to:
-            `CRequestHeader`, `CScheduler` (structs), `COutstandingOperation`,
-            `CIncompleteBatchTimer` (enums). Each needs its `clone_up_to_view` written first —
-            that is the actual work, and it is per-type, not mechanical.
-      - [ ] **54.13.d** The 16 in `src/generated/`. The transpiler already emits spec'd
+      - [x] **54.13.c** The 4 types with **no** spec'd clone helper to delegate to.
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 42 → 38. With this
+            **every hand-written autoderive-Clone warning is cleared**; all 16 that remain are
+            in `src/generated/`. Each of the four needed a different answer, which is why it
+            could not be pattern-substituted:
+            - `CIncompleteBatchTimer` — its only payload is a `u64`, so the clone genuinely
+              *is* a copy. `#[derive(Clone, Copy)]` is strictly better than writing an impl:
+              no new code at all, and Verus specs it directly. (This is the same fix noted
+              for the generated `CLogEntry` in 54.13.d.)
+            - `CScheduler` — became writable *because of 54.13.a*: its `replica: CReplica`
+              field only got a spec'd `.clone()` in that step, so the helper now composes.
+            - `CRequestHeader` — has no `View` impl, so the postcondition is stated over the
+              fields (`result.client@ == self.client@`, `result.seqno == self.seqno`), which
+              is exactly what the existing `eq_spec` already treats as this type's identity.
+            - `COutstandingOperation` — an enum, so the body matches per variant;
+              `CBallot` is `Copy` and the batch has `clone_request_batch_up_to_view`.
+      - [ ] **54.13.d** The 16 in `src/generated/` — **all that remain**, confirmed by
+            re-censusing the log after 54.13.c. The transpiler already emits spec'd
             `impl Clone` blocks for some types (e.g. `Raft/types_gen.rs` `CState`), so this is
             extending an existing emitter to the types it currently leaves on `#[derive]`,
             then regenerating. Note `Raft/types_gen.rs` `CLogEntry` is the one case where the
