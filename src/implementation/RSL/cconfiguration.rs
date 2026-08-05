@@ -215,7 +215,7 @@ pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)
             let ss = s@.map(|i, e:EndPoint| e@);
             &&& s.len() ==  ss.len()
             &&& (forall |i:int| #![trigger ss[i]] 0 <= i < s.len() ==> ss[i] == s[i]@)
-            &&& (forall |i:AbstractEndPoint| ss.contains(i) ==> exists |x:int| 0 <= x < s.len() && i == s[x]@)
+            &&& (forall |i:AbstractEndPoint| ss.contains(i) ==> exists |x:int| #![trigger s[x]@] 0 <= x < s.len() && i == s[x]@)
             &&& (forall |i:EndPoint| #![trigger i@] ss.contains(i@) ==> exists |x:int| 0 <= x < s.len() && i == s[x])
             &&& seq_is_unique(ss)
         })

@@ -114,14 +114,18 @@ RULES = [
     ),
     (
         lambda e: True,
-        "nested-quantifier",
-        "trigger belongs to an inner binder",
-        "The note points at an outer quantifier while the trigger Verus chose "
-        "names a variable bound by a *nested* one, so attaching it to the outer "
-        "binder does not compile (\"cannot find value `p` in this scope\"). "
-        "Removing these needs the expression restructured -- hoisting the inner "
-        "quantifier, or annotating it so the outer note resolves on its own, as "
-        "happened in 54.3 -- not a mechanical annotation.",
+        "unclassified",
+        "outside `src/generated/`, reason not yet measured",
+        "**Measure the chosen trigger before writing this off.** This group used "
+        "to be called \"nested-quantifier\" and carried the reason that the note "
+        "sits on an outer quantifier while Verus picked a term naming an inner "
+        "binder, so it could only be fixed by restructuring the expression. That "
+        "was a catch-all applied to every note outside `src/generated/` without "
+        "checking any of them, and when all 13 were finally checked, **all 13 "
+        "were pinnable** -- the trigger Verus chose mentioned only variables the "
+        "annotated binder actually binds. The group is now empty. Anything "
+        "landing here is a *new* note: read its `trigger 1 of 1` in the log and "
+        "pin it if the term names only the bound variables.",
     ),
 ]
 

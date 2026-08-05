@@ -86,9 +86,9 @@ class TestClassification(unittest.TestCase):
             "a note inside a skip_functions body must not be labelled transpiler output",
         )
 
-    def test_everything_else_is_the_nested_quantifier_case(self):
+    def test_everything_else_is_unclassified_pending_measurement(self):
         key, _, _ = te.classify(entry("src/protocol/Raft/refinement_proof/invariants.rs"))
-        self.assertEqual(key, "nested-quantifier")
+        self.assertEqual(key, "unclassified")
 
     def test_every_note_gets_a_reason(self):
         inv = inventory(
@@ -108,7 +108,7 @@ class TestRendering(unittest.TestCase):
         text = te.render(inv, te.build(inv))
         total, per = te.extract_counts(text)
         self.assertEqual(total, 2)
-        self.assertEqual(per, {"generated-emitted": 1, "nested-quantifier": 1})
+        self.assertEqual(per, {"generated-emitted": 1, "unclassified": 1})
 
     def test_individual_sites_are_listed_for_actionable_groups(self):
         inv = inventory([entry("src/protocol/RSL/b.rs", 42, ["s.contains(p)"])])
