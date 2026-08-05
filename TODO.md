@@ -15003,11 +15003,19 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         **Re-scoped 2026-08-05 — it no longer blocks anything.** Written when it looked
         like executor's blocker; F then showed those functions are `assume(false)` stubs in
         fresh output, and G landed executor by preserving the real bodies. The lift bug is
-        real and still worth fixing — a `&mut self` method whose tail is
-        `proof { … }; result` returns the pre-lift tuple — but it only ever damages stub
-        bodies that the preserve list replaces. Low priority, and
-        `test_mut_self_method_drops_functional_output` should grow this shape when it is
-        fixed.
+        **and its recorded cause is now disproved.** I wrote that a `&mut self` method whose
+        tail is `proof { … }; result` returns the pre-lift tuple because the lift misses that
+        shape. Built the reproduction as a unit test —
+        `test_lift_reaches_a_nested_trailing_block`, feeding
+        `{ assume(false); { let result = (Struct{…}, rest); proof {…}; result } }` straight to
+        `struct_to_field_assignments` — and it **passes**: the struct becomes `self.field = …`
+        and the tuple does not survive. So the lift handles this shape in isolation, and
+        whatever produced executor's `}; result }` is elsewhere — the lift not being applied
+        to proof-fallback stubs at all, a different `returns_unit`, or a separate emission
+        path for stub bodies.
+        The test is kept as a guard for a shape that matters. **E needs re-diagnosis, not the
+        fix I assumed**, and since it only damages stub bodies the preserve list replaces, it
+        stays low priority.
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:
 

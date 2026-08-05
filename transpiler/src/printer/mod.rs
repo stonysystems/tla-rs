@@ -2208,6 +2208,51 @@ mod tests {
     }
 
     #[test]
+    /// Phase 42.8.c.2.iv.E. The `&mut self` lift handles
+    /// `let result = (Struct{..}, rest); ..proofs..; result` at the top level of a
+    /// body. executor's proof-fallback stubs nest that one level deeper --
+    /// `{ assume(false); { let result = ..; proof {..}; result } }` -- and the
+    /// lift left `result` bound to the pre-lift tuple, so the body returned
+    /// `(CExecutor, Vec<CPacket>)` where the signature promised `Vec<CPacket>`.
+    #[test]
+    fn test_lift_reaches_a_nested_trailing_block() {
+        let inner = ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(ExecExpr::Tuple(vec![
+                    ExecExpr::Struct {
+                        name: "CExecutor".to_string(),
+                        fields: vec![("ops".to_string(), ExecExpr::Var("n".to_string()))],
+                    },
+                    ExecExpr::Var("packets".to_string()),
+                ])),
+            },
+            ExecExpr::ProofBlock {
+                stmts: vec![ExecExpr::Call {
+                    func: "lemma_empty_seq_map".to_string(),
+                    args: vec![],
+                }],
+            },
+            ExecExpr::Var("result".to_string()),
+        ]);
+        let body = ExecExpr::Block(vec![
+            ExecExpr::Assume(Box::new(ExecExpr::Literal("false".to_string()))),
+            inner,
+        ]);
+
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            rendered.contains("self"),
+            "the struct should have become `self.field = ..` assignments:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("Tuple"),
+            "the tuple must not survive: the signature returns only the second element\n{rendered}"
+        );
+    }
+
     fn test_method_body_struct_to_field_assignments() {
         // A method whose body is a struct construction should emit field assignments
         let func = ExecFunction {
