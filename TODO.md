@@ -17154,6 +17154,24 @@ value per hour, not by phase number:
       before rewriting, and re-run the trigger diff, since changing a broadcast trigger can
       move proofs anywhere.
 
+- [ ] **54.18** The integration suite depends on a **separately-built release binary**, and
+      that is a real harness defect, not bad luck. Many tests (`*_regen_matches_checked_in`,
+      the scaffold/roundtrip ones) shell out to `transpiler/target/release/verus-transpile`,
+      but `cargo test` builds the *debug* profile and never rebuilds it. So results depend on
+      whether someone ran `cargo build --release` recently, and a run that races a rebuild
+      compares fresh spec input against a stale binary's output.
+      Observed three times on 2026-08-05, each alongside
+      `failed to build archive ... libverus_transpiler-*.rlib`: 13 failures, then 1, then 18
+      — every one passing on immediate re-run with no source change in between. The 18-failure
+      run took 48s against a normal 3.4s, which is the rebuild.
+      This is **distinct from 54.17**: that one is a doc-contract test reading `TODO.md` and
+      is still undiagnosed. This one is understood, and it is the more damaging of the two,
+      because 18 simultaneous red tests read like a real regression and cost real time to
+      dismiss.
+      Fix: make the release binary a build dependency of the tests — a `build.rs` step, or
+      have the helper that locates `verus-transpile` run `cargo build --release` (once, behind
+      a `OnceLock`) instead of assuming the artifact is current and fresh.
+
 - [ ] **54.17** `test_phase_38_10_4_b_shadow_subset_report_script_contract` is **flaky**.
       Seen failing twice on 2026-08-05, passing on immediate re-run both times, and **not
       reproduced in 6 consecutive full-suite runs** afterwards. The panic message was never
