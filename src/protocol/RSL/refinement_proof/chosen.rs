@@ -84,8 +84,6 @@ pub proof fn lemma_GetUpperBoundOnQuorumOf2bsOperationNumber(
         );
         let opns = p2bs.map(|p:RslPacket| p.msg->opn_2b);
 
-        // Derive opns.finite(): sentPackets.finite() → p2bs ⊆ sentPackets → p2bs.finite() → opns.finite()
-        lemma_sentPackets_finite(b, c, i);
         assert(p2bs.subset_of(b[i].environment.sentPackets)) by {
             assert forall |p: RslPacket| #![trigger p2bs.contains(p)] p2bs.contains(p)
                 implies b[i].environment.sentPackets.contains(p) by {};

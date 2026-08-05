@@ -110,16 +110,6 @@ verus! {
             s.unexecuted_learner_state.contains_key(k) implies s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
             lemma_Received2bMessageSendersAlwaysNonempty(b, c, i - 1, learner_idx, k);
         }
-        assert forall |k: OperationNumber| #![trigger s.unexecuted_learner_state.contains_key(k)]
-            s.unexecuted_learner_state.contains_key(k) implies s.unexecuted_learner_state[k].received_2b_message_senders.finite() by {
-            lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i - 1, learner_idx, k);
-            assert(s.unexecuted_learner_state[k].received_2b_message_senders.subset_of(c.config.replica_ids.to_set())) by {
-                assert forall |sender: AbstractEndPoint| #![trigger c.config.replica_ids.to_set().contains(sender)]
-                    s.unexecuted_learner_state[k].received_2b_message_senders.contains(sender) implies c.config.replica_ids.to_set().contains(sender) by {
-                    assert(c.config.replica_ids.contains(sender));
-                }
-            }
-        }
 
         if next_action_index == 0 {
             assert(LReplicaNextProcessPacket(sched.replica, sched_prime.replica, ios));

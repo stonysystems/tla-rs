@@ -138,29 +138,6 @@ verus! {
         }
       }
 
-      /// Generic one-step preservation: if sentPackets is finite and LEnvironment_Next holds,
-      /// then sentPackets is finite in the next state.
-      pub proof fn lemma_environment_next_preserves_sentpackets_finite<IdType, MessageType>(
-          e: LEnvironment<IdType, MessageType>,
-          e_: LEnvironment<IdType, MessageType>,
-      )
-          requires
-              LEnvironment_Next(e, e_),
-          ensures
-              e_.sentPackets.finite()
-      {
-          match e.nextStep {
-              LEnvStep::LEnvStepHostIos{actor, ios} => {
-                  broadcast use vstd::set::group_set_lemmas;
-                  let new_set = ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
-                      .map_values(|io: LIoOp<IdType, MessageType>| io->s).to_set();
-              },
-              LEnvStep::LEnvStepDeliverPacket{p} => {},
-              LEnvStep::LEnvStepAdvanceTime => {},
-              LEnvStep::LEnvStepStutter => {},
-          }
-      }
-
       /// If a packet appears in the new sentPackets but not the old ones,
       /// and LEnvironment_PerformIos holds, then the ios must contain Send{s:pkt}.
       pub proof fn lemma_new_packet_in_ios<IdType, MessageType>(

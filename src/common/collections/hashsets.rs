@@ -134,8 +134,6 @@ verus! {
     ///
     /// Used in Raft (votes_granted: HashSet<u64>, spec uses Set<int>).
     pub proof fn lemma_set_u64_to_int_len(s: Set<u64>)
-    requires
-        s.finite(),
     ensures
         s.map(|x: u64| x as int).len() == s.len(),
     {
@@ -156,7 +154,6 @@ verus! {
         s@.map(|x: u64| x as int).len() == s.len(),
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        lemma_hashset_view_finite(s);
         assert(s@.len() == s.len());
         lemma_set_u64_to_int_len(s@);
     }
@@ -170,7 +167,6 @@ verus! {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
-        lemma_hashset_view_finite(s);
         assert(s@.len() == s.len());
         let f = |p: crate::implementation::RSL::cmessage::CPacket| p@;
         assert forall |p1: crate::implementation::RSL::cmessage::CPacket, p2: crate::implementation::RSL::cmessage::CPacket|
@@ -187,7 +183,6 @@ verus! {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
         broadcast use crate::common::native::io_s::axiom_endpoint_view;
-        lemma_hashset_view_finite(s);
         assert(s@.len() == s.len());
         let f = |e: crate::common::native::io_s::EndPoint| e@;
         assert forall |e1: crate::common::native::io_s::EndPoint, e2: crate::common::native::io_s::EndPoint|
@@ -264,17 +259,6 @@ verus! {
     // Trusted primitive: HashSet view is always finite (Phase 30)
     // ══════════════════════════════════════════════════════════════════
     //
-    // Sound because a physical HashSet always contains a finite number
-    // of elements — its view Set<Key> is therefore always finite.
-
-    /// Any HashSet's spec view is a finite set.
-    #[verifier::external_body]
-    pub proof fn lemma_hashset_view_finite<Key>(s: &HashSet<Key>)
-    ensures
-        s@.finite(),
-    {
-    }
-
     /// Verified clone for HashSet<u64>.
     ///
     /// Unlike the generic `clone_hashset<T>` (which is `external_body` because

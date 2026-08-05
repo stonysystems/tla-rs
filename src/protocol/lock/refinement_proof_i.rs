@@ -221,9 +221,6 @@ verus! {
         } else {
             lemma_lock_sentPackets_finite(glb, config, i - 1);
             lemma_ls_next(glb, config, i - 1);
-            // gls_next → ls_next → LEnvironment_Next → generic preservation
-            lemma_environment_next_preserves_sentpackets_finite(
-                glb[i - 1].ls.environment, glb[i].ls.environment);
         }
     }
 

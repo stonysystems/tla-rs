@@ -16898,8 +16898,10 @@ value per hour, not by phase number:
       |  5 | broadcast functions should have explicit `#[trigger]` | **54.16** |
       |  2 | rustc's own "N warnings emitted" trailers | — |
 
-- [ ] **54.11** The 68 `use of deprecated method: Every Set is always finite, so this is
-      always true` warnings. These are `.finite()` calls that the `0.2026.08` `Set` change
+- [x] **54.11** The 68 `use of deprecated method: Every Set is always finite, so this is
+      always true` warnings. **DONE (2026-08-05)** for all compiled modules — the warning is
+      at 0 and the crate total went 130 → 62. See 54.11.c for the 28 in the disabled lock
+      tree. These are `.finite()` calls that the `0.2026.08` `Set` change
       turned into no-ops. Delete them. Mechanical, zero risk, but re-verify: removing a
       no-op can still change what the solver has in scope.
 
@@ -16921,9 +16923,23 @@ value per hour, not by phase number:
             it; the other was a hand-injected precondition in
             `raft_transpile.toml` under `CTryAdvanceCommitIndex`. Config is not generated
             code, so it was removed at source and the file regenerated per CLAUDE.md.
-      - [ ] **54.11.a.2** The 17 sites where the deletion makes an *enclosing obligation
+      - [x] **54.11.a.2** The 17 sites where the deletion makes an *enclosing obligation
             vacuous*, so the edit is "delete the lemma and update its callers", not "delete
             a line". Deferring these is why a.1 could be done safely at all.
+            **DONE (2026-08-05).** `1040 verified, 0 errors`; the `.finite()` deprecation
+            warning is now at **0** and the crate total is 130 → 62. Five proof functions
+            were deleted outright because their entire statement had become `true`:
+            `lemma_hashset_view_finite` (a `#[verifier::external_body]` *axiom* — it was
+            trusted, and is now not merely provable but trivial), `lemma_sentPackets_finite`,
+            `lemma_environment_next_preserves_sentpackets_finite`, `map_fold_finite`,
+            `map_finite`, `map_set_finite_auto`, plus the `assert forall … by { … }` block
+            in `learner_state.rs` — with all 9 call sites updated. Three functions kept
+            their bodies and lost only a vacuous clause (`lemma_set_u64_to_int_len`,
+            `map_fold`, `map_fold_ok`). `set_fold`'s `if s.finite() { … } else { zero }`
+            guard existed to make the recursion well-founded over infinite sets; with none
+            left the `else` branch is dead, and Verus accepts `decreases s.len()` without
+            it. Verified-function count drops 1045 → 1040 because five fewer functions
+            exist, not because anything went unproven.
             - 3 block-form clause lists whose every clause was a finiteness claim:
               `hashsets.rs:138` (`requires`), `hashsets.rs:274` (`ensures`),
               `environment_s.rs:151` (`ensures`) — deleting the clause leaves a bare
@@ -16940,6 +16956,20 @@ value per hour, not by phase number:
               set library, so deleting is a judgement call worth making deliberately: the
               alternative is keeping them with `#[allow(deprecated)]` and a note that they
               are trivially true under vstd 0.2026.08.
+      - [ ] **54.11.c** **28 more `.finite()` calls exist that Verus never warned about**,
+            because they are in modules that are not compiled: both `src/protocol/mod.rs:1`
+            and `src/services/mod.rs:1` read `// pub mod lock;`. They are in
+            `services/lock/main_s.rs` (11), `protocol/lock/distributed_system_procotol_i.rs`
+            (7), `services/lock/distributed_system_s.rs` (6), and
+            `protocol/lock/refinement_proof_i.rs` (4, including
+            `lemma_lock_sentPackets_finite`, vacuous for the same reason as the RSL one).
+            Reconciled: 53 `.finite()` in `src/` = 17 warned + 8 in comments + 28 dead.
+            Nothing here is urgent, but 54.11 must not be recorded as "zero" without it —
+            re-enabling the lock tree brings all 28 warnings back. The three call sites that
+            referenced lemmas deleted in a.2 were updated, so the tree is at least
+            consistent with the code around it.
+            **This generalises past 54.11**: every warning count in Phase 54 is a count over
+            *compiled* modules only, and the same is true of the 120 trigger notes.
 
 - [ ] **54.12** The 20 `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and
       says outright it "is dangerous since it assumes the given function describes a finite

@@ -39,26 +39,6 @@ verus! {
         }
     }
 
-    pub proof fn lemma_sentPackets_finite(
-        b:Behavior<RslState>,
-        c:LConstants,
-        i:int,
-    )
-        requires IsValidBehaviorPrefix(b, c, i),
-                 0 <= i,
-        ensures  b[i].environment.sentPackets.finite()
-        decreases i
-    {
-        if i == 0 {
-            // Base case: RslInit includes LEnvironment_Init which ensures sentPackets.finite()
-        } else {
-            lemma_sentPackets_finite(b, c, i - 1);
-            lemma_AssumptionsMakeValidTransition(b, c, i - 1);
-            lemma_environment_next_preserves_sentpackets_finite(
-                b[i - 1].environment, b[i].environment);
-        }
-    }
-
     pub proof fn lemma_PacketSetStaysInSentPackets(
         b:Behavior<RslState>,
         c:LConstants,

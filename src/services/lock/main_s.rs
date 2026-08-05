@@ -228,8 +228,6 @@ verus! {
         {
             // Set::map preserves finiteness, so le.sentPackets is finite.
 
-            // Derive de_next.sentPackets.finite() from de.sentPackets.finite() + LEnvironment_Next
-            lemma_environment_next_preserves_sentpackets_finite(de, de_next);
 
             // Set::map also makes le_next.sentPackets finite.
 
@@ -384,9 +382,6 @@ verus! {
                     // Prove db[j].abstractable() where j = db.len()-1
                     // IH gives db[i].abstractable() for i = db.len()-2
                     lemma_ds_consistency(config, db, j);
-                    // sentPackets.finite(): from IH + LEnvironment_Next preservation
-                    lemma_environment_next_preserves_sentpackets_finite(
-                        db[i].environment, db[j].environment);
                     assert(db[j].abstractable());
                     RefinementToLSStateHelper(db[i], db[j], sb[i], sb[j]);
                 }

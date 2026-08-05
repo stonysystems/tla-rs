@@ -7,18 +7,13 @@ verus! {
 /// argument. This means proofs don't need to generalize over the accumulator,
 /// unlike the Set::fold currently in Verus.
 pub open spec fn set_fold<A, B>(s: Set<A>, zero: B, f: spec_fn(B, A) -> B) -> B
-    recommends s.finite()
     decreases s.len()
 {
-    if s.finite() {
-        if s.len() == 0 {
-            zero
-        } else {
-            let a = s.choose();
-            f(set_fold(s.remove(a), zero, f), a)
-        }
-    } else {
+    if s.len() == 0 {
         zero
+    } else {
+        let a = s.choose();
+        f(set_fold(s.remove(a), zero, f), a)
     }
 }
 
@@ -242,13 +237,11 @@ pub proof fn lemma_to_set_union_auto<A>()
 }
 
 spec fn map_fold<A, B>(s: Set<A>, f: spec_fn(A) -> B) -> Set<B>
-    recommends s.finite()
 {
     set_fold(s, Set::empty(), |s1: Set<B>, a: A| s1.insert(f(a)))
 }
 
 proof fn map_fold_ok<A, B>(s: Set<A>, f: spec_fn(A) -> B)
-    requires s.finite()
     ensures map_fold(s, f) =~= s.map(f)
     decreases s.len()
 {
@@ -258,39 +251,6 @@ proof fn map_fold_ok<A, B>(s: Set<A>, f: spec_fn(A) -> B)
         let a = s.choose();
         map_fold_ok(s.remove(a), f);
         return;
-    }
-}
-
-proof fn map_fold_finite<A, B>(s: Set<A>, f: spec_fn(A) -> B)
-    requires s.finite()
-    ensures map_fold(s, f).finite()
-    decreases s.len()
-{
-    if s.len() == 0 {
-        return;
-    } else {
-        let a = s.choose();
-        map_fold_finite(s.remove(a), f);
-        return;
-    }
-}
-
-pub proof fn map_finite<A, B>(s: Set<A>, f: spec_fn(A) -> B)
-requires
-    s.finite(),
-ensures
-    s.map(f).finite(),
-{
-    map_fold_ok(s, f);
-    map_fold_finite(s, f);
-}
-
-pub proof fn map_set_finite_auto<A, B>()
-ensures
-    forall |s: Set<A>, f: spec_fn(A) -> B| s.finite() ==> #[trigger] (s.map(f).finite()),
-{
-    assert forall |s: Set<A>, f: spec_fn(A) -> B| s.finite() implies #[trigger] s.map(f).finite() by {
-        map_finite(s, f);
     }
 }
 
