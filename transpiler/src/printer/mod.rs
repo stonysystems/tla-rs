@@ -2291,7 +2291,6 @@ mod tests {
         assert!(!regular_param.is_self);
     }
 
-    #[test]
     /// Phase 42.8.c.2.iv.E. The `&mut self` lift handles
     /// `let result = (Struct{..}, rest); ..proofs..; result` at the top level of a
     /// body. executor's proof-fallback stubs nest that one level deeper --

@@ -1355,7 +1355,11 @@ impl<'a> LintContext<'a> {
             // `x' = x` and `x' = [x EXCEPT ..]`: the frame/update form. The
             // left side is not a read at all, and a bare mention of the same
             // variable on the right is the frame condition.
-            TlaExpr::BinOp { op, left, right } if matches!(op, TlaBinOp::Eq) => {
+            TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                left,
+                right,
+            } => {
                 if let TlaExpr::Prime(inner) = &**left {
                     if let TlaExpr::Ident(v) = &**inner {
                         self.collect_whole_array_reads_skipping(right, per_node, v, out);

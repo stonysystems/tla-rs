@@ -3434,7 +3434,6 @@ mod tests {
         );
     }
 
-    #[test]
     /// Phase 54.7.e. The value-equivalence `assert forall` in the generated map
     /// lemmas carries explicit triggers. They pin exactly what Verus was already
     /// choosing (`abs2[ak]` / `expected[ak]`, reported as trigger 1 and 2 of 2),
@@ -3486,6 +3485,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn test_generate_map_proof_lemmas_empty() {
         let map_fields = std::collections::HashMap::new();
         let output = Transpiler::generate_map_proof_lemmas(
