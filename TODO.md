@@ -14941,6 +14941,47 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         stub — E made the stub well-typed, not real. J needs the free-function forms retired
         in favour of the methods so fresh's contract can be taken without its body.
 
+        **Scoped 2026-08-05, and the blocker is smaller than "Phase 48/49 work" suggested.**
+        Fresh output is *not* a bare stub: the body is already a real translation, and the
+        contract already carries `#![trigger result@[i]]`, so regenerating replica does
+        deliver the 36. Two things stand between here and that, both measured:
+      - [ ] **J.1 — `proven_functions` supplies the missing preconditions.** The gap that
+            makes fresh unusable is one config line, not a transpiler defect.
+            `build_requires` already translates spec `recommends` into exec `requires`, but
+            drops them when `assume_postconditions = true`; `proven_functions` is the
+            designed opt-out ("proven_functions need recommends since they don't have
+            assume(false)"). Replica lists exactly one function.
+            **Measured**: adding `LReplicaNextProcess1a` restores
+            `received_packet.msg is CMessage1a` — matching the checked-in file
+            character-for-character — and drops its `assume(false)`. Adding all 12 spec
+            functions that carry a `recommends` and are not `skip_functions` takes replica's
+            fresh `assume(false)` count **20 → 8**. The 8 that remain are precisely the
+            `Spontaneous*`/`ReadClock*` actions, which have no `recommends`.
+            **Not committed as config yet, deliberately**: listing a function in
+            `proven_functions` *claims* its body verifies, and only a verification run can
+            settle that. The claim is cheap to make and expensive to be wrong about, so it
+            lands with J.3, not before. The mechanism itself is now pinned by
+            `test_assume_postconditions_drops_recommends` and
+            `test_proven_functions_restores_recommends_under_assume_postconditions` — the
+            pre-existing recommends test ran with the default config and covered neither
+            half of this interaction.
+      - [ ] **J.2 — migrate the callers.** 20 call sites in
+            `src/implementation/RSL/ReplicaImpl.rs`, all the uniform shape
+            `crate::generated::RSL::replica_gen::CReplicaNextX(self, args..)` →
+            `self.CReplicaNextX(args..)`. Two of the 20 must stay free functions
+            (`CReplicaNextProcess1b`, `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`)
+            because they are `skip_functions` and fresh never emits them — which leaves
+            exactly the 18 this item has always described, a useful consistency check. This
+            file is hand-written implementation code, so editing it is ordinary work.
+      - [ ] **J.3 — take fresh, verify, and back off what does not hold.** The decisive
+            step: replace the 18 free functions with fresh's methods, keeping the
+            `skip_functions` bodies, then run verification. Any function whose proof does not
+            go through comes back out of `proven_functions` and keeps its existing body. The
+            8 `Spontaneous*`/`ReadClock*` actions are the likely holdouts — they gain no
+            precondition from a `recommends`, so nothing has changed in their favour.
+      - [ ] **J.4 — confirm the 36 notes land**, with
+            `scripts/classify_trigger_notes.py` on a fresh verification log.
+
   - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
         `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the
         same module on **several single-name lines** (`use X::a;` and `use X::b;`), and the

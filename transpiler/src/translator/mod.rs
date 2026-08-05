@@ -24955,6 +24955,74 @@ mod tests {
         assert!(requires.iter().any(|r| r == "s.role is CLeader"));
     }
 
+    /// Phase 42.8.c.2.iv.J. `assume_postconditions` drops recommends, because a
+    /// precondition the caller does not establish would break it -- and the body
+    /// is trusted via `assume(false)` anyway. `proven_functions` is the opt-out:
+    /// those bodies really are verified, so they need the precondition back.
+    ///
+    /// This interaction is what gates replica's merge. Fresh output for
+    /// `CReplicaNextProcess1a` was missing `received_packet.msg is CMessage1a`
+    /// and carried `assume(false)`; listing the spec name restores the clause
+    /// character-for-character against the checked-in file and drops the assume.
+    /// The pre-existing recommends test runs with the default config, so neither
+    /// half of this was covered.
+    fn recommends_func() -> AnnotatedFunction {
+        let mut func = make_annotated_func(
+            "LAction",
+            vec![
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+            ],
+            vec![ParameterMode::Input, ParameterMode::Output],
+            Expr::Literal(Literal::Bool(true)),
+        );
+        func.spec_fn.recommends.push(Expr::Is(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "role".to_string(),
+            )),
+            "Leader".to_string(),
+        ));
+        func
+    }
+
+    fn translator_with(assume_postconditions: bool, proven: &[&str]) -> Translator {
+        let mut config = TranslatorConfig::default();
+        config.int_type = "u64".to_string();
+        config.validity_predicate_name = "valid".to_string();
+        config.assume_postconditions = assume_postconditions;
+        config.proven_functions = proven.iter().map(|s| s.to_string()).collect();
+        Translator::new(config)
+    }
+
+    #[test]
+    fn test_assume_postconditions_drops_recommends() {
+        let requires = translator_with(true, &[]).build_requires(&recommends_func());
+        assert!(
+            !requires.iter().any(|r| r.contains("is CLeader")),
+            "recommends must not become a requires when the body is trusted via \
+             assume(false); the caller has not been asked to establish it: {:?}",
+            requires
+        );
+    }
+
+    #[test]
+    fn test_proven_functions_restores_recommends_under_assume_postconditions() {
+        let requires = translator_with(true, &["LAction"]).build_requires(&recommends_func());
+        assert!(
+            requires.iter().any(|r| r == "s.role is CLeader"),
+            "a proven function carries no assume(false), so it needs its \
+             precondition back: {:?}",
+            requires
+        );
+    }
+
     #[test]
     fn test_build_requires_full_pipeline() {
         let mut config = TranslatorConfig::default();
