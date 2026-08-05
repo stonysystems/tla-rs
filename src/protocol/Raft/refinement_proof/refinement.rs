@@ -48,6 +48,7 @@ verus! {
                 configuration_commit_certificates:
                     ds.configuration_commit_certificates,
                 log_commit_certificates: ds.log_commit_certificates,
+                election_log_len: ds.election_log_len,
             };
 
             assert forall |i: int| 0 <= i < sub_ds.num_servers

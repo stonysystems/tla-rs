@@ -36,6 +36,16 @@ verus! {
         // entry that becomes committed, including Data entries.
         pub log_commit_certificates:
             Map<int, LogCommitCertificate>,
+        // Ghost state: maps (server_id, election_term) → that server's log
+        // length at the moment it won the election for that term. Mirrors the
+        // vote_log_len pattern. Proof-only: nothing on the wire or in generated
+        // code observes it.
+        //
+        // Needed because has_recorded_election_log_provenance only says the
+        // saved membership phase comes from *some* prefix; recording the exact
+        // snapshot length is what lets a proof conclude that a log entry whose
+        // term is below the leader's own term was already present at election.
+        pub election_log_len: Map<(int, int), int>,
     }
 
     /// Well-formedness of the distributed state
@@ -61,6 +71,7 @@ verus! {
             == Map::<int, ConfigurationCommitCertificate>::empty()
         &&& ds.log_commit_certificates
             == Map::<int, LogCommitCertificate>::empty()
+        &&& ds.election_log_len == Map::<(int, int), int>::empty()
     }
 
     /// Helper: which action branch was taken, producing the given sent_packets.
@@ -156,6 +167,26 @@ verus! {
                         && sent_packets[i]->VoteResponse_granted)
                 )
             })
+            // Ghost state: election_log_len records the stepping server's log
+            // length at the moment it becomes leader. Existing entries are
+            // immutable, a promotion records one, and nothing else is added.
+            &&& (forall |v: int, t: int| ds.election_log_len.dom().contains((v, t))
+                ==> ds_.election_log_len.dom().contains((v, t))
+                    && ds_.election_log_len[(v, t)] == ds.election_log_len[(v, t)])
+            &&& (!(s.role is Leader) && s_.role is Leader ==> {
+                &&& ds_.election_log_len.dom().contains(
+                    (server_id, s_.current_term))
+                &&& ds_.election_log_len[(server_id, s_.current_term)]
+                    == s.log.len()
+            })
+            &&& (forall |v: int, t: int|
+                #![trigger ds_.election_log_len.dom().contains((v, t))]
+                ds_.election_log_len.dom().contains((v, t))
+                && !ds.election_log_len.dom().contains((v, t))
+                ==> v == server_id
+                    && t == s_.current_term
+                    && !(s.role is Leader)
+                    && s_.role is Leader)
             // Existing configuration-commit certificates are immutable.
             &&& (forall |index: int|
                 ds.configuration_commit_certificates.dom().contains(index)
@@ -472,6 +503,7 @@ verus! {
                 configuration_commit_certificates:
                     ds.configuration_commit_certificates,
                 log_commit_certificates: ds.log_commit_certificates,
+                election_log_len: ds.election_log_len,
             });
             if last_commit > rest_max { last_commit } else { rest_max }
         }
@@ -558,6 +590,7 @@ verus! {
                 configuration_commit_certificates:
                     ds.configuration_commit_certificates,
                 log_commit_certificates: ds.log_commit_certificates,
+                election_log_len: ds.election_log_len,
             };
             assert(sub_ds.server_states.len() == ds.num_servers - 1);
             lemma_max_commit_index_eq_seq(sub_ds);
@@ -659,6 +692,7 @@ verus! {
             configuration_commit_certificates:
                 ds.configuration_commit_certificates,
             log_commit_certificates: ds.log_commit_certificates,
+            election_log_len: ds.election_log_len,
         };
         let rest_max = MaxCommitIndex(sub_ds);
         if last_commit >= MaxCommitIndex(ds) {
