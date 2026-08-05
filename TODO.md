@@ -17344,6 +17344,12 @@ value per hour, not by phase number:
       config in `/tmp` produces a body that is `assume(false)`. A real gap, not a stale skip.
       That trial also produced a false negative on two acceptor functions, and chasing *that*
       is what surfaced the two-list structure the whole classification rests on.
+      **README updated (2026-08-05)** to state the 10 / 15 / 8 split instead of the flat
+      "some functions have hand-written bodies", and
+      `test_rsl_skip_function_classification_matches_configs` recomputes the split from the
+      seven configs and holds the README and the note to it. Checked that the guard actually
+      fails on drift — adding a fake entry to one `skip_functions` list makes it report
+      `left: 31, right: 30` — rather than assuming a passing test is a working one.
 
 ### Non-goals
 - Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.

@@ -338,8 +338,14 @@ Types are prefixed by layer: `L*` for logical/protocol types (`LReplica`, `LProp
 
 - Raft's refinement proof still carries a few `assume`s, mostly around leader completeness;
   every other protocol's proof is assumption-free
-- RSL is not fully auto-generated: some functions have hand-written bodies
-  (`skip_functions`); see `transpiler/docs/REGEN_WORKFLOW.md`
+- RSL is not fully auto-generated. Of the 30 entries in its `skip_functions` lists:
+  **10 are a deliberate trust boundary** — the host event loop and its packet/clock
+  dispatch, which IronFleet also leaves trusted; **15 have proven hand-written
+  implementations** in `acceptor_manual.rs` / `executor_manual.rs`; and **8 are a genuine
+  transpiler gap** — quantifier-defined map constructions, recursive sequence walks, and
+  composite send-actions. Full RSL regeneration is not a goal. See
+  `docs/rsl-skip-functions.md` for the per-function classification and
+  `transpiler/docs/REGEN_WORKFLOW.md` for the workflow
 - `&mut self` codegen cannot handle intermediate whole-state assignments; protocols using
   that pattern (Raft) stay on the slower functional convention
 - Marshalling lacks a spec function for the non-deserializable check

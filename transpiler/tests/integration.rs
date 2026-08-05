@@ -1068,6 +1068,86 @@ fn test_chain_replication_config_loading() {
 
 /// Helper: verify that transpiler output for a protocol matches the checked-in *_gen.rs.
 /// Catches stale generated files (e.g., missing proof lemma calls after config changes).
+/// Phase 54.15: the RSL skip_functions classification is derived from the
+/// transpile configs, so it can drift silently the moment someone edits one.
+/// Recompute it from the configs and hold the README and the classification
+/// note to the result.
+///
+/// The split that matters is `skip_functions` vs `skip_functions` ∩
+/// `no_stub_functions`: the intersection is not "missing code", it is code that
+/// exists and is verified by hand in a `*_manual.rs`. Conflating the two is what
+/// made this limitation read as far more debt than it is.
+#[test]
+fn test_rsl_skip_function_classification_matches_configs() {
+    fn toml_list(src: &str, name: &str) -> Vec<String> {
+        let start = match src.find(&format!("{name} = [")) {
+            Some(i) => i,
+            None => return Vec::new(),
+        };
+        let rest = &src[start..];
+        let end = rest.find(']').expect("unterminated list");
+        rest[..end]
+            .match_indices('"')
+            .collect::<Vec<_>>()
+            .chunks(2)
+            .filter(|c| c.len() == 2)
+            .map(|c| rest[c[0].0 + 1..c[1].0].to_string())
+            .collect()
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let modules = [
+        "broadcast",
+        "acceptor",
+        "learner",
+        "executor",
+        "election",
+        "proposer",
+        "replica",
+    ];
+
+    let (mut total, mut hand_implemented) = (0usize, 0usize);
+    for m in modules {
+        let path = repo_root.join(format!("src/protocol/RSL/{m}_transpile.toml"));
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let skip = toml_list(&src, "skip_functions");
+        let no_stub = toml_list(&src, "no_stub_functions");
+        total += skip.len();
+        hand_implemented += skip.iter().filter(|f| no_stub.contains(f)).count();
+    }
+    let stub_emitted = total - hand_implemented;
+
+    assert_eq!(total, 30, "RSL skip_functions count changed");
+    assert_eq!(
+        hand_implemented, 15,
+        "skip ∩ no_stub changed -- these have hand-written implementations, not gaps"
+    );
+    assert_eq!(stub_emitted, 15, "stub-emitted skip_functions changed");
+
+    // The README and the classification note quote these numbers; if the configs
+    // move, they must move too rather than quietly becoming wrong.
+    let readme = std::fs::read_to_string(repo_root.join("README.md")).expect("read README");
+    for fragment in [
+        "30 entries",
+        "10 are a deliberate trust boundary",
+        "15 have proven hand-written",
+        "8 are a genuine",
+    ] {
+        assert!(
+            readme.contains(fragment),
+            "README no longer states the classification fragment `{fragment}` -- \
+             update it (and docs/rsl-skip-functions.md) to match the configs"
+        );
+    }
+    let note = std::fs::read_to_string(repo_root.join("docs/rsl-skip-functions.md"))
+        .expect("read docs/rsl-skip-functions.md");
+    assert!(
+        note.contains("15 of the 30 are in both"),
+        "the classification note no longer matches the configs"
+    );
+}
+
 /// Phase 54.18: build the release binary once, then invoke it directly.
 ///
 /// These tests used to each spawn `cargo run --release -- ...`. Around twenty
