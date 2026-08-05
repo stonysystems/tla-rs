@@ -17002,7 +17002,39 @@ value per hour, not by phase number:
             file by ~1200 diff lines (hand-written `skip_functions` bodies and the manual
             Arc patch), which is exactly the merge stuck at **42.8.c.2.iv**. Blocked there,
             not here — and per CLAUDE.md the generated file must not be hand-edited.
-      - [ ] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs` (64/69 in
+      - [ ] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs`.
+            **Measured (2026-08-05), and the earlier sketch was wrong on one point.** It
+            proposed `flatten_set_seq` from `verus_extra/set_lib_ext_v.rs` for `requests` and
+            a `Set::<int>::range`-based pair set for `replies`. vstd in fact has
+            `Seq::flat_map` and `Seq::to_set`, which express *both* — `replies` is
+            `Seq::new(len, |b| Seq::new(.., |r| GetReplyFromRequestBatches(..))).flatten().to_set()`
+            — and `Seq::to_set` is finite by construction, so nothing is assumed. No
+            `Set::range` gymnastics needed.
+            The genuinely missing piece was **membership**: vstd proves `flatten`'s length,
+            its `flatten_alt` equivalence, `push` and singleton behaviour — and nothing about
+            what it contains. The refinement proof reasons about these sets almost entirely
+            through `.contains`, so that lemma is the whole bridge.
+            - [x] **54.12.c.1** `lemma_flatten_contains` in `verus_extra/seq_lib_v.rs`.
+                  **DONE (2026-08-05)**, `1042 verified, 0 errors`, trigger diff
+                  **0 added / 0 removed / 0 changed** after pinning the two `choose` binders
+                  (unpinned they added 2 auto-chosen notes; Phase 54 exists to prevent exactly
+                  that). Additive — no existing proof touched, so no regression risk.
+                  Worth recording how it had to be proved: the induction step is done at the
+                  level of `to_set`, not `contains`. vstd has **no membership lemma for
+                  `Seq::add`**, so `first().add(drop_first().flatten())` cannot be taken apart
+                  directly. Routing through our own `lemma_to_set_distributes_over_addition`
+                  gives `(a + b).to_set() == a.to_set() + b.to_set()`, and `to_set_ensures`
+                  carries it back. The solver does not chain those hops on its own — each one
+                  is written out.
+            - [ ] **54.12.c.2** Rewrite the 4 sites over the new lemma and re-verify. This is
+                  the part that carries risk: `ProduceAbstractState` and
+                  `ProduceAbstractStateFromBatches` are `pub open spec fn`s that ~500 lines of
+                  refinement proof unfold. Note `ProduceAbstractStateFromBatches` is exactly
+                  `ProduceAbstractState` over
+                  `batches.drop_last().push(batches.last().take(reqs_in_last_batch))`, so the
+                  two may collapse into one definition — check before assuming.
+
+      - [ ] ~~superseded~~ original 54.12.c note (64/69 in
             `ProduceAbstractStateFromBatches`, 82/87 in `ProduceAbstractState` — 4 warnings,
             3 distinct shapes). These build `{req | ∃ batch_num, req_num. bounds ∧ …}` over a
             `Seq<RequestBatch>`, i.e. the image of a finite *index* set, and they sit in
