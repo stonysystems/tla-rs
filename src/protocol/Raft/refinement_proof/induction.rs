@@ -355,24 +355,10 @@ verus! {
         &&& ds.log_commit_certificates[log_index].entry == entry
     }
 
-    /// Strong dynamic Leader Completeness statement. Its preservation is the
-    /// remaining election-provenance obligation for leaders elected from a
-    /// stale committed configuration; committed-history safety above does not
-    /// rely on this unproved strengthening.
-    pub open spec fn DynamicLeaderCompleteness(
-        ds: RaftDistributedState,
-    ) -> bool {
-        forall |log_index: int, entry: LLogEntry, leader_id: int|
-            0 <= log_index
-            && DynamicallyCommittedAt(ds, log_index, entry)
-            && 0 <= leader_id < ds.num_servers
-            && ds.server_states[leader_id].role is Leader
-            && ds.server_states[leader_id].current_term > entry.term
-            ==> {
-                &&& ds.server_states[leader_id].log.len() > log_index
-                &&& ds.server_states[leader_id].log[log_index] == entry
-            }
-    }
+    // `DynamicLeaderCompleteness` now lives in `invariants.rs`, stated directly
+    // over the certificate map, so it can become a conjunct of
+    // `RaftSafetyInvariant` without `invariants.rs` having to import this
+    // module. It reaches here through the glob import.
 
     /// Every concrete transition in a reachable Raft behavior commits only
     /// a legal chain of membership phases.

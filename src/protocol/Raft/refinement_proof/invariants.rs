@@ -386,6 +386,193 @@ verus! {
             }
     }
 
+    /// A certified Configuration boundary below a certified log entry has no
+    /// greater term.
+    ///
+    /// The log certificate's committer holds its whole committed prefix, so
+    /// both entries sit in that one log with the boundary earlier; log terms
+    /// are monotonic within a server. Consequently a leader whose term exceeds
+    /// the target entry's term also exceeds every earlier certified boundary's,
+    /// which is exactly what global Configuration Leader Completeness needs to
+    /// place those boundaries in the leader.
+    pub proof fn lemma_configuration_certificate_term_below_log_certificate(
+        ds: RaftDistributedState,
+        log_index: int,
+        configuration_index: int,
+    )
+        requires
+            LogCommitCertificatesValid(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            LogTermsMonotonic(ds),
+            ds.log_commit_certificates.dom().contains(log_index),
+            ds.configuration_commit_certificates.dom()
+                .contains(configuration_index),
+            0 <= configuration_index < log_index,
+        ensures
+            ds.configuration_commit_certificates[configuration_index]
+                .entry.term
+                <= ds.log_commit_certificates[log_index].entry.term,
+    {
+        let committer = ds.log_commit_certificates[log_index].committer;
+
+        assert(LogCommitCertificatesValid(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= log_index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(log_index < ds.server_states[committer].log.len());
+        assert(ds.server_states[committer].log[log_index]
+            == ds.log_commit_certificates[log_index].entry);
+
+        // The boundary lies in the same committed prefix.
+        assert(configuration_index
+            < ds.server_states[committer].commit_index);
+        assert(configuration_index < ds.server_states[committer].log.len());
+        lemma_certified_boundary_agrees_with_committed_server(
+            ds, configuration_index, committer);
+
+        assert(LogTermsMonotonic(ds));
+    }
+
+    /// All-entry dynamic Leader Completeness, stated directly over the
+    /// certificate map so it can be a conjunct of `RaftSafetyInvariant`.
+    ///
+    /// Covers Data and Configuration payloads alike: every leader whose term
+    /// exceeds a certified entry's term holds that exact entry at that index.
+    pub open spec fn DynamicLeaderCompleteness(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int, leader_id: int|
+            #![trigger ds.log_commit_certificates[index],
+                       ds.server_states[leader_id].role]
+            ds.log_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[index].entry.term
+            ==> {
+                &&& ds.server_states[leader_id].log.len() > index
+                &&& ds.server_states[leader_id].log[index]
+                    == ds.log_commit_certificates[index].entry
+            }
+    }
+
+    /// All-entry analogue of `CertifiedBoundaryTransfersToVotedLeader`.
+    ///
+    /// This is the *same* inherited static-Raft log-transfer trust boundary
+    /// already relied on for Configuration Leader Completeness, restated over
+    /// `LogCommitCertificate`. It introduces no new assumption.
+    pub open spec fn CertifiedLogEntryTransfersToVotedLeader(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int, leader_id: int, overlap_voter: int|
+            ds.log_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && 0 <= overlap_voter < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[index].entry.term
+            && ds.log_commit_certificates[index].quorum
+                .contains(overlap_voter)
+            && ds.server_states[leader_id].votes_granted
+                .contains(overlap_voter)
+            ==> {
+                &&& ds.server_states[leader_id].log.len() > index
+                &&& ds.server_states[leader_id].log[index]
+                    == ds.log_commit_certificates[index].entry
+            }
+    }
+
+    /// The all-entry transfer obligation is discharged by the same inherited
+    /// lemma as the Configuration one — no new trust boundary.
+    pub proof fn lemma_log_entry_transfer_obligation_discharged_by_inherited_lemma(
+        ds: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogCommitCertificatesValid(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            LogMatching(ds),
+            LogTermsMonotonic(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+        ensures
+            CertifiedLogEntryTransfersToVotedLeader(ds),
+    {
+        assert forall |index: int, leader_id: int, overlap_voter: int|
+            ds.log_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && 0 <= overlap_voter < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[index].entry.term
+            && ds.log_commit_certificates[index].quorum
+                .contains(overlap_voter)
+            && ds.server_states[leader_id].votes_granted
+                .contains(overlap_voter)
+        implies {
+            &&& ds.server_states[leader_id].log.len() > index
+            &&& ds.server_states[leader_id].log[index]
+                == ds.log_commit_certificates[index].entry
+        }
+        by {
+            let certificate = ds.log_commit_certificates[index];
+
+            // Certificate validity already places the entry in the voter's log.
+            assert(LogCommitCertificatesValid(ds));
+            assert(index < ds.server_states[overlap_voter].log.len());
+            assert(ds.server_states[overlap_voter].log[index]
+                == certificate.entry);
+            assert(0 <= index);
+
+            if overlap_voter != leader_id {
+                assert(VotersVotedForCandidate(ds));
+                let vote = choose |packet: LRaftPacket| {
+                    &&& ds.network.contains(packet)
+                    &&& packet.dst == leader_id
+                    &&& packet.msg matches LRaftMessage::VoteResponse {
+                        term,
+                        granted,
+                        voter,
+                        ..
+                    }
+                    &&& term == ds.server_states[leader_id].current_term
+                    &&& granted
+                    &&& voter == overlap_voter
+                };
+                assert(vote.src == overlap_voter) by {
+                    assert(VoteResponseIntegrity(ds));
+                };
+                assert(
+                    ds.server_states[overlap_voter].current_term
+                        > vote.msg->VoteResponse_term
+                    || (ds.server_states[overlap_voter].current_term
+                            == vote.msg->VoteResponse_term
+                        && ds.server_states[overlap_voter].has_voted
+                        && ds.server_states[overlap_voter].voted_for
+                            == leader_id)
+                ) by {
+                    assert(VoteResponseIntegrity(ds));
+                };
+
+                lemma_overlap_voter_entry_transfer(
+                    ds,
+                    leader_id,
+                    overlap_voter,
+                    index,
+                    certificate.entry,
+                );
+            }
+        };
+    }
+
     /// Membership-specific half of Configuration Leader Completeness. Given the
     /// first-missing-boundary provenance and the inherited transfer obligation
     /// above, quorum overlap across the governing membership phase forces every
