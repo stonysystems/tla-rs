@@ -15043,6 +15043,22 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         `ExecExpr` the printer receives for `CExecutorProcessAppStateRequest` and compare it
         against the model in `test_lift_with_a_let_before_the_if_in_the_value_block`, which is
         the closest passing approximation.
+        **Instrumentation done 2026-08-05** — `VERUS_TRANSPILE_DUMP_BODY=<fn>` on the printer
+        prints the `ExecExpr` it receives. It settles the question the hand-built models could
+        not: the state element is **`Clone(Var("self"))`**, a dedicated `ExecExpr::Clone` node,
+        *not* the `MethodCall{receiver: self, method: "clone"}` that every model above used and
+        that `is_identity_self_clone` matched. That is why the Tuple-arm fix passed its own test
+        and changed nothing real — it was matching a node the translator never emits. Matching
+        the `Clone` node is now fixed and tested
+        (`test_identity_self_clone_recognises_the_clone_node`).
+        **Emission still does not move** — executor still emits 3 `; result }` with the `Clone`
+        node matched, and re-applying the `find_struct_in_expr` / `count_non_struct_in_expr`
+        extension on top of it changed nothing either, so that stayed reverted a second time.
+        The remaining suspect is the restructure guard `!expr_eq(transformed, value)`: if the
+        transform yields something equal to its input the restructure never runs, which would
+        explain why *every* fix downstream of it is inert. Instrument that next, not the AST.
+        Otherwise the dump is now the tool for this — no more hand-built models, they were
+        wrong about the node shape for four rounds running.
         Still low priority: it only damages stub bodies the preserve list replaces.
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:

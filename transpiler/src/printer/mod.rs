@@ -130,6 +130,16 @@ impl Printer {
             // proof blocks must read the updated `self` rather than the vanished
             // output binding.
             let returns_unit = matches!(&func.return_type, ExecType::Named(n) if n == "()");
+            // Phase 42.8.c.2.iv.E: four hand-built models of this body all lifted
+            // correctly while the real one did not, so the divergence is in how the
+            // AST is built. Set VERUS_TRANSPILE_DUMP_BODY=<fn name> to print what
+            // the printer actually receives.
+            if std::env::var("VERUS_TRANSPILE_DUMP_BODY").as_deref() == Ok(func.name.as_str()) {
+                eprintln!(
+                    "=== {} is_method={} returns_unit={} return_type={:?}\n{:#?}",
+                    func.name, func.is_method, returns_unit, func.return_type, func.body
+                );
+            }
             let method_body = Self::struct_to_field_assignments(&func.body, returns_unit);
             // If nothing still binds the output name, every remaining mention of
             // it refers to the state the assignments just wrote -- i.e. `self`.
@@ -288,6 +298,12 @@ impl Printer {
                     && (method == "clone_up_to_view" || method == "clone")
                     && matches!(receiver.as_ref(), ExecExpr::Var(v) if v == "self")
             }
+            // The translator emits a dedicated `Clone` node, not a `.clone()` method
+            // call, for `(self.clone(), ..)` in proof-fallback stubs. Matching only
+            // the MethodCall form is why the Tuple-arm fix in 42.8.c.2.iv.E passed
+            // its unit test and changed nothing in the real output; found by dumping
+            // the AST the printer receives.
+            ExecExpr::Clone(inner) => matches!(inner.as_ref(), ExecExpr::Var(v) if v == "self"),
             ExecExpr::Block(stmts) => stmts.len() == 1 && Self::is_identity_self_clone(&stmts[0]),
             _ => false,
         }
@@ -2400,6 +2416,29 @@ mod tests {
         );
     }
 
+    /// Phase 42.8.c.2.iv.E. The translator emits a dedicated `Clone` node, not a
+    /// `.clone()` MethodCall, for `(self.clone(), ..)`. Found by dumping the AST the
+    /// printer receives (`VERUS_TRANSPILE_DUMP_BODY`), after a MethodCall-shaped fix
+    /// passed its own test and changed nothing in the real output.
+    #[test]
+    fn test_identity_self_clone_recognises_the_clone_node() {
+        assert!(Printer::is_identity_self_clone(&ExecExpr::Clone(Box::new(
+            ExecExpr::Var("self".to_string())
+        ))));
+        assert!(Printer::is_identity_self_clone(&ExecExpr::MethodCall {
+            receiver: Box::new(ExecExpr::Var("self".to_string())),
+            method: "clone".to_string(),
+            args: vec![],
+        }));
+        // not an identity clone: a different receiver
+        assert!(!Printer::is_identity_self_clone(&ExecExpr::Clone(
+            Box::new(ExecExpr::Var("other".to_string()))
+        )));
+    }
+
+    // Was missing `#[test]`, so it compiled but never ran -- found while adding the
+    // test above. It is the oldest test of the lift that 42.8.c.2.iv.E is chasing.
+    #[test]
     fn test_method_body_struct_to_field_assignments() {
         // A method whose body is a struct construction should emit field assignments
         let func = ExecFunction {
