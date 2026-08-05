@@ -107,7 +107,7 @@ ensures
             else { assert(old_m@.contains_key(kw) && kw as int == ak); }
         }
     }
-    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
+    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
         let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;
         if ak == k as int { assert(kw == k); assert(m2@[kw] == v); }
         else { assert(m2@[kw] == old_m@[kw]); }
@@ -157,7 +157,7 @@ ensures
             assert(old_m@.contains_key(kw) && kw as int == ak);
         }
     }
-    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
+    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {
         let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;
         let kw_orig = choose |kw2: u64| old_m@.contains_key(kw2) && kw2 as int == ak;
         assert(kw_orig == kw);
@@ -196,7 +196,7 @@ ensures
             assert(k == opn);
         }
     }
-    assert forall |ak: int| abs.contains_key(ak) implies abs[ak] == expected[ak] by {
+    assert forall |ak: int| #![trigger abs[ak]] #![trigger expected[ak]] abs.contains_key(ak) implies abs[ak] == expected[ak] by {
         let k = choose |k: u64| m@.contains_key(k) && k as int == ak;
         assert(k == opn); assert(m@[k] == tup);
     }
@@ -353,7 +353,7 @@ impl CLearner {
             { self.constants = self.constants.clone_up_to_view(); self.max_ballot_seen = self.max_ballot_seen.clone(); self.unexecuted_learner_state = __unexecuted_learner_state }
 
         } else {
-
+            
         };
         proof {
             if old_self.unexecuted_learner_state@.contains_key(*opn) {

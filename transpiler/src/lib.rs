@@ -1809,7 +1809,7 @@ impl Transpiler {
             output.push_str("        }\n");
             output.push_str("    }\n");
             // Value equivalence
-            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
+            output.push_str("    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
             output.push_str(
                 "        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
             );
@@ -1882,7 +1882,7 @@ impl Transpiler {
             output.push_str("            assert(old_m@.contains_key(kw) && kw as int == ak);\n");
             output.push_str("        }\n");
             output.push_str("    }\n");
-            output.push_str("    assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
+            output.push_str("    assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] abs2.contains_key(ak) implies abs2[ak] == expected[ak] by {\n");
             output.push_str(
                 "        let kw = choose |kw: u64| m2@.contains_key(kw) && kw as int == ak;\n",
             );
@@ -1946,7 +1946,7 @@ impl Transpiler {
             output.push_str("            assert(k == opn);\n");
             output.push_str("        }\n");
             output.push_str("    }\n");
-            output.push_str("    assert forall |ak: int| abs.contains_key(ak) implies abs[ak] == expected[ak] by {\n");
+            output.push_str("    assert forall |ak: int| #![trigger abs[ak]] #![trigger expected[ak]] abs.contains_key(ak) implies abs[ak] == expected[ak] by {\n");
             output.push_str(
                 "        let k = choose |k: u64| m@.contains_key(k) && k as int == ak;\n",
             );
@@ -3435,6 +3435,57 @@ mod tests {
     }
 
     #[test]
+    /// Phase 54.7.e. The value-equivalence `assert forall` in the generated map
+    /// lemmas carries explicit triggers. They pin exactly what Verus was already
+    /// choosing (`abs2[ak]` / `expected[ak]`, reported as trigger 1 and 2 of 2),
+    /// so the instantiation is unchanged and only the note goes away -- which is
+    /// the point: an auto-chosen trigger can move between Verus releases.
+    #[test]
+    fn test_map_proof_lemmas_pin_the_value_equivalence_triggers() {
+        let mut map_fields = std::collections::HashMap::new();
+        map_fields.insert(
+            "unexecuted_learner_state".to_string(),
+            (
+                "CLearnerState".to_string(),
+                "clearnerstate".to_string(),
+                "CLearnerTuple".to_string(),
+            ),
+        );
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
+
+        // Only the *value*-equivalence assert is pinned. The key-set assert
+        // (`abs2.contains_key(ak) == expected.contains_key(ak)`) emits no note, so
+        // there is no chosen trigger to pin and annotating it would be a change
+        // with no evidence behind it.
+        assert!(
+            !output.contains(
+                "assert forall |ak: int| abs2.contains_key(ak) implies abs2[ak] == expected[ak]"
+            ),
+            "the unannotated value-equivalence form must not survive:\n{}",
+            output
+        );
+        assert!(
+            output.contains(
+                "assert forall |ak: int| #![trigger abs2[ak]] #![trigger expected[ak]] \
+                 abs2.contains_key(ak)"
+            ),
+            "insert/remove lemmas should pin both chosen triggers:\n{}",
+            output
+        );
+        assert!(
+            output.contains(
+                "assert forall |ak: int| #![trigger abs[ak]] #![trigger expected[ak]] \
+                 abs.contains_key(ak)"
+            ),
+            "the singleton lemma uses `abs`, not `abs2`:\n{}",
+            output
+        );
+    }
+
     fn test_generate_map_proof_lemmas_empty() {
         let map_fields = std::collections::HashMap::new();
         let output = Transpiler::generate_map_proof_lemmas(

@@ -25,14 +25,15 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 ## Current Status (last updated 2026-08-05)
 
 **🔝 42.8.c is COMPLETE (2026-08-05). All seven RSL modules are reconciled.**
-`1046 verified, 0 errors`; trigger notes **534 → 77**; `assume(false)` **0**.
+`1046 verified, 0 errors`; trigger notes **534 → 74**; `assume(false)` **0**.
 `scripts/classify_trigger_notes.py` reports **0 notes deliverable by regeneration** — the
 codegen pipeline this phase opened is drained, and the ceiling is tightened to 77 so it
 cannot silently regrow.
 
 **What is left, and it is only two things:**
-- **13 notes** are transpiler output carrying shapes 54.7.a does not annotate. Clearing them
-  needs *new codegen work*, one shape at a time — no dominant pattern remains.
+- **10 notes** are transpiler output carrying shapes 54.7.a does not annotate. Clearing them
+  needs *new codegen work*, one shape at a time — no dominant pattern remains. (Was 13;
+  54.7.e cleared the 3 learner map-lemma notes.)
 - **64 notes** sit in `skip_functions` or preserved hand-written bodies. `CLAUDE.md`
   forecloses both answers 54.7.c/d proposed (editing in place, and extracting to
   `*_manual.rs`), so the only compliant route is teaching the transpiler to generate those
@@ -17337,6 +17338,28 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 The other 11 are pinned.** The remaining 2 need the enclosing expression restructured (hoist the inner
 quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
 they are the honest remainder of the "not mechanical" warning in this phase's premise.
+- [ ] **54.10.a — the `changed triggers` signal has a false-positive mode, seen twice.**
+      The diff keys entries by `file:line`, so when annotating a site removes its note the
+      *following* notes shift up and get paired against whatever used to be at their line.
+      Both occurrences were pure line drift with an identical trigger multiset: 3 in
+      `proposer_gen.rs` after the replica merge, and 4 in `learner_gen.rs` after 54.7.e.
+      This matters more than a cosmetic annoyance — "same expression, different chosen
+      trigger" is *the* signal this phase exists to watch, and a diff that cries wolf on
+      every regeneration is one people learn to ignore. Fix: pair entries by
+      (file, normalised expression text) and fall back to line only to disambiguate
+      duplicates within a file, rather than keying on line first.
+- [x] **54.7.e — the 3 learner map-lemma notes (2026-08-05).** `generate_map_proof_lemmas`
+      now emits `#![trigger abs2[ak]] #![trigger expected[ak]]` on the value-equivalence
+      `assert forall`. The triggers pinned are **exactly what Verus was already choosing**
+      (reported as trigger 1 and 2 of 2), so the instantiation does not change and only the
+      note goes away — which is the point, since an auto-chosen trigger can move between
+      releases. 77 → 74, `1046 verified, 0 errors`, 0 added.
+      The *key-set* assert in the same lemmas (`abs2.contains_key(ak) == expected.contains_key(ak)`)
+      is deliberately left alone: it emits no note, so there is no chosen trigger to pin and
+      annotating it would be a change with no evidence behind it. The test says so.
+      Remaining emitted notes: 10, in `proposer_gen.rs` (8) and `executor_gen.rs` (2) — all
+      `choose` binders and an inner `exists`, each with a clear chosen trigger (`k@`, `ep@`,
+      `packets.contains(p)`, `s.contains(cp)`), but emitted from sites not yet located.
 - [x] **54.9.b — ceiling tightened to 77 (2026-08-05)**, from the stale 120 that would have
       allowed 43 notes of silent regrowth. Verified the guard actually bites: it passes at 77
       and exits 1 at 78. The baseline was refreshed at the same time, which also resolved the

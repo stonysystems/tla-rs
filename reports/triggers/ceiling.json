@@ -1,11 +1,11 @@
 {
   "schema": "trigger-ceiling/v1",
   "enforce": true,
-  "max_notes": 77,
+  "max_notes": 74,
   "mode": "selective",
   "set_on": "2026-08-05",
-  "set_by": "Phase 42.8.c.2.iv.J.3.d",
-  "rationale": "Measured on the pinned release 0.2026.08.02.b677dd5 over the whole crate (1046 verified, 0 errors) in Verus's default `selective` trigger mode: 77 notes. Tightened from 120 now that all seven RSL modules are reconciled and scripts/classify_trigger_notes.py reports 0 notes deliverable by regeneration -- the codegen pipeline is drained, so the count cannot fall further without either new codegen work (13 notes, emitted but an unhandled shape) or the CLAUDE.md policy decision in 54.7.c/d (64 notes in hand-written or preserved bodies). Leaving it at 120 would have allowed 43 notes of silent regrowth. Raise it only with a stated reason and a new measurement in `history`, never to make a red build green.",
+  "set_by": "Phase 54.7.e",
+  "rationale": "Measured on the pinned release 0.2026.08.02.b677dd5 over the whole crate (1046 verified, 0 errors) in Verus's default `selective` trigger mode: 74 notes. Tightened from 120 now that all seven RSL modules are reconciled and scripts/classify_trigger_notes.py reports 0 notes deliverable by regeneration -- the codegen pipeline is drained, so the count cannot fall further without either new codegen work (10 notes, emitted but an unhandled shape) or the CLAUDE.md policy decision in 54.7.c/d (64 notes in hand-written or preserved bodies). Leaving it at 120 would have allowed 43 notes of silent regrowth. Raise it only with a stated reason and a new measurement in `history`, never to make a red build green.",
   "history": [
     {
       "date": "2026-08-04",
@@ -54,6 +54,12 @@
       "max_notes": 77,
       "verus": "0.2026.08.02.b677dd5",
       "note": "42.8.c.2.iv.J: replica merged, the last of the seven RSL modules. 26 notes removed vs 103, assume(false) held at 0. Baseline refreshed at the same time: the 3 'changed triggers' the old 2026-08-04 baseline reported against proposer_gen.rs are line drift, not instability -- the same three trigger strings, rotated across three asserts that moved when the file was regenerated. Diffing by file:line cannot tell those apart."
+    },
+    {
+      "date": "2026-08-05",
+      "max_notes": 74,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.7.e: the value-equivalence `assert forall` in the generated map lemmas now carries explicit triggers, pinning exactly what Verus was already choosing (abs2[ak] / expected[ak]). 3 removed, 0 added. The 4 'changed triggers' this diff reported are line drift again -- annotated asserts stop emitting and unrelated ones shift into their line numbers. Second occurrence; see 54.10.a."
     }
   ]
 }

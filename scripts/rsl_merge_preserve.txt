@@ -71,3 +71,11 @@ proposer CProposerProcess1b
 proposer CProposerProcessHeartbeat
 proposer CProposerProcessRequest
 proposer CProposerResetViewTimerDueToExecution
+
+# Phase 54.7.e. The three map-abstraction lemmas whose `assert forall` now carries
+# explicit triggers. Taking fresh is the whole point of the change -- the triggers
+# pinned are exactly the ones Verus was already choosing, so the instantiation is
+# unchanged and only the note disappears.
+learner lemma_abstractify_clearnerstate_insert accept-fresh
+learner lemma_abstractify_clearnerstate_remove accept-fresh
+learner lemma_abstractify_singleton_clearnerstate accept-fresh
