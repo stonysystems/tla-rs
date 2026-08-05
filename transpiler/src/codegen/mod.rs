@@ -1374,8 +1374,17 @@ fn compute_copy_spec_types(registry: &TypeRegistry) -> HashSet<String> {
             crate::ast::Type::Named(p) => matches!(
                 p.segments.last().map(|s| s.as_str()),
                 Some(
-                    "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
-                        | "isize" | "bool" | "char"
+                    "u8" | "u16"
+                        | "u32"
+                        | "u64"
+                        | "usize"
+                        | "i8"
+                        | "i16"
+                        | "i32"
+                        | "i64"
+                        | "isize"
+                        | "bool"
+                        | "char"
                 )
             ),
             _ => false,
@@ -1650,61 +1659,107 @@ mod tests {
         let mut reg = TypeRegistry::new();
 
         // base: all-scalar struct
-        reg.structs
-            .insert("LLogEntry".into(), st("LLogEntry", vec![
-                field("term", Type::Int),
-                field("value", Type::Nat),
-                field("flag", Type::Bool),
-            ]));
+        reg.structs.insert(
+            "LLogEntry".into(),
+            st(
+                "LLogEntry",
+                vec![
+                    field("term", Type::Int),
+                    field("value", Type::Nat),
+                    field("flag", Type::Bool),
+                ],
+            ),
+        );
         // base: unit enum -- the case this generalises
-        reg.enums.insert("LNodeRole".into(), EnumDef {
-            name: "LNodeRole".into(),
-            generics: Default::default(),
-            variants: vec![
-                VariantDef { name: "Primary".into(), fields: VariantFields::Unit },
-                VariantDef { name: "Backup".into(), fields: VariantFields::Unit },
-            ],
-            is_spec: true,
-        });
+        reg.enums.insert(
+            "LNodeRole".into(),
+            EnumDef {
+                name: "LNodeRole".into(),
+                generics: Default::default(),
+                variants: vec![
+                    VariantDef {
+                        name: "Primary".into(),
+                        fields: VariantFields::Unit,
+                    },
+                    VariantDef {
+                        name: "Backup".into(),
+                        fields: VariantFields::Unit,
+                    },
+                ],
+                is_spec: true,
+            },
+        );
         // enum with scalar payloads
-        reg.enums.insert("LRaftMessage".into(), EnumDef {
-            name: "LRaftMessage".into(),
-            generics: Default::default(),
-            variants: vec![
-                VariantDef { name: "Vote".into(), fields: VariantFields::Struct(vec![field("term", Type::Int)]) },
-                VariantDef { name: "Tuple".into(), fields: VariantFields::Tuple(vec![Type::Int]) },
-            ],
-            is_spec: true,
-        });
+        reg.enums.insert(
+            "LRaftMessage".into(),
+            EnumDef {
+                name: "LRaftMessage".into(),
+                generics: Default::default(),
+                variants: vec![
+                    VariantDef {
+                        name: "Vote".into(),
+                        fields: VariantFields::Struct(vec![field("term", Type::Int)]),
+                    },
+                    VariantDef {
+                        name: "Tuple".into(),
+                        fields: VariantFields::Tuple(vec![Type::Int]),
+                    },
+                ],
+                is_spec: true,
+            },
+        );
         // transitive: Copy only once LRaftMessage is known Copy. This is what
         // forces the fixpoint -- a single pass over a HashMap could visit it first.
-        reg.structs.insert("LRaftPacket".into(), st("LRaftPacket", vec![
-            field("src", Type::Int),
-            field("msg", named("LRaftMessage")),
-        ]));
+        reg.structs.insert(
+            "LRaftPacket".into(),
+            st(
+                "LRaftPacket",
+                vec![field("src", Type::Int), field("msg", named("LRaftMessage"))],
+            ),
+        );
         // not Copy: a Seq field
-        reg.structs.insert("LWithSeq".into(), st("LWithSeq", vec![
-            field("log", Type::Seq(Box::new(Type::Int))),
-        ]));
+        reg.structs.insert(
+            "LWithSeq".into(),
+            st(
+                "LWithSeq",
+                vec![field("log", Type::Seq(Box::new(Type::Int)))],
+            ),
+        );
         // not Copy: names a type absent from the registry
-        reg.structs.insert("LWithUnknown".into(), st("LWithUnknown", vec![
-            field("x", named("SomethingElse")),
-        ]));
+        reg.structs.insert(
+            "LWithUnknown".into(),
+            st("LWithUnknown", vec![field("x", named("SomethingElse"))]),
+        );
         // not Copy: one bad field is enough
-        reg.structs.insert("LMixed".into(), st("LMixed", vec![
-            field("ok", Type::Int),
-            field("bad", Type::Seq(Box::new(Type::Int))),
-        ]));
+        reg.structs.insert(
+            "LMixed".into(),
+            st(
+                "LMixed",
+                vec![
+                    field("ok", Type::Int),
+                    field("bad", Type::Seq(Box::new(Type::Int))),
+                ],
+            ),
+        );
         // an enum is not Copy if any variant payload is not
-        reg.enums.insert("LBadEnum".into(), EnumDef {
-            name: "LBadEnum".into(),
-            generics: Default::default(),
-            variants: vec![
-                VariantDef { name: "Ok".into(), fields: VariantFields::Unit },
-                VariantDef { name: "Bad".into(), fields: VariantFields::Tuple(vec![Type::Seq(Box::new(Type::Int))]) },
-            ],
-            is_spec: true,
-        });
+        reg.enums.insert(
+            "LBadEnum".into(),
+            EnumDef {
+                name: "LBadEnum".into(),
+                generics: Default::default(),
+                variants: vec![
+                    VariantDef {
+                        name: "Ok".into(),
+                        fields: VariantFields::Unit,
+                    },
+                    VariantDef {
+                        name: "Bad".into(),
+                        fields: VariantFields::Tuple(vec![Type::Seq(Box::new(Type::Int))]),
+                    },
+                ],
+                is_spec: true,
+            },
+        );
 
         let copy = compute_copy_spec_types(&reg);
 

@@ -19915,7 +19915,11 @@ mod tests {
     fn test_vacuous_unsigned_bound_folding() {
         use crate::ast::{Literal, Type};
 
-        fn ctx_with<'a>(config: &'a TranslatorConfig, name: &str, ty: Type) -> TransformContext<'a> {
+        fn ctx_with<'a>(
+            config: &'a TranslatorConfig,
+            name: &str,
+            ty: Type,
+        ) -> TransformContext<'a> {
             let mut input_types = HashMap::new();
             input_types.insert(name.to_string(), ty);
             TransformContext {
@@ -19956,12 +19960,7 @@ mod tests {
         // cannot claim it was narrowed to an unsigned type
         let nat_ctx = ctx_with(&unsigned, "follower_id", Type::Nat);
         assert!(!t.is_vacuous_unsigned_bound(&id, &zero, "<", &nat_ctx));
-        assert!(!t.is_vacuous_unsigned_bound(
-            &Expr::Ident("other".to_string()),
-            &zero,
-            "<",
-            &ctx
-        ));
+        assert!(!t.is_vacuous_unsigned_bound(&Expr::Ident("other".to_string()), &zero, "<", &ctx));
         assert!(!t.is_vacuous_unsigned_bound(
             &Expr::Field(Box::new(id.clone()), "f".to_string()),
             &zero,
