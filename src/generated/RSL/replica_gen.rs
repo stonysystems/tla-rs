@@ -157,8 +157,8 @@ requires
     received_packet.msg is CMessageRequest,
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextProcessRequest(old(s)@, s@, received_packet@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;
@@ -204,7 +204,7 @@ ensures
                 let ghost m = s.executor.reply_cache;
                 assert(!abstractify_creplycache(&m).contains_key(received_packet@.src)) by {
                     if abstractify_creplycache(&m).contains_key(received_packet@.src) {
-                        let k = choose |k: EndPoint| m@.contains_key(k) && k@ == received_packet@.src;
+                        let k = choose |k: EndPoint| #![trigger k@] m@.contains_key(k) && k@ == received_packet@.src;
                         assert(k@ == received_packet.src@);
                         assert(k == received_packet.src);
                         assert(m@.contains_key(received_packet.src));
@@ -234,8 +234,8 @@ requires
     received_packet.msg is CMessage1b,
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextProcess1b(old(s)@, s@, received_packet@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;
@@ -300,8 +300,8 @@ requires
     received_packet.msg is CMessage2a,
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextProcess2a(old(s)@, s@, received_packet@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;
@@ -347,8 +347,8 @@ requires
     old(s).valid(),
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(old(s)@, s@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;
@@ -363,7 +363,7 @@ ensures
             found ==> old_self.acceptor.last_checkpointed_operation.contains(target as int),
             found ==> crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
                 target as int, old_self.acceptor.last_checkpointed_operation, old_self.constants.all.config),
-            !found ==> (forall |j: int| 0 <= j < idx as int
+            !found ==> (forall |j: int| #![trigger old_self.acceptor.last_checkpointed_operation[j]] 0 <= j < idx as int
                 ==> !crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
                     old_self.acceptor.last_checkpointed_operation[j],
                     old_self.acceptor.last_checkpointed_operation, old_self.constants.all.config)),
@@ -409,7 +409,7 @@ ensures
         proof {
             assert(crate::protocol::RSL::acceptor::LAcceptorTruncateLog(
                 old_self.acceptor, s.acceptor@, target as int));
-            assert(exists |opn: OperationNumber|
+            assert(exists |opn: OperationNumber| #![trigger old_self.acceptor.last_checkpointed_operation.contains(opn)]
                 old_self.acceptor.last_checkpointed_operation.contains(opn)
                 && crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
                     opn, old_self.acceptor.last_checkpointed_operation, old_self.constants.all.config)
@@ -434,7 +434,7 @@ ensures
                 let lco = old_self.acceptor.last_checkpointed_operation;
                 let cfg = old_self.constants.all.config;
                 let n = LMinQuorumSize(cfg);
-                assert forall |j: int| 0 <= j < lco.len() implies
+                assert forall |j: int| #![trigger lco[j]] 0 <= j < lco.len() implies
                     !crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
                         lco[j], lco, cfg) by {
                     assert(lco =~= old_self.acceptor.last_checkpointed_operation);
@@ -462,8 +462,8 @@ requires
     old(s).valid(),
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextSpontaneousMaybeMakeDecision(old(s)@, s@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;
@@ -505,8 +505,8 @@ requires
     old(s).valid(),
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextSpontaneousMaybeExecute(old(s)@, s@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;
@@ -551,8 +551,8 @@ requires
     ReplicaIndexValid(old(s).constants.my_index, old(s).constants.all.config),
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextReadClockMaybeSendHeartbeat(old(s)@, s@, clock@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;

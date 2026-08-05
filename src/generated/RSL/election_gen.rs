@@ -165,11 +165,11 @@ ensures
 /// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CRemoveAllSatisfiedRequestsInSequence(s: &Vec<CRequest>, r: &CRequest) -> (result: Vec<CRequest>)
 requires
-    forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+    forall |i: int| #![trigger s@[i]] 0 <= i < s@.len() ==> s@[i].valid(),
     r.valid(),
 ensures
     result@.map(|i: int, e: CRequest| e@) == RemoveAllSatisfiedRequestsInSequence(s@.map(|i: int, e: CRequest| e@), r@),
-    forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i: int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
 {
     let mut result: Vec<CRequest> = Vec::new();
     let mut idx: usize = 0;
@@ -177,9 +177,9 @@ ensures
     invariant
         idx <= s.len(),
         result@.len() <= idx as int,
-        forall |j: int| 0 <= j < result@.len() ==> result@[j].valid(),
+        forall |j: int| #![trigger result@[j]] 0 <= j < result@.len() ==> result@[j].valid(),
         result@.map(|i: int, e: CRequest| e@) == RemoveAllSatisfiedRequestsInSequence(s@.take(idx as int).map(|i: int, e: CRequest| e@), r@),
-        forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+        forall |i: int| #![trigger s@[i]] 0 <= i < s@.len() ==> s@[i].valid(),
         r.valid(),
     decreases
         s.len() - idx,
@@ -274,9 +274,9 @@ fn build_req_set(v: &Vec<CRequest>) -> (res: HashSet<CRequestHeader>)
 pub exec fn CBoundRequestSequence(s: &Vec<CRequest>, lengthBound: u64) -> (result: Vec<CRequest>)
 requires
     s@.len() < 0x1_0000_0000_0000_0000,
-    forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+    forall |i: int| #![trigger s@[i]] 0 <= i < s@.len() ==> s@[i].valid(),
 ensures
-    forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i: int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
     result@.map(|i: int, r: CRequest| r@) == BoundRequestSequence(s@.map(|i: int, r: CRequest| r@), UpperBound::UpperBoundFinite{n: lengthBound as int}),
 {
     let s_len = s.len() as u64;
@@ -422,7 +422,7 @@ ensures
             let concat_result = concat_vecs(&self.requests_received_prev_epochs, &self.requests_received_this_epoch);
             let _clen = concat_result.len();
             proof {
-                assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
+                assert forall |i:int| #![trigger concat_result@[i]] 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
                     if i < self.requests_received_prev_epochs@.len() {
                         assert(concat_result@[i] == self.requests_received_prev_epochs@[i]);
                     } else {
@@ -537,7 +537,7 @@ ensures
         let concat_result = concat_vecs(&self.requests_received_prev_epochs, &self.requests_received_this_epoch);
         let _clen = concat_result.len();
         proof {
-            assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
+            assert forall |i:int| #![trigger concat_result@[i]] 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
                 if i < self.requests_received_prev_epochs@.len() {
                     assert(concat_result@[i] == self.requests_received_prev_epochs@[i]);
                 } else {
@@ -596,7 +596,7 @@ ensures
         let concat_result = concat_vecs(&self.requests_received_prev_epochs, &self.requests_received_this_epoch);
         let _clen = concat_result.len();
         proof {
-            assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
+            assert forall |i:int| #![trigger concat_result@[i]] 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {
                 if i < self.requests_received_prev_epochs@.len() {
                     assert(concat_result@[i] == self.requests_received_prev_epochs@[i]);
                 } else {
@@ -630,12 +630,12 @@ ensures
 /// Uses clone_up_to_view() for initial copy.
 pub exec fn CRemoveExecutedRequestBatch(reqs: &Vec<CRequest>, batch: &CRequestBatch) -> (result: Vec<CRequest>)
 requires
-    forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),
-    forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),
+    forall |i: int| #![trigger reqs@[i]] 0 <= i < reqs@.len() ==> reqs@[i].valid(),
+    forall |i: int| #![trigger batch@[i]] 0 <= i < batch@.len() ==> batch@[i].valid(),
 ensures
     result@.map(|i: int, r: CRequest| r@) == RemoveExecutedRequestBatch(reqs@.map(|i: int, r: CRequest| r@), abstractify_crequestbatch(batch)),
-    forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
-    forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    forall |i: int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i: int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].abstractable(),
 {
     let mut result: Vec<CRequest> = clone_requests_received_prev_epochs(reqs);
     let ghost batch_abs: Seq<Request> = batch@.map(|i: int, r: CRequest| r@);
@@ -647,14 +647,14 @@ ensures
     while idx < batch.len()
     invariant
         idx <= batch.len(),
-        forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),
+        forall |i: int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
         batch_abs == batch@.map(|i: int, r: CRequest| r@),
         result@.map(|i: int, r: CRequest| r@) == RemoveExecutedRequestBatch(
             reqs@.map(|i: int, r: CRequest| r@),
             batch_abs.take(idx as int),
         ),
-        forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),
-        forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),
+        forall |i: int| #![trigger reqs@[i]] 0 <= i < reqs@.len() ==> reqs@[i].valid(),
+        forall |i: int| #![trigger batch@[i]] 0 <= i < batch@.len() ==> batch@[i].valid(),
     decreases
         batch.len() - idx,
     {
@@ -678,7 +678,7 @@ impl CElectionState {
 pub exec fn CElectionStateReflectExecutedRequestBatch(&mut self, batch: &CRequestBatch)
 requires
     old(self).valid(),
-    forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),
+    forall |i: int| #![trigger batch@[i]] 0 <= i < batch@.len() ==> batch@[i].valid(),
 ensures
     self.valid(),
     ElectionStateReflectExecutedRequestBatch(old(self)@, self@, abstractify_crequestbatch(batch)),

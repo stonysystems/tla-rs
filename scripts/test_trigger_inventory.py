@@ -626,5 +626,39 @@ class AssertOrdinalDrift(unittest.TestCase):
         self.assertEqual((d["added_count"], d["removed_count"]), (0, 0))
 
 
+class ZeroNotesIsASuccessState(unittest.TestCase):
+    """Phase 54.7.f drove the count to 0, at which point an empty capture stopped
+    meaning "the run died early". The guard refused to judge any empty capture,
+    which would make a ceiling of 0 unenforceable -- the success state would be
+    the one state never checked. It now uses the recorded
+    `N verified, 0 errors` to tell the two apart."""
+
+    CLEAN_LOG = "verification results:: 1048 verified, 0 errors\n"
+    BROKEN_LOG = "error: aborting due to 3 previous errors\n"
+
+    def test_a_clean_empty_capture_is_judged(self):
+        inv = ti.build_inventory(self.CLEAN_LOG)
+        self.assertEqual(inv["total_notes"], 0)
+        self.assertEqual((inv["verified"], inv["errors"]), (1048, 0))
+        code, out = ti.guard(inv, {"enforce": True, "max_notes": 0, "mode": "selective"},
+                             "selective")
+        self.assertEqual(code, 0)
+        self.assertIn("ceiling: 0", out)
+
+    def test_an_empty_capture_with_no_result_line_is_still_refused(self):
+        inv = ti.build_inventory(self.BROKEN_LOG)
+        self.assertIsNone(inv["verified"])
+        code, out = ti.guard(inv, {"enforce": True, "max_notes": 0, "mode": "selective"},
+                             "selective")
+        self.assertEqual(code, 0)
+        self.assertIn("probably failed early", out)
+
+    def test_a_capture_with_errors_is_refused(self):
+        inv = ti.build_inventory("verification results:: 900 verified, 2 errors\n")
+        code, out = ti.guard(inv, {"enforce": True, "max_notes": 0, "mode": "selective"},
+                             "selective")
+        self.assertIn("probably failed early", out)
+
+
 if __name__ == "__main__":
     unittest.main()

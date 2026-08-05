@@ -36,6 +36,10 @@ cannot silently regrow.
 **0 emitted**. There is no codegen work left in this phase.
 Recorded in `docs/rsl-skip-functions.md`.
 
+**✅ Phase 54 is at ZERO auto-chosen trigger notes (2026-08-05).** 534 → 0, `1048 verified,
+0 errors`, ceiling set to 0 so any new unannotated quantifier fails the build. The last 74
+landed under the policy change below.
+
 **🔝 POLICY CHANGE (2026-08-05, by the user): the block on those 74 is lifted.**
 `CLAUDE.md` now scopes the generated-code rule by **provenance rather than path**.
 Transpiler-emitted code still may not be hand-edited; hand-written bodies preserved inside
@@ -17971,8 +17975,31 @@ value per hour, not by phase number:
       **Reopen if it recurs** — that would be real evidence against 54.18 being the whole
       story, which is more than I have now in either direction.
 
-- [ ] **54.7.f** Annotate the **53 deliverable notes** in hand-written bodies under
-      `src/generated/`. **Unblocked 2026-08-05** by the `CLAUDE.md` amendment above.
+- [x] **54.7.f** Annotate the deliverable notes in hand-written bodies under
+      `src/generated/`. **DONE 2026-08-05 — the count is 0, not the ~21 expected.**
+      All **74** were annotated, not 53: the 10 "unlisted orphans" turned out to be
+      annotatable like the rest, and the "sites where Verus picks a term containing a
+      lambda, which cannot be written by hand at all" do not exist — measured 0 of 74
+      before starting, so that expectation was wrong rather than the work being harder.
+      `1048 verified, 0 errors` throughout, verified per module batch: learner 4 (74→70),
+      executor 10 (→60), election 17 (→43), replica 18 (→25), proposer 25 (→**0**).
+      **Why no proof moved**: each site pins the trigger Verus had *already chosen*, read
+      from the inventory. The instantiation is identical; only the note goes away, and the
+      choice stops being free to drift between releases. That is the whole point of the
+      phase, and it is why 74 edits to verified code cost zero proof debugging.
+      Provenance was confirmed per function with `--fresh-dir` before editing, as the item
+      required — all 74 absent from fresh transpiler output.
+      Ceiling tightened **74 → 0**. Phase 54's acceptance criterion was "zero notes or a
+      documented exceptions list"; it is zero, and `exceptions.md` is now empty.
+      **Two things reaching zero broke, both fixed rather than worked around:**
+      - The guard refused to judge *any* empty capture (54.9 design point (e): an empty
+        capture means the run died early). At a ceiling of 0 that makes the success state
+        the one state never checked. It now uses the recorded `N verified, 0 errors` to
+        tell a clean run from a broken one; three tests, including that a capture with
+        errors, or with no result line at all, is still refused.
+      - `test_the_repo_list_states_a_total_and_reasons` required at least one reason group,
+        so an empty exceptions list failed the test that exists to keep the list honest.
+      *(original item)* **Unblocked 2026-08-05** by the `CLAUDE.md` amendment above.
       - Confirm provenance per function with `scripts/classify_trigger_notes.py --fresh-dir`
         before editing. Do not reuse the old membership test (absent from `skip_functions` and
         from the preserve list) — 54.10.b measured it wrong for all 74.
@@ -17986,7 +18013,12 @@ value per hour, not by phase number:
       - Still **not** `#![auto]`: it silences the note while leaving the choice automatic, so
         the count moves and the version-stability problem does not.
 
-- [ ] **54.7.d** Annotate the recurring-shape notes on the checked-in artifacts (**72** as
+- [x] **54.7.d** — **SUPERSEDED by 54.7.f (2026-08-05), closed.** This proposed a
+      post-processing pass as a way around the old path-based `CLAUDE.md` rule. With the
+      rule rescoped by provenance the workaround is unnecessary: the bodies were edited
+      directly, which is simpler and leaves nothing to re-run. The policy question this item
+      raised is answered, not pending.
+      *(original item)* Annotate the recurring-shape notes on the checked-in artifacts (**72** as
       measured 2026-08-05, not the 76 first recorded; see 54.7.c for the census)
       with a post-processing pass, instead of waiting for the merge in 42.8.c.
       **⚠ BLOCKED ON A POLICY DECISION, not on capability (raised 2026-08-05).** As written

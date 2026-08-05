@@ -408,7 +408,7 @@ ensures
         };
         proof {
             assert(tup.received_2b_message_senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
-            assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+            assert forall |p: EndPoint| #![trigger tup.received_2b_message_senders@.contains(p)] tup.received_2b_message_senders@.contains(p)
                 implies p.abstractable()
             by {
                 assert(Set::<EndPoint>::empty().insert(ghost_src).contains(p));
@@ -438,7 +438,7 @@ ensures
         };
         proof {
             assert(tup.received_2b_message_senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
-            assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+            assert forall |p: EndPoint| #![trigger tup.received_2b_message_senders@.contains(p)] tup.received_2b_message_senders@.contains(p)
                 implies p.abstractable()
             by {
                 assert(Set::<EndPoint>::empty().insert(ghost_src).contains(p));
@@ -469,7 +469,7 @@ ensures
                 assert(self.unexecuted_learner_state@[opn_2b].valid());
                 assert(crequestbatch_is_valid(&existing.candidate_learned_value));
                 assert(packet.src.abstractable());
-                assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+                assert forall |p: EndPoint| #![trigger tup.received_2b_message_senders@.contains(p)] tup.received_2b_message_senders@.contains(p)
                     implies p.abstractable()
                 by {
                     if existing.received_2b_message_senders@.contains(p) {
@@ -594,7 +594,7 @@ ensures
             }
         }
 
-        assert forall |ak: int| abs_filtered.contains_key(ak) implies
+        assert forall |ak: int| #![trigger abs_filtered[ak]] #![trigger abs_orig[ak]] abs_filtered.contains_key(ak) implies
             abs_filtered[ak] == abs_orig[ak]
         by {
             let j_f = choose |j: u64| self.unexecuted_learner_state@.contains_key(j) && j as int == ak;

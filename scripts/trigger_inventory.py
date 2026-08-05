@@ -71,6 +71,13 @@ SOURCE_LINE_RE = re.compile(r"^\s*(?P<lineno>\d+)\s\|(?P<rest>.*)$")
 # `    |            ^^^^` / `    | |____^` / `    |  __^`
 MARKER_LINE_RE = re.compile(r"^\s*\|(?P<rest>[\s|^_/\\]*)$")
 VERUS_VERSION_RE = re.compile(r"^\s*Version:\s*(\S+)\s*$")
+# `verification results:: N verified, M errors` -- the evidence that a capture
+# with zero notes is a *clean* run rather than one that died before Verus
+# printed any. Phase 54.7.f drove the count to 0, at which point "empty" stopped
+# meaning "broken" and the guard could no longer tell the two apart.
+VERIFICATION_RESULT_RE = re.compile(
+    r"verification results::\s*(?P<verified>\d+)\s+verified,\s*(?P<errors>\d+)\s+error"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +354,13 @@ def build_inventory(text, label=None, verus_version=None, source=None, root=None
         if seen[base] > 1:
             e["key"] = "{}#{}".format(base, seen[base])
 
+    verified = errors = None
+    for line in text.splitlines():
+        m = VERIFICATION_RESULT_RE.search(line)
+        if m:
+            verified = int(m.group("verified"))
+            errors = int(m.group("errors"))
+
     by_file = Counter(e["file"] for e in entries)
     by_dir = Counter(os.path.dirname(e["file"]) or "." for e in entries)
     by_trigger_count = Counter(str(e["trigger_count"]) for e in entries)
@@ -357,6 +371,8 @@ def build_inventory(text, label=None, verus_version=None, source=None, root=None
             ("verus_version", verus_version or detect_verus_version(text) or ""),
             ("source_log", source or ""),
             ("total_notes", len(entries)),
+            ("verified", verified),
+            ("errors", errors),
             ("total_triggers", sum(e["trigger_count"] for e in entries)),
             ("orphan_trigger_notes", orphans),
             ("multiline_notes", sum(1 for e in entries if e["multiline"])),
@@ -616,11 +632,23 @@ def guard(inventory, ceiling, mode=None, baseline=None, out=None):
         )
         return 2, "\n".join(lines)
 
-    if total == 0:
+    # Zero notes is ambiguous on its face: it is either a clean run or one that
+    # died before Verus printed anything. The capture says which -- a recorded
+    # `N verified, 0 errors` with N > 0 is a run that finished. Treating every
+    # empty capture as suspect was right until Phase 54.7.f reached 0, and would
+    # now make a ceiling of 0 unenforceable: the success state would be the one
+    # state never checked.
+    finished = (
+        inventory.get("verified") is not None
+        and inventory["verified"] > 0
+        and inventory.get("errors") == 0
+    )
+    if total == 0 and not finished:
         lines.append(
-            "no trigger notes in this capture — Verus only prints them for verified "
-            "modules, so the run probably failed early. Not judging a ceiling on an "
-            "empty capture."
+            "no trigger notes in this capture, and the log does not record a "
+            "successful `N verified, 0 errors` — Verus only prints notes for "
+            "verified modules, so the run probably failed early. Not judging a "
+            "ceiling on an empty capture."
         )
         return 0, "\n".join(lines)
 

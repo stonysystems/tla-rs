@@ -2,32 +2,24 @@
 
 | field | value |
 |---|---|
-| label | 0.2026.08.02.b677dd5 full crate (triggers-mode selective), 54.10.a |
+| label | 0.2026.08.02.b677dd5 full crate (triggers-mode selective), 54.7.f complete |
 | verus version | 0.2026.08.02.b677dd5 |
-| source log | /tmp/ja/v.log |
-| notes | 74 |
-| trigger choices | 76 |
-| multi-line expressions | 4 |
+| source log | /tmp/f7/v6.log |
+| notes | 0 |
+| trigger choices | 0 |
+| multi-line expressions | 0 |
 
 ## By directory
 
 | directory | notes |
 |---|---:|
-| `src/generated/RSL` | 74 |
 
 ## Triggers per expression
 
 | triggers chosen | expressions |
 |---:|---:|
-| 1 | 72 |
-| 2 | 2 |
 
 ## Top files
 
 | file | notes |
 |---|---:|
-| `src/generated/RSL/proposer_gen.rs` | 25 |
-| `src/generated/RSL/replica_gen.rs` | 18 |
-| `src/generated/RSL/election_gen.rs` | 17 |
-| `src/generated/RSL/executor_gen.rs` | 10 |
-| `src/generated/RSL/learner_gen.rs` | 4 |

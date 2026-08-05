@@ -156,7 +156,7 @@ pub proof fn lemma_creplycache_get(cache: &CReplyCache, key: EndPoint)
     // Forward: witness k = key for the existential in Map::new domain
     assert(cache@.contains_key(key) && key@ == key@);
     // The choose in Map::new value function picks some k with k@ == key@
-    let k = choose |k: EndPoint| cache@.contains_key(k) && k@ == key@;
+    let k = choose |k: EndPoint| #![trigger k@] cache@.contains_key(k) && k@ == key@;
     assert(cache@.contains_key(key) && key@ == key@); // witness ensures exists
     assert(k@ == key@);
     // axiom_endpoint_view: k@ == key@ ==> k == key (EndPoint view is injective)
@@ -172,8 +172,8 @@ requires
     LReplicaConstantsValid(old(s).constants@),
 ensures
     s.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LExecutorExecute(old(s)@, s@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(s)@;
@@ -298,7 +298,7 @@ proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch,
             },
         };
         assert(packets =~= seq![first] + rest_packets);
-        assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {
+        assert forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) implies p.msg is RslMessageReply by {
             if rest_packets.contains(p) {
             } else {
             }
@@ -365,8 +365,8 @@ requires
     inp.valid(),
     inp.msg is CMessageAppStateRequest,
 ensures
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].abstractable(),
     LExecutorProcessAppStateRequest(self@, self@, inp@, result@.map(|i, p: CPacket| p@)),
 {
     let (bal_state_req, opn_state_req) = match &inp.msg {
@@ -420,8 +420,8 @@ requires
     inp.valid(),
     inp.msg is CMessageStartingPhase2,
 ensures
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].abstractable(),
     LExecutorProcessStartingPhase2(self@, self@, inp@, result@.map(|i, p: CPacket| p@)),
 {
     if contains(&self.constants.all.config.replica_ids, &inp.src) && (match &inp.msg {
@@ -457,8 +457,8 @@ requires
     inp.msg is CMessageRequest,
     self.reply_cache@.contains_key(inp.src),
 ensures
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].abstractable(),
     LExecutorProcessRequest(self@, inp@, result@.map(|i, p: CPacket| p@)),
 {
     let seqno_req = match &inp.msg {

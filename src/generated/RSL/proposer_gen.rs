@@ -213,9 +213,9 @@ fn hashmap_clear_seqno(hm: &mut HashMap<EndPoint, u64>)
 /// Matches the inline definition in CProposer.view().highest_seqno_requested_by_client_this_view.
 spec fn abstractify_endpoint_seqno_map(m: Map<EndPoint, u64>) -> Map<AbstractEndPoint, int> {
     Map::new(
-        Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k: EndPoint| m.contains_key(k) && k@ == ak),
+        Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k: EndPoint| #![trigger k@] m.contains_key(k) && k@ == ak),
         |ak: AbstractEndPoint| {
-            let k = choose |k: EndPoint| m.contains_key(k) && k@ == ak;
+            let k = choose |k: EndPoint| #![trigger k@] m.contains_key(k) && k@ == ak;
             m[k] as int
         }
     )
@@ -243,7 +243,7 @@ ensures
     assert forall |ak: AbstractEndPoint|
         lhs.dom().contains(ak) implies rhs.dom().contains(ak)
     by {
-        let ep = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;
+        let ep = choose |ep: EndPoint| #![trigger ep@] new_m.contains_key(ep) && ep@ == ak;
         if ep == k {
             // ak == k@, so rhs.dom() contains ak via the insert
         } else {
@@ -264,10 +264,10 @@ ensures
         }
     };
 
-    assert forall |ak: AbstractEndPoint|
+    assert forall |ak: AbstractEndPoint| #![trigger lhs[ak]] #![trigger rhs[ak]]
         lhs.dom().contains(ak) implies lhs[ak] == rhs[ak]
     by {
-        let ep_new = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;
+        let ep_new = choose |ep: EndPoint| #![trigger ep@] new_m.contains_key(ep) && ep@ == ak;
         if ak == k@ {
             // By injectivity, ep_new == k. new_m[k] == v.
             assert(ep_new == k);
@@ -366,7 +366,7 @@ ensures
             assert(forall |i: int| 0 <= i < self.request_queue@.len()
                 ==> (#[trigger] self.request_queue@[i]).valid());
             // received_1b_packets: unchanged from old(self)
-            assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());
+            assert(forall |p: CPacket| #![trigger p.valid()] self.received_1b_packets@.contains(p) ==> p.valid());
             // highest_seqno: old keys valid + new key valid
             assert(forall |k: EndPoint| (#[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k))
                 ==> k.valid_public_key());
@@ -429,7 +429,7 @@ ensures
             assert(self.election_state.valid());
             assert(forall |i: int| 0 <= i < self.request_queue@.len()
                 ==> (#[trigger] self.request_queue@[i]).valid());
-            assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());
+            assert(forall |p: CPacket| #![trigger p.valid()] self.received_1b_packets@.contains(p) ==> p.valid());
             assert(forall |k: EndPoint| (#[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k))
                 ==> k.valid_public_key());
             assert(self.valid());
@@ -472,8 +472,8 @@ requires
     old(self).next_operation_number_to_propose < old(self).constants.all.params.max_integer_val,
 ensures
     self.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LProposerNominateNewValueAndSend2a(old(self)@, self@, *clock as int, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(self)@;
@@ -559,7 +559,7 @@ proof fn lemma_not_all_had_no_proposal_to_exec(
 requires
     !LAllAcceptorsHadNoProposal(s.map(|p: CPacket| p@), opn as int),
 ensures
-    exists |cp: CPacket| s.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn),
+    exists |cp: CPacket| #![trigger s.contains(cp)] s.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn),
 {
 }
 
@@ -578,10 +578,10 @@ requires
     s_set.contains(best_cp),
     best_cp.msg is CMessage1b,
     best_cp.msg->votes@.contains_key(opn),
-    forall |cp: CPacket| s_set.contains(cp) && cp.msg is CMessage1b
+    forall |cp: CPacket| #![trigger s_set.contains(cp)] s_set.contains(cp) && cp.msg is CMessage1b
         && (#[trigger] cp.msg->votes)@.contains_key(opn)
         ==> BalLeq(cp.msg->votes@[opn].max_value_bal@, best_cp.msg->votes@[opn].max_value_bal@),
-    forall |cp: CPacket| s_set.contains(cp) ==> cp.valid(),
+    forall |cp: CPacket| #![trigger cp.valid()] s_set.contains(cp) ==> cp.valid(),
 ensures
     s_set.map(|p: CPacket| p@).contains(best_cp@),
     LValIsHighestNumberedProposal(
@@ -645,8 +645,8 @@ requires
     old(self).next_operation_number_to_propose < old(self).constants.all.params.max_integer_val,
 ensures
     self.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LProposerNominateOldValueAndSend2a(old(self)@, self@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(self)@;
@@ -722,7 +722,7 @@ ensures
     }
     proof {
         Self::lemma_not_all_had_no_proposal_to_exec(self.received_1b_packets@, opn);
-        let cp: CPacket = choose |cp: CPacket|
+        let cp: CPacket = choose |cp: CPacket| #![trigger self.received_1b_packets@.contains(cp)]
             self.received_1b_packets@.contains(cp)
             && cp.msg is CMessage1b
             && (#[trigger] cp.msg->votes)@.contains_key(opn);
@@ -765,7 +765,7 @@ ensures
         assert(best_cp.msg->votes@.contains_key(opn));
         assert(best_cp.valid());
 
-        assert forall |cp: CPacket| old(self).received_1b_packets@.contains(cp) && cp.msg is CMessage1b
+        assert forall |cp: CPacket| #![trigger old(self).received_1b_packets@.contains(cp)] old(self).received_1b_packets@.contains(cp) && cp.msg is CMessage1b
             && (#[trigger] cp.msg->votes)@.contains_key(opn)
             implies BalLeq(cp.msg->votes@[opn].max_value_bal@, best_cp.msg->votes@[opn].max_value_bal@) by {
             let j: int = choose |j: int| 0 <= j < packets@.len() && packets@[j] == cp;
@@ -799,8 +799,8 @@ requires
     old(self).valid(),
 ensures
     self.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LProposerMaybeNominateValueAndSend2a(old(self)@, self@, *clock as int, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(self)@;
@@ -881,8 +881,8 @@ requires
     old(self).valid(),
 ensures
     self.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LProposerMaybeEnterNewViewAndSend1a(old(self)@, self@, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(self)@;
@@ -943,12 +943,12 @@ ensures
     let p_cloned = clone_cpacket_preserving_validity(p);
     hashset_insert_cpacket(&mut self.received_1b_packets, p_cloned);
     proof {
-        assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.valid() by {
+        assert forall |q:CPacket| #![trigger q.valid()] self.received_1b_packets@.contains(q) implies q.valid() by {
             if !old(self).received_1b_packets@.contains(q) {
                 assert(q == p_cloned);
             }
         }
-        assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.abstractable() by {
+        assert forall |q:CPacket| #![trigger q.abstractable()] self.received_1b_packets@.contains(q) implies q.abstractable() by {
             if !old(self).received_1b_packets@.contains(q) {
                 assert(q == p_cloned);
             }
@@ -967,8 +967,8 @@ requires
     old(self).valid(),
 ensures
     self.valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
-    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LProposerMaybeEnterPhase2(old(self)@, self@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)),
 {
     let ghost old_self = old(self)@;
@@ -1060,7 +1060,7 @@ impl CProposer {
 pub exec fn CProposerResetViewTimerDueToExecution(&mut self, val: &CRequestBatch)
 requires
     old(self).valid(),
-    forall |i: int| 0 <= i < val@.len() ==> val@[i].valid(),
+    forall |i: int| #![trigger val@[i]] 0 <= i < val@.len() ==> val@[i].valid(),
 ensures
     self.valid(),
     LProposerResetViewTimerDueToExecution(old(self)@, self@, abstractify_crequestbatch(val)),

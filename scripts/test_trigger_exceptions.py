@@ -200,7 +200,14 @@ class TestCommittedList(unittest.TestCase):
         with open(path) as f:
             total, per = te.extract_counts(f.read())
         self.assertIsNotNone(total, "the committed list must state a total")
-        self.assertTrue(per, "the committed list must group notes by reason")
+        # Phase 54.7.f drove the count to 0. An empty list is the *success*
+        # state, not a malformed one -- Phase 54's acceptance criterion is
+        # "zero remaining notes **or** this list". Requiring at least one reason
+        # group made reaching zero fail the test that exists to check honesty.
+        if total == 0:
+            self.assertEqual(per, {}, "no notes means no reason groups")
+        else:
+            self.assertTrue(per, "a non-empty list must group notes by reason")
         self.assertEqual(total, sum(per.values()))
 
 
