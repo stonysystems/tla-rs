@@ -73,20 +73,41 @@ def _normalise(text):
     return " ".join(text.split())
 
 
+def _all_bodies(text):
+    """Every function body in the file, free functions *and* impl methods.
+
+    Comparing only free functions was a real hole: the protocol actions are
+    `&mut self` methods, so an entire module's implementations went unchecked.
+    executor's `CExecutorProcessAppStateRequest` is a 52-line implementation in
+    the checked-in file and a 59-line `assume(false)` stub in fresh output, and
+    the report still read clean.
+    """
+    free, impls, _ = mg.parse_items(text)
+    out = dict(free)
+    for impl_name, methods in impls.items():
+        for method, body in methods.items():
+            out[f"{impl_name}::{method}"] = body
+    return out
+
+
 def body_drift(fresh_text, existing_text, preserve=frozenset(), accept=frozenset()):
     """(unreviewed, preserved, accepted) function names whose bodies differ."""
-    f_free, _, _ = mg.parse_items(fresh_text)
-    e_free, _, _ = mg.parse_items(existing_text)
+    fresh = _all_bodies(fresh_text)
+    existing = _all_bodies(existing_text)
+
+    def listed(name, names):
+        # accept either `method` or `Impl::method` in the preserve list
+        return name in names or name.split("::")[-1] in names
 
     unreviewed, preserved, accepted = [], [], []
-    for name, e_body in e_free.items():
-        if name not in f_free:
+    for name, e_body in existing.items():
+        if name not in fresh:
             continue  # not emitted fresh; the merge carries the existing one
-        if _normalise(f_free[name]) == _normalise(e_body):
+        if _normalise(fresh[name]) == _normalise(e_body):
             continue
-        if name in preserve:
+        if listed(name, preserve):
             preserved.append(name)
-        elif name in accept:
+        elif listed(name, accept):
             accepted.append(name)
         else:
             unreviewed.append(name)

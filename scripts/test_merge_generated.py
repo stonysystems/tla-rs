@@ -282,15 +282,20 @@ class PreserveListIsWiredUp(unittest.TestCase):
         for module, fn, _kind in self._entries():
             path = os.path.join(REPO_ROOT, "src", "generated", "RSL", f"{module}_gen.rs")
             self.assertTrue(os.path.exists(path), f"no generated file for {module}")
+            import check_merge_body_drift as cd  # noqa: PLC0415
+
             with open(path) as fh:
                 src = fh.read()
-            _, _, _ = mg.parse_items(src)
-            free, _, _ = mg.parse_items(src)
+            # Free functions *and* impl methods -- the RSL protocol actions are
+            # `&mut self` methods, and requiring free functions here would reject
+            # the 17 of them the preserve list now covers.
+            bodies = cd._all_bodies(src)
+            names = set(bodies) | {n.split("::")[-1] for n in bodies}
             self.assertIn(
                 fn,
-                free,
-                f"{fn} is listed for {module} but is not a free function in "
-                f"{module}_gen.rs -- merge_generated.py would raise on it",
+                names,
+                f"{fn} is listed for {module} but is not a function in "
+                f"{module}_gen.rs -- a stale entry the tooling would trip on",
             )
 
     def test_regenerate_script_reads_the_list(self):

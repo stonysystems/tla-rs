@@ -14886,6 +14886,25 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [ ] **42.8.c.2.iv.F** **The drift check was blind to `&mut self` methods — 17 real
+        implementations would have been replaced by `assume(false)` stubs (2026-08-05).**
+        `body_drift` compared only the free functions from `parse_items`, ignoring the
+        `impls` map entirely. The RSL protocol actions are all `&mut self` methods, so
+        executor, election and proposer were effectively unchecked while reporting clean.
+        Found while chasing E: `CExecutorProcessAppStateRequest` is a **52-line
+        implementation** in the checked-in file and a **59-line `assume(false)` stub** in
+        fresh output.
+        Extended to impl methods (`Impl::method`, and the preserve list accepts either the
+        bare or qualified name). That surfaced **17 more**, and every single one is the
+        dangerous direction — fresh stub over real implementation:
+        executor ×5, election ×4, proposer ×8. All added to the preserve list; all seven
+        modules now report clean.
+        The count for 42.8.c is therefore **30 protected bodies, not 13**. And the reason E's
+        transpiler bug matters less than it looked: those functions are proof-fallback stubs
+        in fresh output, so the `&mut self` lift is mangling *stub* bodies. The lift bug is
+        still real, but executor's merge is gated on preserving the implementations, which is
+        now done.
+
   - [ ] **42.8.c.2.iv.E** **Executor is blocked by a transpiler bug, not by the merge.**
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:

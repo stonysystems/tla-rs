@@ -113,5 +113,44 @@ class ExitStatus(unittest.TestCase):
         self.assertEqual(cd.main([fresh, existing, "--quiet"]), 0)
 
 
+
+
+class ImplMethodsAreCompared(unittest.TestCase):
+    """Phase 42.8.c.2.iv.F. The check originally compared only free functions.
+    The RSL protocol actions are all `&mut self` methods, so entire modules went
+    unchecked -- 17 real implementations would have been replaced by
+    `assume(false)` stubs with the report reading clean."""
+
+    FRESH = (
+        "verus! {\nimpl CExec {\n"
+        "pub exec fn act(&mut self) {\n    assume(false);\n}\n"
+        "}\n} // verus!\n"
+    )
+    EXISTING = (
+        "verus! {\nimpl CExec {\n"
+        "pub exec fn act(&mut self) {\n    real_implementation();\n}\n"
+        "}\n} // verus!\n"
+    )
+
+    def test_a_method_body_swap_is_detected(self):
+        unreviewed, _, _ = cd.body_drift(self.FRESH, self.EXISTING)
+        self.assertEqual(unreviewed, ["CExec::act"])
+
+    def test_preserve_accepts_the_bare_method_name(self):
+        # The list is written `<module> <fn>`; requiring `Impl::fn` there would
+        # be a second naming convention to get wrong.
+        unreviewed, preserved, _ = cd.body_drift(
+            self.FRESH, self.EXISTING, preserve={"act"}
+        )
+        self.assertEqual(unreviewed, [])
+        self.assertEqual(preserved, ["CExec::act"])
+
+    def test_qualified_name_also_works(self):
+        _, preserved, _ = cd.body_drift(
+            self.FRESH, self.EXISTING, preserve={"CExec::act"}
+        )
+        self.assertEqual(preserved, ["CExec::act"])
+
+
 if __name__ == "__main__":
     unittest.main()

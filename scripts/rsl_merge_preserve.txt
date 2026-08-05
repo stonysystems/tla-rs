@@ -47,3 +47,26 @@ election clone_requests_received_prev_epochs accept-fresh
 #   CReplicaNumActions: `result as int == LReplicaNumActions()` (fresh) versus
 #   `result@ == ...` (existing) -- equivalent, and fresh is the more explicit form.
 replica CReplicaNumActions accept-fresh
+
+# Phase 42.8.c.2.iv.F. `&mut self` protocol actions. Fresh emits an
+# `assume(false)` proof-fallback stub for every one of these; the checked-in
+# bodies are the real implementations. These were invisible until the drift
+# check learned to look at impl methods -- it compared only free functions, so
+# an entire module's actions went unchecked.
+executor CExecutorGetDecision
+executor CExecutorProcessAppStateRequest
+executor CExecutorProcessAppStateSupply
+executor CExecutorProcessRequest
+executor CExecutorProcessStartingPhase2
+election CElectionStateCheckForQuorumOfViewSuspicions
+election CElectionStateCheckForViewTimeout
+election CElectionStateProcessHeartbeat
+election CElectionStateReflectExecutedRequestBatch
+proposer CProposerCheckForQuorumOfViewSuspicions
+proposer CProposerCheckForViewTimeout
+proposer CProposerMaybeEnterNewViewAndSend1a
+proposer CProposerMaybeEnterPhase2
+proposer CProposerProcess1b
+proposer CProposerProcessHeartbeat
+proposer CProposerProcessRequest
+proposer CProposerResetViewTimerDueToExecution
