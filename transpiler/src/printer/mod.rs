@@ -141,6 +141,9 @@ impl Printer {
                 );
             }
             let method_body = Self::struct_to_field_assignments(&func.body, returns_unit);
+            if std::env::var("VERUS_TRANSPILE_DUMP_BODY").as_deref() == Ok(func.name.as_str()) {
+                eprintln!("=== AFTER TRANSFORM ===\n{:#?}", method_body);
+            }
             // If nothing still binds the output name, every remaining mention of
             // it refers to the state the assignments just wrote -- i.e. `self`.
             // The guard matters: renaming while `let result = ..` is still live

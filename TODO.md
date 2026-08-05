@@ -14935,8 +14935,11 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         a stub. `--preserve` keeps the *whole function*, contract included, so preserving the
         18 actions to save their bodies also freezes their stale contracts. The notes land
         only if fresh output can be taken whole, i.e. the `&mut self` conversion emits real
-        bodies instead of `assume(false)` — which is 42.8.c.2.iv.E's territory. That is the
-        argument for finishing E rather than leaving it at "low priority".
+        bodies instead of `assume(false)`.
+        **E is now fixed (2026-08-05) and it is not sufficient.** The lift no longer mangles
+        these bodies, but fresh output for replica's 18 actions is still a proof-fallback
+        stub — E made the stub well-typed, not real. J needs the free-function forms retired
+        in favour of the methods so fresh's contract can be taken without its body.
 
   - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
         `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the
@@ -15032,7 +15035,30 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         still real, but executor's merge is gated on preserving the implementations, which is
         now done.
 
-  - [ ] **42.8.c.2.iv.E** The `&mut self` lift mangles proof-fallback stub bodies.
+  - [x] **42.8.c.2.iv.E** The `&mut self` lift mangles proof-fallback stub bodies.
+        **FIXED 2026-08-05 — and it was already fixed one commit earlier; the measurement
+        said otherwise.** A/B on real output: **4 tuple tails without the `Clone` match, 0
+        with it**, in `executor.rs`. The emitted body is now
+        `let result = if .. { vec![CPacket{..}] } else { .. vec![] }; result`, typed
+        `Vec<CPacket>` as the signature promises.
+        **Why three iterations concluded "the fix changes nothing": the metric could not
+        tell the two apart.** I was counting `grep -c '; result }'`, which is 3 in the broken
+        *and* the fixed output — the defect was `result`'s *type* (a pair), not the presence
+        of a trailing `result`. Every "still 3, so no effect" reading in the entries below is
+        void, and so are the two reverts of the `find_struct_in_expr` /
+        `count_non_struct_in_expr` extension that it justified. Those reverts happen to have
+        been right anyway: the transform is correct without them, confirmed by dumping the
+        post-transform AST.
+        **Guarded at the emission level** by
+        `test_mut_self_lift_leaves_no_tuple_tail_in_rsl_output`, which transpiles executor,
+        election, proposer and replica and asserts no `(self.clone(), ..)` survives. Verified
+        failing-first: 4 offenders without the fix, 0 with. An emitted-text assertion is
+        deliberate here — four AST-level tests of this same lift passed while the real output
+        stayed broken, so the AST is the wrong place to guard it.
+        **What it does not do is unblock J.** Fresh output for these functions is still an
+        `assume(false)` proof-fallback stub; E only makes the stub well-typed. Replica still
+        needs the free-function forms retired in favour of methods, and still cannot take
+        fresh's contract without taking a stub body with it. The 36 notes remain behind J.
         **Re-scoped 2026-08-05 — it no longer blocks anything.** Written when it looked
         like executor's blocker; F then showed those functions are `assume(false)` stubs in
         fresh output, and G landed executor by preserving the real bodies. The lift bug is
@@ -15092,12 +15118,8 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         explain why *every* fix downstream of it is inert. Instrument that next, not the AST.
         Otherwise the dump is now the tool for this — no more hand-built models, they were
         wrong about the node shape for four rounds running.
-        **No longer low priority (re-scoped 2026-08-05).** The old reason — "it only damages
-        stub bodies the preserve list replaces" — holds for the three merged modules but not
-        for replica: preserving a body also preserves its contract, so replica's 18 actions
-        cannot be merged via `--preserve` without freezing the stale `ensures` that carry
-        **36** of the 103 trigger notes. Fixing this lift is what lets J take fresh output
-        whole. E is now the path to the largest deliverable in Phase 54, not a curiosity.
+        *(The "still low priority" note here is superseded by the FIXED banner at the top of
+        this item. The lift is fixed; what remains for the 36 notes is J, not E.)*
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:
 

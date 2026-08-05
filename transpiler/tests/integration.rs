@@ -1186,6 +1186,74 @@ fn transpiler_binary() -> &'static std::path::Path {
     .as_path()
 }
 
+/// Phase 42.8.c.2.iv.E. A `&mut self` method must not return the pre-lift tuple.
+///
+/// The lift rewrites `(state, outputs)` into assignments on `self` plus
+/// `outputs`. When the state element is an identity clone the translator emits
+/// an `ExecExpr::Clone` node, not a `.clone()` MethodCall, and the lift matched
+/// only the latter -- so `result` stayed bound to the pair and the body returned
+/// `(CExecutor, Vec<CPacket>)` where the signature promised `Vec<CPacket>`.
+///
+/// This asserts on *emitted text*, deliberately. Four AST-level tests of this
+/// same lift passed while the real output stayed broken, and the metric used to
+/// check it (`grep '; result }'`) matched the fixed and broken forms alike --
+/// that string is present either way, because the defect was `result`'s type,
+/// not the presence of the tail. A surviving `(self.clone(), ..)` cannot be
+/// read two ways.
+#[test]
+fn test_mut_self_lift_leaves_no_tuple_tail_in_rsl_output() {
+    let repo_root = resolve_repo_root_for_integration();
+    for (spec, toml, automan) in [
+        ("executor.rs", "executor_transpile.toml", "executor.automan"),
+        ("election.rs", "election_transpile.toml", "election.automan"),
+        ("proposer.rs", "proposer_transpile.toml", "proposer.automan"),
+        ("replica.rs", "replica_transpile.toml", "replica.automan"),
+    ] {
+        let output = std::process::Command::new(transpiler_binary())
+            .args([
+                "--input",
+                repo_root
+                    .join(format!("src/protocol/RSL/{}", spec))
+                    .to_str()
+                    .unwrap(),
+                "--config",
+                repo_root
+                    .join(format!("src/protocol/RSL/{}", toml))
+                    .to_str()
+                    .unwrap(),
+                "--annotations",
+                repo_root
+                    .join(format!("src/protocol/RSL/{}", automan))
+                    .to_str()
+                    .unwrap(),
+                "--stdout",
+            ])
+            .current_dir(repo_root.join("transpiler"))
+            .output()
+            .expect("Failed to run transpiler");
+        assert!(
+            output.status.success(),
+            "Transpiler failed for {}:\n{}",
+            spec,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let fresh = String::from_utf8(output.stdout).expect("output is not UTF-8");
+        let offenders: Vec<&str> = fresh
+            .lines()
+            .filter(|l| l.contains("(self.clone(),"))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "{} emits {} tuple-tail state element(s); the `&mut self` lift did not \
+             reach them, so the body returns a pair where the signature promises one \
+             value:\n{}",
+            spec,
+            offenders.len(),
+            offenders.join("\n")
+        );
+    }
+}
+
 fn assert_regen_matches_checked_in(
     protocol_dir: &str, // e.g. "ChainReplication"
     spec_file: &str,    // e.g. "chain.rs"
