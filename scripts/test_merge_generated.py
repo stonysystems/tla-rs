@@ -300,5 +300,76 @@ class PreserveListIsWiredUp(unittest.TestCase):
         self.assertIn("--preserve", script)
 
 
+
+
+class OverlappingBraceImports(unittest.TestCase):
+    """Phase 42.8.c.2.iv.D. Fresh `use X::{a, b}` plus a carried
+    `use X::{b, a, c}` is a duplicate-name error, not two imports -- the earlier
+    `_import_path` normalisation compared whole member sets, so the two looked
+    distinct. The fix widens fresh's import instead of emitting a second one."""
+
+    FRESH = "verus! {\nuse crate::x::{a, b};\npub fn f() {}\n} // verus!\n"
+    EXISTING = (
+        "verus! {\nuse crate::x::{b, a, c};\npub fn f() {}\npub fn g() {}\n} // verus!\n"
+    )
+
+    def test_module_path_is_imported_once(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        uses = [l for l in out.split("\n") if l.strip().startswith("use crate::x")]
+        self.assertEqual(len(uses), 1, f"expected one import, got {uses!r}")
+
+    def test_the_extra_member_survives(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        use_line = next(l for l in out.split("\n") if "crate::x" in l)
+        for member in ("a", "b", "c"):
+            self.assertIn(member, use_line, f"{member} missing from {use_line!r}")
+
+    def test_no_double_use_keyword(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        self.assertNotIn("use use", out.replace("\n", " "))
+
+
+
+
+class ContractStructLiteral(unittest.TestCase):
+    """Phase 42.8.c.2.iv.D. A struct literal inside a `requires` clause --
+    `UpperBound::UpperBoundFinite{n: ..}` -- opens and closes braces on one line.
+    Treating that as the body-opening brace truncated CExecutorExecute from 99
+    lines to 5, and the merge then carried the fragment. The body-opening brace
+    is the one still open at end of line."""
+
+    def test_struct_literal_in_requires_does_not_end_the_block(self):
+        lines = [
+            "pub exec fn f(s: &S) -> (r: R)",
+            "requires",
+            "    Lt(s.x as int, UpperBound::UpperBoundFinite{n: s.max as int}),",
+            "ensures",
+            "    r.valid(),",
+            "{",
+            "    body();",
+            "}",
+            "pub exec fn next() {}",
+        ]
+        end = mg._block_end(lines, 0)
+        self.assertEqual(
+            end, 7, f"block ended at line {end} ({lines[end]!r}), truncating the body"
+        )
+
+    def test_parsed_body_is_brace_balanced(self):
+        src = (
+            "verus! {\n"
+            "pub exec fn f(s: &S) -> (r: R)\n"
+            "requires\n"
+            "    Lt(s.x, Bound::Finite{n: s.max}),\n"
+            "{\n"
+            "    body();\n"
+            "}\n"
+            "} // verus!\n"
+        )
+        free, _, _ = mg.parse_items(src)
+        body = free["f"]
+        self.assertEqual(body.count("{"), body.count("}"), body)
+
+
 if __name__ == "__main__":
     unittest.main()

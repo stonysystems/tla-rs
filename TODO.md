@@ -14886,6 +14886,26 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [ ] **42.8.c.2.iv.D** Two more merge defects, found by actually attempting the
+        executor merge rather than trusting the clean drift report (2026-08-05). Both fixed;
+        executor's merge still fails on something else, so it is **not** landed.
+        - **Overlapping brace-list imports produced a duplicate.** Fresh
+          `use X::{a, b}` plus a carried `use X::{b, a, c}` emitted both, which is an
+          `E0252 defined multiple times`. `_import_path` normalised whole member sets, so
+          the two looked like different imports. The merge now *widens* fresh's import
+          instead of adding a second.
+        - **`_block_end` truncated any function with a struct literal in its contract.**
+          `CExecutorExecute`'s `requires` has
+          `UpperBound::UpperBoundFinite{n: …}`; those braces open and close on one line, and
+          `_block_end` took that as the body. It parsed as **5 lines instead of 99**, and the
+          merge carried the fragment. The body-opening brace is the one still *open* at end
+          of line. After the fix no parsed body in any `*_gen.rs` is brace-unbalanced.
+        **This one also hid itself from the drift check**: `CExecutorExecute` is a
+        `skip_function`, so it is absent from fresh, and the check skips names not in both —
+        the carry was broken even though the report was clean. A checker built on a parser
+        inherits that parser's blind spots, which is worth remembering before trusting a
+        green report over an actual attempt.
+
   - [ ] **42.8.c.2.iv.C** The 13 bodies a merge would silently rewrite, now enumerated.
         `scripts/check_merge_body_drift.py` (new, 2026-08-05) compares function *bodies*
         rather than `pub exec fn` names, which is what the regen parity check does and why

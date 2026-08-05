@@ -65,10 +65,14 @@ def _block_end(lines, start):
         for ch in code:
             if ch in depth:
                 depth[ch] += 1
-                if ch == "{":
-                    seen = True
             elif ch in close:
                 depth[close[ch]] -= 1
+        # The body-opening brace is the one still open at end of line. A struct
+        # literal inside a contract -- `UpperBound::UpperBoundFinite{n: ..}` in a
+        # `requires` clause -- opens and closes on one line, and treating it as
+        # the body truncates the function to its signature.
+        if depth["{"] > 0:
+            seen = True
         if seen and all(d <= 0 for d in depth.values()):
             return i
     return len(lines) - 1
@@ -169,10 +173,37 @@ def plan_merge(fresh_text, existing_text, preserve=()):
             + ", ".join(missing)
         )
 
+    # An import whose module path fresh already imports must not be emitted again:
+    # `use X::{a, b}` from fresh plus `use X::{b, a, c}` carried over is a
+    # duplicate-name error, not two imports. Merge the member sets instead.
+    def _module_path(imp):
+        flat = re.sub(r"\s+", "", imp).rstrip(";")
+        return flat.split("{", 1)[0] if "{" in flat else None
+
+    def _members(imp):
+        flat = re.sub(r"\s+", "", imp).rstrip(";")
+        m = re.match(r"^.*?\{(.*)\}$", flat)
+        return [x for x in m.group(1).split(",") if x] if m else []
+
+    fresh_by_path = {}
+    for imp in f_imports:
+        path = _module_path(imp)
+        if path:
+            fresh_by_path.setdefault(path, set()).update(_members(imp))
+    merged_imports = {}
+    for imp in e_imports:
+        path = _module_path(imp)
+        if path and path in fresh_by_path:
+            extra = set(_members(imp)) - fresh_by_path[path]
+            if extra:
+                merged_imports[path] = fresh_by_path[path] | set(_members(imp))
+
     carried_imports = [
         imp
         for imp in e_imports
-        if imp not in f_imports and _import_path(imp) not in map(_import_path, f_imports)
+        if imp not in f_imports
+        and _import_path(imp) not in map(_import_path, f_imports)
+        and _module_path(imp) not in fresh_by_path
     ]
     dropped_impls = [n for n in carried_methods if n not in f_impls]
     return OrderedDict(
@@ -181,6 +212,7 @@ def plan_merge(fresh_text, existing_text, preserve=()):
             ("carried_methods", carried_methods),
             ("carried_imports", carried_imports),
             ("overridden_free_fns", overridden),
+            ("merged_imports", merged_imports),
             ("impls_absent_from_fresh", dropped_impls),
         ]
     )
@@ -218,6 +250,21 @@ def merge(fresh_text, existing_text, preserve=()):
         f_free, _, _ = parse_items(fresh_text)
         if name in f_free:
             fresh_text = fresh_text.replace(f_free[name], e_free[name], 1)
+
+    # Widen fresh's import to cover members only the existing file had, rather
+    # than emitting a second `use` for the same module path (a duplicate-name
+    # error). Phase 42.8.c.2.iv.D.
+    for path, members in plan.get("merged_imports", {}).items():
+        # `path` comes from the whitespace-stripped form, so it already begins
+        # with "use"; re-insert the space rather than prefixing a second one.
+        widened = "{}{{{}}};".format(
+            path.replace("use", "use ", 1), ", ".join(sorted(members))
+        )
+        for line in fresh_text.split("\n"):
+            flat = re.sub(r"\s+", "", line).rstrip(";")
+            if flat.startswith(path + "{") or flat == "use" + path.lstrip("use"):
+                fresh_text = fresh_text.replace(line, widened, 1)
+                break
 
     lines = fresh_text.split("\n")
 
