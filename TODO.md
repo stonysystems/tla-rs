@@ -17055,11 +17055,23 @@ merely annoys.
   queue array)" — false on a spec whose only update is `msgs' = {}` (zero
   EXCEPTs) and on Jetpack's `messages`, which the module never assigns at all.
   It now reports what it observed, including "this module never assigns it".
-- [ ] **Whole-array reads and writes are not checked.** `Cardinality(state)` in
-  an action observes every node at once, and `x' = [i \in Node |-> ..]` in an
-  action rewrites every node's state. Both are accepted today. The *contract*
-  now states both rules (harvested into `docs/clean_tla_subset.md` from the
-  parallel implementation) — the linter has not caught up.
+- [ ] **Whole-array reads and writes are not checked.** — **READS DONE 2026-08-05; writes
+  still open.** `Cardinality(state)` in an action now reports C2. The two exemptions the
+  contract names are what make the rule usable, and both were found by measurement rather
+  than reasoning:
+  - **an `EXCEPT` base is not a read.** `[sendSeq EXCEPT ![s] = ..]` names `sendSeq` bare
+    but touches exactly entry `s`. Counting it flagged three of Lamport-mutex's helpers
+    (`AdvanceAll`, `AdvanceOne`, `Accept`) on a spec that is clean — caught by running the
+    whole corpus before trusting the rule, not by reading the code.
+  - **frame conditions are exempt**, per the contract: the right-hand side of `x' = x`, and
+    anything under `UNCHANGED`.
+  An indexed read is also excluded, so a cross-node read reports once rather than twice.
+  **No corpus case exercises this rule** — all ten originals and all eight `clean.tla`
+  keep their existing counts — so it is covered by four unit tests instead, including one
+  per exemption. That is worth stating plainly: the rule is real but unexercised by the
+  corpus, and the first spec to need it will be the first real test.
+  Still open: the whole-array **write**, `x' = [i \in Node |-> ..]` in an action (only
+  `Init` may do it).
 - [ ] **Messages with no `src`/`dst` are accepted**, though the framework cannot
   route them. Also now in the contract, not in the linter.
 - [ ] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally**, with

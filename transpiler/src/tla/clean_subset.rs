@@ -910,6 +910,23 @@ impl<'a> LintContext<'a> {
             let Some(op) = self.operator(&op_name) else {
                 continue;
             };
+            let mut whole = Vec::new();
+            self.collect_whole_array_reads(&op.body, &per_node, &mut whole);
+            whole.sort();
+            whole.dedup();
+            for var in whole {
+                report.findings.push(self.finding(
+                    CleanRule::C2,
+                    Some(op),
+                    format!(
+                        "reads `{var}` as a whole array -- every node's state at once, \
+                         with no index. A node taking this step can only read \
+                         `{var}[{node_param}]`. Aggregate it the way the algorithm \
+                         actually learns it: a message per node, and a local tally."
+                    ),
+                ));
+            }
+
             let mut reads = Vec::new();
             self.collect_foreign_reads(&op.body, &node_param, &per_node, &mut reads);
             for (var, index) in reads {
@@ -1024,6 +1041,103 @@ impl<'a> LintContext<'a> {
     }
 
     /// Collect `x[e]` reads of per-node variables where `e` is not the node.
+    /// Per-node variables read *as a whole array* -- named without an index.
+    ///
+    /// `Cardinality(state)` observes every node at once, which the contract
+    /// calls a cross-node read even though no index appears
+    /// (`docs/clean_tla_subset.md`, C2: "Reading the whole array is a cross-node
+    /// read, even without an index").
+    ///
+    /// Frame conditions are exempt, and that exemption is the whole difficulty:
+    /// `x' = x` names `x` bare but carries no information across nodes, and P5
+    /// regenerates it anyway. So the right-hand side of an equality whose left
+    /// side is that same variable primed is not a read, and neither is anything
+    /// under `UNCHANGED`.
+    fn collect_whole_array_reads(
+        &self,
+        expr: &TlaExpr,
+        per_node: &BTreeSet<&str>,
+        out: &mut Vec<String>,
+    ) {
+        match expr {
+            // `x' = x` and `x' = [x EXCEPT ..]`: the frame/update form. The
+            // left side is not a read at all, and a bare mention of the same
+            // variable on the right is the frame condition.
+            TlaExpr::BinOp { op, left, right } if matches!(op, TlaBinOp::Eq) => {
+                if let TlaExpr::Prime(inner) = &**left {
+                    if let TlaExpr::Ident(v) = &**inner {
+                        self.collect_whole_array_reads_skipping(right, per_node, v, out);
+                        return;
+                    }
+                }
+                self.collect_whole_array_reads(left, per_node, out);
+                self.collect_whole_array_reads(right, per_node, out);
+            }
+            // `f[i]` reads one element; C2's indexed check owns it. Descend into
+            // the index but not into the function position, or every indexed
+            // read would also count as a whole-array read.
+            TlaExpr::FnApply { func, arg } => {
+                if !matches!(
+                    Self::index_base(func),
+                    Some(TlaExpr::Ident(v)) if per_node.contains(v.as_str())
+                ) {
+                    self.collect_whole_array_reads(func, per_node, out);
+                }
+                self.collect_whole_array_reads(arg, per_node, out);
+            }
+            // `[f EXCEPT ![i] = v]` names `f` bare but touches exactly entry
+            // `i`; it is the ordinary per-node update, not a whole-array read.
+            // Counting the base flagged three of Lamport-mutex's helpers
+            // (`AdvanceAll`, `AdvanceOne`, `Accept`) on a spec that is clean.
+            // The forbidden whole-array *write* is a function constructor over
+            // the node set, `x' = [i \in Node |-> ..]`, which is a different
+            // shape and is not this.
+            TlaExpr::FnExcept { func, updates } => {
+                if !matches!(&**func, TlaExpr::Ident(v) if per_node.contains(v.as_str())) {
+                    self.collect_whole_array_reads(func, per_node, out);
+                }
+                for update in updates {
+                    for step in &update.path {
+                        if let crate::tla::ast::TlaExceptPath::Index(idx) = step {
+                            self.collect_whole_array_reads(idx, per_node, out);
+                        }
+                    }
+                    self.collect_whole_array_reads(&update.value, per_node, out);
+                }
+            }
+            TlaExpr::Unchanged(_) => {}
+            TlaExpr::Ident(v) if per_node.contains(v.as_str()) => out.push(v.clone()),
+            other => walk_children(other, &mut |child| {
+                self.collect_whole_array_reads(child, per_node, out)
+            }),
+        }
+    }
+
+    /// As above, but `skip` names the variable whose bare mention is this
+    /// expression's frame condition.
+    fn collect_whole_array_reads_skipping(
+        &self,
+        expr: &TlaExpr,
+        per_node: &BTreeSet<&str>,
+        skip: &str,
+        out: &mut Vec<String>,
+    ) {
+        if matches!(expr, TlaExpr::Ident(v) if v == skip) {
+            return;
+        }
+        let mut found = Vec::new();
+        self.collect_whole_array_reads(expr, per_node, &mut found);
+        out.extend(found.into_iter().filter(|v| v != skip));
+    }
+
+    /// The variable a function application indexes into, unpriming it.
+    fn index_base(func: &TlaExpr) -> Option<&TlaExpr> {
+        match func {
+            TlaExpr::Prime(inner) => Some(inner),
+            other => Some(other),
+        }
+    }
+
     fn collect_foreign_reads(
         &self,
         expr: &TlaExpr,
@@ -1525,6 +1639,108 @@ Next == clock' = clock + 1
         // a consumer reading only `violations` cannot tell the difference; the
         // two lists are what make the number interpretable
         assert!(json.contains(r#""rule":"C1","reason":"#), "{json}");
+    }
+
+    /// Phase 52: "Reading the whole array is a cross-node read, even without an
+    /// index" (`docs/clean_tla_subset.md`, C2). `Cardinality(state)` observes
+    /// every node at once. The contract stated this; the linter did not check it.
+    #[test]
+    fn rejects_reading_a_per_node_variable_as_a_whole_array() {
+        let source = r#"---- MODULE Test ----
+EXTENDS FiniteSets, Naturals
+VARIABLES state
+TypeOK == state \in [Proc -> Nat]
+Step(p) == /\ Cardinality(state) > 0
+           /\ state' = [state EXCEPT ![p] = state[p] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            rules(&report).contains(&CleanRule::C2),
+            "a whole-array read must be C2: {:?}",
+            report.findings
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("whole array")),
+            "the message should say which shape was found: {:?}",
+            report.findings
+        );
+    }
+
+    /// The exemption that makes the rule usable. `[f EXCEPT ![i] = v]` names `f`
+    /// bare but touches exactly entry `i` -- it is the ordinary per-node update.
+    /// Counting the base flagged three of Lamport-mutex's helpers on a spec that
+    /// is clean, which is how this was caught.
+    #[test]
+    fn an_except_base_is_not_a_whole_array_read() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES sendSeq
+TypeOK == sendSeq \in [Proc -> Nat]
+Advance(s) == [sendSeq EXCEPT ![s] = sendSeq[s] + 1]
+Step(p) == sendSeq' = Advance(p)
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("whole array")),
+            "an EXCEPT base is an update of one entry, not a whole-array read: {:?}",
+            report.findings
+        );
+    }
+
+    /// The other exemption the contract names: "Frame conditions are exempt.
+    /// `x' = x` ... carries no information across nodes".
+    #[test]
+    fn a_frame_condition_is_not_a_whole_array_read() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES clock, flag
+TypeOK == /\ clock \in [Proc -> Nat]
+          /\ flag \in [Proc -> Nat]
+Step(p) == /\ clock' = [clock EXCEPT ![p] = clock[p] + 1]
+           /\ flag' = flag
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("whole array")),
+            "`flag' = flag` is a frame condition: {:?}",
+            report.findings
+        );
+    }
+
+    /// An indexed read is C2's *other* branch; it must not also be counted as a
+    /// whole-array read, or every cross-node read would report twice.
+    #[test]
+    fn an_indexed_read_is_not_also_reported_as_a_whole_array_read() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES clock
+TypeOK == clock \in [Proc -> Nat]
+Step(p) == \E q \in Proc : clock' = [clock EXCEPT ![p] = clock[q]]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        let whole = report
+            .findings
+            .iter()
+            .filter(|f| f.message.contains("whole array"))
+            .count();
+        assert_eq!(
+            whole, 0,
+            "indexed reads belong to the other branch: {:?}",
+            report.findings
+        );
     }
 
     #[test]
