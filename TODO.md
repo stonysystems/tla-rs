@@ -16817,7 +16817,23 @@ epoch; our fixed-membership slice must keep it or cross-recovery agreement break
 - [ ] **51.9** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery + BeginRecovery. Decided A1 (assumed `base_says_recover` predicate as trigger guard) + B1 (keep all 4 BeginRecovery actions; ignore out-of-slice old_view/new_view/oepoch), but NOT pursued by hand.
 - [ ] **51.10** Complete `LNext` to include the entry actions.
 - [ ] **51.11** Safety invariant: agreement (no two recoveries choose conflicting values); prove it inductive.
-- [ ] **51.12** `finite` invariant for `prep_rcvd`/`accept_rcvd` (required by `.len()`-based quorum).
+- [x] **51.12** ~~`finite` invariant for `prep_rcvd`/`accept_rcvd`~~ — **OBSOLETE, closed
+  2026-08-05. The premise expired with the vstd upgrade; no invariant is needed.**
+  The item's reason was "required by `.len()`-based quorum", which held when a `Set` could
+  be infinite and `len()` was only meaningful on a finite one. In the pinned vstd
+  (0.2026.08.02.b677dd5) **every `Set` is finite by construction**: `Set::new` returns
+  `Option<Set<A>>` and yields `None` for a predicate with infinite extent
+  (`set.rs:113-135`), `Set::finite()` is deprecated with the note *"Every Set is always
+  finite, so this is always true"*, and `len()` is total — `self.to_iset().len()`, no
+  precondition.
+  Confirmed on the code as well as in the library: `prep_rcvd`/`accept_rcvd` are
+  `Set<int>`, `L_CompletePrepare` and `L_CompleteAccept` guard on
+  `.len() >= c.quorum_size` with no finiteness hypothesis anywhere in the module, and the
+  crate verifies `1046 verified, 0 errors` with Jetpack mounted.
+  This is the same upgrade that made 54.11 delete 68 `Set::finite()` calls; the Jetpack
+  item was written before it and simply outlived its reason.
+  **Consequence for 51.11**: the agreement invariant does not need a finiteness
+  precondition either, so that item is smaller than it was written to be.
 - [x] **51.13** Mount module + `verus` check (2026-08-04). `pub mod Jetpack;` is uncommented in `src/protocol/mod.rs`; the module type-checks under Verus 0.2026.08.02.b677dd5:
   `verus --crate-type=lib src/lib.rs --verify-module protocol::Jetpack::jetpack --verify-module protocol::Jetpack::types` → `0 verified, 0 errors`.
   **Read that result correctly**: the module is spec-only (`pub open spec fn`), so there are no proof obligations and "0 verified" is expected — what the run establishes is that the whole crate, Jetpack included, passes Verus's frontend type-check. Confirmed **non-vacuous** by injecting a deliberate type error (`s.jepoch == Set::<int>::empty()`), which produced `error[E0277] ... SpecEq<Set<int>> is not satisfied`, then reverting. Safety/`finite` invariants (51.11/51.12) are still absent, so this is type-correctness, not correctness.
