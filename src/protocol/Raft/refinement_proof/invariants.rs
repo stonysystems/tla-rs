@@ -2818,6 +2818,154 @@ verus! {
         assert(ds.server_states[leader_id].log.len() > certificate_index);
     }
 
+    /// Strong induction over certificate positions with **no** log-length
+    /// bound: an existing leader holds every certified boundary below any
+    /// bound whatsoever.
+    ///
+    /// The short-log branch is discharged rather than excluded — a leader whose
+    /// log ended before a certified boundary is impossible, so that case closes
+    /// by contradiction.
+    pub proof fn lemma_existing_leader_holds_certified_boundaries_below_any_bound(
+        ds: RaftDistributedState,
+        leader_id: int,
+        bound: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            ElectionLogLenBounded(ds),
+            ElectionLogLenEntryTermBound(ds),
+            LeaderElectionSnapshotRecorded(ds),
+            LogTermsMonotonic(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            0 <= bound,
+            forall |a: int, e: int|
+                #![trigger ds.server_constants[a], ds.server_constants[e]]
+                0 <= a < ds.num_servers && 0 <= e < ds.num_servers
+                ==> ds.server_constants[a].servers
+                    == ds.server_constants[e].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].current_term
+                    > ds.configuration_commit_certificates[m].entry.term,
+        ensures
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+        decreases bound,
+    {
+        if bound > 0 {
+            let m = bound - 1;
+
+            lemma_existing_leader_holds_certified_boundaries_below_any_bound(
+                ds, leader_id, m);
+
+            if ds.configuration_commit_certificates.dom().contains(m) {
+                if m < ds.server_states[leader_id].commit_index {
+                    assert(CommitIndexBounded(ds));
+                    lemma_certified_boundary_agrees_with_committed_server(
+                        ds, m, leader_id);
+                } else if m <= ds.server_states[leader_id].log.len() {
+                    lemma_existing_leader_holds_certified_boundary_unconditionally(
+                        ds, m, leader_id);
+                } else {
+                    lemma_existing_leader_cannot_end_before_certified_boundary(
+                        ds, m, leader_id);
+                }
+            }
+        }
+    }
+
+    /// Configuration Leader Completeness holds in any state satisfying the
+    /// dynamic certificate, election-snapshot, log and transfer invariants.
+    ///
+    /// Stated over explicit invariants rather than `RaftSafetyInvariant` so it
+    /// can be used to *establish* that conjunct without circular unfolding.
+    ///
+    /// Because it is a state theorem, no per-transition split into old versus
+    /// freshly created certificates is needed: whatever the step did, the
+    /// post-state satisfies these invariants and the conclusion follows.
+    pub proof fn lemma_dynamic_state_implies_certified_configuration_leader_completeness(
+        ds: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            ElectionLogLenBounded(ds),
+            ElectionLogLenEntryTermBound(ds),
+            LeaderElectionSnapshotRecorded(ds),
+            LogTermsMonotonic(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+        ensures
+            CertifiedConfigurationLeaderCompleteness(ds),
+    {
+        assert forall |index: int, leader_id: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+        implies {
+            &&& ds.server_states[leader_id].log.len() > index
+            &&& ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry
+        } by {
+            assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+            assert(0 <= index);
+
+            // All servers share one universe of identities.
+            assert forall |a: int, e: int|
+                0 <= a < ds.num_servers && 0 <= e < ds.num_servers
+                implies ds.server_constants[a].servers
+                    == ds.server_constants[e].servers
+            by {
+                lemma_all_servers_share_server_universe(ds, a, e);
+            };
+
+            // Certificate terms increase with position, so the leader's term
+            // exceeds every certified boundary up to and including this one.
+            assert forall |m: int|
+                0 <= m < index + 1
+                && ds.configuration_commit_certificates.dom().contains(m)
+                implies ds.server_states[leader_id].current_term
+                    > ds.configuration_commit_certificates[m].entry.term
+            by {
+                if m < index {
+                    lemma_certified_boundary_terms_are_monotonic(ds, index, m);
+                }
+            };
+
+            lemma_existing_leader_holds_certified_boundaries_below_any_bound(
+                ds, leader_id, index + 1);
+        };
+    }
+
     /// Strong induction over certificate positions for an *existing* leader.
     ///
     /// Counterpart of `lemma_certified_boundaries_present_below`, which needs
