@@ -64,15 +64,17 @@ def _block_end(lines, start):
         code = re.sub(r"//.*$", "", line)
         for ch in code:
             if ch in depth:
+                # The body-opening brace is the only `{` that appears outside any
+                # parenthesis or bracket. Everything in a contract is nested:
+                # `UpperBound::UpperBoundFinite{n: ..}` sits inside a call, and an
+                # `if { .. } else { .. }` inside `=~= ( .. )` sits inside parens.
+                # Counting either as the body truncates the function to its
+                # signature, and the merge then carries a fragment.
+                if ch == "{" and depth["("] == 0 and depth["["] == 0:
+                    seen = True
                 depth[ch] += 1
             elif ch in close:
                 depth[close[ch]] -= 1
-        # The body-opening brace is the one still open at end of line. A struct
-        # literal inside a contract -- `UpperBound::UpperBoundFinite{n: ..}` in a
-        # `requires` clause -- opens and closes on one line, and treating it as
-        # the body truncates the function to its signature.
-        if depth["{"] > 0:
-            seen = True
         if seen and all(d <= 0 for d in depth.values()):
             return i
     return len(lines) - 1
@@ -190,15 +192,6 @@ def plan_merge(fresh_text, existing_text, preserve=()):
     # An import whose module path fresh already imports must not be emitted again:
     # `use X::{a, b}` from fresh plus `use X::{b, a, c}` carried over is a
     # duplicate-name error, not two imports. Merge the member sets instead.
-    def _module_path(imp):
-        flat = re.sub(r"\s+", "", imp).rstrip(";")
-        return flat.split("{", 1)[0] if "{" in flat else None
-
-    def _members(imp):
-        flat = re.sub(r"\s+", "", imp).rstrip(";")
-        m = re.match(r"^.*?\{(.*)\}$", flat)
-        return [x for x in m.group(1).split(",") if x] if m else []
-
     fresh_by_path = {}
     for imp in f_imports:
         path = _module_path(imp)
@@ -231,6 +224,29 @@ def plan_merge(fresh_text, existing_text, preserve=()):
             ("impls_absent_from_fresh", dropped_impls),
         ]
     )
+
+
+def _module_path(imp):
+    """The module prefix, for both `use A::B::{c, d};` and `use A::B::c;`.
+
+    Treating a single-name import as having no module path meant
+    `use X::LtUpperBound;` and `use X::{LtUpperBound, ..}` were not seen as
+    overlapping, and both got emitted -- E0252.
+    """
+    flat = re.sub(r"\s+", "", imp).rstrip(";")
+    if "{" in flat:
+        return flat.split("{", 1)[0]
+    if "::" in flat:
+        return flat.rsplit("::", 1)[0] + "::"
+    return None
+
+
+def _members(imp):
+    flat = re.sub(r"\s+", "", imp).rstrip(";")
+    m = re.match(r"^.*?\{(.*)\}$", flat)
+    if m:
+        return [x for x in m.group(1).split(",") if x]
+    return [flat.rsplit("::", 1)[1]] if "::" in flat else []
 
 
 def _import_path(imp):
@@ -286,8 +302,7 @@ def merge(fresh_text, existing_text, preserve=()):
             path.replace("use", "use ", 1), ", ".join(sorted(members))
         )
         for line in fresh_text.split("\n"):
-            flat = re.sub(r"\s+", "", line).rstrip(";")
-            if flat.startswith(path + "{") or flat == "use" + path.lstrip("use"):
+            if line.strip().startswith("use ") and _module_path(line) == path:
                 fresh_text = fresh_text.replace(line, widened, 1)
                 break
 

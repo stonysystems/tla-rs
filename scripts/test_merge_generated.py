@@ -376,5 +376,56 @@ class ContractStructLiteral(unittest.TestCase):
         self.assertEqual(body.count("{"), body.count("}"), body)
 
 
+
+
+class SingleNameImportOverlap(unittest.TestCase):
+    """Phase 42.8.c.2.iv.H. `use X::a;` and `use X::{a, b, c};` are the same
+    module path. Treating a single-name import as having none meant both were
+    emitted (E0252) and, once that was patched, that fresh's single-name form was
+    never widened -- so `b` and `c` went missing and the file stopped compiling
+    for the opposite reason."""
+
+    FRESH = "verus! {\nuse crate::x::a;\npub fn f() {}\n} // verus!\n"
+    EXISTING = "verus! {\nuse crate::x::{a, b, c};\npub fn f() {}\npub fn g() {}\n} // verus!\n"
+
+    def test_module_path_of_a_single_name_import(self):
+        self.assertEqual(mg._module_path("use crate::x::a;"), "usecrate::x::")
+        self.assertEqual(mg._module_path("use crate::x::{a, b};"), "usecrate::x::")
+
+    def test_members_of_a_single_name_import(self):
+        self.assertEqual(mg._members("use crate::x::a;"), ["a"])
+
+    def test_imported_once_and_all_members_kept(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        uses = [l for l in out.split("\n") if l.strip().startswith("use crate::x")]
+        self.assertEqual(len(uses), 1, f"expected one import, got {uses!r}")
+        for member in ("a", "b", "c"):
+            self.assertIn(member, uses[0], f"{member} missing from {uses[0]!r}")
+
+
+class BodyBraceIsTopLevel(unittest.TestCase):
+    """Phase 42.8.c.2.iv.H. A contract can contain braces that stay open across a
+    line -- `=~= ( if cond { .. } else { .. } )` -- so "still open at end of line"
+    is not enough. The body-opening brace is the one outside every paren."""
+
+    def test_if_else_inside_parens_in_a_contract(self):
+        lines = [
+            "proof fn f(s: Seq<T>, x: T)",
+            "    ensures",
+            "        G(s.push(x)) =~= (",
+            "            if P(x) {",
+            "                G(s)",
+            "            } else {",
+            "                G(s).push(x)",
+            "            }",
+            "        ),",
+            "{",
+            "    body();",
+            "}",
+            "proof fn next() {}",
+        ]
+        self.assertEqual(mg._block_end(lines, 0), 11)
+
+
 if __name__ == "__main__":
     unittest.main()

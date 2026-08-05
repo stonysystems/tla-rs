@@ -14886,6 +14886,23 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [x] **42.8.c.2.iv.H** **Election merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `assume(false)` in the merged file 5 → 0; 332 lines changed. Two more merge defects,
+        both the same shape as earlier ones in a case I had not covered:
+        - **`use X::a;` and `use X::{a, b, c};` are the same module path.** `_module_path`
+          returned `None` for a single-name import, so the overlap was invisible and both
+          were emitted (`E0252: LtUpperBound defined multiple times`). Patching that alone
+          then broke it the *other* way — fresh's single-name form was never widened, so
+          `UpperBound` and `UpperBoundedAddition` went missing and the file failed with
+          `cannot find type UpperBound`. Both directions now covered.
+        - **"Still open at end of line" was not enough for the body brace.** My struct-literal
+          fix in D used that rule, and a contract can hold braces that *stay* open across
+          lines: `G(s.push(x)) =~= ( if P(x) { … } else { … } )`. The body-opening brace is
+          the one outside **every paren**, which covers both cases. Verified across all seven
+          modules: no parsed body is brace- or paren-unbalanced.
+        Each fix is regression-tested, and the second test pins the exact contract shape that
+        broke it rather than a generic one.
+
   - [x] **42.8.c.2.iv.G** **Executor merged. `1046 verified, 0 errors`.** (2026-08-05)
         `merge_generated.py --preserve` had the *same* free-functions-only blind spot the
         drift check did, so it rejected all 17 method names outright — the protection was
