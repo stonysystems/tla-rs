@@ -16903,6 +16903,16 @@ value per hour, not by phase number:
       turned into no-ops. Delete them. Mechanical, zero risk, but re-verify: removing a
       no-op can still change what the solver has in scope.
 
+      Census (from the 54.10 pass, `/tmp/w1.log`) — **it does not all belong in one commit**:
+      `maps.rs` 17, `set_lib_ext_v.rs` 12, `sets.rs` 10, `learner.rs` 6,
+      `environment_s.rs` 5, `quorum.rs` 3, `chosen.rs` 3, `hashsets.rs` 3,
+      `refinement.rs` 2, `Raft/invariants.rs` 2, `learner_state.rs` 1, `environment.rs` 1,
+      `Raft/raft.rs` 1 — and **2 in `src/generated/Raft/raft_gen.rs`**.
+      - [ ] **54.11.a** The 66 hand-written ones. Delete per file, re-verify after each group.
+      - [ ] **54.11.b** The 2 in `src/generated/Raft/raft_gen.rs`. Per CLAUDE.md these must
+            not be hand-edited: find where the transpiler emits `.finite()`, stop emitting it,
+            regenerate. They will regrow on every regeneration until that is fixed.
+
 - [ ] **54.12** The 20 `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and
       says outright it "is dangerous since it assumes the given function describes a finite
       set" — so unlike the rest of this list these are a real proof gap, not noise. All 20 are
