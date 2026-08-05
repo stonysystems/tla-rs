@@ -17052,14 +17052,25 @@ value per hour, not by phase number:
                   need the bridge at *both* sequences.
                   Done additively: the bridge lemma was committed green before the definition
                   swap was attempted, so the tree was never left half-migrated.
-            - [ ] **54.12.c.2c** `ProduceIntermediateAbstractState` — the last 4 warnings
-                  (`refinement.rs:64`, `:69`; the other 2 are 54.12.b's generated site,
-                  blocked on 42.8.c). Its bound is
-                  `if bn == batches.len()-1 { reqs_in_last_batch } else { batches[bn].len() }`,
-                  so it needs a truncated-bound variant of `ReplySeqFromRequestBatches` and a
-                  matching bridge. For requests, `batches.drop_last().push(batches.last().take(n))`
-                  should let `lemma_requests_contains` apply unchanged — worth trying before
-                  writing a third lemma.
+            - [x] **54.12.c.2c** `ProduceIntermediateAbstractState`. **DONE (2026-08-05)**,
+                  `1046 verified, 0 errors`, notes 120, trigger diff 0/0/0.
+                  **`Set::new_assuming_finite` is now gone from all hand-written code** — the
+                  only 2 warnings left in the crate are 54.12.b's generated site, blocked on
+                  the 42.8.c merge, and its template is already fixed. Crate warnings: 3.
+                  Its per-batch bound is `if bn == last { reqs_in_last_batch } else {
+                  batches[bn].len() }`, so it needed `IntermediateBatchLen` plus bounded
+                  `IntermediateRequestSeq`/`IntermediateReplySeq` and their two bridges,
+                  rather than reusing the unbounded ones. The
+                  `batches.drop_last().push(batches.last().take(n))` idea floated earlier was
+                  not needed — a bound function is simpler and works for replies too, which
+                  that idea did not cover.
+                  Both bridges proved first try, reusing the witness structure from c.2a/c.2b.
+                  Callers needed the intermediate bridge at whichever `n` their state used —
+                  `0`, `reqs_in_last_batch`, `reqs_in_last_batch + 1`, and
+                  `batches.last().len()` all appear — and two `==` set assertions again had to
+                  become `assert forall … <==> …` plus `=~=`.
+                  Two `assert forall`s picked up auto-chosen triggers (120 → 122) and are
+                  pinned; a change made *for* Phase 54 should not leak new notes.
       - [ ] ~~superseded~~ original 54.12.c note (64/69 in
             `ProduceAbstractStateFromBatches`, 82/87 in `ProduceAbstractState` — 4 warnings,
             3 distinct shapes). These build `{req | ∃ batch_num, req_num. bounds ∧ …}` over a
