@@ -161,6 +161,17 @@ class EndToEnd(unittest.TestCase):
         with open(os.path.join(scripts, "rsl_merge_preserve.txt"), "w") as fh:
             fh.write("m CKept\n")
 
+        # fresh transpiler output: contains CKept and CPlain, but not CSkipped
+        # (skipped) and not CHandwritten (a helper that merely lives in the
+        # generated file and is named in no config).
+        self.fresh = os.path.join(self.root, "fresh")
+        os.makedirs(self.fresh)
+        with open(os.path.join(self.fresh, "m_gen.rs"), "w") as fh:
+            fh.write(
+                "pub exec fn CKept() {\n    b();\n}\n"
+                "pub exec fn CPlain() {\n    c();\n}\n"
+            )
+
         self.log = (
             note("src/generated/RSL/m_gen.rs", 2, VEC_SRC)
             + note("src/generated/RSL/m_gen.rs", 5, VEC_SRC)
@@ -170,7 +181,7 @@ class EndToEnd(unittest.TestCase):
         )
 
     def test_each_note_lands_in_its_origin(self):
-        r = ct.classify(self.log, self.root)
+        r = ct.classify(self.log, self.root, self.fresh)
         self.assertEqual([x[2] for x in r["skip"]], ["CSkipped"])
         self.assertEqual([x[2] for x in r["preserve"]], ["CKept"])
         self.assertEqual([x[2] for x in r["generated"]], ["CPlain", "CPlain"])
@@ -182,12 +193,31 @@ class EndToEnd(unittest.TestCase):
     def test_shape_is_recorded_alongside_origin(self):
         # The decision needs both: emitted-and-known-shape is the only cell a
         # regeneration clears. `CPlain` has one of each.
-        gen = ct.classify(self.log, self.root)["generated"]
+        gen = ct.classify(self.log, self.root, self.fresh)["generated"]
         self.assertEqual(sorted(x[3] for x in gen), ["other", "vec-element"])
 
     def test_totals_account_for_every_note(self):
         r = ct.classify(self.log, self.root)
         self.assertEqual(sum(len(v) for v in r.values()), 5)
+
+    def test_without_fresh_output_nothing_is_claimed_to_be_emitted(self):
+        # Phase 54.10.b. Inferring "emitted" from "not skipped and not
+        # preserved" reported 13 emitted notes when the true number was 3: a
+        # hand-written helper can simply live in a generated file and appear in
+        # no config at all. Unverified must not masquerade as actionable.
+        r = ct.classify(self.log, self.root)
+        self.assertEqual(r["generated"], [])
+        self.assertEqual([x[2] for x in r["unverified"]], ["CPlain", "CPlain"])
+
+    def test_a_helper_absent_from_fresh_output_is_not_emitted(self):
+        # CPlain is in fresh output; a same-shaped note in a function that is
+        # not must land in handwritten-unlisted, not generated.
+        log = self.log + note("src/generated/RSL/m_gen.rs", 11, VEC_SRC)
+        with open(os.path.join(self.root, "src", "generated", "RSL", "m_gen.rs"), "a") as fh:
+            fh.write("pub exec fn CHandwritten() {\n    d();\n}\n")
+        r = ct.classify(log, self.root, self.fresh)
+        self.assertEqual([x[2] for x in r["handwritten-unlisted"]], ["CHandwritten"])
+        self.assertEqual([x[2] for x in r["generated"]], ["CPlain", "CPlain"])
 
 
 if __name__ == "__main__":

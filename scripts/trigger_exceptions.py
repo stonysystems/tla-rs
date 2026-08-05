@@ -137,17 +137,22 @@ RULES = [
     ),
     (
         lambda e: e["file"].startswith("src/generated/"),
-        "generated-emitted",
-        "transpiler output",
-        "Cannot be hand-edited (`CLAUDE.md`). These used to be the group that "
-        "would clear once the blocked regeneration landed. **It has landed** "
-        "(42.8.c.2.iv.J, 2026-08-05: all seven RSL modules reconciled), and it "
-        "removed the notes whose shape codegen knows -- `scripts/"
-        "classify_trigger_notes.py` now reports **0 deliverable by "
-        "regeneration**. What remains here is transpiler output carrying shapes "
-        "54.7.a does not annotate, so clearing it needs *new codegen work*, not "
-        "another merge. Each is a distinct shape rather than one dominant "
-        "pattern, which is why they were left to last.",
+        "generated-unlisted",
+        "hand-written body in a generated file, named in no config",
+        "Cannot be hand-edited (`CLAUDE.md`). This group used to be called "
+        "\"generated-emitted\" and was described as transpiler output that a "
+        "regeneration would clear. **Both halves were wrong**, and the error was "
+        "an inference rather than a measurement: membership was decided by "
+        "*not* being in `skip_functions` and *not* being preserve-listed, which "
+        "is not the same as being emitted. Checked against fresh transpiler "
+        "output on 2026-08-05 (Phase 54.10.b), **none of them are emitted** -- "
+        "they are hand-written helpers (`abstractify_endpoint_seqno_map`, "
+        "`lemma_creplycache_get`, the proposer bridge lemmas) that simply live "
+        "in a generated file and appear in no config at all. Regeneration never "
+        "rewrites them, so they are in the same position as the preserved group: "
+        "the only compliant fix is to teach the transpiler to generate the "
+        "function. `scripts/classify_trigger_notes.py --fresh-dir` now verifies "
+        "this rather than assuming it.",
     ),
     (
         lambda e: True,

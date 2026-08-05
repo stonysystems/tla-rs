@@ -63,15 +63,20 @@ class TestClassification(unittest.TestCase):
     def test_generated_files_are_their_own_reason(self):
         # a line that is not inside any preserved body
         key, _, _ = te.classify(entry("src/generated/RSL/replica_gen.rs"))
-        self.assertEqual(key, "generated-emitted")
+        self.assertEqual(key, "generated-unlisted")
 
     def test_generated_notes_are_split_by_provenance(self):
         """Phase 54: a note inside a `skip_functions` body is hand-written code
         that regeneration copies through verbatim. Calling it "transpiler
         output" gives it a reason -- "blocked on regeneration" -- that can never
-        come true, so the two must not share a category."""
+        come true, so the two must not share a category.
+
+        Phase 54.10.b renamed the other side from `generated-emitted` to
+        `generated-unlisted`: membership is decided by absence from the configs,
+        which is *not* evidence of being emitted. Measured against fresh output,
+        none of them were."""
         emitted = te.classify(entry("src/generated/RSL/replica_gen.rs"))[0]
-        self.assertEqual(emitted, "generated-emitted")
+        self.assertEqual(emitted, "generated-unlisted")
         # `LAcceptorProcess1a` is in acceptor's skip_functions, so a note inside
         # `CAcceptorProcess1a` is preserved hand-written code.
         line = _line_inside(
@@ -108,7 +113,7 @@ class TestRendering(unittest.TestCase):
         text = te.render(inv, te.build(inv))
         total, per = te.extract_counts(text)
         self.assertEqual(total, 2)
-        self.assertEqual(per, {"generated-emitted": 1, "unclassified": 1})
+        self.assertEqual(per, {"generated-unlisted": 1, "unclassified": 1})
 
     def test_individual_sites_are_listed_for_actionable_groups(self):
         inv = inventory([entry("src/protocol/RSL/b.rs", 42, ["s.contains(p)"])])

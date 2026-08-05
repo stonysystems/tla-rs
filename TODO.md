@@ -31,13 +31,12 @@ codegen pipeline this phase opened is drained, and the ceiling is tightened to 7
 cannot silently regrow.
 
 **What is left, and it is only two things:**
-- **10 notes** are transpiler output carrying shapes 54.7.a does not annotate. Clearing them
-  needs *new codegen work*, one shape at a time — no dominant pattern remains. (Was 13;
-  54.7.e cleared the 3 learner map-lemma notes.)
-- **64 notes** sit in `skip_functions` or preserved hand-written bodies. `CLAUDE.md`
-  forecloses both answers 54.7.c/d proposed (editing in place, and extracting to
-  `*_manual.rs`), so the only compliant route is teaching the transpiler to generate those
-  functions. Recorded in `docs/rsl-skip-functions.md`.
+**All 74 sit in hand-written bodies.** Verified against fresh transpiler output on
+2026-08-05 (54.10.b), not inferred: `classify_trigger_notes.py --fresh-dir` reports
+**0 emitted**. There is no codegen work left in this phase — `CLAUDE.md` forecloses both
+answers 54.7.c/d proposed (editing in place, and extracting to `*_manual.rs`), so the only
+compliant route for any of the 74 is teaching the transpiler to generate the function.
+Recorded in `docs/rsl-skip-functions.md`.
 
 **42.8.c final (2026-08-05).** Six of seven RSL modules are reconciled and the crate is at
 `1046 verified, 0 errors`, notes 103, warnings 3.
@@ -17338,6 +17337,23 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 The other 11 are pinned.** The remaining 2 need the enclosing expression restructured (hoist the inner
 quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
 they are the honest remainder of the "not mechanical" warning in this phase's premise.
+- [x] **54.10.b — "emitted" was inferred, not measured; the true count was 3, not 13.**
+      `classify_trigger_notes.py` decided its `generated` category by *absence* — not in
+      `skip_functions`, not preserve-listed — and called the result transpiler output. That
+      is not the same thing: a hand-written helper can simply live in a generated file and
+      appear in no config at all. Found by going to fix the "10 remaining emitted notes" and
+      failing to find any emission site in the transpiler; checking fresh output showed
+      **none of the 10 are emitted** (`abstractify_endpoint_seqno_map`,
+      `lemma_creplycache_get`, the proposer bridge lemmas, …). The 3 that really were
+      emitted are exactly the 3 that 54.7.e cleared, which is the confirming evidence.
+      Fixed by verifying against fresh output: `--fresh-dir` classifies precisely, and
+      without it the notes are reported as `unverified` rather than assumed actionable.
+      `trigger_exceptions.py`'s category renamed `generated-emitted` → `generated-unlisted`
+      with a corrected description. 5 new tests, including that an unverified run claims
+      nothing.
+      **Consequence: Phase 54 has no codegen work left.** All 74 remaining notes are
+      hand-written bodies, so the phase is now entirely behind the `CLAUDE.md` question in
+      54.7.c/d.
 - [x] **54.10.a — the `changed triggers` false positive, FIXED 2026-08-05. My recorded
       diagnosis was wrong and the real cause is narrower.** I wrote that the diff keys on
       `file:line`. It does not — `entry_key` was already
@@ -17363,9 +17379,9 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
       The *key-set* assert in the same lemmas (`abs2.contains_key(ak) == expected.contains_key(ak)`)
       is deliberately left alone: it emits no note, so there is no chosen trigger to pin and
       annotating it would be a change with no evidence behind it. The test says so.
-      Remaining emitted notes: 10, in `proposer_gen.rs` (8) and `executor_gen.rs` (2) — all
-      `choose` binders and an inner `exists`, each with a clear chosen trigger (`k@`, `ep@`,
-      `packets.contains(p)`, `s.contains(cp)`), but emitted from sites not yet located.
+      **The "remaining 10 emitted notes" recorded here were not emitted at all** — see
+      54.10.b. Looking for their emission sites in the transpiler is what exposed it: they
+      are not there.
 - [x] **54.9.b — ceiling tightened to 77 (2026-08-05)**, from the stale 120 that would have
       allowed 43 notes of silent regrowth. Verified the guard actually bites: it passes at 77
       and exits 1 at 78. The baseline was refreshed at the same time, which also resolved the

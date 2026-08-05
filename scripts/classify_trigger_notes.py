@@ -15,8 +15,15 @@ decides deliverability:
     preserve  listed in `rsl_merge_preserve.txt` -- fresh output *does* contain
               this function, but the merge deliberately keeps the existing body.
               A codegen fix reaches these only if the preserve entry is dropped.
-    generated  neither -- the transpiler produces this body, so a codegen fix
-              plus regeneration delivers the note. These are actionable now.
+    generated  neither, **and fresh transpiler output really contains it** --
+              so a codegen fix plus regeneration delivers the note. Verifying
+              against fresh output is the whole point: inferring "emitted"
+              from "not skipped and not preserved" is wrong, because a
+              hand-written helper can simply live in a generated file without
+              appearing in any config. That inference reported 13 emitted notes
+              when the true number was 3 (Phase 54.10.b).
+    unverified neither, but no fresh output was supplied to check against, so
+              whether the transpiler emits it is unknown. Pass --fresh-dir.
 
 Usage:
     classify_trigger_notes.py <verification.log> [--root .] [--json]
@@ -164,11 +171,30 @@ def module_of(path):
     return base[: -len("_gen.rs")] if base.endswith("_gen.rs") else None
 
 
-def classify(log_text, root="."):
-    """{category: [(file, line, function)]} plus notes outside src/generated."""
+def load_fresh_names(fresh_dir, module):
+    """Function names fresh transpiler output contains for `module`, or None.
+
+    `None` means "no fresh output supplied", which is different from "fresh
+    output contains nothing" -- the caller reports those differently.
+    """
+    if not fresh_dir:
+        return None
+    path = os.path.join(fresh_dir, f"{module}_gen.rs")
+    if not os.path.exists(path):
+        return None
+    free, impls, _ = mg.parse_items(open(path).read())
+    names = set(free)
+    for methods in impls.values():
+        names |= set(methods)
+    return names
+
+
+def classify(log_text, root=".", fresh_dir=None):
+    """{category: [(file, line, function, shape)]} plus notes outside src/generated."""
     out = collections.defaultdict(list)
     spans_cache = {}
     skips_cache = {}
+    fresh_cache = {}
     preserve_path = os.path.join(root, "scripts", "rsl_merge_preserve.txt")
 
     for path, line, src in parse_note_locations(log_text):
@@ -198,7 +224,17 @@ def classify(log_text, root="."):
         elif short in preserved or fn in preserved:
             out["preserve"].append((path, line, fn, shape))
         else:
-            out["generated"].append((path, line, fn, shape))
+            if module not in fresh_cache:
+                fresh_cache[module] = load_fresh_names(fresh_dir, module)
+            fresh = fresh_cache[module]
+            if fresh is None:
+                out["unverified"].append((path, line, fn, shape))
+            elif short in fresh or fn in fresh:
+                out["generated"].append((path, line, fn, shape))
+            else:
+                # Hand-written, but named in no config -- it simply lives in a
+                # generated file. Regeneration never rewrites it.
+                out["handwritten-unlisted"].append((path, line, fn, shape))
     return out
 
 
@@ -212,11 +248,17 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("log")
     p.add_argument("--root", default=".")
+    p.add_argument(
+        "--fresh-dir",
+        help="directory of freshly transpiled <module>_gen.rs files; without it, "
+        "notes that are neither skipped nor preserved are reported as `unverified` "
+        "rather than assumed to be transpiler output",
+    )
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
     with open(args.log) as fh:
-        result = classify(fh.read(), args.root)
+        result = classify(fh.read(), args.root, args.fresh_dir)
 
     if args.json:
         print(json.dumps({k: v for k, v in sorted(result.items())}, indent=2))
@@ -224,7 +266,15 @@ def main(argv=None):
 
     total = sum(len(v) for v in result.values())
     print(f"{total} auto-chosen-trigger notes")
-    for category in ("generated", "preserve", "skip", "not-generated", "unattributed"):
+    for category in (
+        "generated",
+        "unverified",
+        "handwritten-unlisted",
+        "preserve",
+        "skip",
+        "not-generated",
+        "unattributed",
+    ):
         items = result.get(category, [])
         if not items:
             continue
@@ -251,7 +301,7 @@ def main(argv=None):
         f"  needs new codegen work: {len(gen) - len(ready)} emitted but an "
         f"unhandled shape\n"
         f"  not reachable by regeneration: "
-        f"{len(result.get('skip', [])) + len(result.get('preserve', []))} "
+        f"{len(result.get('skip', [])) + len(result.get('preserve', [])) + len(result.get('handwritten-unlisted', []))} "
         f"(hand-written or preserved bodies)"
     )
     return 0
