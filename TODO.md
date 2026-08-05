@@ -17055,8 +17055,7 @@ merely annoys.
   queue array)" — false on a spec whose only update is `msgs' = {}` (zero
   EXCEPTs) and on Jetpack's `messages`, which the module never assigns at all.
   It now reports what it observed, including "this module never assigns it".
-- [ ] **Whole-array reads and writes are not checked.** — **READS DONE 2026-08-05; writes
-  still open.** `Cardinality(state)` in an action now reports C2. The two exemptions the
+- [x] **Whole-array reads and writes are not checked.** — **DONE 2026-08-05.** `Cardinality(state)` in an action now reports C2. The two exemptions the
   contract names are what make the rule usable, and both were found by measurement rather
   than reasoning:
   - **an `EXCEPT` base is not a read.** `[sendSeq EXCEPT ![s] = ..]` names `sendSeq` bare
@@ -17070,8 +17069,18 @@ merely annoys.
   keep their existing counts — so it is covered by four unit tests instead, including one
   per exemption. That is worth stating plainly: the rule is real but unexercised by the
   corpus, and the first spec to need it will be the first real test.
-  Still open: the whole-array **write**, `x' = [i \in Node |-> ..]` in an action (only
-  `Init` may do it).
+  **Writes done too.** `x' = [i \in Node |-> ..]` in an action now reports C2. `Init` is
+  exempt *structurally* rather than by special case — C2 only walks operators reachable
+  from `Next`, and `Init` is not one. The rule keys on the constructor being the **direct**
+  right-hand side, which is what keeps Lamport-mutex's
+  `[sendSeq EXCEPT ![s] = [d \in Proc |-> ..]]` clean: that advances every *destination*
+  counter within node `s`, a single-node step.
+  **Known limit, recorded rather than left to be rediscovered**: a spec that hides the
+  constructor behind a helper (`x' = BuildAll(s)`) is not caught. Following returned values
+  needs the value analysis C2's indexed branch also lacks. Not flagging is the safe
+  direction.
+  Corpus impact of both rules: **none** — all ten originals and all eight `clean.tla` keep
+  their counts, checked before trusting either rule.
 - [ ] **Messages with no `src`/`dst` are accepted**, though the framework cannot
   route them. Also now in the contract, not in the linter.
 - [ ] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally**, with

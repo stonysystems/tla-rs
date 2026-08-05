@@ -893,6 +893,10 @@ impl<'a> LintContext<'a> {
             ));
             return;
         }
+        let node_set_name = report
+            .node_set
+            .clone()
+            .expect("guarded above: C2 returns early without a node set");
         // The network is exempt: reading messages other nodes sent is what a
         // network is for, and a malformed one is C4's single decision, not one
         // C2 finding per read of it.
@@ -910,6 +914,22 @@ impl<'a> LintContext<'a> {
             let Some(op) = self.operator(&op_name) else {
                 continue;
             };
+            let mut writes = Vec::new();
+            self.collect_whole_array_writes(&op.body, &per_node, &node_set_name, &mut writes);
+            writes.sort();
+            writes.dedup();
+            for var in writes {
+                report.findings.push(self.finding(
+                    CleanRule::C2,
+                    Some(op),
+                    format!(
+                        "assigns `{var}` as a whole array -- one step that updates every \
+                         node at once. A node taking this step can only write \
+                         `{var}[{node_param}]`. Only `Init` may build the whole function."
+                    ),
+                ));
+            }
+
             let mut whole = Vec::new();
             self.collect_whole_array_reads(&op.body, &per_node, &mut whole);
             whole.sort();
@@ -1041,6 +1061,51 @@ impl<'a> LintContext<'a> {
     }
 
     /// Collect `x[e]` reads of per-node variables where `e` is not the node.
+    /// Per-node variables assigned as a whole array: `x' = [i \in Node |-> ..]`.
+    ///
+    /// The contract allows this only in `Init` (`docs/clean_tla_subset.md`, C2:
+    /// "Writing the whole array is out ... a step that updates every node. Only
+    /// `Init` may do it"). Scanning only the operators reachable from `Next` is
+    /// what exempts `Init`, so the exemption needs no special case.
+    ///
+    /// The constructor must be the **direct** right-hand side. A constructor
+    /// over the node set nested inside an `EXCEPT` updates one node's inner
+    /// table -- Lamport-mutex's `[sendSeq EXCEPT ![s] = [d \in Proc |-> ..]]`
+    /// advances every *destination* counter within node `s`, which is a
+    /// single-node step.
+    ///
+    /// Known limit: a spec that hides the constructor behind a helper
+    /// (`x' = BuildAll(s)`) is not caught. Following returned values would need
+    /// the value analysis C2's indexed branch also lacks; not flagging is the
+    /// safe direction, and this comment is the record that it is a gap rather
+    /// than a decision.
+    fn collect_whole_array_writes(
+        &self,
+        expr: &TlaExpr,
+        per_node: &BTreeSet<&str>,
+        node_set: &str,
+        out: &mut Vec<String>,
+    ) {
+        if let TlaExpr::BinOp { op, left, right } = expr {
+            if matches!(op, TlaBinOp::Eq) {
+                if let TlaExpr::Prime(inner) = &**left {
+                    if let TlaExpr::Ident(v) = &**inner {
+                        if per_node.contains(v.as_str()) {
+                            if let TlaExpr::FnConstruct { domain, .. } = &**right {
+                                if self.show(domain) == node_set {
+                                    out.push(v.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_whole_array_writes(child, per_node, node_set, out)
+        });
+    }
+
     /// Per-node variables read *as a whole array* -- named without an index.
     ///
     /// `Cardinality(state)` observes every node at once, which the contract
@@ -1639,6 +1704,73 @@ Next == clock' = clock + 1
         // a consumer reading only `violations` cannot tell the difference; the
         // two lists are what make the number interpretable
         assert!(json.contains(r#""rule":"C1","reason":"#), "{json}");
+    }
+
+    /// Phase 52: "Writing the whole array is out ... a step that updates every
+    /// node. Only `Init` may do it" (`docs/clean_tla_subset.md`, C2).
+    #[test]
+    fn rejects_assigning_a_per_node_variable_as_a_whole_array() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES state
+TypeOK == state \in [Proc -> Nat]
+Step(p) == state' = [i \in Proc |-> state[i] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C2 && f.message.contains("assigns")),
+            "a whole-array write must be C2: {:?}",
+            report.findings
+        );
+    }
+
+    /// `Init` builds the whole function by definition, and must stay clean. The
+    /// exemption is structural rather than special-cased: C2 only walks the
+    /// operators reachable from `Next`.
+    #[test]
+    fn init_may_build_the_whole_array() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES state
+TypeOK == state \in [Proc -> Nat]
+Init == state = [i \in Proc |-> 0]
+Step(p) == state' = [state EXCEPT ![p] = state[p] + 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("assigns")),
+            "Init is where the whole function is built: {:?}",
+            report.findings
+        );
+    }
+
+    /// The exemption that keeps the rule usable, and the reason it keys on the
+    /// *direct* right-hand side: a constructor over the node set nested inside
+    /// an `EXCEPT` updates one node's inner table. Lamport-mutex's `AdvanceAll`
+    /// advances every destination counter within node `s` -- a single-node step.
+    #[test]
+    fn a_constructor_nested_in_an_except_is_not_a_whole_array_write() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES sendSeq
+TypeOK == sendSeq \in [Proc -> [Proc -> Nat]]
+Step(s) == sendSeq' = [sendSeq EXCEPT ![s] = [d \in Proc |-> sendSeq[s][d] + 1]]
+Next == \E s \in Proc : Step(s)
+===="#;
+        let report = lint(source);
+        assert!(
+            report.is_clean(),
+            "updating one node's inner table is a single-node step: {:?}",
+            report.findings
+        );
     }
 
     /// Phase 52: "Reading the whole array is a cross-node read, even without an
