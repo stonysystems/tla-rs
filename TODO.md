@@ -16804,6 +16804,22 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       `test_vec_element_ensures_emits_explicit_trigger`, which asserts the emitted text
       rather than a regenerated file, for the reason in 54.7.b.
 - [ ] **54.7.b** Regenerate `src/generated/RSL/` and confirm the notes are gone.
+      **PARTIAL DELIVERY (2026-08-05): acceptor done, 120 → 116 notes, `1046 verified,
+      0 errors`.** The route was not the one this item assumed. Acceptor's 4 notes are inside
+      `CAcceptorProcess1a`/`2a`, which are `skip_functions` — so they are *not* transpiler
+      output and regenerating alone would have delivered nothing. But those bodies come from
+      `manual_code = acceptor_manual.rs`, a **hand-written file `CLAUDE.md` does not cover**,
+      which the transpiler inlines. Annotating the four quantifiers there and regenerating
+      put them into `acceptor_gen.rs` through the transpiler, as the policy requires.
+      Acceptor was eligible because its merge is lossless: after the 42.8.c parser fixes,
+      `rustfmt` on the merged output reproduces the checked-in file **exactly**, so the only
+      diff is the four annotations.
+      Not repeatable elsewhere yet: `executor_manual.rs` holds 2 more preserved notes, but
+      executor's merge diff is 623 lines, so annotating it now would only desynchronise the
+      manual source from the generated file. The other 21 preserved notes are in modules with
+      no `manual_code` at all (learner, election, proposer, replica) — their bodies are
+      preserved by copy-from-backup, so the generated file *is* the only source and they stay
+      blocked on the merge.
       **CORRECTION (2026-08-05): the blocker I recorded here was wrong, and is now much
       smaller.** I wrote that regeneration "rewrites `types_gen.rs` with 53 lines deleted,
       dropping hand-added imports". It does not. All **43 imports survive**; the 53-line
