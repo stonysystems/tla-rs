@@ -67,6 +67,34 @@ def _enclosing_fn(path, line):
     return None
 
 
+def _preserve_list_by_module(repo_root="."):
+    """Names in `scripts/rsl_merge_preserve.txt`, per module.
+
+    `skip_functions` alone is the wrong test for "regeneration cannot reach this
+    body". A function can be emitted fresh and still have its body preserved by
+    `merge_generated.py --preserve` -- which is the case for the 17 `&mut self`
+    protocol actions whose fresh output is an `assume(false)` stub. Notes inside
+    those were being reported as transpiler output that regeneration would
+    clear, and it never will (Phase 42.8.c.2.iv.G).
+    """
+    path = os.path.join(repo_root, "scripts", "rsl_merge_preserve.txt")
+    out = {}
+    try:
+        with open(path) as fh:
+            text = fh.read()
+    except OSError:
+        return out
+    for line in text.split("\n"):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 2 or (len(parts) == 3 and parts[2] == "accept-fresh"):
+            continue  # accept-fresh takes the transpiler's version
+        out.setdefault(parts[0], set()).add(parts[1])
+    return out
+
+
 def _in_preserved_body(entry, skip_by_module, repo_root="."):
     path = entry["file"]
     if "generated/RSL/" not in path:
@@ -77,12 +105,14 @@ def _in_preserved_body(entry, skip_by_module, repo_root="."):
         return False
     base = fn[1:] if fn.startswith("C") else fn
     stem = base[:-4] if base.endswith("_mut") else base
-    candidates = {base, stem, "L" + base, "L" + stem}
-    return bool(candidates & skip_by_module.get(mod, set()))
+    candidates = {base, stem, "L" + base, "L" + stem, fn}
+    preserved = skip_by_module.get(mod, set()) | _PRESERVE_BY_MODULE.get(mod, set())
+    return bool(candidates & preserved)
 
 
 # Why a note is still here. Order matters: the first matching rule wins.
 _SKIP_BY_MODULE = _skip_functions_by_module()
+_PRESERVE_BY_MODULE = _preserve_list_by_module()
 
 RULES = [
     (
