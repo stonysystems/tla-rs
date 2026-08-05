@@ -17331,39 +17331,20 @@ value per hour, not by phase number:
               set library, so deleting is a judgement call worth making deliberately: the
               alternative is keeping them with `#[allow(deprecated)]` and a note that they
               are trivially true under vstd 0.2026.08.
-      - [ ] **54.11.c** **28 more `.finite()` calls exist that Verus never warned about**,
-            because they are in modules that are not compiled: both `src/protocol/mod.rs:1`
-            and `src/services/mod.rs:1` read `// pub mod lock;`. They are in
-            `services/lock/main_s.rs` (11), `protocol/lock/distributed_system_procotol_i.rs`
-            (7), `services/lock/distributed_system_s.rs` (6), and
-            `protocol/lock/refinement_proof_i.rs` (4, including
-            `lemma_lock_sentPackets_finite`, vacuous for the same reason as the RSL one).
-            Reconciled: 53 `.finite()` in `src/` = 17 warned + 8 in comments + 28 dead.
-            Nothing here is urgent, but 54.11 must not be recorded as "zero" without it —
-            re-enabling the lock tree brings all 28 warnings back. The three call sites that
-            referenced lemmas deleted in a.2 were updated, so the tree is at least
-            consistent with the code around it.
-            **This generalises past 54.11**: every warning count in Phase 54 is a count over
-            *compiled* modules only, and the same is true of the 120 trigger notes.
-
-- [ ] **54.12** The `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and says
-      outright it "is dangerous since it assumes the given function describes a finite set" —
-      so unlike the rest of this list these are a real proof gap, not noise.
-
-      Two corrections to the original item. **It is 10 sites, not 20**: Verus reports each
-      once per verification chunk, so the warning count double-counts. And **they are not all
-      the same shape** — only 7 are the "image of a finite `HashMap` domain" idiom; the other
-      3 are set comprehensions over index pairs into a `Seq<RequestBatch>`, which is a
-      different and much harder problem.
-
-      The right replacement for the map-domain idiom is not "discharge finiteness" but
-      "don't create the obligation": `m@.dom().map(|k| k@)` *is* the image of the domain, and
-      `Set::map` is total with a finite result by construction. `Set::new` in this vstd
-      returns `Option<Set<A>>` (`None` when infinite), so going that way would mean an
-      `unwrap` plus a finiteness proof at every site — strictly worse. `Set::lemma_map_contains`
-      is in `group_set_lib_default`, so the membership characterisation the old predicate gave
-      definitionally is still available to proofs.
-
+      - [x] **54.11.c** The 28 `.finite()` calls in the lock tree. **Closed 2026-08-05 as
+            not worth doing, and the reason changes the framing.** I had recorded these as
+            "they will regrow when the lock tree is re-enabled". Checking the history: both
+            `src/protocol/mod.rs` and `src/services/mod.rs` have carried `// pub mod lock;`
+            **since the initial commit** — `7fdd2080` only deleted a *duplicate* commented
+            declaration. The tree has never compiled in this repo; it is inherited dead code
+            from the IronFleet port, not something switched off pending a return.
+            Nothing outside it references it (checked). It is **1,689 lines across 10 files**.
+            Deleting 28 no-op `.finite()` calls in never-compiled code is busywork, and worse,
+            unverifiable — no Verus run covers it, so an edit could break it silently.
+            **The real question is whether the tree stays at all**, which is a judgement call
+            worth making deliberately rather than as a side effect of a warning sweep:
+            delete it, or re-enable it and fix what that surfaces. Either is a proper task;
+            neither is "tidy the finite() calls".
       - [x] **54.12.a** The 6 hand-written map-domain sites: `types_i.rs` 324/461/570
             (`abstractify_creplycache`, `abstractify_cvotes`, `abstractify_clearnerstate`) and
             `ProposerImpl.rs` 108/132. **DONE (2026-08-05)**, `1040 verified, 0 errors` with
