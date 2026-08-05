@@ -16876,7 +16876,8 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 | `src/protocol/RSL/refinement_proof/state_machine.rs` | 1 | same nested-quantifier shape |
 | `src/implementation/RSL/cconfiguration.rs` | 1 | same |
 
-The 13 nested-quantifier cases need the enclosing expression restructured (hoist the inner
+**Superseded 2026-08-05 — only 2 of these 13 were really nested; see the acceptance row.
+The other 11 are pinned.** The remaining 2 need the enclosing expression restructured (hoist the inner
 quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
 they are the honest remainder of the "not mechanical" warning in this phase's premise.
 - [x] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
@@ -16905,7 +16906,7 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
 
 | criterion | status |
 |---|---|
-| 0 `automatically chose triggers` notes, **or** a checked-in list of the deliberate exceptions with a reason for each | **MET via the list.** 534 → **120**. `reports/triggers/exceptions.md` accounts for every remaining note. **Corrected 2026-08-05**: the 107 in `src/generated/` were all labelled "transpiler output, blocked on regeneration". Measuring the enclosing function against each module's `skip_functions` shows **80 are transpiler-emitted** (these do clear when 42.8.c lands) and **27 sit in preserved hand-written bodies** — regeneration copies those through verbatim, so 54.7.b can never clear them however the merge goes. Now two categories with separate reasons: 80 + 27 + 13 nested-quantifier. Generated from a measured inventory by `scripts/trigger_exceptions.py`, and CI runs `--check` so it cannot silently drift. |
+| 0 `automatically chose triggers` notes, **or** a checked-in list of the deliberate exceptions with a reason for each | **MET via the list.** 534 → **120**. `reports/triggers/exceptions.md` accounts for every remaining note. **Corrected 2026-08-05**: the 107 in `src/generated/` were all labelled "transpiler output, blocked on regeneration". Measuring the enclosing function against each module's `skip_functions` shows **80 are transpiler-emitted** (these do clear when 42.8.c lands) and **27 sit in preserved hand-written bodies** — regeneration copies those through verbatim, so 54.7.b can never clear them however the merge goes. Now two categories with separate reasons. **Corrected again**: 534 → **105**. The nested-quantifier group was a *catch-all* ("not under `src/generated/`"), applied without measuring; the trigger Verus actually chose is the whole `ds.network.contains(LRaftPacket {…})` term, which mentions every bound variable, so **11 of those 13 were pinnable** and are now pinned. Acceptor's 4 were delivered via `acceptor_manual.rs` (54.7.b). Standing split: 80 generated-emitted + 23 generated-preserved + **2** genuinely nested (`cconfiguration.rs:218`, `state_machine.rs:54`). Generated from a measured inventory by `scripts/trigger_exceptions.py`, and CI runs `--check` so it cannot silently drift. |
 | `1044 verified, 0 errors` still holds | **MET.** Now **1045**, 0 errors — the extra function came from regenerating `broadcast_gen.rs`, which had lost a proof helper. |
 | No module's verification wall-clock regresses more than 20% against the 54.2 baseline | **MET.** Measured min-of-3 on both sides at each batch; the crate ended up **faster** (54.8: −4.4%). |
 | CI guard from 54.9 in place | **MET.** Note-count ceiling (ratcheted 534 → 120) plus the `changed`-trigger check against the committed baseline; timing is reported rather than gated because CI hardware differs from the baseline host (54.9.a). |
