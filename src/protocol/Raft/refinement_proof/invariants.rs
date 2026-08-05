@@ -1246,6 +1246,68 @@ verus! {
         };
     }
 
+    /// A certified boundary whose term is below a leader's own term sits
+    /// strictly inside that leader's election snapshot.
+    ///
+    /// Leader Completeness places the boundary in the leader's log; the
+    /// snapshot term bound then forces its position to be below the snapshot,
+    /// because everything at or beyond the snapshot was appended by this leader
+    /// and therefore carries its current term.
+    ///
+    /// This is the fact that lets an *existing* leader's saved membership phase
+    /// be related to a certificate's governing phase — the newly-promoted case
+    /// gets it for free, since its snapshot is its whole log.
+    pub proof fn lemma_certified_boundary_below_election_snapshot(
+        ds: RaftDistributedState,
+        m: int,
+        leader_id: int,
+    )
+        requires
+            CertifiedConfigurationLeaderCompleteness(ds),
+            ElectionLogLenEntryTermBound(ds),
+            ElectionLogLenBounded(ds),
+            LeaderElectionSnapshotRecorded(ds),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.configuration_commit_certificates.dom().contains(m),
+            0 <= m,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[m].entry.term,
+        ensures
+            ds.server_states[leader_id].log.len() > m,
+            ds.server_states[leader_id].log[m]
+                == ds.configuration_commit_certificates[m].entry,
+            m < ds.election_log_len[
+                (leader_id, ds.server_states[leader_id].current_term)],
+    {
+        // Leader Completeness places the certified entry in the leader's log.
+        assert(CertifiedConfigurationLeaderCompleteness(ds));
+        assert(ds.server_states[leader_id].log.len() > m);
+        assert(ds.server_states[leader_id].log[m]
+            == ds.configuration_commit_certificates[m].entry);
+
+        // The snapshot exists for this leader's term. Bind the key as a single
+        // pair so the term-bound quantifier's trigger shape matches.
+        assert(LeaderElectionSnapshotRecorded(ds));
+        let term = ds.server_states[leader_id].current_term;
+        let key: (int, int) = (leader_id, term);
+        assert(key.0 == leader_id);
+        assert(key.1 == term);
+        assert(ds.election_log_len.dom().contains(key));
+        let snapshot = ds.election_log_len[key];
+
+        // If the boundary sat at or beyond the snapshot it would have been
+        // appended by this leader, hence carry its current term — but its term
+        // is strictly smaller.
+        assert(ElectionLogLenEntryTermBound(ds));
+        if snapshot <= m {
+            assert(ds.election_log_len[key] <= m);
+            assert(m < ds.server_states[key.0].log.len());
+            assert(ds.server_states[key.0].log[m].term >= key.1);
+            assert(false);
+        }
+    }
+
     pub open spec fn NoDivergentUncommittedConfiguration(
         ds: RaftDistributedState,
     ) -> bool {
