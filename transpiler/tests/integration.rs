@@ -24160,3 +24160,56 @@ fn test_mut_self_method_drops_functional_output() {
     );
     let _ = std::fs::remove_file(&out);
 }
+
+/// Phase 38: the DPOR corpus must contain no degenerate stub specs.
+///
+/// `detect_stub_specs.py` exists to catch cases that "pass" because their
+/// generated `Types.rs` fabricates values with `arbitrary::<..>()` instead of
+/// modelling the protocol — a vacuous pass, which is the failure mode the whole
+/// Phase 38.14 audit track was about.
+///
+/// It had no guard test, and that is precisely how its status went stale: the
+/// TODO recorded "4 findings in cases 14/15/16/19" long after regeneration had
+/// stopped producing them. The corpus is gitignored and rebuilt, so the only
+/// way the claim stays true is to check it rather than remember it.
+#[test]
+fn test_dpor_corpus_has_no_degenerate_stub_specs() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let script =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/scripts/detect_stub_specs.py");
+    assert!(
+        script.exists(),
+        "stub detector missing at {}",
+        script.display()
+    );
+
+    let corpus = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs");
+    if !corpus.exists() {
+        // The corpus is generated (regenerate_corpus.sh); without it there is
+        // nothing to judge, and asserting would fail for the wrong reason.
+        eprintln!("corpus not generated; skipping stub-spec check");
+        return;
+    }
+
+    let out = std::process::Command::new("python3")
+        .arg(&script)
+        .current_dir(&repo_root)
+        .output()
+        .expect("run detect_stub_specs.py");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "detect_stub_specs.py reported degenerate stub specs:\n{}\n{}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("no degenerate stub specs"),
+        "unexpected detector output:\n{}",
+        stdout
+    );
+}

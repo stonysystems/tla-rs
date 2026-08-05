@@ -101,7 +101,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
-- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
+- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. **38.11 is closed (verified 2026-08-05)**: all ten acceptance criteria are met and each has a guard test — `cargo test --test integration phase_38_11` runs 10 tests, all passing. The previously recorded "4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19)" **no longer reproduce**: `scripts/detect_stub_specs.py` reports "no degenerate stub specs detected in corpus" and none of those four cases contains an `arbitrary::` constructor. The corpus is gitignored and regenerated (CI runs `regenerate_corpus.sh`), so that finding came from a stale local copy. Phase 38's remaining leaves — 38.20.3, 38.21.C, 38.21.H, 38.22.2.b.iii — are all marked blocked, multi-week, case-specific or deferred, so the phase has no small actionable leaf right now.
 
 **Next steps (priority order, updated 2026-08-04):**
 
@@ -114,7 +114,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
 
-1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Remaining leaf tasks: 38.20.3 (blocked on solver ceilings), 38.21.C (Source DPOR, multi-week), 38.21.H (bit-pack, case-specific), 38.22.2.b.iii (NamedFields indexed Vec, deferred). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — `38.11` acceptance criteria are **closed** (10/10, each with a passing guard test, verified 2026-08-05). What remains is `38.18` / `38.22` performance work, and every open leaf is blocked or deferred (see below), so this phase is not currently actionable in small steps. Remaining leaf tasks: 38.20.3 (blocked on solver ceilings), 38.21.C (Source DPOR, multi-week), 38.21.H (bit-pack, case-specific), 38.22.2.b.iii (NamedFields indexed Vec, deferred). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
 5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler to translate value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. Concrete target: eliminate `raft_manual.rs` (369 LOC).
@@ -12137,6 +12137,21 @@ stub detector clean and the run script reporting 0 vacuous passes.
     fragments in `tests/reports/shadow_parity_subset_latest.md`, and fails on
     missing required keys (for example `summary.parity_failures`).
 
+### 38.11 status verification (2026-08-05)
+
+All ten criteria below are met **and each has a passing guard test** —
+`cargo test --test integration phase_38_11` runs 10 tests, 10 pass. Verified rather than
+assumed, because two adjacent status claims had gone stale:
+
+- "Remaining DPOR work is acceptance-criteria closure in 38.11" — it is not; 38.11 is closed.
+- "Structural detector reports 4 `arbitrary::<...>()` findings (cases 14/15/16/19)" — it does
+  not. `scripts/detect_stub_specs.py` reports "no degenerate stub specs detected in corpus",
+  and none of those four cases contains an `arbitrary::` constructor. The corpus is
+  gitignored and regenerated, so the finding came from a stale local copy. That detector had
+  **no guard test**, which is exactly how the claim drifted; it now has one
+  (`test_dpor_corpus_has_no_degenerate_stub_specs`), which skips cleanly when the corpus has
+  not been generated rather than failing for the wrong reason.
+
 ### 38.11 Acceptance criteria
 
 1. [x] `transpiler/DPOR_based_model_tla_rs_checker/` exists with `README.md`, `design.md`, `src/`, `scripts/`, and `tests/`.
@@ -16825,33 +16840,19 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
       --fail-on-regression`, skipped with a message until `reports/triggers/timing-baseline.json`
       exists. 21 new tests, incl. a guard that an `enforce=true` ceiling must carry a number.
 
-### Acceptance
+### Acceptance — status 2026-08-05
 
-- 0 `automatically chose triggers` notes on a full pass, or a checked-in list of the
-  deliberate exceptions with a reason for each
-- `1044 verified, 0 errors` still holds
-- No module's verification wall-clock regresses more than 20% against the 54.2 baseline
-- CI guard from 54.9 in place
+| criterion | status |
+|---|---|
+| 0 `automatically chose triggers` notes, **or** a checked-in list of the deliberate exceptions with a reason for each | **MET via the list.** 534 → **120**. `reports/triggers/exceptions.md` accounts for every remaining note: 107 in `src/generated/` (transpiler output, blocked on regeneration — 54.7.b / 42.8.c.2.iv) and 13 nested-quantifier cases needing the expression restructured. Generated from a measured inventory by `scripts/trigger_exceptions.py`, and CI runs `--check` so it cannot silently drift. |
+| `1044 verified, 0 errors` still holds | **MET.** Now **1045**, 0 errors — the extra function came from regenerating `broadcast_gen.rs`, which had lost a proof helper. |
+| No module's verification wall-clock regresses more than 20% against the 54.2 baseline | **MET.** Measured min-of-3 on both sides at each batch; the crate ended up **faster** (54.8: −4.4%). |
+| CI guard from 54.9 in place | **MET.** Note-count ceiling (ratcheted 534 → 120) plus the `changed`-trigger check against the committed baseline; timing is reported rather than gated because CI hardware differs from the baseline host (54.9.a). |
 
-- [x] **54.9.a** CI timing gate — **root cause was not the floor. FIXED (2026-08-05).**
-      The report was right that the gate was red and wrong about why, and the mistake was
-      mine to begin with. Two things had already changed before `e0241425`: 54.4.a raised the
-      noise floor 500 → **1000 ms** and made it apply to the *base* value, so the 36 modules
-      under 100 ms could not fire the gate at all.
-      The actual cause: **the committed baseline was measured on this 127-thread box and CI
-      compares it against a GitHub runner with a handful of cores.** Verus verifies modules
-      in parallel, so per-module wall-clock tracks the core count and the contention pattern;
-      a percentage between the two measures the hardware, not the proof. No threshold and no
-      absolute floor fixes a cross-hardware comparison — the suggested 250 ms floor would
-      have suppressed the symptom while leaving the numbers meaningless.
-      Fixes: (a) CI **reports** timing instead of gating on it, with the reason in the
-      workflow; the 20% criterion stays a *local* pre-merge gate, which is how 54.3–54.8
-      actually used it. (b) `verus_timing.py diff` now records `num-threads` for both sides,
-      prints "**These runs are not comparable**" when they differ, and **refuses to fail**
-      on a cross-hardware comparison even when asked — so the category error announces
-      itself instead of being silently absorbed by a bigger threshold. 7 tests, including
-      one asserting CI does not pass `--fail-on-regression` to the timing diff.
-      Older inventories without `num-threads` are unaffected.
+**Phase 54 is complete against its stated acceptance criteria.** What remains is not
+trigger work: the 107 generated notes wait on RSL regeneration (Phase 42/21), and the 13
+nested cases wait on expression restructuring, both tracked in their own phases.
+
 
 ### Non-goals
 - Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.
