@@ -165,12 +165,26 @@ def plan_merge(fresh_text, existing_text, preserve=()):
     # checked-in file holds a hand-verified `while` loop with invariants.
     # Without this, merging silently replaces verified code with code that does
     # not verify -- which is most of learner's 183-line merge diff.
+    # Preserve resolves against free functions *and* impl methods. The RSL
+    # protocol actions are `&mut self` methods, and free-functions-only meant the
+    # 17 of them that fresh emits as `assume(false)` stubs could not be protected
+    # at all (Phase 42.8.c.2.iv.F).
     overridden = [name for name in preserve if name in e_free]
-    missing = sorted(set(preserve) - set(e_free))
+    overridden_methods = {}
+    for impl_name, methods in e_impls.items():
+        for method in methods:
+            if method in preserve or f"{impl_name}::{method}" in preserve:
+                overridden_methods.setdefault(impl_name, []).append(method)
+    resolved = set(overridden) | {
+        m for ms in overridden_methods.values() for m in ms
+    } | {
+        f"{i}::{m}" for i, ms in overridden_methods.items() for m in ms
+    }
+    missing = sorted(set(preserve) - resolved)
     if missing:
         raise ValueError(
-            "--preserve names not found as free functions in the existing file: "
-            + ", ".join(missing)
+            "--preserve names not found as a free function or impl method in the "
+            "existing file: " + ", ".join(missing)
         )
 
     # An import whose module path fresh already imports must not be emitted again:
@@ -212,6 +226,7 @@ def plan_merge(fresh_text, existing_text, preserve=()):
             ("carried_methods", carried_methods),
             ("carried_imports", carried_imports),
             ("overridden_free_fns", overridden),
+            ("overridden_methods", overridden_methods),
             ("merged_imports", merged_imports),
             ("impls_absent_from_fresh", dropped_impls),
         ]
@@ -250,6 +265,16 @@ def merge(fresh_text, existing_text, preserve=()):
         f_free, _, _ = parse_items(fresh_text)
         if name in f_free:
             fresh_text = fresh_text.replace(f_free[name], e_free[name], 1)
+
+    # Same for impl methods.
+    for impl_name, methods in plan.get("overridden_methods", {}).items():
+        for method in methods:
+            _, f_impls_now, _ = parse_items(fresh_text)
+            fresh_body = f_impls_now.get(impl_name, {}).get(method)
+            if fresh_body is not None:
+                fresh_text = fresh_text.replace(
+                    fresh_body, e_impls[impl_name][method], 1
+                )
 
     # Widen fresh's import to cover members only the existing file had, rather
     # than emitting a second `use` for the same module path (a duplicate-name

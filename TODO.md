@@ -14886,6 +14886,26 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [x] **42.8.c.2.iv.G** **Executor merged. `1046 verified, 0 errors`.** (2026-08-05)
+        `merge_generated.py --preserve` had the *same* free-functions-only blind spot the
+        drift check did, so it rejected all 17 method names outright — the protection was
+        recorded but unenforceable. It errored loudly rather than silently doing nothing,
+        which is the fail-closed behaviour that made this obvious. Extended to impl methods;
+        the list accepts a bare or `Impl::method` name.
+        Result: **`assume(false)` in the merged file goes 6 → 0** — those six stubs are
+        exactly what would have replaced real implementations. Executor's regenerated file is
+        checked in, 425 lines changed, verifying.
+        **It delivers no trigger notes, and that is expected, not a shortfall.** Executor's 10
+        notes live inside the bodies the preserve list protects, so regeneration cannot reach
+        them. Which means the 54.7 provenance split needs revisiting: it classified notes by
+        `skip_functions` membership, and the 17 newly-preserved methods are not in
+        `skip_functions`, so notes inside them were counted as "transpiler-emitted, delivered
+        by regeneration" when they are not. **The deliverable-note figure is below 80.**
+        One test moved: `test_executor_cache_helpers_rehomed_out_of_manual_injection`
+        asserted the `gen_helpers` import as an exact single line, and `rustfmt` wraps and
+        sorts it. It now checks the three helper names are imported — the property it cares
+        about — rather than the formatting.
+
   - [ ] **42.8.c.2.iv.F** **The drift check was blind to `&mut self` methods — 17 real
         implementations would have been replaced by `assume(false)` stubs (2026-08-05).**
         `body_drift` compared only the free functions from `parse_items`, ignoring the

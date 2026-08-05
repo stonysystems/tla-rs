@@ -3160,10 +3160,26 @@ fn test_executor_cache_helpers_rehomed_out_of_manual_injection() {
 
     let generated_source = std::fs::read_to_string("../src/generated/RSL/executor_gen.rs")
         .expect("Failed to read executor_gen.rs");
+    // Check the import's *content*, not its formatting: rustfmt wraps and sorts a
+    // long `use` list, so an exact single-line match fails on a file that imports
+    // exactly the right three helpers (Phase 42.8.c.2.iv.G).
+    let gen_helpers_import: String = generated_source
+        .split("use crate::implementation::RSL::gen_helpers::")
+        .nth(1)
+        .map(|rest| rest.split(';').next().unwrap_or("").to_string())
+        .unwrap_or_default();
+    for helper in [
+        "CClientsInReplies",
+        "CUpdateNewCache",
+        "CGetPacketsFromReplies",
+    ] {
+        assert!(
+            gen_helpers_import.contains(helper),
+            "executor_gen.rs should import {helper} from gen_helpers; got `{gen_helpers_import}`"
+        );
+    }
     assert!(
-        generated_source.contains(
-            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache, CGetPacketsFromReplies};"
-        ),
+        generated_source.contains("use crate::implementation::RSL::gen_helpers::"),
         "executor_gen.rs should import re-homed helpers from gen_helpers"
     );
     assert!(
