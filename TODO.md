@@ -14886,6 +14886,28 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [ ] **42.8.c.2.iv.A** Learner: `filter_clearnerstate` collision. **FIXED 2026-08-05,
+        learner merge diff 183 → 119.** The largest single divergence was not a signature
+        mismatch at all. The transpiler *synthesises* a `filter_clearnerstate` helper — a
+        naive `for` loop over `m.iter()` — while the checked-in file holds a hand-verified
+        `while` loop with invariants and `broadcast use`. Merging silently replaced the
+        verified code with code that does not verify, which is why the merged learner never
+        got far enough to reach the signature errors.
+        `no_stub_functions` cannot express this: it is keyed on *spec* function names, and
+        this helper has none — it is synthesised, so it appears in no `.rs` or `.toml`
+        (checked). Fixed in `merge_generated.py` instead, which is where the "preserve
+        hand-written work" concept already lives: `--preserve FN` makes the existing file win
+        for a named free function. An unknown name is an error, not a silent no-op, so a typo
+        cannot quietly yield the un-preserved merge.
+  - [ ] **42.8.c.2.iv.B** Learner: the remaining 119 lines. Now characterised — it *is* the
+        by-value/by-reference drift this item originally recorded, and it is systematic
+        rather than per-function: fresh emits `old_m: CLearnerState` where the checked-in
+        file has `&CLearnerState`, across `lemma_abstractify_clearnerstate_{insert,remove}`,
+        `lemma_abstractify_{empty,singleton}_clearnerstate`, and the four `learnerstate_*`
+        helpers. Plus `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3).
+        Decide once whether the transpiler should emit `&T` for these, then apply — not
+        eight independent reconciliations.
+
   - [ ] **42.8.c.2.iv** **Measured 2026-08-05, and two bugs upstream of the recorded cause
         are now fixed.** "No predictable finish" was based on the signature mismatch below.
         Running the merge over all seven RSL modules and feeding each result to `rustfmt`

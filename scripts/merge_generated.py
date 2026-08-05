@@ -144,7 +144,7 @@ def parse_items(text):
     return free_fns, impls, imports
 
 
-def plan_merge(fresh_text, existing_text):
+def plan_merge(fresh_text, existing_text, preserve=()):
     """What would be carried over from `existing` into `fresh`."""
     f_free, f_impls, f_imports = parse_items(fresh_text)
     e_free, e_impls, e_imports = parse_items(existing_text)
@@ -155,6 +155,20 @@ def plan_merge(fresh_text, existing_text):
         missing = [m for m in methods if m not in f_impls.get(impl_name, {})]
         if missing:
             carried_methods[impl_name] = missing
+    # Phase 42.8.c: named free functions the *existing* file wins on, even though
+    # fresh emits them. The transpiler synthesises helpers such as
+    # `filter_clearnerstate` naively (a `for` loop over `m.iter()`), while the
+    # checked-in file holds a hand-verified `while` loop with invariants.
+    # Without this, merging silently replaces verified code with code that does
+    # not verify -- which is most of learner's 183-line merge diff.
+    overridden = [name for name in preserve if name in e_free]
+    missing = sorted(set(preserve) - set(e_free))
+    if missing:
+        raise ValueError(
+            "--preserve names not found as free functions in the existing file: "
+            + ", ".join(missing)
+        )
+
     carried_imports = [
         imp
         for imp in e_imports
@@ -166,6 +180,7 @@ def plan_merge(fresh_text, existing_text):
             ("carried_free_fns", carried_free),
             ("carried_methods", carried_methods),
             ("carried_imports", carried_imports),
+            ("overridden_free_fns", overridden),
             ("impls_absent_from_fresh", dropped_impls),
         ]
     )
@@ -187,9 +202,9 @@ def _import_path(imp):
     return flat
 
 
-def merge(fresh_text, existing_text):
+def merge(fresh_text, existing_text, preserve=()):
     """Fresh output with the existing file's unemitted items spliced back."""
-    plan = plan_merge(fresh_text, existing_text)
+    plan = plan_merge(fresh_text, existing_text, preserve)
     if plan["impls_absent_from_fresh"]:
         raise ValueError(
             "cannot place preserved methods: fresh output has no impl block for "
@@ -197,6 +212,13 @@ def merge(fresh_text, existing_text):
         )
 
     e_free, e_impls, _ = parse_items(existing_text)
+
+    # Swap fresh's version of each overridden free function for the existing one.
+    for name in plan["overridden_free_fns"]:
+        f_free, _, _ = parse_items(fresh_text)
+        if name in f_free:
+            fresh_text = fresh_text.replace(f_free[name], e_free[name], 1)
+
     lines = fresh_text.split("\n")
 
     # Methods go at the end of the impl block they came from, innermost-last so
@@ -267,17 +289,32 @@ def main(argv=None):
     p.add_argument("existing")
     p.add_argument("-o", "--out")
     p.add_argument("--report", action="store_true", help="describe the merge only")
+    p.add_argument(
+        "--preserve",
+        action="append",
+        default=[],
+        metavar="FN",
+        help="keep the EXISTING file's version of this free function even though "
+        "fresh emits one (repeatable). For helpers the transpiler synthesises "
+        "naively but which were hand-verified in place.",
+    )
     args = p.parse_args(argv)
 
     fresh_text = open(args.fresh).read()
     existing_text = open(args.existing).read()
 
     if args.report:
-        print(render_report(plan_merge(fresh_text, existing_text), args.fresh, args.existing))
+        print(
+            render_report(
+                plan_merge(fresh_text, existing_text, args.preserve),
+                args.fresh,
+                args.existing,
+            )
+        )
         return 0
 
     try:
-        merged = merge(fresh_text, existing_text)
+        merged = merge(fresh_text, existing_text, args.preserve)
     except ValueError as e:
         sys.stderr.write("error: {}\n".format(e))
         return 1

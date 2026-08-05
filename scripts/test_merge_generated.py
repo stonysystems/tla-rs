@@ -188,5 +188,50 @@ class MultiLineConstructs(unittest.TestCase):
         self.assertEqual(mg._block_end(lines, 0), 2)
 
 
+
+
+class PreserveOverride(unittest.TestCase):
+    """Phase 42.8.c: the transpiler synthesises some helpers naively -- a `for`
+    loop over `m.iter()` where the checked-in file holds a hand-verified `while`
+    loop with invariants. Merging without this replaces verified code with code
+    that does not verify, silently. `--preserve` names those helpers."""
+
+    FRESH = (
+        "verus! {\n"
+        "pub fn helper(m: &Map) -> Map {\n"
+        "    naive_body()\n"
+        "}\n"
+        "pub fn other() {}\n"
+        "} // verus!\n"
+    )
+    EXISTING = (
+        "verus! {\n"
+        "pub fn helper(m: &Map) -> Map {\n"
+        "    verified_body_with_invariants()\n"
+        "}\n"
+        "pub fn other() {}\n"
+        "} // verus!\n"
+    )
+
+    def test_without_preserve_fresh_wins(self):
+        out = mg.merge(self.FRESH, self.EXISTING)
+        self.assertIn("naive_body", out)
+        self.assertNotIn("verified_body_with_invariants", out)
+
+    def test_with_preserve_existing_wins(self):
+        out = mg.merge(self.FRESH, self.EXISTING, ["helper"])
+        self.assertIn("verified_body_with_invariants", out)
+        self.assertNotIn("naive_body", out)
+
+    def test_preserve_leaves_other_functions_on_fresh(self):
+        out = mg.merge(self.FRESH, self.EXISTING, ["helper"])
+        self.assertIn("pub fn other", out)
+
+    def test_unknown_preserve_name_is_an_error_not_a_silent_no_op(self):
+        # Typing the name wrong must not quietly produce the un-preserved merge.
+        with self.assertRaises(ValueError):
+            mg.merge(self.FRESH, self.EXISTING, ["helpr"])
+
+
 if __name__ == "__main__":
     unittest.main()
