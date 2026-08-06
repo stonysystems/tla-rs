@@ -96,7 +96,10 @@ jobs:
     timeout-minutes: 45
     env:
       # Latest stable release validated by the incremental Verus migration.
-      # The rolling release currently points at the same b677dd5 commit.
+      # Pinned on purpose: this is the version the trigger ceiling and the
+      # timing baseline were measured on. The `verify-rolling` job below tracks
+      # the newest release separately, so a Verus change and one of ours stay
+      # distinguishable.
       VERUS_VERSION: "0.2026.08.02.b677dd5"
     steps:
       - uses: actions/checkout@v4
@@ -244,6 +247,136 @@ jobs:
 
       - name: Verify and run README quickstart
         run: VERUS_PATH="$HOME/verus/verus" ./scripts/check_readme_quickstart.sh
+
+  # Verita (Verus compatibility CI) asks projects to keep a designated branch
+  # verifying against the *latest* Verus, so that a breakage introduced by our
+  # own change is caught by whoever made it. That is this job. It deliberately
+  # does not pin: it resolves the newest rolling prerelease at run time, which
+  # is the closest public artifact to Verus's main.
+  #
+  # Kept separate from `verify` rather than replacing it. The pinned job is what
+  # makes a build reproducible and gives the trigger ceiling a measured meaning;
+  # without it, a red run could not be attributed to our change or to upstream
+  # drift. Two jobs answer two different questions.
+  verify-rolling:
+    name: Verus Verification (rolling)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve latest rolling release
+        id: verus
+        run: |
+          set -o pipefail
+          # Releases are tagged release/<version> (stable) and
+          # release/rolling/<version> (prerelease). The rolling tags are the
+          # ones marked prerelease, and /releases returns newest first.
+          TAG=$(gh api repos/verus-lang/verus/releases \
+            --jq '[.[] | select(.prerelease==true)] | .[0].tag_name')
+          if [ -z "$TAG" ]; then
+            echo "no rolling prerelease found" >&2
+            exit 1
+          fi
+          VERSION="${TAG#release/rolling/}"
+          # The version string ends in the Verus commit it was built from;
+          # that commit's rust-toolchain.toml is the toolchain it needs, so the
+          # job follows a Verus toolchain bump instead of failing on one.
+          SHA="${VERSION##*.}"
+          TOOLCHAIN=$(curl -sfL \
+            "https://raw.githubusercontent.com/verus-lang/verus/${SHA}/rust-toolchain.toml" \
+            | sed -n 's/^channel = "\(.*\)"/\1/p')
+          if [ -z "$TOOLCHAIN" ]; then
+            echo "could not read rust-toolchain.toml at ${SHA}" >&2
+            exit 1
+          fi
+          echo "tag=$TAG"             >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "toolchain=$TOOLCHAIN" >> "$GITHUB_OUTPUT"
+          echo "Resolved $VERSION (toolchain $TOOLCHAIN) from $TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install Python and scons
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install scons
+
+      - name: Cache Verus
+        id: cache-verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus
+          key: verus-ubuntu-24.04-${{ steps.verus.outputs.version }}
+
+      - name: Download Verus
+        if: steps.cache-verus.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          V="${{ steps.verus.outputs.version }}"
+          gh release download "${{ steps.verus.outputs.tag }}" \
+            --repo verus-lang/verus \
+            --pattern "verus-${V}-x86-linux.zip" \
+            --output verus.zip
+          unzip -q verus.zip -d ~/
+          mv ~/verus-x86-linux ~/verus
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Ensure Verus is executable
+        run: chmod +x ~/verus/verus
+
+      - name: Install Rust toolchain for Verus
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.verus.outputs.toolchain }}
+          components: rustfmt
+
+      - name: Verify with Verus
+        run: |
+          set -o pipefail
+          scons --verus-path=$HOME/verus/verus --skip-dotnet 2>&1 \
+            | tee verus-rolling.log
+
+      # Report only. The committed ceiling of 0 was measured on the pinned
+      # release; a rolling build may choose triggers differently, and a note
+      # count that has never been measured on this version is not a threshold
+      # anyone agreed to. Enforcing it here would turn the job red for a
+      # change in Verus rather than a break in our proofs -- which is exactly
+      # the confusion this job exists to avoid.
+      - name: Report trigger notes (not enforced)
+        if: always()
+        run: |
+          if [ ! -f verus-rolling.log ]; then
+            echo "no verification log (an earlier step failed); nothing to report"
+            exit 0
+          fi
+          python3 scripts/trigger_inventory.py parse verus-rolling.log \
+            --label "${{ steps.verus.outputs.version }} rolling (triggers-mode selective)" \
+            --verus-version "${{ steps.verus.outputs.version }}" \
+            --root . \
+            --allow-empty \
+            -o trigger-inventory-rolling.json
+          python3 scripts/trigger_inventory.py report trigger-inventory-rolling.json \
+            -o trigger-inventory-rolling.md
+          {
+            echo "### Rolling: ${{ steps.verus.outputs.version }}"
+            echo "_Notes are reported, not gated -- the ceiling of 0 is measured"
+            echo "on the pinned release only._"
+            cat trigger-inventory-rolling.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload rolling inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trigger-inventory-rolling-${{ steps.verus.outputs.version }}
+          path: |
+            trigger-inventory-rolling.json
+            trigger-inventory-rolling.md
+            verus-rolling.log
+          if-no-files-found: warn
 
   model-check-evidence:
     name: Model-Check Evidence Drift Guard
