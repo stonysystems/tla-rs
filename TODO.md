@@ -18237,19 +18237,35 @@ and not an argued one. Measured against `jetpack.tla`:
   `RMChooseToAbort` from 2PC still reports EQUAL. Refinement would catch it.
   State plainly in the write-up that this is model-checked refinement, not proof.
 
-- [ ] **55.0.c — Q2 (no reconfiguration) collides with Jetpack's core.**
-  The subset excludes membership change, but `old_view`/`new_view`/`oepoch`
-  *are* Jetpack's membership mechanism — recovery is triggered by a view change
-  and its correctness argument rests on view ordering. Unlike Raft, where joint
-  consensus is a separable module, here it is the trunk. Either the subset
-  contract changes (a C1–C5 revision, not a rewrite decision) or views are
-  pinned and the result is knowingly less than faithful. **This one cannot be
-  resolved by working harder; it needs a decision.**
+- [x] **55.0.c — WITHDRAWN. Q2 does NOT collide with Jetpack's views**
+  (corrected 2026-08-05). This item originally read *"Q2 collides with Jetpack's
+  core … cannot be resolved by working harder; it needs a decision."* **That was
+  wrong**, asserted from the intuition "views = reconfiguration = excluded by
+  Q2" without checking the spec. Four checks, all pointing the other way:
+
+  | checked | result |
+  |---|---|
+  | is `Server` a constant? | **yes** — `CONSTANTS Server, ...`, and `Server'` appears **0 times** across all three modules |
+  | what is `replica_ids`? | `SUBSET Server`, carried inside `new_view[i]` |
+  | does any action read another node's view? | **no** — every occurrence is `new_view[i]` / `old_view[i]` at the acting node |
+  | what does `WRequestReconfig` mutate? | `config[i].members` → `old_view[i]`, `new_view[i]`, `jepoch[i]` — all per-node |
+
+  Q2 excludes the **node set itself changing over time**, which would stop
+  `Node` being a constant. Jetpack instead has each node hold *its own opinion
+  of who is currently a member*, drawn from a fixed `Server`. That is ordinary
+  per-node state — no different in kind from Raft's `votedFor` — and it
+  satisfies C1, C2 and Q2 as written. Quorums count over
+  `new_view[i].replica_ids`, which is the acting node's own data, so P4 applies
+  with the counting base being a per-node subset rather than the constant.
+
+  **Consequence: views can be modelled faithfully, and the subset contract does
+  not need revising.** One decision fewer, and the faithful rewrite is
+  materially more reachable than 55.0.c claimed.
 
 ### Plan
 
-- [ ] **55.1** Decide 55.0.a and 55.0.c. These gate everything and are design
-      questions, not implementation.
+- [ ] **55.1** Decide 55.0.a (module structure). It is now the **only** open
+      design question — 55.0.c was withdrawn and 55.3.a was answered.
 - [ ] **55.2** `base_raft_clean.tla` — the base protocol as a standalone clean
       module. Closest existing reference is `t2_01_raft/clean.tla`.
 - [x] **55.3.a — the open question is answered: `FastpathQuorum` IS
