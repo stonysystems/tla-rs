@@ -18264,8 +18264,31 @@ and not an argued one. Measured against `jetpack.tla`:
 
 ### Plan
 
-- [ ] **55.1** Decide 55.0.a (module structure). It is now the **only** open
-      design question — 55.0.c was withdrawn and 55.3.a was answered.
+- [x] **55.1 — DECIDED (2026-08-05): option A, the frontend learns module
+      composition.** Chosen over "author three files, check them flattened"
+      because the repo will hit multi-module specs again (EPaxos, any
+      composition), and a flattening script would be a second thing to keep
+      correct.
+      **It is smaller than the 300–500 lines estimated in 55.0.a.** The *parsing*
+      side already exists and was never wired up: `TlaInstance { local_name,
+      module_name, substitutions, is_local }` is populated (`parser.rs:399`),
+      `V == INSTANCE Foo WITH p <- e` is recognised as a definition whose RHS is
+      not an expression (`parser.rs:201`), `V!Op` parses into `Ident("V!Op")`
+      with the qualified name kept whole (`parser.rs:833`), and `EXTENDS` names
+      land in `module.extends`. **Nothing loads the referenced file.** So the
+      work is a resolver, not a parser change.
+  - [ ] **55.1.a** `src/tla/module_resolver.rs` — given a root `.tla`, load
+        `EXTENDS` and `INSTANCE` targets from the same directory and return one
+        flattened `TlaModule`. `EXTENDS Foo` merges unprefixed; `V == INSTANCE
+        Foo` merges Foo's operators as `V!name` with `WITH` substitutions
+        applied and Foo-local references rewritten to the prefix; Foo's
+        variables and constants are *shared* with the parent, which is what
+        makes the Jetpack composition work at all. Skip the standard modules
+        (`Integers`, `Sequences`, `FiniteSets`, `TLC`, `Naturals`, `Bags`), and
+        detect cycles.
+  - [ ] **55.1.b** Wire it into `tla-lint` and `clean-tla` behind the file path,
+        and guard it with a test that the Jetpack composition now identifies its
+        node set — today it reports "3 of 5 implemented rules did not run".
 - [ ] **55.2** `base_raft_clean.tla` — the base protocol as a standalone clean
       module. Closest existing reference is `t2_01_raft/clean.tla`.
 - [x] **55.3.a — the open question is answered: `FastpathQuorum` IS
