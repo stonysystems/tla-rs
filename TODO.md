@@ -18252,12 +18252,50 @@ and not an argued one. Measured against `jetpack.tla`:
       questions, not implementation.
 - [ ] **55.2** `base_raft_clean.tla` — the base protocol as a standalone clean
       module. Closest existing reference is `t2_01_raft/clean.tla`.
+- [x] **55.3.a — the open question is answered: `FastpathQuorum` IS
+      node-computable, so P4 applies and the fast path is projectable**
+      (2026-08-05). The definition is second-order — it quantifies over every
+      other quorum:
+
+      ```
+      FastpathQuorum(v) == {q \in JQuorum(v) :
+          /\ v.proposing_replica_ids \subseteq q
+          /\ \A q2 \in JQuorum(v) :
+               v.proposing_replica_ids \subseteq q2 => (q \cap q2) \in JQuorum(v)}
+      ```
+
+      but it **collapses to a first-order test**. Writing `P` for
+      `proposing_replica_ids` and `n` for `|replica_ids|`:
+
+      | condition | fast quorums |
+      |---|---|
+      | `|P| * 2 > n` | every majority containing `P` |
+      | otherwise | **only the full replica set** |
+
+      Verified by brute force against the literal definition over **all 1,022
+      `(n, P)` combinations for `n ≤ 9`** — zero mismatches. So a replica can
+      evaluate it with a subset test plus a count, which is exactly P4's shape:
+
+      ```
+      IsFastQuorum(q) ==
+        /\ P \subseteq q
+        /\ IF Cardinality(P) * 2 > Cardinality(Replicas)
+             THEN Cardinality(q) * 2 > Cardinality(Replicas)
+             ELSE q = Replicas
+      ```
+
+      **This means the `t3_01_jetpack` slice dropped the fast path
+      unnecessarily** — not because it was unprojectable, but because it was
+      never attempted. That is the outcome the acceptance criterion named as
+      most useful, and it is now established before any rewriting.
+
+      Worth noting for the Raft composition specifically: it instantiates
+      `Proposer <- {"sole"}`, so `|P| = 1`; at 3 servers `1*2 = 2 ≤ 3`, which
+      lands in the second row — **the fast path there requires unanimity**. Any
+      TLC model must be sized so that branch is actually exercised.
+
 - [ ] **55.3** `jetpack_clean.tla` — recovery **plus the fast path**
-      (`Preaccept`, `FastpathQuorum`, the client-side counting). The open
-      technical question: `FastpathQuorum` is not a majority — it requires
-      `proposing_replica_ids ⊆ q` and that any two such quorums intersect in a
-      quorum. **Does P4 (quorum → counting) even apply?** If not, that is a
-      finding about the subset, not about Jetpack.
+      (`Preaccept`, the client-side counting, `IsFastQuorum` as derived above).
 - [ ] **55.4** `composition_clean.tla` — however 55.1 resolves module structure.
 - [ ] **55.5** Refinement mapping + TLC refinement check (55.0.b).
 - [ ] **55.6** Translate all three, `verus` check, freeze goldens, write
