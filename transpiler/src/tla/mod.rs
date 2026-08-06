@@ -8,6 +8,7 @@ pub mod ast;
 pub mod clean_subset;
 pub mod emit;
 pub mod mc_wrapper;
+pub mod module_resolver;
 pub mod parser;
 pub mod projection;
 pub mod tokenizer;
@@ -27,6 +28,7 @@ pub use emit::emit;
 pub use mc_wrapper::{
     generate_relational_mc_wrapper, McWrapperArtifacts, McWrapperOptions, PacketProjectionMode,
 };
+pub use module_resolver::{needs_resolution, resolve_module_file, ResolveError};
 pub use parser::{parse_module, ParseResult, TlaParseError, TlaParser};
 pub use projection::{project_module, ProjectedSpec, ProjectedType, ProjectionError};
 pub use tokenizer::{TlaToken, TlaTokenKind, TlaTokenizer, TlaTokenizerError};

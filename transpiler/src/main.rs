@@ -6076,7 +6076,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
         }
 
         Commands::TlaLint { input, json } => {
-            use verus_transpiler::tla::{lint_module, parse_module, report_to_json};
+            use verus_transpiler::tla::{
+                lint_module, needs_resolution, parse_module, report_to_json, resolve_module_file,
+            };
 
             let source = std::fs::read_to_string(input)
                 .map_err(|e| miette::miette!("Failed to read TLA+ file: {}", e))?;
@@ -6098,6 +6100,23 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     }
                     std::process::exit(2);
                 }
+            };
+
+            // A composed spec (`EXTENDS Foo`, `V == INSTANCE Foo`) is linted as
+            // the module it denotes, not as the file: with the referenced
+            // definitions missing, the node set cannot be found and most rules
+            // silently do not run.
+            let module = if needs_resolution(&module) {
+                match resolve_module_file(input) {
+                    Ok(resolved) => resolved,
+                    Err(e) => {
+                        eprintln!("{}: {e}", input.display());
+                        eprintln!("cannot lint a composed spec whose modules do not resolve");
+                        std::process::exit(2);
+                    }
+                }
+            } else {
+                module
             };
 
             let report = lint_module(&module);

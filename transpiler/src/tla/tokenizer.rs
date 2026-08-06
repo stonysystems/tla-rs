@@ -690,10 +690,27 @@ impl<'a> TlaTokenizer<'a> {
             // Numbers
             '0'..='9' => self.scan_number(c, start)?,
 
-            // A TLA+ identifier starts with a letter; `_` is its own token.
-            // This matters for action subscripts: in `[Next]_vars` the `_vars`
-            // must be `_` followed by `vars`, not one identifier named `_vars`.
-            '_' => TlaTokenKind::Underscore,
+            // `_` is ambiguous in TLA+ and the disambiguation is positional.
+            //
+            // In `[Next]_vars` it is the action-subscript operator, so `_vars`
+            // must scan as `_` then `vars`. But a TLA+ identifier may also
+            // *begin* with `_` -- `base_raft.tla` defines `_SendNoRestriction`
+            // -- and treating that as two tokens makes the module unparseable.
+            //
+            // The subscript only ever follows `]` or `>>`, so that is the test.
+            // Making `_` unconditionally its own token was the 52.M0.0.b fix;
+            // it was right about the subscript and wrong about identifiers.
+            '_' => {
+                let after_action = matches!(
+                    self.tokens.last().map(|t| &t.kind),
+                    Some(TlaTokenKind::RBracket) | Some(TlaTokenKind::RAngle)
+                );
+                if !after_action && self.peek().is_some_and(|n| n.is_alphanumeric() || n == '_') {
+                    self.scan_identifier(c, start)?
+                } else {
+                    TlaTokenKind::Underscore
+                }
+            }
 
             // Identifiers and keywords
             'a'..='z' | 'A'..='Z' => self.scan_identifier(c, start)?,

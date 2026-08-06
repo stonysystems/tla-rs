@@ -18277,7 +18277,7 @@ and not an argued one. Measured against `jetpack.tla`:
       with the qualified name kept whole (`parser.rs:833`), and `EXTENDS` names
       land in `module.extends`. **Nothing loads the referenced file.** So the
       work is a resolver, not a parser change.
-  - [ ] **55.1.a** `src/tla/module_resolver.rs` — given a root `.tla`, load
+  - [x] **55.1.a — DONE (2026-08-05).** `src/tla/module_resolver.rs` — given a root `.tla`, load
         `EXTENDS` and `INSTANCE` targets from the same directory and return one
         flattened `TlaModule`. `EXTENDS Foo` merges unprefixed; `V == INSTANCE
         Foo` merges Foo's operators as `V!name` with `WITH` substitutions
@@ -18286,9 +18286,34 @@ and not an argued one. Measured against `jetpack.tla`:
         makes the Jetpack composition work at all. Skip the standard modules
         (`Integers`, `Sequences`, `FiniteSets`, `TLC`, `Naturals`, `Bags`), and
         detect cycles.
-  - [ ] **55.1.b** Wire it into `tla-lint` and `clean-tla` behind the file path,
-        and guard it with a test that the Jetpack composition now identifies its
-        node set — today it reports "3 of 5 implemented rules did not run".
+  - [x] **55.1.b — DONE (2026-08-05).** Wired into `tla-lint`; guarded by
+        `tests/module_resolution_test.rs` (7 tests).
+
+  **Result: Jetpack's real clean-distance is 46, not 2 — a 23x correction.**
+
+  | | before | after |
+  |---|---|---|
+  | node set | *unidentifiable* | `Server` |
+  | violations | 2 | **46** |
+  | by rule | C4 1, C5 1 | C1 11, **C2 31**, C4 1, C5 3 |
+  | rules that ran | 2 of 5 | **5 of 5** |
+  | per-node variables found | 0 | 21 |
+
+  C2 — the rule the subset exists for — went from *not running at all* to being
+  the dominant finding. This is the third case measured wrong for the same
+  underlying reason (Jetpack's 2, EPaxos's 1, and now Jetpack again at a deeper
+  level), and it is exactly what the playbook's "if `node_set` is null, the
+  number is not a distance" warning was written about. The warning was right and
+  still insufficient: here the count was *quoted in three documents* before
+  anyone could see through `INSTANCE`.
+
+  - [x] **A tokenizer bug found on the way.** `base_raft.tla` defines
+        `_SendNoRestriction`, and TLA+ allows an identifier to begin with `_`.
+        52.M0.0.b had made `_` unconditionally its own token so `[Next]_vars`
+        would scan correctly — right about the subscript, wrong about
+        identifiers, and it made the whole module unparseable. `_` is now the
+        subscript operator only after `]` or `>>`. Both directions are pinned by
+        tests.
 - [ ] **55.2** `base_raft_clean.tla` — the base protocol as a standalone clean
       module. Closest existing reference is `t2_01_raft/clean.tla`.
 - [x] **55.3.a — the open question is answered: `FastpathQuorum` IS
