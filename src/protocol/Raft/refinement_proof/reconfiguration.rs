@@ -1265,7 +1265,6 @@ verus! {
         c: LConstants,
     )
         requires
-            c.servers.finite(),
             c.servers.len() > 0,
             c.quorum_size == c.servers.len() / 2 + 1,
             s.votes_granted.subset_of(c.servers),
@@ -1301,7 +1300,6 @@ verus! {
     )
         requires
             LBecomeLeader(s, s_, c, sent_packets),
-            c.servers.finite(),
             c.servers.len() > 0,
             c.quorum_size == c.servers.len() / 2 + 1,
             s.votes_granted.subset_of(c.servers),
@@ -1345,7 +1343,6 @@ verus! {
                 voter,
                 sent_packets,
             ),
-            c.servers.finite(),
             c.servers.len() > 0,
             c.quorum_size == c.servers.len() / 2 + 1,
             step_down_if_needed(s, term).votes_granted
@@ -3182,7 +3179,6 @@ verus! {
         idx: int,
     )
         requires
-            c.servers.finite(),
             c.servers.len() > 0,
             c.quorum_size == c.servers.len() / 2 + 1,
             replicator_count(s, c, idx) >= c.quorum_size,
@@ -3226,7 +3222,6 @@ verus! {
         idx: int,
     )
         requires
-            c.servers.finite(),
             c.servers.len() > 0,
             c.quorum_size == c.servers.len() / 2 + 1,
             replicator_count(s, c, idx) >= c.quorum_size,

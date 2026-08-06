@@ -5504,7 +5504,6 @@ verus! {
 
             lemma_range_set_finite(ds.num_servers);
 
-            assert(config.finite());
             assert(config.len() == ds.num_servers);
             assert(config.len() > 0);
 
@@ -9803,6 +9802,7 @@ verus! {
     ///
     /// The earlier saved phase equals the phase at the start of the later
     /// leader's log interval, and every step to the later saved phase is legal.
+    #[verifier::rlimit(20)]
     pub proof fn lemma_ordered_leader_election_snapshots_have_legal_bridge(
         ds: RaftDistributedState,
         earlier_leader: int,
@@ -11211,7 +11211,11 @@ verus! {
             &&& ds.server_states[w].log.len() > k
             &&& ds.server_states[w].log[k].term == s_.log[k].term
             &&& ds.server_states[w].log[k].value == s_.log[k].value
+            &&& ds.server_states[w].log[k].payload == s_.log[k].payload
         };
+        assert(ds.server_states[w].log[k].term == s_.log[k].term);
+        assert(ds.server_states[w].log[k].value == s_.log[k].value);
+        assert(ds.server_states[w].log[k].payload == s_.log[k].payload);
         assert(ds.server_states[w].log[k] == s_.log[k]);
         assert(ds_.server_states[w].log[k] == ds.server_states[w].log[k]);
     }

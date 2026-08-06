@@ -49,7 +49,6 @@ verus! {
         quorum: Set<int>,
         config: Set<int>,
     ) -> bool {
-        &&& config.finite()
         &&& config.len() > 0
         &&& quorum.subset_of(config)
         &&& quorum.len() >= config.len() / 2 + 1

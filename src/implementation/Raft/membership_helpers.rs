@@ -44,7 +44,6 @@ pub open spec fn is_u64_majority_of(
     quorum: Set<u64>,
     config: Set<u64>,
 ) -> bool {
-    &&& config.finite()
     &&& config.len() > 0
     &&& quorum.subset_of(config)
     &&& quorum.len() >= config.len() / 2 + 1
@@ -185,8 +184,6 @@ pub proof fn lemma_u64_majority_matches_logical(
     quorum: Set<u64>,
     servers: Seq<u64>,
 )
-    requires
-        quorum.finite(),
     ensures
         is_u64_majority_of(
             quorum,
@@ -607,8 +604,6 @@ pub proof fn lemma_u64_joint_quorum_matches_logical(
     old_servers: Seq<u64>,
     new_servers: Seq<u64>,
 )
-    requires
-        quorum.finite(),
     ensures
         is_u64_joint_quorum(
             quorum,
