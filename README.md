@@ -38,13 +38,22 @@ verus! {
 }
 ```
 
-The accompanying AutoMan annotation marks supplied inputs with `+` and outputs for the
-transpiler to synthesize with `-`:
+The Rust functions above are relations: their signatures do not say which parameters
+are known before execution. That dataflow is declared separately in
+`examples/quickstart/counter_spec.automan`:
 
 ```text
-LInit(-);
-LIncrement(+, -);
+module counter_spec {
+    LInit(-);
+    LIncrement(+, -);
+}
 ```
+
+Each marker corresponds positionally to a parameter in the Rust relation. `+` marks an
+input supplied to the generated function, while `-` marks an output that function must
+compute. Thus `LInit(value)` with `LInit(-)` generates a zero-argument `CInit` returning
+the initial value, and `LIncrement(value, value_)` with `LIncrement(+, -)` generates
+`CIncrement(value)` returning the new value represented by `value_`.
 
 From the repository root, generate the executable functions, verify them, compile them, and
 run the result:
