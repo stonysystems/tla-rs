@@ -18185,3 +18185,88 @@ Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can be
 - If 42.5.c (revert Phase 40): +1-2 days for the revert + Phase 40.3.e salvage.
 
 ---
+
+---
+
+## Phase 55: Faithful Jetpack — three modules, refinement-checked
+
+**Goal (as asked, 2026-08-05):** rewrite **all three** Jetpack modules —
+`jetpack.tla`, `base_raft.tla`, and the composition — into the clean subset, so
+the output is three files that each satisfy the TLA+ → tla-rs input contract,
+and establish that the rewrite is **equivalent to the original**, ideally by
+formal proof rather than by assertion.
+
+New corpus tier: `transpiler/tests/corpus/tier4/t4_01_jetpack_full/`.
+
+### Why this exists
+
+`t3_01_jetpack` is a **slice**, and an inherited one. Its `rewrite.md:42` says
+"Phase 51's R1, unchanged" — the scope was taken from Phase 51's partial
+hand-written spec so the two could be compared, which was a *convenient* choice
+and not an argued one. Measured against `jetpack.tla`:
+
+- **variables 22 → 11**;
+- **fast path entirely absent** — `grep -ci preaccept clean.tla` = 0 against 15
+  in the original, and `FastpathQuorum` = 0. Jetpack's paper is *"Consensus Made
+  Generally Fast"*: the fast path is the contribution, the recovery layer is the
+  fallback. We translated the fallback;
+- `ClientSendPreaccept`, `HandlePreacceptRequest/Response`, `Resubmit`,
+  `CompleteResubmit`, `HandleFinishRecovery` all dropped;
+- and **no V2 evidence at all** — the slice shares no observable with the
+  composition module, so the fidelity comparator cannot run on it.
+
+### Three blockers, all verified before planning (2026-08-05)
+
+- [ ] **55.0.a — the frontend resolves neither `INSTANCE` nor local `EXTENDS`.**
+  Verified twice: `grep TlaInstance` finds nothing in `clean_subset.rs`,
+  `projection.rs` or `action_projection.rs`; and a two-module probe where
+  `Comp.tla` does `EXTENDS Base` fails with *"cannot identify the node set"*
+  because `BaseStep` is invisible. Linting `t3_01_jetpack/original.tla` says the
+  same, and now reports **"3 of 5 implemented rules did not run"**.
+  **Consequence: "three files that each pass the linter" is not reachable
+  today.** Either the frontend learns module composition, or the three files are
+  *authored* separately and *checked* flattened. Decide before writing.
+
+- [ ] **55.0.b — "formal proof of equivalence" cannot mean TLAPS here.**
+  `tlapm` is not installed, and proving refinement from a shared-memory
+  composition to a message-passing rewrite is a research-scale obligation, not a
+  session's work. **What is reachable, and is strictly stronger than today's V2:**
+  a **refinement mapping** plus `TLC` checking `Spec => Original!Spec` under it.
+  That checks *behaviour containment*, where the current V2 only compares
+  reachable state sets — and V2's known blind spot is exactly this: deleting
+  `RMChooseToAbort` from 2PC still reports EQUAL. Refinement would catch it.
+  State plainly in the write-up that this is model-checked refinement, not proof.
+
+- [ ] **55.0.c — Q2 (no reconfiguration) collides with Jetpack's core.**
+  The subset excludes membership change, but `old_view`/`new_view`/`oepoch`
+  *are* Jetpack's membership mechanism — recovery is triggered by a view change
+  and its correctness argument rests on view ordering. Unlike Raft, where joint
+  consensus is a separable module, here it is the trunk. Either the subset
+  contract changes (a C1–C5 revision, not a rewrite decision) or views are
+  pinned and the result is knowingly less than faithful. **This one cannot be
+  resolved by working harder; it needs a decision.**
+
+### Plan
+
+- [ ] **55.1** Decide 55.0.a and 55.0.c. These gate everything and are design
+      questions, not implementation.
+- [ ] **55.2** `base_raft_clean.tla` — the base protocol as a standalone clean
+      module. Closest existing reference is `t2_01_raft/clean.tla`.
+- [ ] **55.3** `jetpack_clean.tla` — recovery **plus the fast path**
+      (`Preaccept`, `FastpathQuorum`, the client-side counting). The open
+      technical question: `FastpathQuorum` is not a majority — it requires
+      `proposing_replica_ids ⊆ q` and that any two such quorums intersect in a
+      quorum. **Does P4 (quorum → counting) even apply?** If not, that is a
+      finding about the subset, not about Jetpack.
+- [ ] **55.4** `composition_clean.tla` — however 55.1 resolves module structure.
+- [ ] **55.5** Refinement mapping + TLC refinement check (55.0.b).
+- [ ] **55.6** Translate all three, `verus` check, freeze goldens, write
+      `rewrite.md` recording every decision and every remaining gap.
+
+### Acceptance
+
+Three `.tla` files; each translates to Verus that passes `verus`; TLC-checked
+refinement against the unmodified originals; and `rewrite.md` stating exactly
+what is still not faithful. **If the fast path turns out to be projectable and
+the slice was simply never attempted, say so** — that is the most useful
+outcome, and it is the one currently expected.
