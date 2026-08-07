@@ -19,8 +19,8 @@ IronFleet's specifications, proofs, and runtime structure are ported to Verus, w
 specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
 
 The repository also extends that foundation with additional distributed protocols, bidirectional
-TLA+/Verus translation, source-first and DPOR-based model checking, mutation-oriented code
-generation, and deployable C# networking/runtime integration.
+TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
+deployable C# networking/runtime integration.
 
 ## Quick Start: From a Spec to a Program
 
@@ -88,8 +88,7 @@ and verifies, compiles, and runs this example.
   Bully leader election.
 - A spec-to-executable transpiler that generates Rust implementations and Verus
   refinement contracts.
-- TLA+/Verus translation, bounded model checking with DPOR, and a deployable C#/.NET
-  networking runtime.
+- TLA+/Verus translation, bounded model checking, and a deployable C#/.NET networking runtime.
 
 ## Requirements
 
