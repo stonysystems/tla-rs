@@ -18289,23 +18289,54 @@ and not an argued one. Measured against `jetpack.tla`:
   - [x] **55.1.b — DONE (2026-08-05).** Wired into `tla-lint`; guarded by
         `tests/module_resolution_test.rs` (7 tests).
 
-  **Result: Jetpack's real clean-distance is 46, not 2 — a 23x correction.**
+  **Result: Jetpack's real clean-distance is 15, not 2.**
+
+  *(First measured as 46. That was inflated by a second bug found immediately
+  afterwards — see 55.1.c. 15 is the number after both fixes.)*
 
   | | before | after |
   |---|---|---|
   | node set | *unidentifiable* | `Server` |
-  | violations | 2 | **46** |
-  | by rule | C4 1, C5 1 | C1 11, **C2 31**, C4 1, C5 3 |
+  | violations | 2 | **15** |
+  | by rule | C4 1, C5 1 | **C1 11**, C4 1, C5 3 |
   | rules that ran | 2 of 5 | **5 of 5** |
   | per-node variables found | 0 | 21 |
 
-  C2 — the rule the subset exists for — went from *not running at all* to being
-  the dominant finding. This is the third case measured wrong for the same
-  underlying reason (Jetpack's 2, EPaxos's 1, and now Jetpack again at a deeper
-  level), and it is exactly what the playbook's "if `node_set` is null, the
-  number is not a distance" warning was written about. The warning was right and
-  still insufficient: here the count was *quoted in three documents* before
-  anyone could see through `INSTANCE`.
+  C1, C2 and C3 went from *not running at all* to running. The count was quoted
+  in three documents before anyone could see through `INSTANCE`.
+
+  - [x] **55.1.c — two further bugs, both found by distrusting the new number.**
+        46 looked too large, and the error text gave it away: *"reads `jepoch[i]`
+        … a node can only read `jepoch[m]`"*, where `m` is a **message**.
+
+    1. **The node parameter was seeded from every `\E` binder in `Next`**, with
+       no check that the binder ranges over the node set. So
+       `\E m \in DOMAIN messages : ServerReceive(m)` declared the *message* to
+       be the acting node, and every legitimate `jepoch[i]` in the handlers
+       below it read as a cross-node access. That accounted for **all 31 C2
+       findings, every one false**. Jetpack's composition has **no cross-node
+       reads at all** — each handler reads only its own node's state.
+    2. **`INSTANCE` implicit substitution was not honoured.** TLA+ substitutes a
+       declared name of the instantiated module with a same-named *definition*
+       in the instantiating module; a `WITH` clause is not required. `Consensus`
+       declares `VARIABLE chosen` and `Voting` substitutes it with
+       `chosen == {v \in Value : ...}`. Reading only `WITH` made `chosen` a
+       variable of Paxos, and C1 reported a global that does not exist —
+       Paxos drifted 1 → 2 until this was fixed.
+
+    **And a correction to the record.** Commit `07efeca7` claimed EPaxos
+    re-measured 3 → 4 and that "the C2 finding it was hiding is a real
+    cross-node read of `crtInst[cleader]`". **That was wrong** — the finding was
+    a false positive from bug 1, which the same commit introduced. EPaxos is
+    back to **3, all C1**, and the manifest is re-pinned. The lesson is the one
+    this phase keeps re-learning: a number that moves in the direction you hoped
+    deserves *more* scrutiny, not less.
+
+    Also fixed here: `t0_01_simple` now correctly reports **2**, the new finding
+    being `Terminating`'s read of every node's `pc` with no node parameter —
+    which the case's own golden header already described as *"one node cannot
+    observe that, so the guard is not projectable"*. That hole was flagged in
+    the merge review and is now closed by the same fix.
 
   - [x] **A tokenizer bug found on the way.** `base_raft.tla` defines
         `_SendNoRestriction`, and TLA+ allows an identifier to begin with `_`.

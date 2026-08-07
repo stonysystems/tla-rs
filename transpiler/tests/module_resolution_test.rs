@@ -177,27 +177,22 @@ fn an_identifier_may_begin_with_an_underscore() {
 #[test]
 fn a_composed_spec_is_measured_against_the_module_it_denotes() {
     // The regression this feature exists to prevent. Before resolution the
-    // Jetpack composition linted at 2 violations with three rules silently not
-    // running; after, the node set is found and every rule runs.
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/tier3/t3_01_jetpack");
-    if !corpus.join("original.tla").exists() {
+    // Jetpack composition linted at 2 violations with C1, C2 and C3 silently
+    // not running; after, the node set is found and every rule runs.
+    let case = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/tier3/t3_01_jetpack");
+    let root = case.join("original.tla");
+    if !root.exists() {
         eprintln!("skipping: corpus case not present");
         return;
     }
+    // The referenced modules sit beside it under their own module names, which
+    // is what the resolver looks for and what TLA+ tooling expects.
+    assert!(
+        case.join("base_raft.tla").exists() && case.join("jetpack.tla").exists(),
+        "the composition's modules must be named after the modules they define"
+    );
 
-    // The corpus stores the modules under `original_*` names, so stage them
-    // under the names the composition actually references.
-    let dir = scratch("jetpack");
-    for (from, to) in [
-        ("original.tla", "jetpack_raft_composition.tla"),
-        ("original_base_raft.tla", "base_raft.tla"),
-        ("original_jetpack_layer.tla", "jetpack.tla"),
-    ] {
-        fs::copy(corpus.join(from), dir.join(to)).expect("stage");
-    }
-
-    let resolved =
-        resolve_module_file(&dir.join("jetpack_raft_composition.tla")).expect("must resolve");
+    let resolved = resolve_module_file(&root).expect("must resolve");
     let report = lint_module(&resolved);
 
     assert_eq!(
@@ -205,19 +200,16 @@ fn a_composed_spec_is_measured_against_the_module_it_denotes() {
         Some("Server"),
         "the node set must be identifiable once the modules resolve"
     );
-    let c2 = report
-        .findings
-        .iter()
-        .filter(|f| f.rule == CleanRule::C2)
-        .count();
+    // The count is pinned in the manifest; this only guards the direction --
+    // if a rule silently stops running the number collapses toward 2.
     assert!(
-        c2 > 10,
-        "C2 should now report the composition's cross-node reads, got {c2}"
+        report.violations() > 10,
+        "resolved distance is 15; got {} -- if this dropped sharply, check \
+         whether a rule stopped running",
+        report.violations()
     );
     assert!(
-        report.violations() > 40,
-        "the resolved distance is ~46; got {} -- if this dropped sharply, \
-         check whether a rule silently stopped running",
-        report.violations()
+        report.findings.iter().any(|f| f.rule == CleanRule::C1),
+        "C1 could not run before resolution and must run now"
     );
 }

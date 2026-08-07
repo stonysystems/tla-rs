@@ -244,13 +244,29 @@ fn merge_instance(
     // Unsubstituted variables and constants are shared with the parent -- that
     // is what `INSTANCE` means, and it is why the Jetpack composition works:
     // `base_raft` and `jetpack` both act on variables the composition declares.
+    // A declared name of the instantiated module counts as substituted when the
+    // parent *defines* it, not only when a `WITH` clause names it. TLA+'s
+    // implicit substitution is exactly this: `INSTANCE M` requires every
+    // declared name of `M` to be defined in the instantiating context, and a
+    // same-named definition serves as the substitution.
+    //
+    // Paxos is the case that shows the cost of missing it: `Consensus` declares
+    // `VARIABLE chosen`, `Voting` substitutes it with its own definition
+    // `chosen == {v \in Value : ...}` and never writes a `WITH`. Treating it as
+    // unsubstituted made `chosen` a variable of Paxos, and C1 then reported a
+    // global that does not exist.
+    fn defined_by(parent: &TlaModule, name: &str) -> bool {
+        parent.variables.iter().any(|v| v == name)
+            || parent.operators.iter().any(|o| o.name == name)
+            || parent.constants.iter().any(|c| c.name == name)
+    }
     for v in child.variables {
-        if !subst.contains_key(&v) && !parent.variables.contains(&v) {
+        if !subst.contains_key(&v) && !defined_by(parent, &v) {
             parent.variables.push(v);
         }
     }
     for c in child.constants {
-        if !subst.contains_key(&c.name) && !parent.constants.iter().any(|p| p.name == c.name) {
+        if !subst.contains_key(&c.name) && !defined_by(parent, &c.name) {
             parent.constants.push(c);
         }
     }

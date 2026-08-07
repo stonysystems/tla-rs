@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use verus_transpiler::tla::{lint_module, parse_module};
+use verus_transpiler::tla::{lint_module, needs_resolution, parse_module, resolve_module_file};
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus")
@@ -116,6 +116,14 @@ fn linter_verdicts_match_the_manifest() {
         let source = fs::read_to_string(&spec).expect("spec must be readable");
         let module = parse_module(&source)
             .unwrap_or_else(|e| panic!("{}: corpus spec must parse: {e}", case.id));
+        // A composed spec is measured as the module it denotes. Without this the
+        // Jetpack composition lints at 2 with three rules silently not running,
+        // which is the failure mode this pinning exists to catch.
+        let module = if needs_resolution(&module) {
+            resolve_module_file(&spec).unwrap_or_else(|e| panic!("{}: {e}", case.id))
+        } else {
+            module
+        };
         let report = lint_module(&module);
         checked += 1;
 

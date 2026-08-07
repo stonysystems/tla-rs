@@ -1217,11 +1217,28 @@ impl<'a> LintContext<'a> {
         // difference because the corpus's `clean.tla` rewrites all quantify
         // directly in `Next`.
         let expanded = self.expand_action_groups(&next.body);
+        // Only a binder that ranges over the **node set** names a node.
+        //
+        // Seeding from every binder makes `\E m \in DOMAIN messages :
+        // ServerReceive(m)` declare `m` -- a *message* -- to be the acting
+        // node, and C2 then reads every legitimate `jepoch[i]` in the handlers
+        // reachable from it as "another node's state". On Jetpack's composition
+        // that alone accounted for most of 31 C2 findings, all of them false.
+        let node_set = self.infer_node_set(next, &expanded);
         let mut seeds = Vec::new();
         for disjunct in flatten_disjunction(&expanded) {
             if let TlaExpr::Exists { vars, body } = disjunct {
                 for bound in vars {
-                    seeds.push((bound.var.clone(), body));
+                    let over_node_set = match (&bound.set, &node_set) {
+                        (Some(set), Some(ns)) => self.show(set) == *ns,
+                        // With no node set identified, C1/C2/C3 do not run
+                        // anyway; keeping the old permissive behaviour here
+                        // only produces findings nothing will report.
+                        _ => false,
+                    };
+                    if over_node_set {
+                        seeds.push((bound.var.clone(), body));
+                    }
                 }
             }
         }
