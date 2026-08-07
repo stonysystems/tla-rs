@@ -173,6 +173,9 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
                 // after, so it takes the record's name and the field's:
                 // `Record`'s `status` field becomes `LRecordStatus`. Leaving it
                 // unnamed emitted `pub status: ,` -- a field with no type.
+                // The record must be named before its nested enums are, so
+                // an enum inside an inline record gets the record's name.
+                name_anonymous_records(&mut ty, var);
                 name_nested_enums(&mut ty, &mut enums);
                 if let ProjectedType::Enum { name, variants } = &mut ty {
                     if name.is_empty() {
@@ -675,6 +678,36 @@ fn name_nested_enums(ty: &mut ProjectedType, enums: &mut Vec<(String, Vec<String
         ProjectedType::Map(k, v) => {
             name_nested_enums(k, enums);
             name_nested_enums(v, enums);
+        }
+        _ => {}
+    }
+}
+
+/// Name a record type that the source never named.
+///
+/// A type invariant may state the record inline --
+/// `pendingReconfig \in [Node -> [op: .., target: ..]]` -- rather than through
+/// a named operator like `Config == [id: .., members: .., committed: ..]`.
+/// A nameless record is dropped by [`collect_records`], so nothing declares it
+/// and every value of that shape then fails to match a declared type: four of
+/// the tier4 composition's gaps were this one record.
+///
+/// Named after the variable it types, exactly as an unnamed nested enum is
+/// named after the record and field it sits in.
+fn name_anonymous_records(ty: &mut ProjectedType, var: &str) {
+    match ty {
+        ProjectedType::Record { name, fields } => {
+            if name.is_empty() {
+                *name = format!("L{}", to_pascal_case(var));
+            }
+            for (_, field_ty) in fields.iter_mut() {
+                name_anonymous_records(field_ty, var);
+            }
+        }
+        ProjectedType::Set(inner) | ProjectedType::Seq(inner) => name_anonymous_records(inner, var),
+        ProjectedType::Map(k, v) => {
+            name_anonymous_records(k, var);
+            name_anonymous_records(v, var);
         }
         _ => {}
     }

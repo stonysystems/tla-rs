@@ -2080,6 +2080,13 @@ impl<'a> ActionContext<'a> {
                 op: TlaUnaryOp::Neg,
                 operand,
             } => Ok(format!("-{}", self.parenthesised(operand, 7)?)),
+            // `DOMAIN f`. A TLA+ function projects to a Verus `Map`, whose
+            // domain is `.dom()`. Jetpack's conflict test walks the keys a node
+            // already holds a command for.
+            TlaExpr::UnaryOp {
+                op: TlaUnaryOp::Domain,
+                operand,
+            } => Ok(format!("{}.dom()", self.parenthesised(operand, 9)?)),
             TlaExpr::IfThenElse {
                 cond,
                 then_expr,
@@ -2354,7 +2361,22 @@ fn collect_calls_with(
             {
                 if let Some(callee) = module.operators.iter().find(|o| o.name == *name) {
                     if let Some(param) = callee.params.get(index) {
-                        out.insert(name.clone(), param.name.clone());
+                        let first_time = out.insert(name.clone(), param.name.clone()).is_none();
+                        // A composed spec dispatches through an intermediate
+                        // operator: `Next` binds the message and calls
+                        // `Receive(i, m)`, whose body is a disjunction of the
+                        // layers' own handlers. Without following that step
+                        // the real handlers have no message parameter, so
+                        // `m.field` has no type -- which is what decides
+                        // whether indexing it loses one. The tier4 Jetpack
+                        // composition reported `application m.mentries[1]`
+                        // for exactly this reason, on a handler that
+                        // translates fine when `Next` calls it directly.
+                        //
+                        // Guarded on `first_time` so a cycle terminates.
+                        if first_time {
+                            collect_calls_with(&callee.body, &param.name, module, out);
+                        }
                     }
                 }
             }
