@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual trigger. Two uses: testing a change to this file without pushing a
+  # commit to main to provoke a run, and re-running after an event was missed
+  # (GitHub throttles webhooks during an Actions incident and does not replay
+  # the pushes it dropped, so a run can be owed with nothing to trigger it).
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
