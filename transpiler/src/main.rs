@@ -6021,7 +6021,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
         }
 
         Commands::CleanTla { input, output } => {
-            use verus_transpiler::tla::{emit, parse_module, project, ProjectionError};
+            use verus_transpiler::tla::{
+                emit, needs_resolution, parse_module, project, resolve_module_file, ProjectionError,
+            };
 
             let source = std::fs::read_to_string(input)
                 .map_err(|e| miette::miette!("Failed to read TLA+ file: {}", e))?;
@@ -6032,6 +6034,23 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     eprintln!("{}: {}", input.display(), e);
                     std::process::exit(2);
                 }
+            };
+
+            // A composed spec is translated as the module it denotes. `tla-lint`
+            // was taught this in 55.1.b; `clean-tla` was not, and the omission
+            // showed up as "element type could not be read off a declaration"
+            // for every variable -- the declarations were in the modules the
+            // translator had never loaded.
+            let module = if needs_resolution(&module) {
+                match resolve_module_file(input) {
+                    Ok(resolved) => resolved,
+                    Err(e) => {
+                        eprintln!("{}: {e}", input.display());
+                        std::process::exit(2);
+                    }
+                }
+            } else {
+                module
             };
 
             let projected = match project(&module) {

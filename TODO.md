@@ -18345,7 +18345,38 @@ and not an argued one. Measured against `jetpack.tla`:
         identifiers, and it made the whole module unparseable. `_` is now the
         subscript operator only after `]` or `>>`. Both directions are pinned by
         tests.
-- [ ] **55.2** `base_raft_clean.tla` — the base protocol as a standalone clean
+- [x] **55.2 / 55.3 / 55.4 — the three modules are written and the composition
+      is CLEAN (2026-08-05).** `tests/corpus/tier4/t4_01_jetpack_full/`:
+      `base_raft_clean.tla` (400 lines), `jetpack_clean.tla` (~570),
+      `jetpack_raft_clean.tla` (~250). `tla-lint` on the composition:
+      **clean, node set `Node`, 34 per-node variables** — the first genuine
+      multi-module TLA+ composition to pass the subset.
+      Structure mirrors the original: the two layers are **library modules**
+      with no `Init`/`Next`, INSTANCEd by the composition. Linting a library
+      alone reports "no next-state relation", which is correct — a library is
+      not a spec, and the file headers say so.
+      **Kept, against `t3_01_jetpack` which dropped all of it**: the fast path
+      (Preaccept, client quorum counting, Resubmit), the base protocol, views
+      and reconfiguration, and the client layer.
+      Decisions: one node set `Node == Server \cup Client` with both roles'
+      state per-node and actions guarded by role (`t1_02_twophase`'s
+      transaction-manager pattern); `FastpathQuorum` replaced by the closed
+      form from 55.3.a; response tables replaced by responder sets plus online
+      aggregation. Still not faithful, each with a reason in the header: the
+      message bag is a set (no duplication), the four counters are per-node,
+      and execution tracking is absent as a history variable.
+  - [x] **A second half of 55.1.b that had been missed.** The resolver was
+        wired into `tla-lint` only, not `clean-tla`. It surfaced as *"element
+        type could not be read off a declaration"* for **every** variable — the
+        declarations were in modules the translator had never loaded. Wiring it
+        took the composition from **71 unprojectable parts to 29**, then to 22
+        after three variables missing from the type invariants were declared.
+  - [ ] **55.2.z** Close the remaining 22, all genuine translator gaps rather
+        than modelling problems: `CASE` on the right of an update; `DOMAIN`;
+        `Map` construction over a set that is not the node set
+        (`[k \in Key |-> ..]`, `[j \in Server |-> ..]`); an inline record type
+        in a type invariant not being collected as a declared record.
+- [ ] **55.2-old** `base_raft_clean.tla` — the base protocol as a standalone clean
       module. Closest existing reference is `t2_01_raft/clean.tla`.
 - [x] **55.3.a — the open question is answered: `FastpathQuorum` IS
       node-computable, so P4 applies and the fast path is projectable**
@@ -18393,6 +18424,13 @@ and not an argued one. Measured against `jetpack.tla`:
       (`Preaccept`, the client-side counting, `IsFastQuorum` as derived above).
 - [ ] **55.4** `composition_clean.tla` — however 55.1 resolves module structure.
 - [ ] **55.5** Refinement mapping + TLC refinement check (55.0.b).
+      **BLOCKED, environmental: `java` is gone from this machine.** TLC ran a
+      dozen times earlier in the same session; `/usr/lib/jvm` no longer exists
+      and `java` is not on `PATH`. The box was evidently rebuilt mid-session —
+      consistent with `python3` moving 3.10 → 3.14 and 94 upstream commits
+      arriving. **Nothing in the new spec has been model-checked**, and that
+      must not be glossed: the three modules are lint-clean and partially
+      translated, and their behaviour is entirely unverified.
 - [ ] **55.6** Translate all three, `verus` check, freeze goldens, write
       `rewrite.md` recording every decision and every remaining gap.
 
