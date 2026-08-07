@@ -79,8 +79,16 @@ Init ==
   /\ currentTerm = [i \in Node |-> 1]
   /\ ostate = [i \in Node |-> IF i \in Server THEN B!Follower ELSE B!NotMember]
   /\ votedFor = [i \in Node |-> B!Nil]
-  /\ log = [i \in Node |-> << >>]
-  /\ commitIndex = [i \in Node |-> 0]
+  (* Every member starts with the cluster-forming entry already committed,  *)
+  (* as upstream does -- its Init gives each member `<<firstEntry>>` and     *)
+  (* sets the leader's nextIndex to 2. An empty initial log is not just a    *)
+  (* smaller model: `AppendEntries` sends `mprevLogIndex = nextIndex - 1`,   *)
+  (* and `LogOk` rejects any request carrying entries at prevLogIndex 0, so  *)
+  (* the first entry could never be replicated and `AdvanceCommitIndex` was  *)
+  (* unreachable. TLC's coverage table is what pointed at it.                *)
+  /\ log = [i \in Node |->
+              IF i \in Server THEN << B!FirstEntry >> ELSE << >>]
+  /\ commitIndex = [i \in Node |-> IF i \in Server THEN 1 ELSE 0]
   /\ votesGranted = [i \in Node |-> {}]
   /\ nextIndex = [i \in Node |-> [j \in Server |-> 1]]
   /\ matchIndex = [i \in Node |-> [j \in Server |-> 0]]

@@ -50,6 +50,12 @@ InitClusterCommand  == "initCluster"
 AddServerCommand    == "addServer"
 RemoveServerCommand == "removeServer"
 
+(* The entry every member's log starts with: the cluster-forming entry,     *)
+(* committed before the protocol begins. Term 0, so no election can be      *)
+(* confused by it.                                                          *)
+FirstEntry == [command |-> InitClusterCommand, term |-> 0,
+               value |-> CHOOSE v \in Commands : TRUE]
+
 ReconfigAdd    == "add"
 ReconfigRemove == "remove"
 NoReconfig     == [op |-> "none", target |-> 0]

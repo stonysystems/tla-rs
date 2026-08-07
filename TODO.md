@@ -18371,11 +18371,37 @@ and not an argued one. Measured against `jetpack.tla`:
         declarations were in modules the translator had never loaded. Wiring it
         took the composition from **71 unprojectable parts to 29**, then to 22
         after three variables missing from the type invariants were declared.
-  - [ ] **55.2.z** Close the remaining 22, all genuine translator gaps rather
-        than modelling problems: `CASE` on the right of an update; `DOMAIN`;
-        `Map` construction over a set that is not the node set
-        (`[k \in Key |-> ..]`, `[j \in Server |-> ..]`); an inline record type
-        in a type invariant not being collected as a declared record.
+  - [ ] **55.2.z — 24 gaps -> 5 (2026-08-07).** Four features closed, and two
+        of them turned up defects that were **already shipped**:
+    - [x] tables and broadcasts over a set that is not the node set — 12 gaps.
+          Doing it exposed that `project_node_set` named the node-set constant
+          by "the first constant with a set type", which is right only when the
+          spec has one. Paxos declares `CONSTANT Value, Acceptor, MaxBallot`,
+          so `{ Msg1a(s, d, b) : d \in Acceptor }` was frozen in a **green**
+          case's golden as `c.value.map(..)` — 1a broadcast to the set of
+          *values*. V1 typechecks (both are `Set<int>`), V2 never looks at the
+          golden, V3 froze the wrong answer as the reference.
+    - [x] anonymous record types — 4 gaps. A type invariant may state a record
+          inline rather than through a named operator; nameless records were
+          dropped, so nothing declared them.
+    - [x] `DOMAIN` — 1 gap.
+    - [x] receive handlers reached through a dispatcher — 1 gap. A composed
+          spec writes `\E m \in msgs : Receive(i, m)` and puts the real
+          handlers in `Receive`'s body; the resolver stopped at `Receive`, so
+          `m.mentries` had no type, and a field's type is what decides whether
+          indexing it loses one.
+    - [x] **operator inlining substituted parameters in sequence**, so a later
+          parameter captured an identifier an earlier substitution introduced.
+          `PreacceptReq(s, d, e, c)` called with `e := clientEpoch[c]` and a
+          fourth parameter named `c` produced `mepoch |-> clientEpoch[cmd]`
+          *and* `msource |-> cmd` — a message sent from the wrong node, which
+          would have verified. Only the first half errored, which is the sole
+          reason it was found. Substitution is now simultaneous, with binder
+          shadowing handled per name.
+    - [ ] remaining 5: `CASE` on the right of an update; a range as a
+          quantifier domain (`1 .. Len(log[i])`); nested `EXCEPT` over a
+          per-node map (`cmdPool[i]`); a `LET` whose definitions feed several
+          updates; a multi-binder set comprehension in a send.
 - [ ] **55.2-old** `base_raft_clean.tla` — the base protocol as a standalone clean
       module. Closest existing reference is `t2_01_raft/clean.tla`.
 - [x] **55.3.a — the open question is answered: `FastpathQuorum` IS
@@ -18423,14 +18449,47 @@ and not an argued one. Measured against `jetpack.tla`:
 - [ ] **55.3** `jetpack_clean.tla` — recovery **plus the fast path**
       (`Preaccept`, the client-side counting, `IsFastQuorum` as derived above).
 - [ ] **55.4** `composition_clean.tla` — however 55.1 resolves module structure.
-- [ ] **55.5** Refinement mapping + TLC refinement check (55.0.b).
-      **BLOCKED, environmental: `java` is gone from this machine.** TLC ran a
-      dozen times earlier in the same session; `/usr/lib/jvm` no longer exists
-      and `java` is not on `PATH`. The box was evidently rebuilt mid-session —
-      consistent with `python3` moving 3.10 → 3.14 and 94 upstream commits
-      arriving. **Nothing in the new spec has been model-checked**, and that
-      must not be glossed: the three modules are lint-clean and partially
-      translated, and their behaviour is entirely unverified.
+- [x] **55.5 — the composition is model-checked (2026-08-07).** Java
+      reinstalled (Temurin JRE 21, to `$HOME`, no sudo on this box). TLC found
+      **six defects**, every one in the new spec rather than in the tool:
+
+      1. two **unclosed comments** — TLA+ comments nest, and our frontend is
+         more permissive than SANY, so nothing had reported them;
+      2. `NilCmd \notin Command`, so `TypeOK` failed in the *initial* state;
+      3. `UpdateTerm` read `m.mterm` off any message — C4 gives the composition
+         ONE network, and it now carries Jetpack's messages too;
+      4. `BecomeToBeLeader` both assigned `ostate'` and listed `ostate` in
+         UNCHANGED. Unsatisfiable, so **no node could ever become leader** and
+         24 of 34 actions never fired. 2,591 states became 6.5M;
+      5. `LeaderHasRecovered` was **mis-stated and the spec was right**: a
+         leader receiving a BeginRecoveryRequest re-enters Recovery as a
+         *participant*, and upstream's handler adopts the incoming view with no
+         epoch guard. Restated as the action property the composition actually
+         guarantees;
+      6. an **empty initial log**. Upstream's Init gives every member
+         `<<firstEntry>>` and sets the leader's `nextIndex` to 2; mine started
+         empty, and `LogOk` rejects any request carrying entries at
+         `prevLogIndex = 0`, so the first entry could never be replicated and
+         `AdvanceCommitIndex` was unreachable.
+
+      **Result: 6,516,746 distinct states, depth 75, no violation** of TypeOK,
+      Consistency, OneLeaderPerTerm or the action property, with 32 of 34
+      actions covered.
+
+      Defect 4 is now guarded permanently by
+      `tests/corpus_wellformed_guard.rs`, which walks the parsed body so that
+      `\/ grant /\ v' = .. \/ ~grant /\ UNCHANGED v` — correct, and what
+      upstream Raft writes — is not reported.
+
+      **Coverage is the check that found 4 and 6, not the invariants.** Both
+      specs passed every invariant while most of the protocol was unreachable.
+      A methodological note that cost an hour: TLC prints its coverage table at
+      *every* progress report, cumulatively, so aggregating across reports lets
+      the zeros from the first one win. Read only the final table.
+
+      The refinement mapping against the unmodified originals is **not done** —
+      this item's original scope. What exists is the composition checked
+      against its own invariants.
 - [ ] **55.6** Translate all three, `verus` check, freeze goldens, write
       `rewrite.md` recording every decision and every remaining gap.
 
