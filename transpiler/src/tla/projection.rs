@@ -237,6 +237,44 @@ struct ProjectionContext<'a> {
     node_set: String,
 }
 
+impl ProjectedSpec {
+    /// The name of the constant that carries the node set in the projected
+    /// spec.
+    ///
+    /// This used to be "the first constant with a set type", which is right
+    /// only when the node set is the spec's one set constant. It is not on the
+    /// tier4 Jetpack composition: the node set is the *operator*
+    /// `Node == Server \cup Client`, so the synthetic constant is appended
+    /// after `Server`, `Client`, `Commands`, `CmdId` and `Key` -- and the
+    /// heuristic picked `server`. Nothing would have reported that; the spec
+    /// would have typechecked and quantified over the wrong set.
+    pub fn node_set_constant(&self) -> String {
+        let named = to_snake_case(&self.node_set);
+        if self.constants.iter().any(|(n, _)| *n == named) {
+            return named;
+        }
+        let synthesised = if self
+            .node_set
+            .chars()
+            .all(|ch| ch.is_alphanumeric() || ch == '_')
+        {
+            named
+        } else {
+            "nodes".to_string()
+        };
+        if self.constants.iter().any(|(n, _)| *n == synthesised) {
+            return synthesised;
+        }
+        // No such constant: keep the historical fallback rather than emitting
+        // a name that is certainly wrong.
+        self.constants
+            .iter()
+            .find(|(_, ty)| matches!(ty, ProjectedType::Set(_)))
+            .map(|(n, _)| n.clone())
+            .unwrap_or_else(|| "procs".to_string())
+    }
+}
+
 impl ProjectionContext<'_> {
     /// Resolve a 0-ary operator to its body, so `Clock == Nat \ {0}` can be
     /// followed when a variable is declared over `Clock`.

@@ -89,7 +89,7 @@ verus! {
         &&& s_.promise_bal == -1
         &&& s_.promise_val == -1
         &&& s_.proposed == false
-        &&& sent_packets == c.value.map(|d: int| LPacket { dst: d, msg: LMessage::M1a { bal: b, mbal: -1, mval: -1 } })
+        &&& sent_packets == c.acceptor.map(|d: int| LPacket { dst: d, msg: LMessage::M1a { bal: b, mbal: -1, mval: -1 } })
         &&& s_.max_bal == s.max_bal
         &&& s_.max_v_bal == s.max_v_bal
         &&& s_.max_val == s.max_val
@@ -151,7 +151,7 @@ verus! {
         &&& LIsMajority(c, s.promises)
         &&& if s.promise_bal == -1 { true } else { v == s.promise_val }
         &&& s_.proposed == true
-        &&& sent_packets == c.value.map(|d: int| LPacket { dst: d, msg: LMessage::M2a { bal: s.leader_bal, mbal: -1, mval: v } })
+        &&& sent_packets == c.acceptor.map(|d: int| LPacket { dst: d, msg: LMessage::M2a { bal: s.leader_bal, mbal: -1, mval: v } })
         &&& s_.max_bal == s.max_bal
         &&& s_.max_v_bal == s.max_v_bal
         &&& s_.max_val == s.max_val

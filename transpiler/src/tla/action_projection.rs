@@ -855,7 +855,7 @@ impl<'a> ActionContext<'a> {
                 Some(format!("Seq::<{}>::empty()", inner.render()))
             }
             (ProjectedType::Map(_, value_ty), TlaExpr::FnConstruct { var, domain, body }) => {
-                let set = self.project_node_set(domain).ok()?;
+                let set = self.project_set_valued(domain).ok()?;
                 let inner = ActionContext {
                     spec: self.spec,
                     param_types: Default::default(),
@@ -1243,23 +1243,41 @@ impl<'a> ActionContext<'a> {
                 }
                 Err(format!("peer set {}", render_source(expr)))
             }
-            other => self.project_node_set(other),
+            other => self.project_set_valued(other),
         }
     }
 
     fn project_node_set(&self, expr: &TlaExpr) -> Result<String, String> {
         let rendered = render_source(expr);
         if rendered == self.spec.node_set {
-            let name = self
-                .spec
-                .constants
-                .iter()
-                .find(|(_, ty)| matches!(ty, ProjectedType::Set(_)))
-                .map(|(n, _)| n.clone())
-                .unwrap_or_else(|| "procs".to_string());
-            Ok(format!("c.{name}"))
+            Ok(format!("c.{}", self.spec.node_set_constant()))
         } else {
             Err(format!("node set {rendered}"))
+        }
+    }
+
+    /// The node set, or any other expression the projection **knows** to be
+    /// set-valued.
+    ///
+    /// Tables and broadcasts are not always built over the node set, and
+    /// requiring that they are is what produced thirteen of the twenty-four
+    /// gaps on the tier4 Jetpack composition: Raft's `nextIndex` is a table
+    /// over `Server` (a client is never a peer), Jetpack's `cmdPool` is a table
+    /// over `Key`, and every recovery broadcast goes to `viewMembers[i]` --
+    /// the node's own view, not the whole cluster.
+    ///
+    /// Knowing it is set-valued is the whole condition, and the reason this is
+    /// not simply `project_expr`: an unresolved identifier projects to itself,
+    /// so `[k \in Nat |-> ..]` would emit `Map::new(Nat, ..)` against a `Nat`
+    /// that does not exist. The same guard is why the quantifier-domain
+    /// fallback below is written this way.
+    fn project_set_valued(&self, expr: &TlaExpr) -> Result<String, String> {
+        match self.project_node_set(expr) {
+            Ok(set) => Ok(set),
+            Err(node_set_error) => match self.type_of(expr) {
+                Some(ProjectedType::Set(_)) => self.project_expr(expr),
+                _ => Err(node_set_error),
+            },
         }
     }
 
@@ -1760,7 +1778,18 @@ impl<'a> ActionContext<'a> {
     /// expression's spelling.
     fn type_of(&self, expr: &TlaExpr) -> Option<ProjectedType> {
         match expr {
-            TlaExpr::Ident(name) => self.param_types.get(name.as_str()).cloned(),
+            // A parameter first, then a constant: `Server` and `Key` are
+            // CONSTANTS, and a table built over one (`nextIndex`, `cmdPool`)
+            // needs to be recognised as set-valued the same way a per-node set
+            // variable is.
+            TlaExpr::Ident(name) => self.param_types.get(name.as_str()).cloned().or_else(|| {
+                let snake = crate::tla::projection::to_snake_case(name);
+                self.spec
+                    .constants
+                    .iter()
+                    .find(|(n, _)| *n == snake)
+                    .map(|(_, t)| t.clone())
+            }),
             TlaExpr::RecordAccess { record, field } => {
                 let field = to_snake_case(field);
                 if matches!(&**record, TlaExpr::Ident(n) if Some(n) == self.msg_param.as_ref()) {
@@ -2233,7 +2262,7 @@ impl<'a> ActionContext<'a> {
             )),
             // `[d \in Node |-> e]` -- a table built over the peers.
             TlaExpr::FnConstruct { var, domain, body } => {
-                let set = self.project_node_set(domain)?;
+                let set = self.project_set_valued(domain)?;
                 let value = self.project_expr_with_binder(body, var)?;
                 Ok(format!("Map::new({set}, |{var}: int| {value})"))
             }
@@ -2270,23 +2299,12 @@ impl<'a> ActionContext<'a> {
                 Err(format!("quantifier domain {}", render_source(set)))
             }
             // The node set, or -- as EPaxos's `\E rec \in cmdLog[i]` needs --
-            // any set-valued expression the node itself holds.
-            // The node set, or -- as EPaxos's `\E rec \in cmdLog[i]` needs --
-            // any expression the projection knows to be set-valued.
-            //
-            // Knowing it is set-valued is the whole condition. Falling back to
-            // `project_expr` alone would accept `\E v \in Nat`, because an
-            // unresolved identifier projects to itself, and emit `Nat.contains(v)`
-            // against a `Nat` that does not exist.
-            other => match self.project_node_set(other) {
-                Ok(set) => Ok(format!("{set}.contains({var})")),
-                Err(node_set_error) => match self.type_of(other) {
-                    Some(ProjectedType::Set(_)) => {
-                        Ok(format!("{}.contains({var})", self.project_expr(other)?))
-                    }
-                    _ => Err(node_set_error),
-                },
-            },
+            // any set-valued expression the node itself holds. See
+            // `project_set_valued` for why the type guard is not optional.
+            other => Ok(format!(
+                "{}.contains({var})",
+                self.project_set_valued(other)?
+            )),
         }
     }
 }
