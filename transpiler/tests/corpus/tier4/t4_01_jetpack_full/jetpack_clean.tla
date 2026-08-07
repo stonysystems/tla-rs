@@ -88,6 +88,10 @@ VARIABLES
 Command == [cmd_id: CmdId, key: Key]
 NilCmd  == [cmd_id |-> 0, key |-> 0]
 
+(* The sentinel is not a command, so every slot that may hold "no command"   *)
+(* is typed to admit it -- the same shape base_raft uses for `votedFor`.     *)
+CommandOrNil == Command \cup {NilCmd}
+
 Epoch == 0 .. MaxEpoch
 
 (***************************************************************************)
@@ -98,7 +102,8 @@ Epoch == 0 .. MaxEpoch
 (*   FastpathQuorum(v) == {q \in JQuorum(v) :                               *)
 (*       /\ v.proposing_replica_ids \subseteq q                            *)
 (*       /\ \A q2 \in JQuorum(v) :                                         *)
-(*            v.proposing_replica_ids \subseteq q2 => (q \cap q2) \in JQuorum(v)}
+(*            v.proposing_replica_ids \subseteq q2                        *)
+(*              => (q \cap q2) \in JQuorum(v)}                            *)
 (*                                                                         *)
 (* which quantifies over every other quorum -- exactly what a node cannot   *)
 (* evaluate. It collapses: writing P for the proposers and n for the view   *)
@@ -210,8 +215,8 @@ JetpackTypeOK ==
   /\ clientEpoch \in [Node -> Epoch]
   /\ clientMembers \in [Node -> SUBSET Server]
   /\ clientProposers \in [Node -> SUBSET Server]
-  /\ cmdPool \in [Node -> [Key -> Command]]
-  /\ clientPending \in [Node -> Command]
+  /\ cmdPool \in [Node -> [Key -> CommandOrNil]]
+  /\ clientPending \in [Node -> CommandOrNil]
 
 (***************************************************************************)
 (* FAST PATH                                                              *)

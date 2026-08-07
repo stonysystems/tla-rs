@@ -62,6 +62,13 @@ RequestVoteResponse   == "rvp"
 AppendEntriesRequest  == "aeq"
 AppendEntriesResponse == "aep"
 
+(* C4 gives the composition ONE network, so this module's actions see       *)
+(* Jetpack's messages too. Only these four carry `mterm`, and `UpdateTerm`  *)
+(* is the one action that reads a field before knowing the message is its   *)
+(* own -- TLC caught it reading `mterm` off a `paq`.                        *)
+TermCarrying == {RequestVoteRequest, RequestVoteResponse,
+                 AppendEntriesRequest, AppendEntriesResponse}
+
 Ok            == "ok"
 StaleTerm     == "staleTerm"
 EntryMismatch == "entryMismatch"
@@ -143,8 +150,10 @@ BaseTypeOK ==
   /\ log \in [Node -> Seq(Entry)]
   /\ commitIndex \in [Node -> Index]
   /\ votesGranted \in [Node -> SUBSET Server]
-  /\ nextIndex \in [Node -> [Node -> 1 .. MaxLogLen + 1]]
-  /\ matchIndex \in [Node -> [Node -> Index]]
+  (* Inner domain is `Server`, not `Node`: a leader tracks its followers, and *)
+  (* a client is never one. TLC caught this the moment a leader existed.      *)
+  /\ nextIndex \in [Node -> [Server -> 1 .. MaxLogLen + 1]]
+  /\ matchIndex \in [Node -> [Server -> Index]]
   /\ config \in [Node -> Config]
   /\ electionCtr \in [Node -> 0 .. MaxElections]
   /\ restartCtr \in [Node -> 0 .. MaxRestarts]
@@ -176,6 +185,7 @@ Restart(i) ==
 (* against it, which is the same set of steps stated so a node can take one.*)
 (***************************************************************************)
 UpdateTerm(i, m) ==
+  /\ m.mtype \in TermCarrying
   /\ m.mdest = i
   /\ m.mterm > currentTerm[i]
   /\ currentTerm' = [currentTerm EXCEPT ![i] = m.mterm]
@@ -253,7 +263,7 @@ BecomeToBeLeader(i) ==
   /\ nextIndex' = [nextIndex EXCEPT ![i] = [j \in Server |-> Len(log[i]) + 1]]
   /\ matchIndex' = [matchIndex EXCEPT ![i] = [j \in Server |-> 0]]
   /\ msgs' = msgs
-  /\ UNCHANGED <<currentTerm, ostate, votedFor, log, commitIndex,
+  /\ UNCHANGED <<currentTerm, votedFor, log, commitIndex,
                  votesGranted, config, pendingReconfig, electionCtr,
                  restartCtr>>
 
@@ -297,8 +307,13 @@ LogOk(i, m) ==
          /\ m.mprevLogIndex <= Len(log[i])
          /\ m.mprevLogTerm = log[i][m.mprevLogIndex].term
     ELSE /\ m.mprevLogIndex = Len(log[i])
+         (* The `> 0` is not redundant with the disjunct above it: TLC        *)
+         (* evaluated `log[i][0]` on an empty log here. Guarding the index    *)
+         (* cannot change LogOk's value -- at index 0 the first disjunct is   *)
+         (* already TRUE -- it only removes an evaluation that is an error.   *)
          /\ \/ m.mprevLogIndex = 0
-            \/ m.mprevLogTerm = log[i][m.mprevLogIndex].term
+            \/ /\ m.mprevLogIndex > 0
+               /\ m.mprevLogTerm = log[i][m.mprevLogIndex].term
 
 RejectAppendEntriesRequest(i, m) ==
   /\ m.mdest = i

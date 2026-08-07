@@ -82,8 +82,8 @@ Init ==
   /\ log = [i \in Node |-> << >>]
   /\ commitIndex = [i \in Node |-> 0]
   /\ votesGranted = [i \in Node |-> {}]
-  /\ nextIndex = [i \in Node |-> [j \in Node |-> 1]]
-  /\ matchIndex = [i \in Node |-> [j \in Node |-> 0]]
+  /\ nextIndex = [i \in Node |-> [j \in Server |-> 1]]
+  /\ matchIndex = [i \in Node |-> [j \in Server |-> 0]]
   /\ config = [i \in Node |-> [id |-> 0, members |-> Server, committed |-> TRUE]]
   /\ pendingReconfig = [i \in Node |-> B!NoReconfig]
   /\ electionCtr = [i \in Node |-> 0]
@@ -170,7 +170,7 @@ ClientAction(i) ==
       J!ClientSendPreaccept(i, cmd) /\ UNCHANGED baseVars
 
 (***************************************************************************)
-(* Receipt. The original writes `\E m \in DOMAIN messages : ServerReceive(m)`,
+(* Receipt. The original writes it as an existential over the message set,   *)
 (* deriving the node from the message; C5 rejects that because no node is   *)
 (* bound. Binding the node and guarding on `m.mdest = i` is the same set of *)
 (* steps, stated so that a node can take one.                              *)
@@ -248,8 +248,24 @@ OneLeaderPerTerm ==
 (* recovery has finished. This is what Jetpack adds to Raft, and it is the  *)
 (* reason the two layers are composed rather than run side by side.         *)
 (***************************************************************************)
-LeaderHasRecovered ==
-  \A i \in Server : ostate[i] = B!Leader => jstate[i] = J!Ready
+(* Stated as an ACTION property, not a state invariant, and the difference  *)
+(* is the whole point. TLC refuted the state-invariant version                *)
+(*   \A i \in Server : ostate[i] = B!Leader => jstate[i] = J!Ready            *)
+(* at depth 37: a Leader receives a BeginRecoveryRequest for a later view   *)
+(* and re-enters Recovery as a *participant*. `jstate` carries both roles    *)
+(* -- driving your own recovery, and taking part in someone else's -- so as *)
+(* a state predicate the implication is false, and it is false in the       *)
+(* original too: upstream `HandleBeginRecoveryRequest` adopts the incoming  *)
+(* view unconditionally, with no epoch guard. The rewrite is faithful; the  *)
+(* invariant was mis-stated.                                                *)
+(*                                                                          *)
+(* What the composition actually guarantees is about the *transition*: the  *)
+(* only way into Leader is through ToBeLeader with recovery complete. That  *)
+(* is exactly what running the two layers side by side would not give.      *)
+LeaderOnlyAfterRecovery ==
+  [][ \A i \in Server :
+        (ostate[i] # B!Leader /\ ostate'[i] = B!Leader)
+          => (ostate[i] = B!ToBeLeader /\ jstate[i] = J!Ready) ]_vars
 
 SmallState == Cardinality(msgs) <= 4
 
