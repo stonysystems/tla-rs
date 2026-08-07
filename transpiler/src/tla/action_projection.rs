@@ -1370,11 +1370,29 @@ impl<'a> ActionContext<'a> {
         if params.len() != args.len() {
             return Err(format!("arity mismatch calling `{name}`"));
         }
-        let mut result = body;
-        for (param, arg) in params.iter().zip(args.iter()) {
-            result = substitute(&result, param, arg);
-        }
-        Ok(result)
+        // Simultaneous, not one parameter after another. Substituting in
+        // sequence lets a later parameter capture an identifier an earlier
+        // substitution just introduced, and TLA+ specs name parameters after
+        // what they carry, so the collision is not exotic:
+        //
+        //     PreacceptReq(s, d, e, c) == [.., mepoch |-> e, msource |-> s, ..]
+        //     BroadcastPreaccept(c, e, cmd, members) ==
+        //       { PreacceptReq(c, d, e, cmd) : d \in members }
+        //
+        // called with `e := clientEpoch[c]`. In sequence, `s := c` and
+        // `e := clientEpoch[c]` put `c` into the body, and the *fourth*
+        // substitution `c := cmd` then rewrote both -- yielding
+        // `mepoch |-> clientEpoch[cmd]` and `msource |-> cmd`. The first
+        // errored, which is the only reason this was found; the second is a
+        // message sent from the wrong node, and would have verified.
+        Ok(substitute_all(
+            &body,
+            &params
+                .iter()
+                .cloned()
+                .zip(args.iter().cloned())
+                .collect::<BTreeMap<_, _>>(),
+        ))
     }
 
     /// Inline a constructor call and require the result to be a record.
@@ -2454,42 +2472,64 @@ fn variant_name(tag: &str) -> String {
 }
 
 /// Replace every free occurrence of `param` with `value`.
+/// `subs` with the given names removed -- what a binder that shadows them
+/// leaves visible inside its body.
+fn without<'a>(
+    subs: &BTreeMap<String, TlaExpr>,
+    bound: impl IntoIterator<Item = &'a str>,
+) -> BTreeMap<String, TlaExpr> {
+    let bound: Vec<&str> = bound.into_iter().collect();
+    subs.iter()
+        .filter(|(k, _)| !bound.contains(&k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
+/// Substitute one identifier. A thin wrapper over the simultaneous form --
+/// see `inline_call` for why substitution must not be applied in sequence.
 fn substitute(expr: &TlaExpr, param: &str, value: &TlaExpr) -> TlaExpr {
+    substitute_all(
+        expr,
+        &[(param.to_string(), value.clone())].into_iter().collect(),
+    )
+}
+
+fn substitute_all(expr: &TlaExpr, subs: &BTreeMap<String, TlaExpr>) -> TlaExpr {
     match expr {
-        TlaExpr::Ident(name) if name == param => value.clone(),
+        TlaExpr::Ident(name) if subs.contains_key(name) => subs[name].clone(),
         TlaExpr::BinOp { op, left, right } => TlaExpr::BinOp {
             op: *op,
-            left: Box::new(substitute(left, param, value)),
-            right: Box::new(substitute(right, param, value)),
+            left: Box::new(substitute_all(left, subs)),
+            right: Box::new(substitute_all(right, subs)),
         },
         TlaExpr::UnaryOp { op, operand } => TlaExpr::UnaryOp {
             op: *op,
-            operand: Box::new(substitute(operand, param, value)),
+            operand: Box::new(substitute_all(operand, subs)),
         },
         TlaExpr::OpApply { op, args } => TlaExpr::OpApply {
-            op: Box::new(substitute(op, param, value)),
-            args: args.iter().map(|a| substitute(a, param, value)).collect(),
+            op: Box::new(substitute_all(op, subs)),
+            args: args.iter().map(|a| substitute_all(a, subs)).collect(),
         },
         TlaExpr::FnApply { func, arg } => TlaExpr::FnApply {
-            func: Box::new(substitute(func, param, value)),
-            arg: Box::new(substitute(arg, param, value)),
+            func: Box::new(substitute_all(func, subs)),
+            arg: Box::new(substitute_all(arg, subs)),
         },
         TlaExpr::Record(fields) => TlaExpr::Record(
             fields
                 .iter()
-                .map(|(n, v)| (n.clone(), substitute(v, param, value)))
+                .map(|(n, v)| (n.clone(), substitute_all(v, subs)))
                 .collect(),
         ),
         TlaExpr::SetEnum(items) => {
-            TlaExpr::SetEnum(items.iter().map(|i| substitute(i, param, value)).collect())
+            TlaExpr::SetEnum(items.iter().map(|i| substitute_all(i, subs)).collect())
         }
-        TlaExpr::SetMap { expr, var, set } if var != param => TlaExpr::SetMap {
-            expr: Box::new(substitute(expr, param, value)),
+        TlaExpr::SetMap { expr, var, set } => TlaExpr::SetMap {
+            expr: Box::new(substitute_all(expr, &without(subs, [var.as_str()]))),
             var: var.clone(),
-            set: Box::new(substitute(set, param, value)),
+            set: Box::new(substitute_all(set, subs)),
         },
         TlaExpr::RecordAccess { record, field } => TlaExpr::RecordAccess {
-            record: Box::new(substitute(record, param, value)),
+            record: Box::new(substitute_all(record, subs)),
             field: field.clone(),
         },
         TlaExpr::IfThenElse {
@@ -2497,43 +2537,43 @@ fn substitute(expr: &TlaExpr, param: &str, value: &TlaExpr) -> TlaExpr {
             then_expr,
             else_expr,
         } => TlaExpr::IfThenElse {
-            cond: Box::new(substitute(cond, param, value)),
-            then_expr: Box::new(substitute(then_expr, param, value)),
-            else_expr: Box::new(substitute(else_expr, param, value)),
+            cond: Box::new(substitute_all(cond, subs)),
+            then_expr: Box::new(substitute_all(then_expr, subs)),
+            else_expr: Box::new(substitute_all(else_expr, subs)),
         },
-        // Quantifiers and CHOOSE bind their own variable, so substitution
-        // stops at a binder that shadows the parameter -- but it must go
-        // *into* the body otherwise. Skipping them left `Max(s)`'s body
-        // referring to `s` while its signature said `s_arg`.
-        TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body }
-            if !vars.iter().any(|b| b.var == param) =>
-        {
+        // Quantifiers and CHOOSE bind their own variable, so a binder that
+        // shadows a parameter hides *that* parameter -- and only that one --
+        // inside the body. The binding sets are outside the binder's scope,
+        // so they still see everything. Skipping the whole node left
+        // `Max(s)`'s body referring to `s` while its signature said `s_arg`.
+        TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+            let inner = without(subs, vars.iter().map(|b| b.var.as_str()));
             let vars = vars
                 .iter()
                 .map(|b| crate::tla::ast::TlaQuantBound {
                     var: b.var.clone(),
-                    set: b.set.as_ref().map(|s| substitute(s, param, value)),
+                    set: b.set.as_ref().map(|s| substitute_all(s, subs)),
                 })
                 .collect();
-            let body = Box::new(substitute(body, param, value));
+            let body = Box::new(substitute_all(body, &inner));
             if matches!(expr, TlaExpr::Forall { .. }) {
                 TlaExpr::Forall { vars, body }
             } else {
                 TlaExpr::Exists { vars, body }
             }
         }
-        TlaExpr::Choose { var, set, body } if var != param => TlaExpr::Choose {
+        TlaExpr::Choose { var, set, body } => TlaExpr::Choose {
             var: var.clone(),
-            set: set.as_ref().map(|s| Box::new(substitute(s, param, value))),
-            body: Box::new(substitute(body, param, value)),
+            set: set.as_ref().map(|s| Box::new(substitute_all(s, subs))),
+            body: Box::new(substitute_all(body, &without(subs, [var.as_str()]))),
         },
         TlaExpr::FnExcept { func, updates } => TlaExpr::FnExcept {
-            func: Box::new(substitute(func, param, value)),
+            func: Box::new(substitute_all(func, subs)),
             updates: updates
                 .iter()
                 .map(|u| crate::tla::ast::TlaExceptUpdate {
                     path: u.path.clone(),
-                    value: substitute(&u.value, param, value),
+                    value: substitute_all(&u.value, subs),
                 })
                 .collect(),
         },
@@ -2640,6 +2680,54 @@ mod tests {
         let module = parse_module(source).expect("test spec must parse");
         let spec = project_module(&module).expect("test spec must be clean");
         project_actions(&module, &spec)
+    }
+
+    /// A constructor whose parameter is named the same as an identifier an
+    /// earlier argument introduces. Substituting one parameter at a time lets
+    /// the later one capture it.
+    ///
+    /// This is the tier4 Jetpack composition reduced: `Send(s, d, e, c)` is
+    /// `PreacceptReq`, and the call passes `epoch[c]` for `e` while its own
+    /// fourth parameter is called `c`. In sequence the result was
+    /// `epoch[cmd]` and `src |-> cmd` -- a message sent from the wrong node,
+    /// which would have typechecked.
+    #[test]
+    fn inlining_substitutes_parameters_simultaneously() {
+        const CAPTURE: &str = r#"---- MODULE Test ----
+VARIABLES epoch, pending, network
+Message == [type: {"req"}, src: Proc, dst: Proc, e: Nat, v: Nat]
+TypeOK == /\ epoch \in [Proc -> Nat]
+          /\ pending \in [Proc -> Nat]
+Send(s, d, e, c) == [type |-> "req", src |-> s, dst |-> d, e |-> e, v |-> c]
+Go(c, cmd) == /\ pending[c] = 0
+              /\ pending' = [pending EXCEPT ![c] = cmd]
+              /\ network' = network \cup {Send(c, c, epoch[c], cmd)}
+              /\ UNCHANGED epoch
+Recv(self, m) == /\ m.type = "req"
+                 /\ epoch' = [epoch EXCEPT ![self] = m.e]
+                 /\ network' = network \ {m}
+                 /\ UNCHANGED pending
+Next == \E self \in Proc :
+          \/ \E cmd \in Nat : Go(self, cmd)
+          \/ \E m \in network : Recv(self, m)
+===="#;
+
+        let projected = actions(CAPTURE);
+        let go = action(&projected, "Go");
+        assert!(
+            go.gaps.is_empty(),
+            "capture made the epoch read look like another node's: {:?}",
+            go.gaps
+        );
+        let body = go.conjuncts.join(" ");
+        assert!(
+            body.contains("s.epoch"),
+            "the acting node's own epoch should be read as `s.epoch`: {body}"
+        );
+        assert!(
+            !body.contains("epoch[cmd]") && !body.contains("dst: cmd"),
+            "a parameter captured an identifier from an earlier argument: {body}"
+        );
     }
 
     fn action<'a>(actions: &'a [ProjectedAction], name: &str) -> &'a ProjectedAction {

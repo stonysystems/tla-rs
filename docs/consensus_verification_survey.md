@@ -48,6 +48,7 @@
   - [5.2 按协议族](#s52)
   - [5.3 按年代时间线](#s53)
   - [5.4 到达可运行实现的工作(本调研最重要的一张表)](#s54)
+  - [5.5 Paxos / Raft 专表:工具 × 自动化程度](#s55)
 - [6. 分析](#s6)
   - [6.1 三类方法的真实代价](#s61)
   - [6.2 覆盖断层与已确认的空白](#s62)
@@ -7801,6 +7802,63 @@ TLAPS 的现实困境是**证明代价高而工具支持弱**:后端由 Zenon/Is
 | 2025 | [VeriRT: An End-to-End Verification Framework for Real-Tim…](#w50) | 纯手写 | 实时分布式系统(共识邻域) | 端到端至汇编,经 CompCert 编译正确性;POPL 2025 |
 | 2025 | [Bolt-On Strong Consistency: Specification, Implementation…](#w198) | 半自动 | Ferry 共识 + 可加装的强一致层 | Super-V DSL 程序既可执行也可验证 |
 | 2026 | [Welder: Compositional Liveness Verification of Cluster Co…](#w150) | 半自动 | 集群控制平面(共识邻域) | Verus + verus-tla,组合式活性 |
+
+---
+
+<a id="s55"></a>
+### 5.5 Paxos / Raft 专表:工具 × 自动化程度
+
+这两张表把 [§2](#b2)–[§4](#b4) 的分类**沿协议切一刀**:行是使用的工具,列是证明的自动化程度,格子里是具体工作(点击跳到该条目)。
+
+读法上有三点必须记住:
+
+1. **「纯自动」不等于「证明」。** 同一列里,专用推断引擎与阈值自动机给的是**无界证明**;TLA+/SPIN 那几行给的是**有界检验**;实现层测试那一行**不给任何保证**。判据见 [§0.1 第二个维度](#s01)。
+2. **Paxos 列里的「Paxos」多数是单值 Paxos。** 自动推断的基准集以 single-decree Paxos 的 EPR 编码为主,Multi-Paxos 的安全性质是逐条目独立的;这与 Raft 的 State Machine Safety 不是一回事。
+3. **同一项工作可能同时出现在两张表里**(如 Sift、AutoMan、Basilisk、Modularity for Decidability 同时覆盖 Paxos 与 Raft)。
+
+Paxos 族共 **104** 项(纯手写 25 / 半自动 31 / 纯自动 48),
+Raft 族共 **60** 项(纯手写 7 / 半自动 14 / 纯自动 39)。
+
+#### 5.5.1 Paxos 家族
+
+| 工具 | 纯手写 | 半自动 | 纯自动 |
+|---|---|---|---|
+| **Coq / Rocq(含 Iris、Perennial)** | [WormSpace](#w27) *SoCC 2019*<br>[Much ADO about Failures](#w33) *PACMPL*<br>[Validating Labelled State Transition a…](#w36) *arXiv preprint o*<br>[Grove](#w37) *SOSP 2023*<br>[AdoB](#w39) *PACMPL*<br>[Trillium](#w43) *POPL 2024* | [An Empirical Study on the Correctness…](#w122) *EuroSys 2017* | — |
+| **Isabelle/HOL** | [Proving the Correctness of Disk Paxos](#w56) *Archive*<br>[Formal Verification of a Consensus Alg…](#w58) *International*<br>[Verifying Fault-Tolerant Distributed A…](#w61) *Archive*<br>[Consensus Refined](#w62) *DSN 2015* | [Verifying Safety Properties with the T…](#w173) *IJCAR 2010*<br>[Formal Verification of Multi-Paxos for…](#w175) *FM 2016* | — |
+| **NuPRL / EventML** | [Developing Correctly Replicated Databa…](#w91) *DSN 2014*<br>[EventML](#w92) *Science* | — | — |
+| **Agda / Lean / Athena** | [Verification of Eventual Consensus in…](#w112) *NFM 2021* | [Veil](#w201) *CAV 2025*<br>[Foundational Multi-Modal Program Verif…](#w140) *POPL 2026* | — |
+| **I/O 自动机工具链(IOA、TIOA、Larch Prover、TAME)** | [Larch Prover Paxos](#w96) *Unrefereed*<br>[IOA 编译器 Time-Based Paxos](#w99) *OPODIS 2010* | [Using simulated execution in verifying…](#w185) *International* | — |
+| **笔算(未机械化)** | [RAMBO](#w90) *DISC 2002*<br>[There Is More Consensus in Egalitarian…](#w100) *SOSP 2013*<br>[Zyzzyva 反例](#w103) *arXiv:1712.01367*<br>[Zyzzyva 反例](#w104) *arXiv:1712.01367*<br>[Paxos Deconstructed](#w106) *ESOP 2018*<br>[State-Machine Replication for Planet-S…](#w29) *EuroSys 2020*<br>[Matchmaker Paxos](#w111) *Journal*<br>[Vertical Atomic Broadcast and Passive…](#w44) *DISC 2024*<br>[Making Democracy Work](#w116) *OPODIS 2025* | [Scaling Replicated State Machines with…](#w195) *PVLDB* | [Paxos Made Live](#w408) *PODC 2007* |
+| **Dafny(含 Linear Dafny、Kondo、Basilisk)** | — | [IronFleet](#w121) *SOSP 2015*<br>[IronFleet(期刊版)](#w123) *Communications*<br>[Kondo](#w134) *OSDI 2024*<br>[AutoMan](#w136) *SOSP 2025*<br>[Zhang 博士论文](#w138) *University* | [Basilisk](#w224) *OSDI 2025* |
+| **Ivy / mypyvy** | — | [Paxos made EPR](#w152) *OOPSLA 2017*<br>[Deductive Verification of Distributed…](#w154) *FMCAD 2018*<br>[Modularity for Decidability](#w155) *PLDI 2018*<br>[Reducing Liveness to Safety](#w156) *POPL 2018*<br>[Verification of Threshold-Based Distri…](#w159) *CAV 2019*<br>[Ivy](#w161) *CAV 2020*<br>[Verification of Distributed Protocols:…](#w167) *FMCAD 2022*<br>[Mostly Automated Verification of Liven…](#w169) *POPL 2024*<br>[Simplifying Safety Proofs with Forward…](#w171) *PLDI 2026* | [I4](#w207) *SOSP 2019*<br>[Towards Automatic Inference of Inducti…](#w208) *HotOS 2019*<br>[DistAI](#w210) *OSDI 2021*<br>[From Finite to Infinite](#w212) *PhD*<br>[IC3PO](#w214) *NFM 2021*<br>[IC3PO(Lamport Paxos)](#w215) *FMCAD 2021*<br>[DuoAI](#w217) *OSDI 2022*<br>[P-FOL-IC3](#w219) *TACAS 2022*<br>[Property-Directed Reachability as Abst…](#w221) *POPL 2022* |
+| **Event-B / CIVL / Move Prover / Veil / PSync / Consensus Logic** | — | [A Logic-Based Framework for Verifying…](#w188) *VMCAI 2014*<br>[PSync](#w189) *POPL 2016*<br>[Communication-Closed Asynchronous Prot…](#w191) *CAV 2019*<br>[Inductive Sequentialization of Asynchr…](#w193) *PLDI 2020*<br>[Proved Construction of a Protocol Insp…](#w200) *ABZ 2025* | — |
+| **TLA+(TLAPS / TLC / Apalache / PlusCal)** | — | [Byzantizing Paxos by Refinement](#w174) *DISC 2011*<br>[Simpler Specifications and Easier Proo…](#w177) *NFM 2018*<br>[DistAlgo Multi-Paxos](#w178) *PPDP 2019* | [Neon safekeeper Paxos/WAL-service TLA+…](#w291) *PUBLIC*<br>[What's Live? Understanding Distributed…](#w287) *arXiv:2001.04787*<br>[The PlusCal Algorithm Language](#w272) *ICTAC 2009*<br>[NOPaxos](#w280) *USENIX OSDI 2016*<br>[On the correctness of Egalitarian Paxo…](#w285) *Information*<br>[Millions of Tiny Databases](#w315) *NSDI 2020*<br>[Amazon DynamoDB](#w323) *USENIX ATC 2022*<br>[Omni-Paxos](#w296) *EuroSys 2023*<br>[I3DP](#w397) *SOSP 2026*<br>[IC3Syn](#w401) *arXiv preprint a* |
+| **SPIN / Promela / mCRL2 / Maude / UPPAAL / SMV / Petri / CPN** | — | — | [Formal Modeling and Analysis of Google…](#w276) *Specification*<br>[Automated test case generation for the…](#w357) *Journal*<br>[Safety Verification of Asynchronous Co…](#w274) *PRDC 2012*<br>[Increasing Consistency in Multi-site D…](#w277) *SEFM 2014*<br>[Model Checking Paxos in Spin](#w278) *GandALF 2014*<br>[Cutoff Bounds for Consensus Algorithms](#w242) *CAV 2017*<br>[P4xos](#w286) *IEEE/ACM*<br>[Debugging Paxos in the UML Multiverse](#w294) *MODELS-C 2023*<br>[Kivi](#w297) *USENIX ATC 2024* |
+| **专用不变式推断引擎(I4 / DistAI / DuoAI / SWISS / IC3PO / endive / flyvy 等)** | — | — | [SWISS](#w211) *NSDI 2021*<br>[Universal Invariant Checking of Parame…](#w216) *CADE 2021*<br>[Primal-Dual Houdini](#w218) *POPL 2022*<br>[Efficient Implementation of an Abstrac…](#w375) *CAV 2024* |
+| **实现层模型检验 / 测试 / 确定性仿真(自研工具)** | — | — | [WiDS Checker](#w343) *NSDI 2007*<br>[CrystalBall](#w344) *NSDI 2009*<br>[MODIST](#w345) *USENIX NSDI 2009*<br>[LMC](#w347) *NSDI 2011*<br>[DEMETER](#w348) *SOSP 2011*<br>[Molly](#w352) *ACM SIGMOD 2015*<br>[ModP](#w356) *PACMPL*<br>[FlyMC](#w358) *EuroSys 2019*<br>[DSLabs](#w361) *EuroSys 2019*<br>[Distributed Protocol Combinators (PADL…](#w411) *PADL 2019*<br>[Mallory](#w371) *ACM CCS 2023* |
+| **其他 / 自研** | [De Prisco-Lampson-Lynch](#w79) *Theoretical* | [Verification of Consensus Algorithms U…](#w186) *Distributed*<br>[Pretend Synchrony](#w192) *POPL 2019* | [Model Checking of Consensus Algorithms…](#w273) *SRDS 2007*<br>[FoundationDB](#w365) *SIGMOD 2021*<br>[Specy](#w383) *OOPSLA 2026* |
+
+#### 5.5.2 Raft
+
+| 工具 | 纯手写 | 半自动 | 纯自动 |
+|---|---|---|---|
+| **Coq / Rocq(含 Iris、Perennial)** | [Verdi](#w17) *PLDI 2015*<br>[Verdi Raft](#w19) *CPP 2016*<br>[Adore](#w35) *PLDI 2022*<br>[ReCraft](#w48) *DSN 2025* | [An Empirical Study on the Correctness…](#w122) *EuroSys 2017* | — |
+| **Isabelle/HOL** | [Elasticsearch (Elastic) Zen2 cluster c…](#w65) *PUBLIC* | — | — |
+| **笔算(未机械化)** | — | — | [Virtual Consensus in Delos](#w317) *OSDI 2020*<br>[Tunable Consistency in MongoDB](#w314) *PVLDB* |
+| **Dafny(含 Linear Dafny、Kondo、Basilisk)** | — | [Sift](#w130) *USENIX ATC 2022*<br>[AutoMan](#w136) *SOSP 2025*<br>[Zhang 博士论文](#w138) *University* | [Basilisk](#w224) *OSDI 2025* |
+| **Ivy / mypyvy** | — | [Deductive Verification of Distributed…](#w154) *FMCAD 2018*<br>[Modularity for Decidability](#w155) *PLDI 2018*<br>[Ivy](#w161) *CAV 2020*<br>[Simplifying Safety Proofs with Forward…](#w171) *PLDI 2026* | — |
+| **TLA+(TLAPS / TLC / Apalache / PlusCal)** | [Ongaro 博士论文](#w101) *Stanford*<br>[Raft 成员变更 bug](#w102) *raft-dev Google * | [Formal Verification of Consensus in th…](#w179) *FM 2021*<br>[MongoRaftReconfig(TLAPS)](#w180) *CPP 2022*<br>[Compositional Inductive Invariant Infe…](#w199) *arXiv preprint a*<br>[Interactive Safety Verification of Dis…](#w182) *NFM 2026* | [Raft with Out-of-Order Executions](#w290) *International*<br>[PingCAP TiDB/TiKV TLA+ specifications…](#w312) *PUBLIC*<br>[CockroachDB Parallel Commits TLA+ spec…](#w313) *PUBLIC*<br>[Modeling the Raft Distributed Consensu…](#w284) *MARS 2020*<br>[eXtreme Modelling in Practice](#w318) *PVLDB*<br>[MongoRaftReconfig](#w288) *OPODIS 2021*<br>[endive](#w220) *FMCAD 2022*<br>[Compositional Model Checking of Consen…](#w324) *SRDS 2022*<br>[Confluent / Apache Kafka KRaft and Kaf…](#w325) *PUBLIC*<br>[TLA+ specifications for Kafka related…](#w327) *Industrial*<br>[PGo](#w293) *ASPLOS 2023*<br>[Model Checking Guided Testing for Dist…](#w372) *EuroSys 2023*<br>[Scythe](#w223) *FMCAD 2024*<br>[SandTable](#w298) *EuroSys 2024*<br>[The Development of a TLA+ Verified Cor…](#w299) *APWeb-WAIM 2024*<br>[Validating Traces of Distributed Progr…](#w377) *SEFM 2024*<br>[SysMoBench](#w304) *arXiv preprint (*<br>[Design and Modular Verification of Dis…](#w333) *VLDB 2025*<br>[Smart Casual Verification of the Confi…](#w334) *NSDI 2025*<br>[Model-Guided Fuzzing of Distributed Sy…](#w379) *OOPSLA 2025*<br>[Runtime Protocol Refinement Checking f…](#w381) *NSDI 2025*<br>[LeaseGuard](#w337) *Proc*<br>[I3DP](#w397) *SOSP 2026*<br>[Specula](#w400) *arXiv preprint (*<br>[IC3Syn](#w401) *arXiv preprint a* |
+| **SPIN / Promela / mCRL2 / Maude / UPPAAL / SMV / Petri / CPN** | — | — | [Modelling the Raft Distributed Consens…](#w376) *MARS 2024* |
+| **实现层模型检验 / 测试 / 确定性仿真(自研工具)** | — | — | [madsim (Rust deterministic simulation…](#w368) *PRACTICE-ONLY*<br>[DEMi](#w353) *USENIX NSDI 2016*<br>[Antithesis (autonomous deterministic-s…](#w355) *PRACTICE-ONLY*<br>[FlyMC](#w358) *EuroSys 2019*<br>[Jepsen (distributed systems safety ana…](#w349) *PRACTICE-ONLY*<br>[Morpheus](#w362) *ASPLOS 2020*<br>[Mallory](#w371) *ACM CCS 2023*<br>[Antithesis autonomous/deterministic si…](#w382) *NOT* |
+| **LLM / 神经方法** | — | — | [Agora](#w395) *ICML 2026* |
+| **其他 / 自研** | — | [Pretend Synchrony](#w192) *POPL 2019*<br>[Bolt-On Strong Consistency](#w198) *Proc* | [Specy](#w383) *OOPSLA 2026* |
+
+### 从这两张表能直接读出来的四件事
+
+1. **Coq 那一行,两张表都几乎全部落在「纯手写」。** 这是代价最高但层次最深的一档——Verdi Raft、Grove、AdoB、Adore、ReCraft 都在这里。Coq 生态里没有出现过"纯自动"。
+2. **Dafny 那一行是唯一一条横跨半自动与纯自动的路线。** IronFleet → Kondo → AutoMan 都是半自动,只有 **Basilisk** 站到了纯自动格;而它在 Raft 上做的是 Raft Leader Election,不是完整 Raft。
+3. **Raft 的「纯自动」格看着最满,但含金量最低。** 39 项里 TLA+ 一行独占 24 项,而这 24 项绝大多数是**有界模型检验与工业界公开规约**(MongoDB、Kafka KRaft、CockroachDB、TiDB、CCF、ZooKeeper),再加上一批实现层测试工具(Jepsen、Antithesis、madsim、DEMi、Mallory、FlyMC)。**真正给无界证明的只有 endive、Scythe、Basilisk、IC3Syn 四项,而它们做的都是 MLDR(无日志的 Raft 衍生重配置协议)或 Raft Leader Election。**
+4. **Verus 那一行在两张表里都是空的。** Verus 生态目前的共识相关成果(Anvil、Welder)验的是建立在共识之上的集群控制平面,不是共识协议本身;AutoMan 虽出自 Verus 邻近社区但用的是 Dafny。**Paxos/Raft × Verus 至今没有工作**——对本仓库(TLA+ → Verus)而言,这一格正是空白所在。
 
 ---
 
