@@ -19,8 +19,8 @@ IronFleet's specifications, proofs, and runtime structure are ported to Verus, w
 specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
 
 The repository also extends that foundation with additional distributed protocols, bidirectional
-TLA+/Verus translation, source-first and DPOR-based model checking, mutation-oriented code
-generation, and deployable C# networking/runtime integration.
+TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
+deployable C# networking/runtime integration.
 
 ## Quick Start: From a Spec to a Program
 
@@ -38,13 +38,22 @@ verus! {
 }
 ```
 
-The accompanying AutoMan annotation marks supplied inputs with `+` and outputs for the
-transpiler to synthesize with `-`:
+The Rust functions above are relations: their signatures do not say which parameters
+are known before execution. That dataflow is declared separately in
+`examples/quickstart/counter_spec.automan`:
 
 ```text
-LInit(-);
-LIncrement(+, -);
+module counter_spec {
+    LInit(-);
+    LIncrement(+, -);
+}
 ```
+
+Each marker corresponds positionally to a parameter in the Rust relation. `+` marks an
+input supplied to the generated function, while `-` marks an output that function must
+compute. Thus `LInit(value)` with `LInit(-)` generates a zero-argument `CInit` returning
+the initial value, and `LIncrement(value, value_)` with `LIncrement(+, -)` generates
+`CIncrement(value)` returning the new value represented by `value_`.
 
 From the repository root, generate the executable functions, verify them, compile them, and
 run the result:
@@ -79,8 +88,7 @@ and verifies, compiles, and runs this example.
   Bully leader election.
 - A spec-to-executable transpiler that generates Rust implementations and Verus
   refinement contracts.
-- TLA+/Verus translation, bounded model checking with DPOR, and a deployable C#/.NET
-  networking runtime.
+- TLA+/Verus translation, bounded model checking, and a deployable C#/.NET networking runtime.
 
 ## Requirements
 

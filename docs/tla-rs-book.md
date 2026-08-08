@@ -6,8 +6,7 @@ specifications, and derive executable Rust functions together with the contracts
 them back to the specification. It is primarily a Verus reimplementation of the ideas in
 [IronFleet](https://doi.org/10.1145/2815400.2815428) and
 [AutoMan](https://doi.org/10.1145/3731569.3764822), extended with more protocols,
-TLA+/Verus translation, source-first model checking, DPOR, and a deployable networking
-runtime.
+TLA+/Verus translation, source-first model checking, and a deployable networking runtime.
 
 Part I is a user guide: it takes a specification through generation, checking,
 verification, compilation, and execution. Part II is a developer guide for changing the
@@ -17,6 +16,11 @@ transpiler, proofs, model checker, protocol integrations, runtime, and build sys
 > development phase. When prose disagrees with source, tests, configuration, or CI, the
 > executable artifact wins. Exact verification totals and performance measurements are
 > snapshots; reproduce them before citing them.
+
+> **DPOR status — under development and not usable.** The `--search dpor` path is very
+> incomplete. Do not use DPOR output as verification, bug-finding evidence, or a release gate.
+> The source-first BFS/DFS workflow remains documented below; every DPOR reference is an
+> implementation note for contributors, not a supported user workflow.
 
 ## What is in the project
 
@@ -67,7 +71,7 @@ TLA+ source (optional)
        ├── translate-tla
        └── human message-aware rewrite → tla-lint → clean-tla
        ▼
-Verus TLA-style specification ───────────────► finite model checking
+Verus TLA-style specification ───────────────► finite model checking (BFS/DFS)
        │                                           │
        │ .automan modes + _transpile.toml          ├── counterexample
        ▼                                           └── bounded evidence
@@ -124,12 +128,16 @@ need range, validity, or finite-domain preconditions.
 | Try the project | Chapters 1–3 and the Counter quickstart in Chapter 2 |
 | Write a Verus specification | Chapters 3–7, then Chapter 11 |
 | Start from TLA+ | Chapters 3, 9, 8, and 7 |
-| Model check a protocol | Chapters 3 and 8; contributors continue with Chapter 22 |
+| Model check a protocol | Chapters 3 and 8; do not use DPOR; contributors continue with Chapter 22 |
 | Run an included service | Chapters 2, 7, and 10 |
 | Contribute to the transpiler or proofs | Chapters 13–20 and 24–27 |
 | Change translation or model checking | Chapters 22–24 and the relevant appendices |
 
 # Part I — User Guide
+
+> **DPOR is not a user feature:** it is very incomplete, under development, and not usable.
+> Use the BFS/DFS paths described in Chapter 8; do not select `--search dpor` for protocol
+> validation or evidence.
 
 Part I follows the main user path from a small relational specification to generated,
 verified, executable code, then extends that path to model checking, TLA+ conversion, and
@@ -154,9 +162,10 @@ The project brings together two lines of work:
 Both original projects used Dafny. tla-rs re-expresses their core ideas in
 Rust with [Verus](https://github.com/verus-lang/verus), then extends the
 workflow with more protocols, TLA+/Verus translation, source-first model
-checking, DPOR search, code-generation options for Rust ownership patterns,
-and a C# networking/runtime layer. The root [README](../README.md) gives the
-short project overview and paper attribution.
+checking, code-generation options for Rust ownership patterns, and a C#
+networking/runtime layer. The root [README](../README.md) gives the short
+project overview and paper attribution. The separate DPOR search path is very
+incomplete and not usable, as Chapter 8 explains.
 
 ### What is included
 
@@ -234,7 +243,8 @@ are blurred together. This book uses the following meanings consistently.
 |---|---|---|
 | A Verus-verified function | The checked body satisfies its stated contract under its preconditions and trusted dependencies | That the contract is the intended specification, or that dependencies and the environment are correct |
 | An `ensures` refinement link | The concrete result's logical view satisfies a named logical relation | An end-to-end theorem outside that relation's scope |
-| A bounded model-check result | No configured violation was found in the resolved finite model before the reported stop condition | An unbounded proof over all values and executions |
+| A bounded BFS/DFS model-check result | No configured violation was found in the resolved finite model before the reported stop condition | An unbounded proof over all values and executions |
+| DPOR output | Nothing reliable in the current implementation; treat it only as a development diagnostic | Verification, reliable bug-finding evidence, or a release gate |
 | `assume(...)` | Verus may use the proposition without a proof at that site | Evidence that the proposition is true |
 | `#[verifier(external_body)]` or an external specification | A trusted body is used through a specified interface | Verification of the hidden implementation |
 | C#/FFI and host/runtime code | The machinery that performs real I/O and invokes the protocol | Deductive Verus verification unless a particular relation is explicitly modeled and proved |
@@ -257,9 +267,10 @@ Most Verus work in this repository concerns state invariants, executable
 contracts, and refinement: statements about individual states or steps and
 their relation to a higher-level specification. The source-first model checker
 can also diagnose bounded `leads_to` obligations with fairness configuration,
-but only after fully exploring the configured finite graph. Neither facility
-silently upgrades the other: a bounded search is not an unbounded proof, and a
-function contract is not automatically a temporal theorem.
+but only after fully exploring the configured finite graph through the BFS/DFS
+path. Neither facility silently upgrades the other: a bounded search is not an
+unbounded proof, and a function contract is not automatically a temporal theorem.
+The DPOR path is not usable for this purpose.
 
 If you are new to the project, read Chapters 2–7 in order, then Chapter 8 for
 model checking and Chapter 10 for running a cluster. Existing TLA+ users can
@@ -563,10 +574,10 @@ dependencies. A model checker executes a resolved finite domain and is very
 good at producing concrete counterexamples, but its non-violation result is
 bounded by domains, depth, state limits, reductions, timeout, and stop reason.
 
-A productive workflow uses both: model check small instances to catch shallow
-specification mistakes, then prove the general invariants and refinement
-relations that matter. Chapter 8 covers the model checker; Chapters 4–7 cover
-the spec-to-proof path.
+A productive workflow uses both: model check small instances with BFS or DFS to catch shallow
+specification mistakes, then prove the general invariants and refinement relations that
+matter. Chapter 8 covers the model checker; Chapters 4–7 cover the spec-to-proof path. Do not
+use the very incomplete DPOR path.
 
 ## Chapter 4 — Write a TLA-Style Specification in Verus
 
@@ -764,8 +775,8 @@ pub open spec fn LSafetyNoCommitAbortOverlap(
 
 Defining an invariant does not prove it. A complete deductive argument shows
 that initialization establishes it and every `LNext` branch preserves it. A
-`proof fn` can package reusable steps; a finite model check can search for
-counterexamples in chosen domains.
+`proof fn` can package reusable steps; a finite BFS/DFS model check can search for
+counterexamples in chosen domains. DPOR is not usable for this purpose.
 
 Keep type/representation predicates separate from semantic invariants. For
 example, “every concrete enum has a valid logical view” and “no resource
@@ -1438,17 +1449,22 @@ Never make the last row mean “edit `src/generated/` until it compiles.”
 
 ## Chapter 8 — Model Check a Specification
 
+> **DPOR warning — very incomplete, under development, and not usable.** Do not select
+> `--search dpor` for protocol validation. Do not treat DPOR output as safety or liveness
+> evidence, a reliable counterexample, or a release gate. The BFS and DFS instructions below
+> do not make DPOR usable; DPOR details are retained only for contributors developing it.
+
 Model checking is the fastest way to turn a small protocol model into either a concrete
 counterexample or carefully bounded evidence. tla-rs can explore the `LInit`/`LNext` relations
 in a Verus protocol source file directly; it does not first translate them to TLA+ or invoke
-TLC. This source-first path is useful early, when a counterexample is cheaper to understand
-than a failed proof, and later as a regression gate beside deductive verification.
+TLC. This source-first BFS/DFS path is useful early, when a counterexample is cheaper to
+understand than a failed proof, and later as a regression gate beside deductive verification.
 
-The word “check” needs a boundary. A successful run says something about the finite domains,
-collection bounds, transition semantics, search horizon, reductions, and properties selected
-for that run. It is not an unbounded Verus proof. Conversely, a counterexample is often useful
-even when the run is lossy or incomplete: it is a concrete execution to inspect, provided the
-evaluator faithfully supports the expressions involved.
+The word “check” needs a boundary. A successful BFS/DFS run says something about the finite
+domains, collection bounds, transition semantics, search horizon, reductions, and properties
+selected for that run. It is not an unbounded Verus proof. Conversely, a BFS/DFS
+counterexample is often useful even when the run is lossy or incomplete: it is a concrete
+execution to inspect, provided the evaluator faithfully supports the expressions involved.
 
 ### Build the checker and identify its three inputs
 
@@ -1566,7 +1582,7 @@ transpiler/target/debug/verus-transpile model-config \
 evaluation guardrail. It is the simplest way to catch a misspelled enum mode, an empty domain,
 a zero limit, or an invalid property combination before exploration begins.
 
-### Choose BFS, DFS, or DPOR
+### Choose BFS or DFS; do not use DPOR
 
 The search strategy is selected on the command line, not in `model.toml`.
 
@@ -1574,7 +1590,7 @@ The search strategy is selected on the command line, not in `model.toml`.
 |---|---|---|
 | `bfs` | Shortest-depth safety witnesses, ordinary regression evidence, liveness graph construction | Sequential by default; `--workers N` enables level-synchronous parallel BFS. |
 | `dfs` | Low-memory bug hunting along deep paths | Sequential; `--workers` does not make DFS parallel. |
-| `dpor` | Reducing redundant interleavings in concurrent models | Integrated sleep-set/independence explorer; `--workers N` enables its parallel frontier/work-stealing path. Treat its current reporting path as experimental, as described below. |
+| `dpor` | Contributor development only | **Not usable.** Very incomplete implementation and reporting path; do not use its results. |
 
 BFS and DFS globally deduplicate reached states. They differ in frontier order, so BFS usually
 finds the shallowest violation while DFS may reach a deep one sooner. Neither order changes the
@@ -1588,21 +1604,23 @@ backtracking then avoid exploring interleavings intended to be equivalent. With
 `--conflict-profile`, the checker reports the field pairs most often preventing an independence
 decision; this option has no meaning for BFS or DFS.
 
-There are important limitations in the current main-path DPOR adapter. It retains canonical
-state-key strings rather than the `ExploredState` values used by the ordinary report path. The
+The DPOR implementation is not usable. Among its known limitations, the current main-path
+adapter retains canonical state-key strings rather than the `ExploredState` values used by the
+ordinary report path. The
 adapter therefore emits no ordinary explored-state payload, does not propagate detailed
 invariant/deadlock witnesses, and currently maps every non-violation termination to
 `FrontierExhausted`. It also does not apply `timeout_ms`, and parity/liveness consumers do not
 receive a useful graph from it. In addition, its state store uses a 64-bit fingerprint fast
-path. For now:
+path. Accordingly:
 
-- use BFS or DFS for authoritative stop-reason reporting and detailed witnesses;
-- use BFS for bounded liveness and cross-engine state export;
-- treat DPOR as bounded safety-oriented reduction and bug finding;
-- compare DPOR with a small canonical BFS model before relying on a reduction change; and
-- do not infer that a DPOR run is exact merely because its JSON `evidence_mode` says so.
+- do not use DPOR for protocol validation, safety evidence, liveness evidence, or bug-finding
+  conclusions;
+- do not treat BFS/DFS comparison as certification of DPOR;
+- do not infer that a DPOR run is exact merely because its JSON `evidence_mode` says so; and
+- limit DPOR execution to development and testing of the checker itself.
 
-Those restrictions describe the current integration, not the intended endpoint of DPOR.
+These restrictions are categorical for the current implementation, not minor qualifications
+on an otherwise supported feature.
 
 ### Select properties and transition semantics
 
@@ -1662,13 +1680,13 @@ component. This is a useful bounded diagnostic, not a complete temporal proof pr
 Liveness is evaluated only when the ordinary explorer reports `FrontierExhausted`. There is a
 subtle but important qualification: the explorer also reports `FrontierExhausted` after it has
 stopped expanding states at `max_depth`. If `summary.depth` reaches `search.max_depth`, the
-graph may be depth-truncated even though the worklist is empty. Interpret a liveness result as
-bounded by that horizon, and increase the depth until the reached graph stabilizes. Do not use
-the current DPOR adapter for liveness evidence.
+graph may be depth-truncated even though the worklist is empty. Interpret a BFS/DFS liveness
+result as bounded by that horizon, and increase the depth until the reached graph stabilizes.
+Do not use the current DPOR adapter for liveness evidence.
 
-### Read results on four independent axes
+### Read BFS/DFS results on four independent axes
 
-No single word such as “exact” captures a run. Read every positive result on four axes:
+No single word such as “exact” captures a run. Read every positive BFS/DFS result on four axes:
 
 | Axis | Question |
 |---|---|
@@ -1701,13 +1719,15 @@ dedup settings preserve explored-state distinctions,” not “the protocol is p
 
 A practical confidence ladder is:
 
-1. A reproduced counterexample is a concrete bounded bug witness.
-2. A lossy or incomplete run with no witness is only a bug-finding attempt.
+1. A reproduced BFS/DFS counterexample is a concrete bounded bug witness.
+2. A lossy or incomplete BFS/DFS run with no witness is only a bug-finding attempt.
 3. A canonical BFS/DFS run that reaches a cap is incomplete bounded evidence.
 4. A canonical BFS/DFS run whose graph closes below the depth cutoff is exhaustive for the
    configured finite model and supported semantics.
 5. A Verus proof establishes its stated theorem under its assumptions and trusted boundary; it
    is a different kind of evidence.
+
+DPOR belongs on none of these rungs in its current state.
 
 ### Tune execution without changing the model accidentally
 
@@ -1740,7 +1760,7 @@ state key and depth. A leads-to violation contains a representative cycle edge p
 action-labeled prefix/cycle witness with coarse state diffs.
 
 Checked-in examples live under [`reports/model_check/`](../reports/model_check/README.md). To
-refresh the supported matrix:
+refresh the supported BFS/DFS matrix:
 
 ```bash
 ./scripts/run_model_check_matrix.sh
@@ -1754,8 +1774,8 @@ telemetry fields—before committing regenerated artifacts.
 
 ### Cross-check with TLC when the engines should agree
 
-Source-first checking is normally the direct path. Generate a TLC wrapper when an independent
-engine, an existing TLC workflow, or historical parity is valuable:
+Source-first BFS/DFS checking is normally the direct path. Generate a TLC wrapper when an
+independent engine, an existing TLC workflow, or historical parity is valuable:
 
 ```bash
 transpiler/target/debug/verus-transpile generate-mc-wrapper \
@@ -1804,8 +1824,8 @@ non-identifier patterns, and unresolved or recursive helper shapes remain common
 When constants resolution reports zero valuations, inspect the resolved domains and verify that
 assignments use the runtime type expected by `LConstants`. When a fairness label is unknown,
 inspect the analyzed `LNext` branch labels rather than renaming the property blindly. When a
-positive result matters, rerun with canonical BFS, no symmetry, no POR, and a larger depth before
-making a stronger claim.
+positive BFS/DFS result matters, rerun with canonical BFS, no symmetry, no POR, and a larger
+depth before making a stronger claim.
 
 The practical command reference and current limitations are maintained in
 [`model-checking-source-first.md`](model-checking-source-first.md); the full configuration and
@@ -1841,7 +1861,7 @@ The import workflow has four distinct checkpoints:
 2. `clean-tla` mechanically projects such a module into a single-process protocol-layer Verus
    spec.
 3. Verus can typecheck that generated spec, and the source-first checker can explore a chosen
-   finite model of it.
+   finite model of it through BFS or DFS.
 4. Human-written or generated proof obligations, discharged by Verus without unreviewed
    assumptions, establish deductive claims.
 
@@ -2062,9 +2082,9 @@ deterministic implementation without mode and witness choices.
 
 The parser has AST nodes for temporal operators and fairness. The general translator renders
 marker-shaped expressions; that does not make Verus a temporal-logic prover. The source-first
-checker handles only configured bounded `leads_to` obligations and branch-label fairness, not an
-arbitrary translated temporal formula. Keep temporal checking in the engine whose semantics you
-actually invoked.
+checker handles configured bounded `leads_to` obligations and branch-label fairness through
+the ordinary BFS/DFS explorer, not an arbitrary translated temporal formula. DPOR is not
+usable for these checks. Keep temporal checking in the engine whose semantics you invoked.
 
 ### Review a round trip responsibly
 
@@ -2074,7 +2094,8 @@ A useful round-trip review is staged:
 2. Translate and typecheck the generated target.
 3. Search for placeholders, markers, omitted proof metadata, and changed data encodings.
 4. Canonicalize and structurally compare the supported expression subset.
-5. Model-check matched finite configurations in both engines when behavior matters.
+5. Model-check matched finite configurations in the source-first BFS/DFS path and TLC when
+   behavior matters.
 6. Diff reachable states, initial states, and—when available—edges or action labels.
 7. Preserve the source, configs, generated artifacts, tool versions, and stop reasons.
 
@@ -2322,8 +2343,7 @@ the generated methods.
 
 ### Bound and explore the state graph
 
-Before code generation, run the small finite model used by the transpiler
-tests:
+Before code generation, run the small finite model used by the transpiler tests:
 
 ```bash
 cargo run --quiet --release --manifest-path transpiler/Cargo.toml -- \
@@ -2336,12 +2356,12 @@ cargo run --quiet --release --manifest-path transpiler/Cargo.toml -- \
   --json-report
 ```
 
-At the current revision, this finite configuration exhausts a graph of three
-states and four transitions at depth one and reports its configured
-`LSafetyTmCommittedRequiresAllPrepared` invariant as satisfied. That is exact
-exploration of this configured finite model. It is not an unbounded induction
-proof, and changing the bounds, initial values, transition subset, or
-invariant changes the claim.
+At the current revision, this finite configuration exhausts a graph of three states and four
+transitions at depth one and reports its configured
+`LSafetyTmCommittedRequiresAllPrepared` invariant as satisfied. That is exact exploration of
+this configured finite model. It is not an unbounded induction proof, and changing the bounds,
+initial values, transition subset, or invariant changes the claim. This procedure uses BFS;
+do not substitute the unusable DPOR path.
 
 ### Validate data-flow annotations
 
@@ -2467,8 +2487,8 @@ following:
    from `src/services/mod.rs`.
 6. Add a selector branch to the native dispatch in `src/lib.rs`, update the C#
    server's documented selectors, and add certificate/run instructions.
-7. Add regeneration parity, focused verification, model-check, message
-   round-trip, scheduler, and runtime smoke tests appropriate to the claim.
+7. Add regeneration parity, focused verification, BFS/DFS model-check, message round-trip,
+   scheduler, and runtime smoke tests appropriate to the claim. Do not use DPOR as a gate.
 
 Copying module names is easy; preserving the relation among logical message,
 concrete message, host event, generated precondition, and next-state action is
@@ -2498,7 +2518,7 @@ commit/abort result. Add a protocol-specific client or deterministic host test
 before claiming end-to-end functional behavior.
 
 The completion bar for a new small protocol is therefore not merely “the
-generated module verifies.” It is: the bounded model says exactly what was
+generated module verifies.” It is: the bounded BFS/DFS model says exactly what was
 explored; generated contracts refine the intended actions without unreviewed
 assumptions; regeneration is deterministic; the hand-written host preserves
 the modeled event semantics to the extent claimed; messages round-trip; the
@@ -2612,9 +2632,10 @@ rg -n 'assume\s*\(|external_body|assume_specification|verifier\(external\)' \
   src/generated src/protocol src/implementation src/lib.rs
 ```
 
-For each relevant claim, record whether it rests on a Verus proof, a bounded
-model-check result, an explicit assumption/external body, a test, or an
-unverified runtime component. Raft's generated actions and its higher-level
+For each relevant claim, record whether it rests on a Verus proof, a bounded BFS/DFS
+model-check result, an explicit assumption/external body, a test, or an unverified runtime
+component. DPOR output is a developer diagnostic, not supported evidence. Raft's generated
+actions and its higher-level
 refinement proof, for example, are separate scopes; explicit assumptions in
 one cannot be erased by reporting that the other verifies.
 
@@ -2645,7 +2666,7 @@ library, or a scheduler action whose guard never becomes true.
 
 | Change | Fast loop | Required wider gate |
 |---|---|---|
-| Spec action | Annotation check → bounded model → scratch generation → focused Verus | Invariants/refinement, parity test, whole crate |
+| Spec action | Annotation check → bounded BFS/DFS model → scratch generation → focused Verus | Invariants/refinement, parity test, whole crate |
 | Annotation/config | `--dump-config` → scratch generation → `cmp` | Regeneration suite and focused/whole verification |
 | Transpiler implementation | Small regression test → affected protocol regeneration | Full transpiler tests, parity test, whole crate |
 | Runtime message/host | Unit/round-trip test → one protocol smoke test | Whole crate, C# build, protocol-specific integration test |
@@ -2655,7 +2676,7 @@ A productive spec-edit loop is:
 
 ```text
 write one relation
-  → bound and explore it
+  → bound and explore it with BFS or DFS
   → make data flow explicit
   → generate to scratch
   → inspect the contract
@@ -2677,7 +2698,8 @@ or a proof of the entire deployment stack. Plan around these boundaries:
 | The transpiler accepts a functionalizable subset of Verus spec relations | Refactor complex nondeterminism and helper data flow into supported, explicit forms |
 | `&mut self` generation cannot express every intermediate whole-state transformation | Use functional state where an action computes and reuses an intermediate state |
 | Executable integers and collections are finite representations | Supply validity and range obligations; do not equate a concrete bound with an unbounded theorem |
-| Source-first model checking operates on configured finite domains and a supported expression subset | State all bounds and distinguish exhaustive finite search from proof |
+| Source-first BFS/DFS model checking operates on configured finite domains and a supported expression subset | State all bounds and distinguish exhaustive finite search from proof |
+| DPOR model checking is very incomplete, under development, and not usable | Do not use DPOR for protocol validation, bug-finding conclusions, or release evidence |
 | TLA+ import/export supports a documented subset | Lint and round-trip representative modules; inspect semantic differences described in Chapters 8–9 |
 | Some mature protocol/refinement paths still have explicit assumptions or special generation configuration | Scope claims to the modules actually checked and audit each boundary |
 | Hosts, FFI, C# networking, clocks, files, and OS behavior are not automatically covered by action contracts | Test them and describe them as trusted unless a specific proof says otherwise |
@@ -2693,7 +2715,7 @@ A useful issue or review note includes:
   failures, `dotnet --info` and the platform;
 - the smallest spec, `.automan`, and TOML files that reproduce generation;
 - the exact command and complete error output;
-- a model configuration and shortest trace for a state-space failure;
+- a model configuration and shortest BFS/DFS trace for a state-space failure;
 - whether the generated result contains assumptions or unchecked bodies; and
 - for runtime failures, the service description's node count, selector, ports,
   and per-node logs with secrets removed.
@@ -3987,6 +4009,11 @@ Before calling a protocol integrated:
 
 ## Chapter 22 — Source-First Model Checker Internals
 
+> **DPOR development status:** the `--search dpor` subsystem is very incomplete and not
+> usable. It must not be used for protocol evidence or bug-finding conclusions. This chapter
+> retains its internals for contributors working toward a usable implementation; the ordinary
+> BFS/DFS explorer is a separate path.
+
 The source-first checker evaluates the protocol relation written in Verus syntax. It is not a
 second implementation of the generated executable protocol, and it does not call Verus's SMT
 solver. A change to this subsystem therefore has two obligations: preserve the intended
@@ -4181,8 +4208,9 @@ witness details, does not expose max-depth/max-state termination, and has no tim
 `DporConfig`. The DPOR state store also uses fingerprints as an authoritative fast path. These
 are integration gaps, not details to paper over in documentation. A repair should introduce an
 explicit DPOR termination enum, retain or stream enough state/edge data for consumers, propagate
-witnesses, apply timeout, and update the evidence classifier before enabling DPOR for liveness
-or parity artifacts.
+witnesses, apply timeout, and update the evidence classifier. Until the full semantics and
+reporting path are validated, DPOR is not usable for safety, liveness, parity, or bug-finding
+claims.
 
 ### Invariants, deadlocks, and traces
 
@@ -4645,7 +4673,9 @@ can hide overload or dropped requests.
 
 Use the same resolved model when comparing explorer implementations. `model-check`
 supports BFS, DFS, and DPOR search, optional bytecode bypass, native code generation,
-parallel workers, and conflict profiling. Change one dimension at a time:
+parallel workers, and conflict profiling. The DPOR command below is strictly for profiling
+and developing the unusable DPOR implementation; its output is not protocol evidence. Change
+one dimension at a time:
 
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- model-check \
@@ -5167,6 +5197,10 @@ missing function.
 
 ### Model checking
 
+> **DPOR is under development and not usable.** The `--search dpor` option is listed only so
+> contributors can find its current command surface. Use BFS or DFS for source-first checking;
+> do not use DPOR output as protocol evidence.
+
 ```bash
 verus-transpile model-check \
   --input protocol.rs --types types.rs --model model.toml \
@@ -5687,6 +5721,10 @@ assertion is translation evidence; it is not typechecking, evaluation, equivalen
 
 ## Appendix E — `model.toml`, Reports, and Evidence Schema
 
+> **DPOR caveat:** DPOR is very incomplete, under development, and not usable. Although DPOR
+> currently emits fields from this schema, they do not make its output reliable evidence. The
+> schema remains applicable to the supported BFS/DFS report path.
+
 This appendix is the operational contract for a source-first model-check run. It records the
 finite universe, search policy, selected properties, result schema, and reproducibility
 artifacts. The Rust definitions in
@@ -5950,8 +5988,8 @@ DPOR has an additional schema caveat. The integrated adapter currently returns a
 `explored` vector, maps any non-violation completion to `FrontierExhausted`, and does not
 propagate ordinary timeout/depth/state stop detail or invariant/deadlock payloads. Graph-based
 liveness and parity fields are consequently not authoritative for `--search dpor`. Use BFS or
-DFS for report-backed traces, liveness, and cross-engine parity; use current DPOR results as
-bounded safety/reduction or bug-finding evidence.
+DFS for report-backed traces, liveness, and cross-engine parity. Do not use current DPOR
+results as safety, reduction-correctness, liveness, parity, or bug-finding evidence.
 
 ### Liveness and counterexample payloads
 
