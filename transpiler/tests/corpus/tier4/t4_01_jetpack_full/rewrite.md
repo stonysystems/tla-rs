@@ -124,25 +124,35 @@ Each of these is a deliberate difference, not a gap:
 
 ## Model checking
 
+Three models, all on the current files. The two that closed are the evidence;
+the third is bounded and is labelled as such.
+
+| # | model | states (distinct) | depth | result | actions covered |
+|---|---|---|---|---|---|
+| 1 | `MaxRestarts = 1`, `msgs <= 3` | **17,570,820** | 73 | **completed, no violation** | **34 / 34** |
+| 2 | `MaxRestarts = 0`, `msgs <= 3` | 717,249 | 69 | completed, no violation | 33 / 34 |
+| 3 | `MaxRestarts = 0`, `msgs <= 4` | 33,711,786 | 55 | **did not complete** | 33 / 34 |
+
 ```
 CONSTANTS Server = {s1,s2,s3}  Client = {c1}  Commands = {v1}
           CmdId = {i1}  Key = {k1}
-          MaxTerm = 2  MaxLogLen = 2  MaxElections = 1
-          MaxRestarts = 0  MaxEpoch = 1
+          MaxTerm = 2  MaxLogLen = 2  MaxElections = 1  MaxEpoch = 1
 SPECIFICATION Spec
 INVARIANTS  TypeOK  Consistency  OneLeaderPerTerm
 PROPERTIES  LeaderOnlyAfterRecovery
 CONSTRAINT  SmallState
 ```
 
-**6,516,746 distinct states, depth 75, no violation**, with 32 of 34 actions
-covered. `Restart` is dead by the model (`MaxRestarts = 0`).
+Model 1 is the result to quote: the whole state space, every action reachable,
+and no violation of `TypeOK`, `Consistency`, `OneLeaderPerTerm` or the action
+property. Model 2 differs only in `MaxRestarts`, which is what leaves `Restart`
+unreachable there.
 
-> That run is against the version of the spec **before** the initial-log fix
-> below. The re-run on the current files is in progress and had reached 15.6M
-> distinct states at depth 48 with no violation when this was written. The
-> number above is therefore evidence about a superseded version, and is left
-> labelled as such rather than quietly reused.
+Model 3 explored 33.7M distinct states to depth 55 without a violation and was
+then **killed by the OOM killer**, not finished. It is evidence and it is not a
+completed check; it is listed because a larger message bound reaching the same
+depth without a counter-example is worth recording, not because it proves
+anything model 1 does not.
 
 ### What TLC found
 

@@ -18472,9 +18472,14 @@ and not an argued one. Measured against `jetpack.tla`:
          `prevLogIndex = 0`, so the first entry could never be replicated and
          `AdvanceCommitIndex` was unreachable.
 
-      **Result: 6,516,746 distinct states, depth 75, no violation** of TypeOK,
-      Consistency, OneLeaderPerTerm or the action property, with 32 of 34
-      actions covered.
+      **Result, on the current files: 17,570,820 distinct states, depth 73,
+      state space closed, no violation** of TypeOK, Consistency,
+      OneLeaderPerTerm or the action property, with **34 of 34 actions
+      covered**. A second closed model (`MaxRestarts = 0`) agrees at 717,249
+      states; a third at a larger message bound explored 33.7M states to depth
+      55 without a counter-example and was killed by the OOM killer rather than
+      finishing -- listed as bounded evidence, not as a check.
+      `clean.cfg` is the model that closed with full coverage.
 
       Defect 4 is now guarded permanently by
       `tests/corpus_wellformed_guard.rs`, which walks the parsed body so that

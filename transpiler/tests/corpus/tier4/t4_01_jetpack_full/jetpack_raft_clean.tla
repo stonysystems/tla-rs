@@ -275,6 +275,6 @@ LeaderOnlyAfterRecovery ==
         (ostate[i] # B!Leader /\ ostate'[i] = B!Leader)
           => (ostate[i] = B!ToBeLeader /\ jstate[i] = J!Ready) ]_vars
 
-SmallState == Cardinality(msgs) <= 4
+SmallState == Cardinality(msgs) <= 3
 
 =============================================================================
