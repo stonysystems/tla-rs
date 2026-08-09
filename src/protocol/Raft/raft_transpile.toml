@@ -7,6 +7,14 @@ skip_functions = [
     "LNext",
 ]
 
+# MembershipPhase is the proof-only set representation. Its executable
+# sequence-backed counterpart is LMembershipPhase; generating both would map
+# both names to CMembershipPhase.
+skip_types = ["MembershipPhase"]
+
+# CState has a custom validity predicate for its optional executable phase.
+skip_validity_types = ["CState"]
+
 # Spec-only functions (no C-prefix in requires clauses)
 spec_only_functions = ["replicator_count", "ae_entry_count"]
 
@@ -77,12 +85,27 @@ CState = ["log", "votes_granted", "match_index", "next_index"]
 # CConstants only has HashSet<u64> and can use verified clone.
 [clone_strategy]
 "CState" = "external_body"
+"CMembershipConfig" = "manual"
+"CMembershipPhase" = "manual"
+"CLogValue" = "manual"
+"CLogEntry" = "manual"
+"CRaftMessage" = "manual"
+"CRaftPacket" = "manual"
 
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
 int_type = "u64"
 nat_type = "u64"
+
+[remapping]
+"Option" = "Option"
+
+[view_overrides]
+"LState.election_membership_phase" = """match self.election_membership_phase {
+    Some(phase) => Some(membership_phase_view(phase@)),
+    None => None,
+}"""
 
 [output]
 generate_abstraction_fns = true
@@ -93,6 +116,7 @@ include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
 generate_inline_types = false
+types_manual_code = "raft_types_manual.rs"
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::set::*;",

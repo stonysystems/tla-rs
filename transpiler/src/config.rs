@@ -957,6 +957,12 @@ pub struct OutputConfig {
     /// The path is relative to the config file.
     #[serde(default)]
     pub manual_code: Option<String>,
+
+    /// Path to manual Verus code inserted only into generate-types output,
+    /// after all generated types inside the generated Verus block.
+    /// This stays separate from function-level manual_code for shared configs.
+    #[serde(default)]
+    pub types_manual_code: Option<String>,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -986,6 +992,7 @@ impl Default for OutputConfig {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            types_manual_code: None,
             assume_postconditions: false,
             proven_functions: Vec::new(),
         }

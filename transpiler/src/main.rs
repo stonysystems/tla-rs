@@ -5653,7 +5653,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
 
             // Load config for remappings, naming, imports, and type extensions if provided
-            let mut file_config = if let Some(config_path) = config {
+            let mut file_config = if let Some(config_path) = config.as_ref() {
                 if cli.verbose {
                     eprintln!("Loading config from: {}", config_path.display());
                 }
@@ -5758,8 +5758,26 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 file_config.output.generate_clone_up_to_view_simple;
             let generate_unreachable_value_helper =
                 file_config.output.generate_unreachable_value_helper;
-            // Note: manual_code is NOT injected during generate-types.
-            // It is a function-generation concern (injected into *_gen.rs, not types_gen.rs).
+            let types_manual_code = match (
+                config.as_ref(),
+                file_config.output.types_manual_code.as_ref(),
+            ) {
+                (Some(config_path), Some(relative_path)) => {
+                    let manual_path = config_path
+                        .parent()
+                        .unwrap_or(Path::new("."))
+                        .join(relative_path);
+                    Some(std::fs::read_to_string(&manual_path).map_err(|e| {
+                        miette::miette!(
+                            "Failed to read manual type code {}: {}",
+                            manual_path.display(),
+                            e,
+                        )
+                    })?)
+                }
+                _ => None,
+            };
+            // Function-level manual_code is intentionally not injected here.
             // Protocols that share a single TOML config for both types and functions
             // (e.g., Raft) would incorrectly inject function-level manual code into types.
 
@@ -5836,7 +5854,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     skip_view_types: &skip_view_types,
                     generate_clone_up_to_view_simple,
                     generate_unreachable_value_helper,
-                    manual_code: None,
+                    manual_code: types_manual_code.as_deref(),
                     arc_wrap_types: &file_config.arc_wrap_types,
                     arc_wrap_fields: &file_config.arc_wrap_fields,
                 },
