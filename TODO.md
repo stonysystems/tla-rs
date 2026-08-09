@@ -18214,75 +18214,61 @@ proves safety of the resulting system.
 
 ### Verification evidence
 
-- Selected ten-module regression: **201 verified, 0 errors** (`--rlimit 20`,
-  `--triggers-mode silent`). Was 188 before this phase's later work.
-- `src/protocol/Raft/refinement_proof/invariants.rs` is verified **by function**, never as a
-  whole module — see "Practical notes" below.
-- No `assume`/`admit`/`external_body` is added anywhere in this phase. The inherited Phase 34
-  assumes are untouched.
+- Latest Verus version: **0.2026.08.02.b677dd5**.
+- Selected ten-module regression: **192 verified, 0 errors**, with
+  `--triggers-mode silent`.
+- Full `src/protocol/Raft/refinement_proof/invariants.rs` module:
+  **212 verified, 0 errors**.
+- Full `src/protocol/Raft/refinement_proof/induction.rs` module:
+  **3 verified, 0 errors**.
+- No `assume`/`admit`/`external_body` was added by the membership proof cleanup.
+  The inherited Phase 34 assumptions remain outside the active committed-history chain.
 
-### Proved unconditionally (behaviour level)
+### Proved unconditionally at behavior level
 
-- Quorum overlap across every legal `Stable → Joint → Stable` progression.
-- **Committed histories never conflict**: two servers cannot commit different physical entries
-  at the same log index, under dynamic joint-consensus quorums
-  (`lemma_dynamic_membership_committed_histories_are_safe`). This routes through the
-  certificate machinery and does **not** depend on the Phase 34 assumes.
-- Agreement at certified membership boundaries for any server that has committed past them.
-- **Configuration Leader Completeness**: every strictly later-term leader contains each
-  certified configuration boundary at its original physical log index
-  (`lemma_certified_configuration_leader_completeness_throughout_behavior`).
-- **All-entry Dynamic Leader Completeness**: every strictly later-term leader contains every
-  dynamically certified `Data` or `Configuration` entry at its original physical log index
-  (`lemma_dynamic_leader_completeness_throughout_behavior` and
-  `lemma_dynamically_committed_entry_survives_in_later_leader`).
-- Both completeness properties are conjuncts of `RaftSafetyInvariant`, established by
-  `RaftDistributedInit`, preserved by every `RaftDistributedNext` case, and lifted to every
-  reachable state by the behavior induction in `induction.rs`.
+- Quorum-overlap lemmas cover every legal `Stable -> Joint -> Stable` progression.
+- Election and commit actions use membership phases derived from the Raft log.
+- Commit advancement stops at each Configuration boundary.
+- Every committed physical log position is tied to one global
+  `LogCommitCertificate`.
+- **Committed histories never conflict**: if two reachable servers have committed the
+  same physical log index, their entries at that index are equal
+  (`lemma_dynamic_membership_committed_histories_are_safe`).
+- The active safety invariant is established at initialization, preserved by every
+  `RaftDistributedNext` case, and lifted to all reachable behavior states.
 
-### Remaining proof boundary
+### Deliberately retired stronger claims
 
-The dynamic-membership theorem is complete within the repository's existing Raft trust
-boundaries. The all-entry proof discharges `CertifiedLogEntryTransfersToVotedLeader` through
-the inherited `lemma_overlap_voter_entry_transfer`, the same log-transfer reasoning used by
-the static-Raft proof. Removing that inherited assumption boundary is separate, research-scale
-work; Milestone C adds no new `assume`, `admit`, or `external_body` shortcut.
+The active dynamic invariant no longer includes the repository's global
+`LogMatching` property for arbitrary uncommitted suffixes. With changing membership,
+a removed stale group can produce uncommitted histories that do not satisfy that
+all-server property, even though it cannot form a valid current commit quorum.
 
-Committed-history agreement remains stronger evidence independent of that boundary: it follows
-directly from immutable, unique `LogCommitCertificate` coverage of every committed physical
-index. Dynamic Leader Completeness additionally establishes that those certified entries survive
-in every strictly later-term leader.
+The former Configuration and all-entry Dynamic Leader Completeness theorems depended on
+that stronger property to transfer a quorum member's entire prefix into every later
+leader. Those behavior-level claims and their fixed-majority compatibility proof chain
+were removed from the active proof. Re-establishing them is follow-up work requiring a
+scoped acknowledged-prefix invariant (or a protocol rule that prevents stale leaders),
+not part of the committed-history safety theorem.
 
-### Hypotheses that are NOT invariants — read before reusing these lemmas
+### Remaining trust and implementation boundaries
 
-- `s.election_membership_phase == Some(election_membership_phase_for_state(s, c))` holds **only
-  at the moment of promotion**. A leader stores the phase it was elected under;
-  `election_membership_phase_for_state` reads the *current* log. Once a leader appends a
-  `Configuration` via `LAppendConfigurationEntry`, the two diverge permanently. This is why the
-  joint-consensus result is stated for newly elected leaders — see
-  `lemma_receive_vote_and_become_leader_records_latest_log_phase`, where the promotion rule
-  supplies the equality directly.
-- `has_recorded_election_log_provenance` is weaker than that equality: it only says the stored
-  phase derives from *some* log prefix. Strengthening it to name `log.len()` would make it
-  false, for the reason above.
+- The repository's inherited Phase 34 `assume` sites remain in legacy compatibility
+  helpers, but the behavior-level committed-history theorem does not call that chain.
+- Generated structural clone helpers are now verified; no membership clone
+  `external_body` remains.
+- Native Configuration serialization is still a compatibility encoding and is not
+  production-ready.
 
-### Practical notes
+### Practical verification notes
 
-- **Do not verify `invariants.rs` as a whole module.** It OOM-kills an 8 GB WSL VM (Verus
-  spawns roughly one Z3 per core). Verify by function with `--verify-function`. Cap CPUs with
-  `taskset -c 0-5` for expensive runs.
-- `invariants.rs` has **six pre-existing failures**, all reproducible on the pre-phase
-  checkpoint `fc28fab6`: `lemma_lnext_leader_quorum_preserved` (postcondition — it asserts the
-  fixed-majority `votes_granted.len() >= quorum_size`, which phase-based quorums cannot
-  satisfy), plus `lemma_vote_sets_disjoint`, `lemma_election_safety_candidate_to_leader`,
-  `lemma_election_safety_inductive`,
-  `lemma_ordered_leader_election_snapshots_have_legal_bridge` and
-  `lemma_leader_log_long_enough_inductive` (all rlimit, still failing at `--rlimit 100`). This
-  is why the regression is ten modules and excludes `invariants.rs`.
-- The legacy fixed-majority `lemma_leader_completeness_inductive` remains available for
-  compatibility, but the membership proof uses `CertifiedConfigurationLeaderCompleteness` and
-  `DynamicLeaderCompleteness` in `RaftSafetyInvariant`. Certificate-based committed-history
-  agreement remains independent of the inherited transfer assumption.
+- Use Verus directly; ordinary `cargo check` does not understand the `verus!` model.
+- Report selected-module, full-module, and focused-function results separately.
+- Use `--triggers-mode silent` so CI does not receive automatic-trigger notes.
+- The legacy `LogMatching`, fixed-majority Leader Completeness, and related helper
+  definitions remain as historical compatibility material, but they are not conjuncts
+  of `RaftSafetyInvariant` and their obsolete induction bodies are not part of the
+  active module.
 
 ### Native serialization gap
 
