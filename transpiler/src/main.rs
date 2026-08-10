@@ -1962,8 +1962,49 @@ fn embed_inline_annotations(verus_code: &str, sidecar_text: &str) -> Result<Stri
     let modules = verus_transpiler::AnnotationParser::new(sidecar_text.to_string())
         .parse()
         .map_err(|e| miette::miette!("generated mode annotations did not parse: {}", e))?;
+
+    // The TLA mode generator can emit degenerate entries — an operator that
+    // became no spec fn, or a mode list whose arity disagrees with the
+    // generated signature (`LNext()` against `LNext(s, s_)` is the live
+    // case). The legacy sidecar flow never validated these; they were dead
+    // entries the transpile stage silently failed to apply. Embedding keeps
+    // that behavior by filtering them out — with a warning, because a dead
+    // entry still marks a generator inconsistency worth seeing.
+    let fn_arity: std::collections::HashMap<String, usize> =
+        verus_transpiler::VerusParser::new(verus_code.to_string())
+            .parse_spec_functions_annotated()
+            .map_err(|e| miette::miette!("generated spec did not parse: {}", e))?
+            .into_iter()
+            .map(|(func, _)| (func.name.clone(), func.params.len()))
+            .collect();
+    let mut filtered = Vec::with_capacity(modules.len());
+    for mut module in modules {
+        module.functions.retain(|name, annotation| {
+            match fn_arity.get(name) {
+                Some(arity) if *arity == annotation.param_modes.len() => true,
+                Some(arity) => {
+                    eprintln!(
+                        "warning: dropping generated mode entry `{}` ({} mode(s) vs {}                          parameter(s)); the TLA mode generator and translator disagree",
+                        name,
+                        annotation.param_modes.len(),
+                        arity
+                    );
+                    false
+                }
+                None => {
+                    eprintln!(
+                        "warning: dropping generated mode entry `{}`: no such spec fn                          in the generated module",
+                        name
+                    );
+                    false
+                }
+            }
+        });
+        filtered.push(module);
+    }
+
     let (embedded, _count) =
-        verus_transpiler::annotation::migrate_source_to_inline(verus_code, &modules)
+        verus_transpiler::annotation::migrate_source_to_inline(verus_code, &filtered)
             .map_err(|e| miette::miette!("could not embed inline annotations: {}", e))?;
     Ok(embedded)
 }

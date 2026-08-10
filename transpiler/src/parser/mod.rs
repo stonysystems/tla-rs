@@ -73,9 +73,7 @@ impl VerusParser {
     /// source that leads with the marker must have been consumed by exactly
     /// this binding; a directive inside a function body, outside a `verus!`
     /// block, or spelled as a doc comment is an error, not a no-op.
-    pub fn parse_spec_functions_annotated(
-        &self,
-    ) -> TranspileResult<Vec<(SpecFunction, Option<FunctionAnnotation>)>> {
+    pub fn parse_spec_functions_annotated(&self) -> TranspileResult<Vec<AnnotatedSpecFn>> {
         let mut functions = Vec::new();
         let mut consumed_lines: Vec<usize> = Vec::new();
 
@@ -192,7 +190,7 @@ impl VerusParser {
         &self,
         content: &str,
         line_offset: usize,
-    ) -> TranspileResult<(Vec<(SpecFunction, Option<FunctionAnnotation>)>, Vec<usize>)> {
+    ) -> TranspileResult<(Vec<AnnotatedSpecFn>, Vec<usize>)> {
         let mut functions = Vec::new();
         let mut parser = VerusBlockParser::new(content, line_offset);
 
@@ -231,6 +229,10 @@ impl VerusParser {
         }
     }
 }
+
+/// A parsed spec function paired with the inline `// @automan` directive
+/// that precedes it, if any (Phase 55.1).
+pub type AnnotatedSpecFn = (SpecFunction, Option<FunctionAnnotation>);
 
 /// Item parsed from verus block
 enum VerusItem {
@@ -2714,7 +2716,7 @@ mod tests {
 
     // ---- Phase 55.1: inline @automan directives ----
 
-    fn annotated(source: &str) -> Vec<(SpecFunction, Option<FunctionAnnotation>)> {
+    fn annotated(source: &str) -> Vec<AnnotatedSpecFn> {
         VerusParser::new(source.to_string())
             .parse_spec_functions_annotated()
             .unwrap()
