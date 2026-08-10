@@ -172,4 +172,3 @@ impl View for CElectionMessage {
 }
 
 } // verus!
-

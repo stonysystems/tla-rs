@@ -250,4 +250,3 @@ impl View for CRaftMessage {
 }
 
 } // verus!
-

@@ -173,4 +173,3 @@ impl View for CPBFTMessage {
 }
 
 } // verus!
-
