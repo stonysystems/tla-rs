@@ -56,7 +56,7 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 8,
+        "cumulative_solve_elapsed_ms": 9,
         "deferred_constraint_evaluations": 4,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -74,7 +74,7 @@
       {
         "branch_label": "branch_2",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 5,
+        "cumulative_solve_elapsed_ms": 10,
         "deferred_constraint_evaluations": 5,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -92,7 +92,7 @@
       {
         "branch_label": "branch_3",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 2,
+        "cumulative_solve_elapsed_ms": 3,
         "deferred_constraint_evaluations": 3,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -110,7 +110,7 @@
       {
         "branch_label": "branch_4",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 1,
+        "cumulative_solve_elapsed_ms": 3,
         "deferred_constraint_evaluations": 3,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -128,7 +128,7 @@
       {
         "branch_label": "branch_5",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 1,
+        "cumulative_solve_elapsed_ms": 3,
         "deferred_constraint_evaluations": 2,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -146,7 +146,7 @@
       {
         "branch_label": "branch_6",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 2,
+        "cumulative_solve_elapsed_ms": 3,
         "deferred_constraint_evaluations": 4,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -187,7 +187,7 @@
     "direct_assignment_branch_solves": 8,
     "distinct_states": 3,
     "duplicate_states": 2,
-    "elapsed_ms": 41,
+    "elapsed_ms": 62,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "explored_states": 3,
@@ -201,14 +201,14 @@
     "successor_cache_misses": 1,
     "symmetry_collapses": 0,
     "timing": {
-      "candidate_generation_evaluation_ms": 2,
-      "dedup_hashing_normalization_ms": 11,
-      "initial_state_construction_ms": 1,
+      "candidate_generation_evaluation_ms": 4,
+      "dedup_hashing_normalization_ms": 15,
+      "initial_state_construction_ms": 4,
       "invariant_evaluation_ms": 0,
-      "model_config_resolution_ms": 2,
+      "model_config_resolution_ms": 21,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 14,
-      "successor_solving_ms": 27
+      "source_ingestion_parsing_ms": 16,
+      "successor_solving_ms": 39
     },
     "transitions": 4
   },

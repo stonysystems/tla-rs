@@ -55,6 +55,13 @@ compute. Thus `LInit(value)` with `LInit(-)` generates a zero-argument `CInit` r
 the initial value, and `LIncrement(value, value_)` with `LIncrement(+, -)` generates
 `CIncrement(value)` returning the new value represented by `value_`.
 
+The modes can also live inline in the spec itself, as a named `// @automan` comment
+directly above each function — `// @automan predicate(value: in, value_: out)` — in which
+case no sidecar file is needed and a parameter rename or reorder fails loudly instead of
+silently rebinding the modes. The maintained protocols under `src/protocol/` use the
+inline form; this example keeps the sidecar to demonstrate that path, and
+`migrate-inline` converts one form to the other.
+
 From the repository root, generate the executable functions, verify them, compile them, and
 run the result:
 

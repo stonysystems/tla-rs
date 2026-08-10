@@ -153,7 +153,7 @@ impl Transpiler {
         spec_path: &Path,
         annotation_path: &Path,
     ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
-        let (output, skipped) = self.transpile_file_inner(spec_path, annotation_path)?;
+        let (output, skipped) = self.transpile_file_inner(spec_path, Some(annotation_path))?;
         Ok((output, skipped))
     }
 
@@ -163,20 +163,63 @@ impl Transpiler {
         spec_path: &Path,
         annotation_path: &Path,
     ) -> TranspileResult<String> {
+        let (output, _skipped) = self.transpile_file_inner(spec_path, Some(annotation_path))?;
+        Ok(output)
+    }
+
+    /// Transpile a spec file whose mode annotations may live inline
+    /// (`// @automan` directives), in a `.automan` sidecar, or both
+    /// (Phase 55.3). With `None`, the spec file must carry inline directives.
+    pub fn transpile_file_auto(
+        &self,
+        spec_path: &Path,
+        annotation_path: Option<&Path>,
+    ) -> TranspileResult<String> {
         let (output, _skipped) = self.transpile_file_inner(spec_path, annotation_path)?;
         Ok(output)
+    }
+
+    /// [`Self::transpile_file_auto`] with the auto-skip report.
+    pub fn transpile_file_auto_with_report(
+        &self,
+        spec_path: &Path,
+        annotation_path: Option<&Path>,
+    ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
+        self.transpile_file_inner(spec_path, annotation_path)
     }
 
     fn transpile_file_inner(
         &self,
         spec_path: &Path,
-        annotation_path: &Path,
+        annotation_path: Option<&Path>,
     ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
-        // Parse spec file
-        let spec_fns = parse_file(spec_path)?;
+        // Parse spec file, capturing inline directives (Phase 55.1).
+        let spec_source = std::fs::read_to_string(spec_path)?;
+        let spec_parser =
+            VerusParser::new(spec_source).with_file_path(spec_path.display().to_string());
+        let parsed = spec_parser.parse_spec_functions_annotated()?;
+        let inline_annotations: Vec<annotation::FunctionAnnotation> =
+            parsed.iter().filter_map(|(_, ann)| ann.clone()).collect();
+        let spec_fns: Vec<crate::ast::SpecFunction> =
+            parsed.into_iter().map(|(func, _)| func).collect();
 
-        // Parse annotations
-        let annotations = annotation::parse_annotation_file(annotation_path)?;
+        // Parse sidecar annotations, then fold the inline ones in. A function
+        // annotated identically in both warns; a conflict is an error.
+        let sidecar = match annotation_path {
+            Some(path) => annotation::parse_annotation_file(path)?,
+            None => Vec::new(),
+        };
+        if annotation_path.is_none() && inline_annotations.is_empty() {
+            return Err(TranspileError::Annotation {
+                message: format!(
+                    "{}: no mode annotations — pass an .automan sidecar or add inline \
+                     `// @automan` directives to the spec functions",
+                    spec_path.display()
+                ),
+                span: None,
+            });
+        }
+        let annotations = annotation::merge_sidecar_and_inline(sidecar, inline_annotations)?;
 
         // Process each function
         let mut mode_analyzer = ModeAnalyzer::new();
@@ -1020,10 +1063,15 @@ impl Transpiler {
         annotation_source: &str,
     ) -> TranspileResult<(String, Vec<SkippedFunction>)> {
         let parser = VerusParser::new(spec_source.to_string());
-        let spec_fns = parser.parse_spec_functions()?;
+        let parsed = parser.parse_spec_functions_annotated()?;
+        let inline_annotations: Vec<annotation::FunctionAnnotation> =
+            parsed.iter().filter_map(|(_, ann)| ann.clone()).collect();
+        let spec_fns: Vec<crate::ast::SpecFunction> =
+            parsed.into_iter().map(|(func, _)| func).collect();
 
         let ann_parser = AnnotationParser::new(annotation_source.to_string());
-        let annotations = ann_parser.parse()?;
+        let annotations =
+            annotation::merge_sidecar_and_inline(ann_parser.parse()?, inline_annotations)?;
 
         let mut mode_analyzer = ModeAnalyzer::new();
         let has_auto_set_fields = false;

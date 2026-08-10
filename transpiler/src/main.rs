@@ -149,6 +149,23 @@ enum Commands {
         annotations: PathBuf,
     },
 
+    /// Migrate a spec file's mode annotations from an .automan sidecar to
+    /// inline `// @automan` directives (Phase 55). Writes the migrated source
+    /// to stdout unless --write is given.
+    MigrateInline {
+        /// Spec file (.rs) to migrate
+        #[arg(short, long)]
+        spec: PathBuf,
+
+        /// Sidecar (.automan) whose annotations move inline
+        #[arg(short, long)]
+        annotations: PathBuf,
+
+        /// Rewrite the spec file in place and delete the sidecar
+        #[arg(long)]
+        write: bool,
+    },
+
     /// Load model.toml, apply CLI overrides for key limits/domains, and print
     /// the resolved model config.
     ModelConfig {
@@ -1908,6 +1925,90 @@ fn infer_type_view_exprs_from_spec_paths(
     inferred
 }
 
+/// Load mode annotations for config inference: the `.automan` sidecar (if
+/// given) merged with inline `// @automan` directives from the spec source
+/// (Phase 55.3). Inference must see the same annotations the transpile
+/// pipeline will, or an inline-only run would infer a different config than
+/// the equivalent sidecar run and produce different output.
+fn load_annotation_modules(
+    input: &Path,
+    annotations: Option<&Path>,
+) -> Option<Vec<verus_transpiler::ModuleAnnotations>> {
+    let sidecar = annotations
+        .and_then(|path| parse_annotation_file(path).ok())
+        .unwrap_or_default();
+    let inline: Vec<verus_transpiler::FunctionAnnotation> = std::fs::read_to_string(input)
+        .ok()
+        .and_then(|source| {
+            verus_transpiler::VerusParser::new(source)
+                .parse_spec_functions_annotated()
+                .ok()
+        })
+        .map(|pairs| pairs.into_iter().filter_map(|(_, ann)| ann).collect())
+        .unwrap_or_default();
+    if sidecar.is_empty() && inline.is_empty() {
+        return None;
+    }
+    verus_transpiler::annotation::merge_sidecar_and_inline(sidecar, inline).ok()
+}
+
+/// Embed TLA-derived mode annotations into generated Verus source as inline
+/// `// @automan` directives (Phase 55.5). The sidecar text is what
+/// `generate_mode_annotations` produces; reusing the proven migrator keeps the
+/// two emission forms equivalent by construction. Errors mean the TLA
+/// translator and the mode generator disagree about the module's functions —
+/// a real inconsistency, not something to paper over.
+fn embed_inline_annotations(verus_code: &str, sidecar_text: &str) -> Result<String> {
+    let modules = verus_transpiler::AnnotationParser::new(sidecar_text.to_string())
+        .parse()
+        .map_err(|e| miette::miette!("generated mode annotations did not parse: {}", e))?;
+
+    // The TLA mode generator can emit degenerate entries — an operator that
+    // became no spec fn, or a mode list whose arity disagrees with the
+    // generated signature (`LNext()` against `LNext(s, s_)` is the live
+    // case). The legacy sidecar flow never validated these; they were dead
+    // entries the transpile stage silently failed to apply. Embedding keeps
+    // that behavior by filtering them out — with a warning, because a dead
+    // entry still marks a generator inconsistency worth seeing.
+    let fn_arity: std::collections::HashMap<String, usize> =
+        verus_transpiler::VerusParser::new(verus_code.to_string())
+            .parse_spec_functions_annotated()
+            .map_err(|e| miette::miette!("generated spec did not parse: {}", e))?
+            .into_iter()
+            .map(|(func, _)| (func.name.clone(), func.params.len()))
+            .collect();
+    let mut filtered = Vec::with_capacity(modules.len());
+    for mut module in modules {
+        module.functions.retain(|name, annotation| {
+            match fn_arity.get(name) {
+                Some(arity) if *arity == annotation.param_modes.len() => true,
+                Some(arity) => {
+                    eprintln!(
+                        "warning: dropping generated mode entry `{}` ({} mode(s) vs {}                          parameter(s)); the TLA mode generator and translator disagree",
+                        name,
+                        annotation.param_modes.len(),
+                        arity
+                    );
+                    false
+                }
+                None => {
+                    eprintln!(
+                        "warning: dropping generated mode entry `{}`: no such spec fn                          in the generated module",
+                        name
+                    );
+                    false
+                }
+            }
+        });
+        filtered.push(module);
+    }
+
+    let (embedded, _count) =
+        verus_transpiler::annotation::migrate_source_to_inline(verus_code, &filtered)
+            .map_err(|e| miette::miette!("could not embed inline annotations: {}", e))?;
+    Ok(embedded)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -1916,19 +2017,22 @@ fn main() -> Result<()> {
         return handle_command(command, &cli);
     }
 
-    // Require input and annotations for single-file mode
+    // Require input for single-file mode. Annotations may come from an
+    // .automan sidecar (--annotations), inline `// @automan` directives in the
+    // spec itself, or both (Phase 55.3) — the transpiler validates that at
+    // least one source is present and that overlaps agree.
     let input = cli
         .input
         .as_ref()
         .ok_or_else(|| miette::miette!("--input is required for single-file mode"))?;
-    let annotations = cli
-        .annotations
-        .as_ref()
-        .ok_or_else(|| miette::miette!("--annotations is required for single-file mode"))?;
+    let annotations = cli.annotations.as_deref();
 
     if cli.verbose {
         eprintln!("Input: {}", input.display());
-        eprintln!("Annotations: {}", annotations.display());
+        match annotations {
+            Some(path) => eprintln!("Annotations: {}", path.display()),
+            None => eprintln!("Annotations: inline `// @automan` directives"),
+        }
         if let Some(ref output) = cli.output {
             eprintln!("Output: {}", output.display());
         }
@@ -1963,7 +2067,7 @@ fn main() -> Result<()> {
 
         match analysis_result {
             Ok(schema) => {
-                let annotation_modules = parse_annotation_file(annotations).ok();
+                let annotation_modules = load_annotation_modules(input, annotations);
                 let function_path_hints =
                     infer_function_paths_from_spec_paths(&spec_paths, &schema, &file_config.naming);
                 let method_call_hints =
@@ -2032,7 +2136,7 @@ fn main() -> Result<()> {
 
     // Run transpilation
     let (result, skipped) = transpiler
-        .transpile_file_with_report(input, annotations)
+        .transpile_file_auto_with_report(input, annotations)
         .map_err(|e| miette::miette!("{}", e))?;
 
     // Report auto-skipped / proof-fallback functions
@@ -5012,6 +5116,36 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
             Ok(())
         }
+        Commands::MigrateInline {
+            spec,
+            annotations,
+            write,
+        } => {
+            let spec_source = std::fs::read_to_string(spec)
+                .map_err(|e| miette::miette!("Failed to read {}: {}", spec.display(), e))?;
+            let sidecar = parse_annotation_file(annotations)
+                .map_err(|e| miette::miette!("Failed to parse {}: {}", annotations.display(), e))?;
+            let (migrated, inserted) =
+                verus_transpiler::annotation::migrate_source_to_inline(&spec_source, &sidecar)
+                    .map_err(|e| miette::miette!("{}", e))?;
+            if *write {
+                std::fs::write(spec, &migrated)
+                    .map_err(|e| miette::miette!("Failed to write {}: {}", spec.display(), e))?;
+                std::fs::remove_file(annotations).map_err(|e| {
+                    miette::miette!("Failed to remove {}: {}", annotations.display(), e)
+                })?;
+                eprintln!(
+                    "{}: inserted {} inline directive(s); removed {}",
+                    spec.display(),
+                    inserted,
+                    annotations.display()
+                );
+            } else {
+                print!("{migrated}");
+                eprintln!("({} directive(s); use --write to apply)", inserted);
+            }
+            Ok(())
+        }
         Commands::ModelConfig {
             model,
             max_depth,
@@ -6281,6 +6415,11 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let mut translator = ModuleTranslator::with_config(config).with_types(type_env);
             let verus_code = translator.translate(&module);
 
+            // The generated spec carries its modes inline (Phase 55.5);
+            // --gen-modes additionally emits the legacy sidecar form.
+            let verus_code =
+                embed_inline_annotations(&verus_code, &generate_mode_annotations(&module))?;
+
             // Output Verus code
             if let Some(output_path) = output {
                 std::fs::write(output_path, &verus_code)
@@ -6468,15 +6607,32 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             });
             let automan_path = spec_path.with_extension("automan");
 
+            // The generated spec carries its modes inline (Phase 55.5), so
+            // the sidecar is no longer required downstream. The clean-subset
+            // path is the exception: its annotations describe the source
+            // module and do not fit the projection (see above), so embedding
+            // them would rightly fail — that path keeps the legacy pair.
+            let verus_spec_code = if stop_after_spec {
+                verus_spec_code
+            } else {
+                embed_inline_annotations(&verus_spec_code, &mode_annotations)?
+            };
+
             // Write intermediate files
             if cli.verbose {
                 eprintln!("  Writing spec to: {}", spec_path.display());
-                eprintln!("  Writing annotations to: {}", automan_path.display());
             }
             std::fs::write(&spec_path, &verus_spec_code)
                 .map_err(|e| miette::miette!("Failed to write spec file: {}", e))?;
-            std::fs::write(&automan_path, &mode_annotations)
-                .map_err(|e| miette::miette!("Failed to write annotation file: {}", e))?;
+            // Sidecar: always for the clean-subset stop (its documented
+            // output shape), otherwise only when keeping intermediates.
+            if stop_after_spec || *keep_intermediate {
+                if cli.verbose {
+                    eprintln!("  Writing annotations to: {}", automan_path.display());
+                }
+                std::fs::write(&automan_path, &mode_annotations)
+                    .map_err(|e| miette::miette!("Failed to write annotation file: {}", e))?;
+            }
 
             if stop_after_spec {
                 println!(
@@ -6521,7 +6677,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
             let transpiler = Transpiler::new(transpiler_config);
             let exec_code = transpiler
-                .transpile_file(&spec_path, &automan_path)
+                .transpile_file_auto(&spec_path, None)
                 .map_err(|e| miette::miette!("Failed to transpile spec to exec: {}", e))?;
 
             // Build self-contained output: spec definitions + exec code
@@ -12466,7 +12622,7 @@ validity_predicate_name = "valid"
     /// including auto-inference from sibling types.rs.
     fn transpile_with_auto_inference(
         input: &Path,
-        annotations: &Path,
+        annotations: Option<&Path>,
         file_config: FileConfig,
         config_path: &Path,
     ) -> String {
@@ -12491,7 +12647,7 @@ validity_predicate_name = "valid"
         };
 
         if let Ok(schema) = analysis_result {
-            let annotation_modules = parse_annotation_file(annotations).ok();
+            let annotation_modules = load_annotation_modules(input, annotations);
             let function_path_hints =
                 infer_function_paths_from_spec_paths(&spec_paths, &schema, &fc.naming);
             let method_call_hints =
@@ -12516,7 +12672,7 @@ validity_predicate_name = "valid"
         let config = convert_file_config(fc, config_path).unwrap();
         let transpiler = Transpiler::new(config);
         transpiler
-            .transpile_file(input, annotations)
+            .transpile_file_auto(input, annotations)
             .unwrap_or_else(|e| panic!("transpilation failed: {}", e))
     }
 
@@ -12974,9 +13130,11 @@ verus! {
             let annot = PathBuf::from(format!("{}/{}.automan", base, spec_name));
             let toml_path = PathBuf::from(format!("{}/{}.toml", base, toml_name));
 
-            if !input.exists() || !annot.exists() || !toml_path.exists() {
+            if !input.exists() || !toml_path.exists() {
                 continue;
             }
+            // Post-migration the modes live inline; the sidecar is optional.
+            let annot_opt = annot.exists().then_some(annot.as_path());
 
             // Load full TOML config
             let full_config = FileConfig::from_file(&toml_path)
@@ -12985,11 +13143,11 @@ verus! {
             // Generate with full TOML + auto-inference (skip if transpilation
             // fails due to unsupported patterns like complex existentials)
             let input_c = input.clone();
-            let annot_c = annot.clone();
+            let annot_c = annot_opt.map(|p| p.to_path_buf());
             let toml_c = toml_path.clone();
             let fc = full_config.clone();
             let full_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                transpile_with_auto_inference(&input_c, &annot_c, fc, &toml_c)
+                transpile_with_auto_inference(&input_c, annot_c.as_deref(), fc, &toml_c)
             }));
             let full_output = match full_result {
                 Ok(output) => output,
@@ -13004,10 +13162,10 @@ verus! {
 
             // Generate with minimal TOML + auto-inference
             let input_c = input.clone();
-            let annot_c = annot.clone();
+            let annot_c = annot_opt.map(|p| p.to_path_buf());
             let toml_c = toml_path.clone();
             let minimal_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                transpile_with_auto_inference(&input_c, &annot_c, minimal_config, &toml_c)
+                transpile_with_auto_inference(&input_c, annot_c.as_deref(), minimal_config, &toml_c)
             }));
             let minimal_output = match minimal_result {
                 Ok(output) => output,

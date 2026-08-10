@@ -14,6 +14,7 @@ use vstd::prelude::*;
 verus! {
 
 /// Initial state: config 0, no ballots seen, not voted, active
+// @automan predicate(s: out, c: in)
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     &&& s.config_num == 0
     &&& s.max_bal == 0
@@ -33,6 +34,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// Phase 1a: Proposer sends prepare with ballot b.
 /// The node promises not to accept any ballot less than b.
+// @automan predicate(s: in, s_: out, c: in, b: in, sent_packets: out)
 pub open spec fn LPrepare(s: LState, s_: LState, c: LConstants, b: int, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& b > s.max_bal
@@ -55,6 +57,7 @@ pub open spec fn LPrepare(s: LState, s_: LState, c: LConstants, b: int, sent_pac
 }
 
 /// Phase 1b: Acceptor receives prepare and sends promise.
+// @automan predicate(s: in, s_: out, c: in, prepare_bal: in, sent_packets: out)
 pub open spec fn LSendPromise(s: LState, s_: LState, c: LConstants, prepare_bal: int, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& prepare_bal > s.max_bal
@@ -77,6 +80,7 @@ pub open spec fn LSendPromise(s: LState, s_: LState, c: LConstants, prepare_bal:
 }
 
 /// Proposer receives a promise and tracks it.
+// @automan predicate(s: in, s_: out, c: in, sender: in, promise_bal: in, promise_v_bal: in, promise_val: in, sent_packets: out)
 pub open spec fn LReceivePromise(s: LState, s_: LState, c: LConstants, sender: int, promise_bal: int, promise_v_bal: int, promise_val: int, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& promise_bal == s.max_bal
@@ -102,6 +106,7 @@ pub open spec fn LReceivePromise(s: LState, s_: LState, c: LConstants, sender: i
 
 /// Phase 2a/2b: Accept a value v at ballot b.
 /// Only accepts if b equals the current max_bal (promised ballot).
+// @automan predicate(s: in, s_: out, c: in, b: in, v: in, sent_packets: out)
 pub open spec fn LAccept(s: LState, s_: LState, c: LConstants, b: int, v: int, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& b == s.max_bal
@@ -125,6 +130,7 @@ pub open spec fn LAccept(s: LState, s_: LState, c: LConstants, b: int, v: int, s
 }
 
 /// Receive an accepted message and track the accepting node.
+// @automan predicate(s: in, s_: out, c: in, sender: in, accept_bal: in, sent_packets: out)
 pub open spec fn LReceiveAccepted(s: LState, s_: LState, c: LConstants, sender: int, accept_bal: int, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& accept_bal == s.max_bal
@@ -149,6 +155,7 @@ pub open spec fn LReceiveAccepted(s: LState, s_: LState, c: LConstants, sender: 
 
 /// Commit: value is committed when accepted by a quorum.
 /// Uses accepts_rcvd.len() for quorum check.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& s.committed == false
@@ -173,6 +180,7 @@ pub open spec fn LCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq
 
 /// Reconfigure: Move to a new configuration.
 /// Increments the config number and resets ballot tracking.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LReconfigure(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& s_.config_num == s.config_num + 1
@@ -194,6 +202,7 @@ pub open spec fn LReconfigure(s: LState, s_: LState, c: LConstants, sent_packets
 }
 
 /// WitnessSync: Witness transfers accepted state from old config to new.
+// @automan predicate(s: in, s_: out, c: in, witness_val: in, sent_packets: out)
 pub open spec fn LWitnessSync(s: LState, s_: LState, c: LConstants, witness_val: int, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     // Receive witness value
@@ -216,6 +225,7 @@ pub open spec fn LWitnessSync(s: LState, s_: LState, c: LConstants, witness_val:
 }
 
 /// Sync: Transfer accepted state to a new configuration member.
+// @automan predicate(s: in, s_: out, c: in, new_config: in, val: in, sent_packets: out)
 pub open spec fn LSync(s: LState, s_: LState, c: LConstants, new_config: int, val: int, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == false
     &&& new_config > s.config_num
@@ -237,6 +247,7 @@ pub open spec fn LSync(s: LState, s_: LState, c: LConstants, new_config: int, va
 }
 
 /// Deactivate: Node leaves the active set for reconfiguration.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LDeactivate(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LVPMessage>) -> bool {
     &&& s.is_active == true
     &&& s_.is_active == false

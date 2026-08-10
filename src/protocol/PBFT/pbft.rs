@@ -13,6 +13,7 @@ use vstd::prelude::*;
 verus! {
 
 /// Initial state: view 0, pre-prepare phase, primary node
+// @automan predicate(s: out, c: in)
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     &&& s.view == 0
     &&& s.phase is PrePrepare
@@ -32,6 +33,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// Pre-prepare: Primary broadcasts a client request to all replicas.
 /// Sends a pre-prepare message and moves to Prepare phase.
+// @automan predicate(s: in, s_: out, c: in, digest: in, sent_packets: out)
 pub open spec fn LPrePrepare(
     s: LState, s_: LState, c: LConstants, digest: int,
     sent_packets: Seq<LPBFTMessage>,
@@ -58,6 +60,7 @@ pub open spec fn LPrePrepare(
 }
 
 /// Receive a pre-prepare message (backup only) and accept it.
+// @automan predicate(s: in, s_: out, c: in, view: in, seq: in, digest: in, sent_packets: out)
 pub open spec fn LReceivePrePrepare(
     s: LState, s_: LState, c: LConstants,
     view: int, seq: int, digest: int,
@@ -85,6 +88,7 @@ pub open spec fn LReceivePrePrepare(
 
 /// Receive a prepare message from another replica.
 /// Adds sender to prepare_senders set.
+// @automan predicate(s: in, s_: out, c: in, sender: in, sent_packets: out)
 pub open spec fn LReceivePrepare(
     s: LState, s_: LState, c: LConstants, sender: int,
     sent_packets: Seq<LPBFTMessage>,
@@ -109,6 +113,7 @@ pub open spec fn LReceivePrepare(
 
 /// Enter commit phase when enough prepares received (quorum = 2f+1).
 /// Uses prepare_senders.len() for quorum check.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LEnterCommit(
     s: LState, s_: LState, c: LConstants,
     sent_packets: Seq<LPBFTMessage>,
@@ -133,6 +138,7 @@ pub open spec fn LEnterCommit(
 
 /// Receive a commit message from another replica.
 /// Adds sender to commit_senders set.
+// @automan predicate(s: in, s_: out, c: in, sender: in, sent_packets: out)
 pub open spec fn LReceiveCommit(
     s: LState, s_: LState, c: LConstants, sender: int,
     sent_packets: Seq<LPBFTMessage>,
@@ -157,6 +163,7 @@ pub open spec fn LReceiveCommit(
 
 /// Execute request and reply to client when enough commits received.
 /// Uses commit_senders.len() for quorum check.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LExecuteReply(
     s: LState, s_: LState, c: LConstants,
     sent_packets: Seq<LPBFTMessage>,
@@ -181,6 +188,7 @@ pub open spec fn LExecuteReply(
 
 /// Create a stable checkpoint after processing K requests.
 /// Advances low_watermark and high_watermark.
+// @automan predicate(s: in, s_: out, c: in, digest: in, sent_packets: out)
 pub open spec fn LCheckpoint(
     s: LState, s_: LState, c: LConstants, digest: int,
     sent_packets: Seq<LPBFTMessage>,
@@ -206,6 +214,7 @@ pub open spec fn LCheckpoint(
 }
 
 /// View change: on timeout, increment view and reset to PrePrepare.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LViewChange(
     s: LState, s_: LState, c: LConstants,
     sent_packets: Seq<LPBFTMessage>,
@@ -227,6 +236,7 @@ pub open spec fn LViewChange(
 }
 
 /// Start new round: after reply, return to PrePrepare for next request.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LNewRound(
     s: LState, s_: LState, c: LConstants,
     sent_packets: Seq<LPBFTMessage>,

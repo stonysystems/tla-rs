@@ -21,66 +21,79 @@ pub struct LConstants {
 
 
 /// Follower operator
+// @automan helper(c: in)
 pub open spec fn LFollower(c: LConstants) -> Seq<char> {
     "follower"@
 }
 
 /// Candidate operator
+// @automan helper(c: in)
 pub open spec fn LCandidate(c: LConstants) -> Seq<char> {
     "candidate"@
 }
 
 /// Leader operator
+// @automan helper(c: in)
 pub open spec fn LLeader(c: LConstants) -> Seq<char> {
     "leader"@
 }
 
 /// Servers operator
+// @automan helper(c: in)
 pub open spec fn LServers(c: LConstants) -> Set<int> {
     set![1, 2, 3, 4, 5]
 }
 
 /// HasQuorum operator
+// @automan predicate(c: in, vs: in)
 pub open spec fn LHasQuorum(c: LConstants, vs: Set<int>) -> bool {
     (((((((((((vs.contains(1) && vs.contains(2)) && vs.contains(3)) || ((vs.contains(1) && vs.contains(2)) && vs.contains(4))) || ((vs.contains(1) && vs.contains(2)) && vs.contains(5))) || ((vs.contains(1) && vs.contains(3)) && vs.contains(4))) || ((vs.contains(1) && vs.contains(3)) && vs.contains(5))) || ((vs.contains(1) && vs.contains(4)) && vs.contains(5))) || ((vs.contains(2) && vs.contains(3)) && vs.contains(4))) || ((vs.contains(2) && vs.contains(3)) && vs.contains(5))) || ((vs.contains(2) && vs.contains(4)) && vs.contains(5))) || ((vs.contains(3) && vs.contains(4)) && vs.contains(5)))
 }
 
 /// Init operator
+// @automan predicate(s: out, c: in)
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     (((((c.server >= 5) && (s.currentTerm == 0)) && (s.role == LFollower(c))) && (s.candidate == 0)) && (s.votesGranted == Set::<int>::empty()))
 }
 
 /// StartElection operator
+// @automan predicate(s: in, s_: out, c: in, cand: in)
 pub open spec fn LStartElection(s: LState, s_: LState, c: LConstants, cand: int) -> bool {
     ((((((s.role == LFollower(c)) && LServers(c).contains(cand)) && (s_.role == LCandidate(c))) && (s_.currentTerm == (s.currentTerm + 1))) && (s_.candidate == cand)) && (s_.votesGranted == set![cand]))
 }
 
 /// GrantVote operator
+// @automan predicate(s: in, s_: out, c: in, voter: in)
 pub open spec fn LGrantVote(s: LState, s_: LState, c: LConstants, voter: int) -> bool {
     ((((((((s.role == LCandidate(c)) && LServers(c).contains(voter)) && (voter <= c.server)) && !s.votesGranted.contains(voter)) && (s_.votesGranted == s.votesGranted.union(set![voter]))) && (s_.role == s.role)) && (s_.currentTerm == s.currentTerm)) && (s_.candidate == s.candidate))
 }
 
 /// BecomeLeader operator
+// @automan predicate(s: in, s_: out, c: in, cand: in)
 pub open spec fn LBecomeLeader(s: LState, s_: LState, c: LConstants, cand: int) -> bool {
     ((((((((s.role == LCandidate(c)) && (cand == s.candidate)) && LServers(c).contains(cand)) && LHasQuorum(c, s.votesGranted)) && (s_.role == LLeader(c))) && (s_.currentTerm == s.currentTerm)) && (s_.candidate == s.candidate)) && (s_.votesGranted == s.votesGranted))
 }
 
 /// StepDown operator
+// @automan predicate(s: in, s_: out, c: in)
 pub open spec fn LStepDown(s: LState, s_: LState, c: LConstants) -> bool {
     (((((s.role == LLeader(c)) && (s_.role == LFollower(c))) && (s_.candidate == 0)) && (s_.votesGranted == Set::<int>::empty())) && (s_.currentTerm == s.currentTerm))
 }
 
 /// Next operator
+// @automan predicate(s: in, s_: out, c: in)
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    (((((((((((((((LStartElection(s, s_, c, 1) || LStartElection(s, s_, c, 2)) || LStartElection(s, s_, c, 3)) || LStartElection(s, s_, c, 4)) || LStartElection(s, s_, c, 5)) || LGrantVote(s, s_, c, 1)) || LGrantVote(s, s_, c, 2)) || LGrantVote(s, s_, c, 3)) || LGrantVote(s, s_, c, 4)) || LGrantVote(s, s_, c, 5)) || LBecomeLeader(s, s_, c, 1)) || LBecomeLeader(s, s_, c, 2)) || LBecomeLeader(s, s_, c, 3)) || LBecomeLeader(s, s_, c, 4)) || LBecomeLeader(s, s_, c, 5)) || LStepDown(s, s_, c))
+    ((((((((LStartElection(s, s_, c, 1) || LStartElection(s, s_, c, 2)) || LStartElection(s, s_, c, 3)) || (LStartElection(s, s_, c, 4) || LStartElection(s, s_, c, 5))) || ((LGrantVote(s, s_, c, 1) || LGrantVote(s, s_, c, 2)) || LGrantVote(s, s_, c, 3))) || (LGrantVote(s, s_, c, 4) || LGrantVote(s, s_, c, 5))) || ((LBecomeLeader(s, s_, c, 1) || LBecomeLeader(s, s_, c, 2)) || LBecomeLeader(s, s_, c, 3))) || (LBecomeLeader(s, s_, c, 4) || LBecomeLeader(s, s_, c, 5))) || LStepDown(s, s_, c))
 }
 
 /// ElectionSafety operator
+// @automan predicate(s: in, c: in)
 pub open spec fn LElectionSafety(s: LState, c: LConstants) -> bool {
     (((s.role == LLeader(c)) ==> LHasQuorum(c, s.votesGranted)) && ((s.role == LLeader(c)) ==> LServers(c).contains(s.candidate)))
 }
 
 /// TypeOK operator
+// @automan predicate(s: in, c: in)
 pub open spec fn LTypeOK(s: LState, c: LConstants) -> bool {
     ((((s.currentTerm >= 0) && (((s.role == LFollower(c)) || (s.role == LCandidate(c))) || (s.role == LLeader(c)))) && ((s.candidate == 0) || LServers(c).contains(s.candidate))) && s.votesGranted.subset_of(LServers(c)))
 }

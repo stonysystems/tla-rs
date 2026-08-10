@@ -1013,9 +1013,9 @@ impl CReplica {
 }
 
 pub exec fn CReplicaNumActions() -> (result: u64)ensures
-    result@ == LReplicaNumActions(),
+    result as int == LReplicaNumActions(),
 {
-    10
+10
 }
 
 pub exec fn CSchedulerInit(c: &CReplicaConstants) -> (result: CScheduler)

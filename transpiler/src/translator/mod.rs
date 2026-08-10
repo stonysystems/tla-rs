@@ -846,7 +846,14 @@ impl ProofNeeds {
         // Determine lemma names based on whether struct_vec_fields is configured.
         // If a struct-typed Vec field exists, use field-specific names (e.g., lemma_empty_log_map).
         // Otherwise, use generic names (e.g., lemma_empty_seq_map).
-        let first_field = struct_vec_fields.keys().next();
+        //
+        // `min()`, not `next()`: with two struct-vec fields of the same exec
+        // type either field's lemma proves the statement, and HashMap
+        // iteration order made the pick per-process random — the same command
+        // on the same input emitted different (verifying) code run to run.
+        // RSL election is the live case; its checked-in generated file
+        // carries a mix from years of such runs.
+        let first_field = struct_vec_fields.keys().min();
 
         // Skip has_empty_vec when delegating call is in conditional — the empty vec
         // is for message tuples in branches, not for struct fields. Inline branch proofs
