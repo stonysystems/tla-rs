@@ -1275,7 +1275,7 @@ For a single-module protocol such as Raft:
 |---|---|---|
 | Logical types | `src/protocol/Raft/types.rs` | Hand-written |
 | Logical actions | `src/protocol/Raft/raft.rs` | Hand-written |
-| Mode annotations | `src/protocol/Raft/raft.automan` | Hand-written |
+| Mode annotations | inline `// @automan` directives in `raft.rs` | Hand-written |
 | Configuration | `src/protocol/Raft/raft_transpile.toml` | Hand-written |
 | Concrete types | `src/generated/Raft/types_gen.rs` | Generated only |
 | Executable actions | `src/generated/Raft/raft_gen.rs` | Generated only |
@@ -1309,7 +1309,6 @@ mkdir -p /tmp/tla-rs-raft-generated
 
 "$TLA_RS_TRANSPILER" \
   -i src/protocol/Raft/raft.rs \
-  -a src/protocol/Raft/raft.automan \
   -c src/protocol/Raft/raft_transpile.toml \
   -o /tmp/tla-rs-raft-generated/raft_gen.rs
 
@@ -1967,7 +1966,8 @@ transpiler/target/debug/verus-transpile pipeline \
 At present this mode deliberately stops after writing the projected spec because mode
 annotations for the projected signatures are not implemented. `--exec-output` is still required
 by the CLI but is not produced. The command also writes a source-derived `.automan` beside the
-spec before it stops; its parameter modes describe the unprojected source operators and must not
+spec before it stops — the clean-subset stop is the one path that still always
+emits the sidecar pair; its parameter modes describe the unprojected source operators and must not
 be used to generate the exec layer. Use `clean-tla` when only the projection is wanted.
 
 ### State clean-subset evidence precisely
@@ -2001,8 +2001,9 @@ transpiler/target/debug/verus-transpile translate-tla \
   --gen-modes
 ```
 
-It parses the module, infers types, applies any `.tla-types` overrides, emits Verus spec code,
-and optionally writes `out/protocol_spec.automan`. `--spec-prefix` and `--state-name` control
+It parses the module, infers types, applies any `.tla-types` overrides, and emits Verus spec
+code that carries its mode annotations as inline `// @automan` directives (Phase 55);
+`--gen-modes` additionally writes the legacy `out/protocol_spec.automan` sidecar. `--spec-prefix` and `--state-name` control
 generated naming. Type hints are especially valuable for empty collections, records, operator
 parameters, and named domains that usage alone cannot determine.
 
@@ -2347,7 +2348,7 @@ an external database API.
 |---|---|
 | Logical types | [`src/protocol/TwoPhase/types.rs`](../src/protocol/TwoPhase/types.rs) |
 | Logical actions and safety predicates | [`twophase.rs`](../src/protocol/TwoPhase/twophase.rs) |
-| Input/output modes | [`twophase.automan`](../src/protocol/TwoPhase/twophase.automan) |
+| Input/output modes | inline `// @automan` directives in [`twophase.rs`](../src/protocol/TwoPhase/twophase.rs) |
 | Generation, messages, and scheduler config | [`twophase_transpile.toml`](../src/protocol/TwoPhase/twophase_transpile.toml) |
 | Concrete generated types/actions | [`src/generated/TwoPhase/`](../src/generated/TwoPhase/) |
 | Runtime message type and host | [`src/implementation/TwoPhase/`](../src/implementation/TwoPhase/) |
@@ -2383,18 +2384,14 @@ do not substitute the unusable DPOR path.
 
 ### Validate data-flow annotations
 
-The mode file declares `LInit(-, +)` and marks each transition's old state and
-constants as inputs, its new state and sent packet sequence as outputs, and any
-selected RM identifier as an input. Check the annotation syntax first:
-
-```bash
-cargo run --quiet --manifest-path transpiler/Cargo.toml -- \
-  check --annotations src/protocol/TwoPhase/twophase.automan
-```
-
-This confirms that the annotation file parses. Generation is the stronger
-test because it resolves the annotations against Rust signatures and attempts
-to synthesize every output.
+Each transition's directive marks the old state and constants as inputs, the
+new state and sent packet sequence as outputs, and any selected RM identifier
+as an input — `// @automan predicate(s: in, s_: out, c: in, rm: in,
+sent_packets: out)` above `LRMReceivePrepare`, for example. The directives are
+validated when the spec is parsed, so generation itself is the syntax check:
+it resolves every binding against the Rust signature and attempts to
+synthesize every output. (`check --annotations <file>` still exists for
+legacy sidecar files.)
 
 The checked-in TwoPhase config currently contains both `arc_wrap_types` and
 `mut_self_types` for `CState`. The current generator warns and clears the Arc
@@ -2420,7 +2417,6 @@ mkdir -p /tmp/tla-rs-twophase-generated
 
 "$TLA_RS_TRANSPILER" \
   -i src/protocol/TwoPhase/twophase.rs \
-  -a src/protocol/TwoPhase/twophase.automan \
   -c src/protocol/TwoPhase/twophase_transpile.toml \
   -o /tmp/tla-rs-twophase-generated/twophase_gen.rs
 
@@ -2803,7 +2799,7 @@ For transpiler-emitted code, if the output is wrong, change the earliest applica
 source of truth:
 
 - change the logical specification if the intended transition is wrong;
-- change the `.automan` file if input and output modes are wrong;
+- change the `// @automan` directive (or legacy `.automan` file) if input and output modes are wrong;
 - change `_transpile.toml` if a mapping or supported code-generation choice is wrong;
 - change `transpiler/src/` if the behavior should be generic;
 - change a hand-written proof or implementation helper only when that helper is the
@@ -2936,9 +2932,9 @@ result must be read with the resolved configuration and stop reason.
 
 The transpiler combines three inputs:
 
-1. a Verus specification;
-2. a `.automan` mode annotation file;
-3. a `_transpile.toml` configuration.
+1. a Verus specification carrying inline `// @automan` mode directives
+   (or paired with a legacy `.automan` sidecar);
+2. a `_transpile.toml` configuration.
 
 It generates concrete `C*` types and executable functions under
 `src/generated/<P>/`. A generated function normally has a contract that relates its
@@ -3048,8 +3044,7 @@ contains:
 
 ```text
 types.rs
-<module>.rs
-<module>.automan
+<module>.rs        (carries the inline // @automan mode directives)
 <module>_transpile.toml
 mod.rs
 ```
@@ -3105,7 +3100,7 @@ source modules are:
 
 | Module | Responsibility |
 |---|---|
-| `annotation` | `.automan` parsing |
+| `annotation` | mode annotations: inline-directive and `.automan` parsing, sidecar↔inline migration |
 | `ast` | internal Verus expression, type, and function representation |
 | `parser` | extraction and parsing of supported Verus syntax |
 | `moder` | mode annotation, assignment tracking, functionalization checks |
@@ -3261,7 +3256,8 @@ name checks.
 ### CLI and configuration entry
 
 With no subcommand, `verus-transpile` runs the spec-to-exec path using
-`--input`, `--annotations`, `--config`, and `--output` (or `--stdout`). The CLI loads
+`--input`, `--config`, and `--output` (or `--stdout`); `--annotations` supplies a
+legacy sidecar and is required only when the spec carries no inline directives. The CLI loads
 the TOML file, combines it with inferred information and command-line modes, resolves
 known interactions such as `mut_self_types` versus Arc wrapping, and can print the
 resolved configuration with `--dump-config`.
@@ -3278,7 +3274,8 @@ The AST preserves constructs the later passes need: types, calls, equality and
 relations, conjunctions/disjunctions, `if`/`match`, quantifiers, collection literals,
 field and arrow access, Views, closures, and struct construction/update.
 
-The annotation parser loads one or more modules from `.automan`. Each function is
+The annotation layer collects inline directives during spec parsing and can load
+module blocks from a legacy `.automan` sidecar. Each function is
 classified as a predicate or helper, and each parameter receives an input or output
 mode. Helpers return a value directly; predicates describe outputs relationally.
 
@@ -3380,8 +3377,23 @@ annotations describe data flow; TOML describes representation and code generatio
 
 ### Annotation model
 
-A `.automan` file contains module blocks. Ordinary entries are predicates; entries
-prefixed with `helper` are value-returning functions:
+Annotations come in two equivalent forms. The primary form is an inline
+directive immediately above the `spec fn` (Phase 55); entries are predicates
+or `helper` value-returning functions:
+
+```rust
+// @automan predicate(value: out, limit: in)
+pub open spec fn LInit(value: int, limit: int) -> bool { ... }
+
+// @automan helper(value: in) -> int
+pub open spec fn NextValue(value: int) -> int { ... }
+```
+
+Bindings are named against the declaration; unknown, missing, or duplicate
+names are errors with a file line, and a directive the parser cannot attach to
+a following `spec fn` fails rather than being skipped. A directive may span
+several adjacent `//` lines. The legacy sidecar form is a `.automan` file with
+module blocks and positional modes:
 
 ```text
 module Example::Counter {
@@ -3392,20 +3404,26 @@ module Example::Counter {
 ```
 
 `+` means the caller supplies the parameter. `-` means the generated function computes
-it. Modes follow the specification's parameter order. A helper's explicit return type
-is optional in the current parser; when omitted, translation falls back to the parsed
-specification return type. Supplying it is often clearer and gives better diagnostics.
+it. Modes follow the specification's parameter order. In both forms a helper's
+explicit return type is optional; when omitted, translation falls back to the
+parsed specification return type. Supplying it is often clearer and gives
+better diagnostics. RSL's production annotations use it to map a logical
+return type to a concrete generated one.
 
-The parser accepts `//` comment lines. Existing annotation files also contain ordinary
-Rust-like comments around entries. Keep each declaration on one line; the current
-annotation parser is line-oriented.
+The sidecar parser accepts `//` comment lines and Rust-like comments around
+entries; keep each declaration on one line, as that parser is line-oriented.
+A function annotated in both forms must agree: identical definitions warn,
+conflicting ones fail. `migrate-inline` converts a sidecar to directives
+mechanically.
 
 ### Mode invariants
 
 Mode checking answers a concrete question: can the relation be turned into a function?
 
-- For a predicate, at least one parameter must be an output.
-- A helper is a value-producing function and should have input parameters only.
+- A predicate usually has at least one output; all-input predicates are legal
+  and act as pure validity checks (the maintained specs contain fifteen, such
+  as `IsLogTruncationPointValid`).
+- A helper is a value-producing function and must have input parameters only.
 - A structured output must be assigned as a whole or have all known fields assigned.
 - A field cannot receive two independent assignments.
 - Every branch must construct a coherent set of outputs.
@@ -3413,16 +3431,17 @@ Mode checking answers a concrete question: can the relation be turned into a fun
 - General assignments under quantifiers are rejected; supported comprehensions are
   recognized explicitly.
 
-Validate an annotation file independently with:
+Validate a legacy sidecar file independently with:
 
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
-  check --annotations src/protocol/Raft/raft.automan
+  check --annotations examples/quickstart/counter_spec.automan
 ```
 
-The annotation checker establishes that the file parses. Full mode and
-functionalization checks happen when the annotated spec is transpiled, so a successful
-`check` command is necessary but not sufficient.
+The annotation checker establishes that the file parses. Inline directives
+need no separate checker — they are validated whenever the spec is parsed.
+Full mode and functionalization checks happen when the annotated spec is
+transpiled, so parsing alone is necessary but not sufficient.
 
 ### Configuration resolution
 
@@ -3436,7 +3455,6 @@ Before debugging translation, inspect the resolved configuration:
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   --input src/protocol/Raft/raft.rs \
-  --annotations src/protocol/Raft/raft.automan \
   --config src/protocol/Raft/raft_transpile.toml \
   --dump-config
 ```
@@ -3549,7 +3567,6 @@ For a single-module protocol, generated output normally depends on:
 ```text
 src/protocol/<P>/types.rs
 src/protocol/<P>/<module>.rs
-src/protocol/<P>/<module>.automan
 src/protocol/<P>/<module>_transpile.toml
 transpiler/src/**
 ```
@@ -3578,7 +3595,6 @@ cargo run --manifest-path transpiler/Cargo.toml -- generate-types \
   -o "$scratch_dir/types_gen.rs"
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i src/protocol/Raft/raft.rs \
-  -a src/protocol/Raft/raft.automan \
   -c src/protocol/Raft/raft_transpile.toml \
   -o "$scratch_dir/raft_gen.rs"
 diff -u src/generated/Raft/raft_gen.rs "$scratch_dir/raft_gen.rs"
@@ -4391,8 +4407,10 @@ typechecking, and finite TLC observable-state comparisons.
 The mode-annotation generator in
 [`translator.rs`](../transpiler/src/tla/translator.rs) analyzes source operator signatures:
 input parameters use `+`, outputs use `-`, and actions are distinguished from initializers and
-predicates. The general pipeline consumes these `.automan` annotations to choose executable
-witnesses.
+predicates. Since Phase 55 the generated spec carries these modes as inline `// @automan`
+directives, embedded by the same migrator that converted the protocol tree, so the two
+emission forms cannot drift apart; the general pipeline consumes them to choose executable
+witnesses, and the sidecar form remains available behind `--gen-modes`.
 
 Projection changes signatures by removing the acting node and replacing network state with
 message inputs/outputs. Source-shaped annotations are therefore invalid for projected output.
