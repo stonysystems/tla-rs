@@ -126,7 +126,7 @@ A full verification pass emits 534 `automatically chose triggers` notes, all in 
 The Verus team raised this while evaluating tla-rs as a compatibility test target: an
 auto-chosen trigger can change between Verus releases, so a proof that verifies today can
 fail tomorrow as an uninformative `rlimit exceeded`. See
-[Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+[Phase 54](#phase-54-explicit-quantifier-triggers--complete-2026-08-05).
 
 Phases 52/53 were sequenced behind this and are no longer waiting: both are
 **COMPLETE (2026-08-04)** — eight `clean.tla` specs translate, all eight goldens pass
@@ -202,11 +202,18 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 **Next steps (priority order, updated 2026-08-04):**
 
-0. **🔝 Phase 54: Explicit Quantifier Triggers** — 534 auto-chosen triggers make our proofs
-   sensitive to Verus version changes. Raised by the Verus team while evaluating tla-rs as a
-   compatibility test target. **Do this first.** (Phases 52/53 were sequenced behind it;
-   they completed independently on 2026-08-04 and are no longer waiting.)
-   See [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+0. **🔝 Phase 55: Inline AutoMan Annotations** — move mode annotations out of `.automan`
+   sidecars and next to the `spec fn` they describe. Tracking issue
+   [#4](https://github.com/stonysystems/tla-rs/issues/4); branch
+   `feature/inline-automan-annotations`. The sidecars bind modes to parameters by position and
+   match functions by bare name, and `LInit` is declared in nine protocol sidecars — nothing
+   has broken only because transpilation runs one protocol at a time. **Committed scope is
+   55.1 alone** (parser + model, additive, `.automan` still the only source of truth);
+   55.2–55.5 are a separate decision gated on the byte-identical parity proof.
+   See [Phase 55](#phase-55-inline-automan-annotations-in-verus-spec-files---top-priority-plan-only-not-started).
+
+   *Phase 54 (explicit quantifier triggers) completed on 2026-08-05 and no longer holds this
+   slot: 534 → 0 notes, 0 warnings, with a ceiling of 0 enforced in CI.*
 
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
@@ -17383,7 +17390,13 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
 
 ---
 
-## Phase 54: Explicit Quantifier Triggers — 🔝 TOP PRIORITY (current work)
+## Phase 54: Explicit Quantifier Triggers — **COMPLETE 2026-08-05**
+
+> 534 auto-chosen trigger notes → **0**, and 0 warnings, on the pinned
+> `0.2026.08.02.b677dd5` (`1048 verified, 0 errors`). `reports/triggers/ceiling.json` holds the
+> result at `max_notes: 0` with `enforce: true`, so a new unannotated quantifier fails the
+> build rather than quietly regrowing the count. The three unchecked boxes below are
+> struck-through — superseded or deliberately not chosen — not open work.
 
 ### Background (2026-08)
 
@@ -18186,7 +18199,7 @@ Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can be
 
 ---
 
-## Phase 55: Inline AutoMan Annotations in Verus Spec Files — PLAN ONLY (not started)
+## Phase 55: Inline AutoMan Annotations in Verus Spec Files — 🔝 TOP PRIORITY (plan only, not started)
 
 Tracking issue: [#4](https://github.com/stonysystems/tla-rs/issues/4). Branch:
 `feature/inline-automan-annotations`. **This section is a plan. No code has been written.**
