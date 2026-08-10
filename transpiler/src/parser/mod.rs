@@ -2682,10 +2682,21 @@ impl<'a> VerusBlockParser<'a> {
 }
 
 /// Parse Verus source from a file
+///
+/// Reader-oriented: inline `// @automan` directives are parsed and validated
+/// (a malformed or misplaced one still fails), then dropped, because every
+/// caller of this function consumes signatures and bodies only — the
+/// spec analyzer, the Verus→TLA converter, the model-check spec reader.
+/// Pipelines that consume modes go through
+/// [`VerusParser::parse_spec_functions_annotated`] instead.
 pub fn parse_file(path: &std::path::Path) -> TranspileResult<Vec<SpecFunction>> {
     let source = std::fs::read_to_string(path)?;
     let parser = VerusParser::new(source).with_file_path(path.display().to_string());
-    parser.parse_spec_functions()
+    Ok(parser
+        .parse_spec_functions_annotated()?
+        .into_iter()
+        .map(|(func, _)| func)
+        .collect())
 }
 
 #[cfg(test)]

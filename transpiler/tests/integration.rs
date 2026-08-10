@@ -637,8 +637,10 @@ fn test_raft_type_generation() {
 fn test_raft_function_transpilation() {
     let spec_source = std::fs::read_to_string("../src/protocol/Raft/raft.rs")
         .expect("Failed to read Raft raft.rs");
-    let annotation_source = std::fs::read_to_string("../src/protocol/Raft/raft.automan")
-        .expect("Failed to read Raft raft.automan");
+    // After the Phase 55 migration the modes live inline in raft.rs; the
+    // sidecar read is kept for the pre-migration state.
+    let annotation_source =
+        std::fs::read_to_string("../src/protocol/Raft/raft.automan").unwrap_or_default();
 
     let config = TranspilerConfig {
         translator: TranslatorConfig {
@@ -739,20 +741,19 @@ fn test_raft_function_transpilation() {
 
 #[test]
 fn test_raft_annotation_parsing() {
-    let annotation_source = std::fs::read_to_string("../src/protocol/Raft/raft.automan")
-        .expect("Failed to read Raft raft.automan");
+    // Phase 55 moved the modes inline; this asserts the migrated directives
+    // carry the same annotations the sidecar used to.
+    let spec_source = std::fs::read_to_string("../src/protocol/Raft/raft.rs")
+        .expect("Failed to read Raft raft.rs");
+    let parsed = verus_transpiler::VerusParser::new(spec_source)
+        .parse_spec_functions_annotated()
+        .unwrap();
+    let funcs: std::collections::HashMap<String, verus_transpiler::FunctionAnnotation> = parsed
+        .into_iter()
+        .filter_map(|(_, ann)| ann.map(|a| (a.name.clone(), a)))
+        .collect();
 
-    let parser = AnnotationParser::new(annotation_source);
-    let modules = parser.parse().unwrap();
-
-    // Should have 1 module (Raft::raft)
-    assert_eq!(modules.len(), 1, "Should have 1 module");
-    let module = &modules[0];
-    assert_eq!(module.module_path, "Raft::raft");
-
-    let funcs = &module.functions;
-
-    // Should have 7 function annotations (skipped functions are not in automan)
+    // Should have 7 function annotations (skipped functions are not annotated)
     assert!(
         funcs.len() >= 7,
         "Expected at least 7 function annotations but got {}",
@@ -922,7 +923,7 @@ fn test_chain_replication_function_transpilation() {
         .expect("Failed to read ChainReplication chain.rs");
     let annotation_source =
         std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
-            .expect("Failed to read ChainReplication chain.automan");
+            .unwrap_or_default();
 
     let config = TranspilerConfig {
         translator: TranslatorConfig {
@@ -993,18 +994,17 @@ fn test_chain_replication_function_transpilation() {
 
 #[test]
 fn test_chain_replication_annotation_parsing() {
-    let annotation_source =
-        std::fs::read_to_string("../src/protocol/ChainReplication/chain.automan")
-            .expect("Failed to read ChainReplication chain.automan");
-
-    let parser = AnnotationParser::new(annotation_source);
-    let modules = parser.parse().unwrap();
-
-    assert_eq!(modules.len(), 1, "Should have 1 module");
-    let module = &modules[0];
-    assert_eq!(module.module_path, "ChainReplication::chain");
-
-    let funcs = &module.functions;
+    // Phase 55 moved the modes inline; this asserts the migrated directives
+    // carry the same annotations the sidecar used to.
+    let spec_source = std::fs::read_to_string("../src/protocol/ChainReplication/chain.rs")
+        .expect("Failed to read ChainReplication chain.rs");
+    let parsed = verus_transpiler::VerusParser::new(spec_source)
+        .parse_spec_functions_annotated()
+        .unwrap();
+    let funcs: std::collections::HashMap<String, verus_transpiler::FunctionAnnotation> = parsed
+        .into_iter()
+        .filter_map(|(_, ann)| ann.map(|a| (a.name.clone(), a)))
+        .collect();
 
     // Should have 6 function annotations
     assert!(
@@ -1213,25 +1213,26 @@ fn test_mut_self_lift_leaves_no_tuple_tail_in_rsl_output() {
         ("proposer.rs", "proposer_transpile.toml", "proposer.automan"),
         ("replica.rs", "replica_transpile.toml", "replica.automan"),
     ] {
+        let mut args: Vec<String> = vec![
+            "--input".into(),
+            repo_root
+                .join(format!("src/protocol/RSL/{}", spec))
+                .display()
+                .to_string(),
+            "--config".into(),
+            repo_root
+                .join(format!("src/protocol/RSL/{}", toml))
+                .display()
+                .to_string(),
+        ];
+        let automan_path = repo_root.join(format!("src/protocol/RSL/{}", automan));
+        if automan_path.exists() {
+            args.push("--annotations".into());
+            args.push(automan_path.display().to_string());
+        }
+        args.push("--stdout".into());
         let output = std::process::Command::new(transpiler_binary())
-            .args([
-                "--input",
-                repo_root
-                    .join(format!("src/protocol/RSL/{}", spec))
-                    .to_str()
-                    .unwrap(),
-                "--config",
-                repo_root
-                    .join(format!("src/protocol/RSL/{}", toml))
-                    .to_str()
-                    .unwrap(),
-                "--annotations",
-                repo_root
-                    .join(format!("src/protocol/RSL/{}", automan))
-                    .to_str()
-                    .unwrap(),
-                "--stdout",
-            ])
+            .args(&args)
             .current_dir(repo_root.join("transpiler"))
             .output()
             .expect("Failed to run transpiler");
@@ -1268,25 +1269,29 @@ fn assert_regen_matches_checked_in(
     let repo_root = resolve_repo_root_for_integration();
     let checked_in_path = repo_root.join(format!("src/generated/{}/{}", protocol_dir, gen_file));
 
+    // Annotations live inline in the spec after the Phase 55 migration; pass
+    // the sidecar only while one still exists.
+    let mut args: Vec<String> = vec![
+        "--input".into(),
+        repo_root
+            .join(format!("src/protocol/{}/{}", protocol_dir, spec_file))
+            .display()
+            .to_string(),
+        "--config".into(),
+        repo_root
+            .join(format!("src/protocol/{}/{}", protocol_dir, toml_file))
+            .display()
+            .to_string(),
+    ];
+    let automan_path = repo_root.join(format!("src/protocol/{}/{}", protocol_dir, automan_file));
+    if automan_path.exists() {
+        args.push("--annotations".into());
+        args.push(automan_path.display().to_string());
+    }
+    args.push("--stdout".into());
+
     let output = std::process::Command::new(transpiler_binary())
-        .args([
-            "--input",
-            repo_root
-                .join(format!("src/protocol/{}/{}", protocol_dir, spec_file))
-                .to_str()
-                .unwrap(),
-            "--config",
-            repo_root
-                .join(format!("src/protocol/{}/{}", protocol_dir, toml_file))
-                .to_str()
-                .unwrap(),
-            "--annotations",
-            repo_root
-                .join(format!("src/protocol/{}/{}", protocol_dir, automan_file))
-                .to_str()
-                .unwrap(),
-            "--stdout",
-        ])
+        .args(&args)
         .current_dir(repo_root.join("transpiler"))
         .output()
         .expect("Failed to run transpiler");
@@ -2845,7 +2850,6 @@ fn test_replica_process1b_is_implemented() {
 fn test_election_recursive_functions_generate_loop_code() {
     // Read the election spec and automan files
     let spec_path = "../src/protocol/RSL/election.rs";
-    let automan_path = "../src/protocol/RSL/election.automan";
 
     // Create a test TOML that removes the recursive functions from skip_functions
     let base_toml = std::fs::read_to_string("../src/protocol/RSL/election_transpile.toml")
@@ -2878,8 +2882,6 @@ fn test_election_recursive_functions_generate_loop_code() {
         .args([
             "-i",
             spec_path,
-            "-a",
-            automan_path,
             "-c",
             tmp_toml.to_str().unwrap(),
             "-o",
@@ -24159,11 +24161,6 @@ fn test_vec_element_ensures_emits_explicit_trigger() {
                 .join("src/protocol/RSL/broadcast.rs")
                 .to_str()
                 .unwrap(),
-            "--annotations",
-            repo_root
-                .join("src/protocol/RSL/broadcast.automan")
-                .to_str()
-                .unwrap(),
             "--config",
             repo_root
                 .join("src/protocol/RSL/broadcast_transpile.toml")
@@ -24314,11 +24311,6 @@ fn test_mut_self_method_drops_functional_output() {
                 .join("src/protocol/RSL/learner.rs")
                 .to_str()
                 .unwrap(),
-            "--annotations",
-            repo_root
-                .join("src/protocol/RSL/learner.automan")
-                .to_str()
-                .unwrap(),
             "--config",
             repo_root
                 .join("src/protocol/RSL/learner_transpile.toml")
@@ -24420,4 +24412,204 @@ fn test_dpor_corpus_has_no_degenerate_stub_specs() {
         "unexpected detector output:\n{}",
         stdout
     );
+}
+
+// ============================================================================
+// Phase 55.2: sidecar → inline migration parity
+//
+// For every maintained sidecar under src/protocol/, mechanically migrate the
+// spec to inline `// @automan` directives in a temp copy and assert the
+// transpiler emits byte-identical output from either input. This is the
+// equivalence proof that gates the real migration (55.4): if these pass, the
+// migration cannot change generated code.
+// ============================================================================
+
+/// The 16 maintained (protocol_dir, spec, automan, toml) triples.
+const PARITY_TRIPLES: &[(&str, &str, &str, &str)] = &[
+    (
+        "ChainReplication",
+        "chain.rs",
+        "chain.automan",
+        "chain_transpile.toml",
+    ),
+    (
+        "EPaxos",
+        "epaxos.rs",
+        "epaxos.automan",
+        "epaxos_transpile.toml",
+    ),
+    (
+        "LeaderElection",
+        "election.rs",
+        "election.automan",
+        "election_transpile.toml",
+    ),
+    ("PBFT", "pbft.rs", "pbft.automan", "pbft_transpile.toml"),
+    ("Paxos", "paxos.rs", "paxos.automan", "paxos_transpile.toml"),
+    (
+        "PrimaryBackup",
+        "primarybackup.rs",
+        "primarybackup.automan",
+        "primarybackup_transpile.toml",
+    ),
+    (
+        "RSL",
+        "acceptor.rs",
+        "acceptor.automan",
+        "acceptor_transpile.toml",
+    ),
+    (
+        "RSL",
+        "broadcast.rs",
+        "broadcast.automan",
+        "broadcast_transpile.toml",
+    ),
+    (
+        "RSL",
+        "election.rs",
+        "election.automan",
+        "election_transpile.toml",
+    ),
+    (
+        "RSL",
+        "executor.rs",
+        "executor.automan",
+        "executor_transpile.toml",
+    ),
+    (
+        "RSL",
+        "learner.rs",
+        "learner.automan",
+        "learner_transpile.toml",
+    ),
+    (
+        "RSL",
+        "proposer.rs",
+        "proposer.automan",
+        "proposer_transpile.toml",
+    ),
+    (
+        "RSL",
+        "replica.rs",
+        "replica.automan",
+        "replica_transpile.toml",
+    ),
+    ("Raft", "raft.rs", "raft.automan", "raft_transpile.toml"),
+    (
+        "TwoPhase",
+        "twophase.rs",
+        "twophase.automan",
+        "twophase_transpile.toml",
+    ),
+    (
+        "VerticalPaxos",
+        "vpaxos.rs",
+        "vpaxos.automan",
+        "vpaxos_transpile.toml",
+    ),
+];
+
+fn assert_inline_migration_parity(protocol_dir: &str, spec: &str, automan: &str, toml: &str) {
+    let repo_root = resolve_repo_root_for_integration();
+    let proto = repo_root.join(format!("src/protocol/{}", protocol_dir));
+
+    // If this protocol has already been migrated (55.4), the sidecar is gone
+    // and the parity claim is vacuous here — the regen tests carry it instead.
+    if !proto.join(automan).exists() {
+        return;
+    }
+
+    let run =
+        |input: &std::path::Path, config: &std::path::Path, sidecar: Option<&std::path::Path>| {
+            let mut args: Vec<String> = vec![
+                "--input".into(),
+                input.display().to_string(),
+                "--config".into(),
+                config.display().to_string(),
+                "--stdout".into(),
+            ];
+            if let Some(sidecar) = sidecar {
+                args.push("--annotations".into());
+                args.push(sidecar.display().to_string());
+            }
+            let out = std::process::Command::new(transpiler_binary())
+                .args(&args)
+                .current_dir(repo_root.join("transpiler"))
+                .output()
+                .expect("failed to run transpiler");
+            assert!(
+                out.status.success(),
+                "transpiler failed for {} {}:\n{}",
+                protocol_dir,
+                input.display(),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout).expect("output not UTF-8")
+        };
+
+    // Both runs happen inside the same temp copy of the protocol dir, so the
+    // only variable is where the annotations live. (Config inference derives
+    // some hints from the spec file's path — src/protocol/<X>/ — so comparing
+    // a temp-dir run against an in-tree run would diff on that, not on the
+    // annotation source.)
+    let temp = tempfile::tempdir().expect("tempdir should create");
+    let tmp_proto = temp.path().join(protocol_dir);
+    copy_dir_recursive(&proto, &tmp_proto);
+
+    let sidecar_out = run(
+        &tmp_proto.join(spec),
+        &tmp_proto.join(toml),
+        Some(&tmp_proto.join(automan)),
+    );
+
+    let migrate = std::process::Command::new(transpiler_binary())
+        .args([
+            "migrate-inline",
+            "--spec",
+            tmp_proto.join(spec).to_str().unwrap(),
+            "--annotations",
+            tmp_proto.join(automan).to_str().unwrap(),
+            "--write",
+        ])
+        .output()
+        .expect("failed to run migrate-inline");
+    assert!(
+        migrate.status.success(),
+        "migrate-inline failed for {}/{}:\n{}",
+        protocol_dir,
+        spec,
+        String::from_utf8_lossy(&migrate.stderr)
+    );
+    assert!(
+        !tmp_proto.join(automan).exists(),
+        "sidecar should be deleted by --write"
+    );
+
+    let inline_out = run(&tmp_proto.join(spec), &tmp_proto.join(toml), None);
+
+    assert_eq!(
+        sidecar_out, inline_out,
+        "{}/{}: inline migration changed transpiler output",
+        protocol_dir, spec
+    );
+}
+
+fn copy_dir_recursive(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).expect("create_dir_all");
+    for entry in std::fs::read_dir(from).expect("read_dir") {
+        let entry = entry.expect("dir entry");
+        let target = to.join(entry.file_name());
+        if entry.file_type().expect("file_type").is_dir() {
+            copy_dir_recursive(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).expect("copy file");
+        }
+    }
+}
+
+#[test]
+fn phase_55_2_inline_migration_parity_all_protocols() {
+    for (dir, spec, automan, toml) in PARITY_TRIPLES {
+        assert_inline_migration_parity(dir, spec, automan, toml);
+    }
 }

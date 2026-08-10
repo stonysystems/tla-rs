@@ -31,6 +31,7 @@ verus! {
         pub executor:LExecutor
     }
 
+    // @automan predicate(r: out, c: in)
     pub open spec fn LReplicaInit(r:LReplica, c:LReplicaConstants) -> bool
         recommends
             WellFormedLConfiguration(c.all.config)
@@ -43,6 +44,7 @@ verus! {
         &&& LExecutorInit(r.executor, c)
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcessInvalid(
         s:LReplica,
         s_:LReplica,
@@ -55,6 +57,7 @@ verus! {
         &&& sent_packets == Seq::<RslPacket>::empty()
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcessRequest(
         s:LReplica,
         s_:LReplica,
@@ -83,6 +86,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcess1a(
         s:LReplica,
         s_:LReplica,
@@ -103,6 +107,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcess1b(
         s:LReplica,
         s_:LReplica,
@@ -133,6 +138,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcessStartingPhase2(
         s:LReplica,
         s_:LReplica,
@@ -152,6 +158,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcess2a(
         s:LReplica,
         s_:LReplica,
@@ -180,6 +187,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcess2b(
         s:LReplica,
         s_:LReplica,
@@ -207,6 +215,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcessReply(
         s:LReplica,
         s_:LReplica,
@@ -219,6 +228,7 @@ verus! {
         &&& sent_packets == Seq::<RslPacket>::empty()
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcessAppStateSupply(
         s:LReplica,
         s_:LReplica,
@@ -247,6 +257,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, sent_packets: out)
     pub open spec fn LReplicaNextProcessAppStateRequest(
         s:LReplica,
         s_:LReplica,
@@ -266,6 +277,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, received_packet: in, clock: in, sent_packets: out)
     pub open spec fn LReplicaNextProcessHeartbeat(
         s:LReplica,
         s_:LReplica,
@@ -288,6 +300,7 @@ verus! {
         &&& sent_packets == Seq::<RslPacket>::empty()
     }
 
+    // @automan predicate(s: in, s_: out, sent_packets: out)
     pub open spec fn LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(
         s:LReplica,
         s_:LReplica,
@@ -305,6 +318,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, sent_packets: out)
     pub open spec fn LReplicaNextSpontaneousMaybeEnterPhase2(
         s:LReplica,
         s_:LReplica,
@@ -322,6 +336,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, clock: in, sent_packets: out)
     pub open spec fn LReplicaNextReadClockMaybeNominateValueAndSend2a(
         s:LReplica,
         s_:LReplica,
@@ -340,6 +355,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, sent_packets: out)
     pub open spec fn LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
         s:LReplica,
         s_:LReplica,
@@ -365,6 +381,7 @@ verus! {
                                     }
     }
 
+    // @automan predicate(s: in, s_: out, sent_packets: out)
     pub open spec fn LReplicaNextSpontaneousMaybeMakeDecision(
         s:LReplica,
         s_:LReplica,
@@ -393,6 +410,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, sent_packets: out)
     pub open spec fn LReplicaNextSpontaneousMaybeExecute(
         s:LReplica,
         s_:LReplica,
@@ -421,6 +439,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, clock: in, sent_packets: out)
     pub open spec fn LReplicaNextReadClockMaybeSendHeartbeat(
         s:LReplica,
         s_:LReplica,
@@ -452,6 +471,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, clock: in, sent_packets: out)
     pub open spec fn LReplicaNextReadClockCheckForViewTimeout(
         s:LReplica,
         s_:LReplica,
@@ -471,6 +491,7 @@ verus! {
         &&& sent_packets == Seq::<RslPacket>::empty()
     }
 
+    // @automan predicate(s: in, s_: out, clock: in, sent_packets: out)
     pub open spec fn LReplicaNextReadClockCheckForQuorumOfViewSuspicions(
         s:LReplica,
         s_:LReplica,
@@ -490,6 +511,7 @@ verus! {
         &&& sent_packets == Seq::<RslPacket>::empty()
     }
 
+    // @automan helper(ios: in) -> Seq<CPacket>
     pub open spec fn ExtractSentPacketsFromIos(ios:Seq<RslIo>) -> (res:Seq<RslPacket>)
         // ensures
         //     forall |p:RslPacket| res.contains(p) <==> ios.contains(LIoOp::Send{s:p})
@@ -617,6 +639,7 @@ verus! {
     }
 
 
+    // @automan predicate(s: in, s_: out, ios: in)
     pub open spec fn LReplicaNextReadClockAndProcessPacket(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool
         recommends
             ios.len() >= 1,
@@ -629,6 +652,7 @@ verus! {
         &&& LReplicaNextProcessHeartbeat(s, s_, ios[0]->r, ios[1]->t, ExtractSentPacketsFromIos(ios))
     }
 
+    // @automan predicate(s: in, s_: out, ios: in)
     pub open spec fn LReplicaNextProcessPacketWithoutReadingClock(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool
         recommends
             ios.len() >= 1,
@@ -652,6 +676,7 @@ verus! {
             }
     }
 
+    // @automan predicate(s: in, s_: out, ios: in)
     pub open spec fn LReplicaNextProcessPacket(s:LReplica, s_:LReplica, ios:Seq<RslIo>) -> bool
     {
         &&& ios.len() >= 1
@@ -668,11 +693,13 @@ verus! {
         }
     }
 
+    // @automan helper() -> int
     pub open spec fn LReplicaNumActions() -> int
     {
       10
     }
 
+    // @automan predicate(ios: in, clocks: in)
     pub open spec fn SpontaneousIos(ios:Seq<RslIo>, clocks:int) -> bool
         recommends 0<=clocks<=1
     {
@@ -681,6 +708,7 @@ verus! {
         &&& (forall |i:int| clocks<=i<ios.len() ==> ios[i] is Send)
     }
 
+    // @automan helper(ios: in) -> ClockReading
     pub open spec fn SpontaneousClock(ios:Seq<RslIo>) -> ClockReading
     {
         if SpontaneousIos(ios, 1){
@@ -690,6 +718,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, nextActionIndex: in, s_: out, ios: in)
     pub open spec fn LReplicaNoReceiveNext(s:LReplica, nextActionIndex:int, s_:LReplica, ios:Seq<RslIo>) -> bool
     {
         let sent_packets = ExtractSentPacketsFromIos(ios);
@@ -730,6 +759,7 @@ verus! {
         pub nextActionIndex:int,
     }
 
+    // @automan predicate(s: out, c: in)
     pub open spec fn LSchedulerInit(s:LScheduler, c:LReplicaConstants) -> bool
         recommends WellFormedLConfiguration(c.all.config)
     {
@@ -737,6 +767,7 @@ verus! {
         &&& s.nextActionIndex == 0
     }
 
+    // @automan predicate(s: in, s_: out, ios: in)
     pub open spec fn LSchedulerNext(s:LScheduler, s_:LScheduler, ios:Seq<RslIo>) -> bool
     {
         &&& s_.nextActionIndex == (s.nextActionIndex + 1) % LReplicaNumActions()

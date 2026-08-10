@@ -61,23 +61,27 @@ verus! {
         // State for view change election management
     }
 
+    // @automan predicate(opn: in, received_1b_packets: in)
     pub open spec fn LIsAfterLogTruncationPoint(opn:OperationNumber, received_1b_packets:Set<RslPacket>) -> bool
     {
         (forall |p:RslPacket| #![trigger received_1b_packets.contains(p)] received_1b_packets.contains(p) && p.msg is RslMessage1b ==> p.msg->log_truncation_point <= opn)
     }
 
 
+    // @automan predicate(S: in)
     pub open spec fn LSetOfMessage1b(S:Set<RslPacket>) -> bool
     {
         forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) ==> p.msg is RslMessage1b
     }
 
+    // @automan predicate(S: in, b: in)
     pub open spec fn LSetOfMessage1bAboutBallot(S:Set<RslPacket>, b:Ballot) -> bool
     {
         &&& LSetOfMessage1b(S)
         &&& (forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) ==> p.msg->bal_1b == b)
     }
 
+    // @automan predicate(p: in, op: in)
     pub open spec fn LExistVotesHasProposalLargeThanOpn(p:RslPacket, op:OperationNumber) -> bool
         recommends
             p.msg is RslMessage1b
@@ -85,6 +89,7 @@ verus! {
         exists |opn:OperationNumber| p.msg->votes.contains_key(opn) && opn > op
     }
 
+    // @automan predicate(S: in, op: in)
     pub open spec fn LExistsAcceptorHasProposalLargeThanOpn(S:Set<RslPacket>, op:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
@@ -93,6 +98,7 @@ verus! {
         exists |p:RslPacket| #![trigger LExistVotesHasProposalLargeThanOpn(p, op)] S.contains(p) && LExistVotesHasProposalLargeThanOpn(p, op)
     }
 
+    // @automan predicate(S: in, opn: in)
     pub open spec fn LAllAcceptorsHadNoProposal(S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
@@ -100,6 +106,7 @@ verus! {
         forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) ==> !p.msg->votes.contains_key(opn)
     }
 
+    // @automan predicate(c: in, S: in, opn: in)
     pub open spec fn Lmax_balInS(c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
@@ -107,6 +114,7 @@ verus! {
         forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) && p.msg->votes.contains_key(opn) ==> BalLeq(p.msg->votes[opn].max_value_bal, c)
     }
 
+    // @automan predicate(v: in, c: in, S: in, opn: in)
     pub open spec fn LExistsBallotInS(v:RequestBatch, c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
@@ -117,6 +125,7 @@ verus! {
                     && p.msg->votes[opn].max_val==v
     }
 
+    // @automan predicate(v: in, c: in, S: in, opn: in)
     pub open spec fn LValIsHighestNumberedProposalAtBallot(v:RequestBatch, c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
@@ -125,6 +134,7 @@ verus! {
         &&& LExistsBallotInS(v, c, S, opn)
     }
 
+    // @automan predicate(v: in, S: in, opn: in)
     pub open spec fn LValIsHighestNumberedProposal(v:RequestBatch, S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
@@ -133,6 +143,7 @@ verus! {
         exists |c:Ballot| LValIsHighestNumberedProposalAtBallot(v, c, S, opn)
     }
 
+    // @automan predicate(s: in, log_truncation_point: in, opn: in)
     pub open spec fn LProposerCanNominateUsingOperationNumber(s:LProposer, log_truncation_point:OperationNumber, opn:OperationNumber) -> bool
     {
         &&& s.election_state.current_view == s.max_ballot_i_sent_1a
@@ -149,6 +160,7 @@ verus! {
         &&& LtUpperBound(opn, s.constants.all.params.max_integer_val)
     }
 
+    // @automan predicate(s: out, c: in)
     pub open spec fn LProposerInit(s:LProposer, c:LReplicaConstants) -> bool
     recommends
             WellFormedLConfiguration(c.all.config)
@@ -164,6 +176,7 @@ verus! {
         &&& s.incomplete_batch_timer is IncompleteBatchTimerOff
     }
 
+    // @automan predicate(s: in, s_: out, packet: in)
     pub open spec fn LProposerProcessRequest(
         s:LProposer,
         s_:LProposer,
@@ -204,6 +217,7 @@ verus! {
             }
     }
 
+    // @automan predicate(s: in, s_: out, sent_packets: out)
     pub open spec fn LProposerMaybeEnterNewViewAndSend1a(
         s:LProposer,
         s_:LProposer,
@@ -233,6 +247,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, p: in)
     pub open spec fn LProposerProcess1b(
         s:LProposer,
         s_:LProposer,
@@ -258,6 +273,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, log_truncation_point: in, sent_packets: out)
     pub open spec fn LProposerMaybeEnterPhase2(
         s:LProposer,
         s_:LProposer,
@@ -290,6 +306,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, clock: in, log_truncation_point: in, sent_packets: out)
     pub open spec fn LProposerNominateNewValueAndSend2a(
         s:LProposer,
         s_:LProposer,
@@ -329,6 +346,7 @@ verus! {
                                 sent_packets)
     }
 
+    // @automan predicate(s: in, s_: out, log_truncation_point: in, sent_packets: out)
     pub open spec fn LProposerNominateOldValueAndSend2a(
         s:LProposer,
         s_:LProposer,
@@ -357,6 +375,7 @@ verus! {
                                 sent_packets)
     }
 
+    // @automan predicate(s: in, s_: out, clock: in, log_truncation_point: in, sent_packets: out)
     pub open spec fn LProposerMaybeNominateValueAndSend2a(
         s:LProposer,
         s_:LProposer,
@@ -394,6 +413,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, p: in, clock: in)
     pub open spec fn LProposerProcessHeartbeat(
         s:LProposer,
         s_:LProposer,
@@ -422,6 +442,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, clock: in)
     pub open spec fn LProposerCheckForViewTimeout(
         s:LProposer,
         s_:LProposer,
@@ -442,6 +463,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, clock: in)
     pub open spec fn LProposerCheckForQuorumOfViewSuspicions(
         s:LProposer,
         s_:LProposer,
@@ -467,6 +489,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, val: in)
     pub open spec fn LProposerResetViewTimerDueToExecution(
         s:LProposer,
         s_:LProposer,

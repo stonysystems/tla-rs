@@ -21,12 +21,14 @@ verus! {
         pub log_truncation_point:OperationNumber,
     }
 
+    // @automan predicate(log_truncation_point: in, last_checkpointed_operation: in, config: in)
     pub open spec fn IsLogTruncationPointValid(log_truncation_point:OperationNumber, last_checkpointed_operation:Seq<OperationNumber>,
                                               config:LConfiguration) -> bool
     {
         IsNthHighestValueInSequence(log_truncation_point, last_checkpointed_operation, LMinQuorumSize(config))
     }
 
+    // @automan predicate(votes: in, votes_: out, log_truncation_point: in)
     pub open spec fn RemoveVotesBeforeLogTruncationPoint(votes:Votes, votes_:Votes, log_truncation_point:OperationNumber) -> bool
     {
         &&& (forall |opn:OperationNumber| #![trigger votes_[opn]] #![trigger votes[opn]] votes_.contains_key(opn) ==> votes.contains_key(opn) && votes_[opn] == votes[opn])
@@ -34,12 +36,14 @@ verus! {
         &&& (forall |opn:OperationNumber| opn >= log_truncation_point && votes.contains_key(opn) ==> votes_.contains_key(opn))
     }
 
+    // @automan predicate(votes: in, votes_: out, new_opn: in, new_vote: in, log_truncation_point: in)
     pub open spec fn LAddVoteAndRemoveOldOnes(votes:Votes, votes_:Votes, new_opn:OperationNumber, new_vote:Vote, log_truncation_point:OperationNumber) -> bool
     {
         &&& (forall |opn:OperationNumber| votes_.dom().contains(opn) <==> opn >= log_truncation_point && (votes.dom().contains(opn) || opn == new_opn))
         &&& (forall |opn:OperationNumber| #![trigger votes_[opn]] votes_.dom().contains(opn) ==> votes_[opn] == (if opn == new_opn {new_vote} else {votes[opn]}))
     }
 
+    // @automan predicate(a: out, c: in)
     pub open spec fn LAcceptorInit(a:LAcceptor, c:LReplicaConstants) -> bool
     {
         &&& a.constants =~= c
@@ -50,6 +54,7 @@ verus! {
         &&& a.log_truncation_point == 0
     }
 
+    // @automan predicate(s: in, s_: out, inp: in, sent_packets: out)
     pub open spec fn LAcceptorProcess1a(
         s: LAcceptor,
         s_: LAcceptor,
@@ -91,6 +96,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, inp: in, sent_packets: out)
     pub open spec fn LAcceptorProcess2a(
         s: LAcceptor,
         s_: LAcceptor,
@@ -131,6 +137,7 @@ verus! {
         &&& s_.last_checkpointed_operation == s.last_checkpointed_operation
     }
 
+    // @automan predicate(s: in, s_: out, inp: in)
     pub open spec fn LAcceptorProcessHeartbeat(
         s: LAcceptor,
         s_: LAcceptor,
@@ -157,6 +164,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, opn: in)
     pub open spec fn LAcceptorTruncateLog(
         s: LAcceptor,
         s_: LAcceptor,

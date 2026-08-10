@@ -79,9 +79,11 @@ for entry in "${PROTOCOLS[@]}"; do
 
     # Generate module implementation
     echo "  Generating ${MODULE}_gen.rs..."
+    annot_args=()
+    [ -f "$SPEC_DIR/${MODULE}.automan" ] && annot_args=(--annotations "$SPEC_DIR/${MODULE}.automan")
     $TRANSPILER \
         --input "$SPEC_DIR/${MODULE}.rs" \
-        --annotations "$SPEC_DIR/${MODULE}.automan" \
+        "${annot_args[@]}" \
         --config "$SPEC_DIR/${MODULE}_transpile.toml" \
         --output "$OUT_DIR/${MODULE}_gen.rs" || {
         echo "  ERROR: Module generation failed for $PROTOCOL"

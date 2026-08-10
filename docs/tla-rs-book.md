@@ -33,7 +33,7 @@ The project has four related, but distinct, tool paths:
 
 | Goal | Start with | Primary tool path | Result |
 |---|---|---|---|
-| Write and run a verified transition | Verus relational spec | `.automan` + `_transpile.toml` → transpiler → Verus | Executable Rust with refinement contracts |
+| Write and run a verified transition | Verus relational spec | inline `// @automan` modes + `_transpile.toml` → transpiler → Verus | Executable Rust with refinement contracts |
 | Find finite-state bugs | Verus `LInit`/`LNext` spec | `model-check` + `model.toml` | Counterexample or bounded search evidence |
 | Bring in an existing TLA+ model | TLA+ module | `translate-tla`, or human cleanup → `tla-lint` → `clean-tla` | Verus protocol-layer specification |
 | Compare with TLC | TLA+ or Verus model | wrapper/parity export tools | Normalized states and transitions for comparison |
@@ -73,7 +73,7 @@ TLA+ source (optional)
        ▼
 Verus TLA-style specification ───────────────► finite model checking (BFS/DFS)
        │                                           │
-       │ .automan modes + _transpile.toml          ├── counterexample
+       │ @automan modes + _transpile.toml          ├── counterexample
        ▼                                           └── bounded evidence
 spec-to-exec transpiler
        │
@@ -92,7 +92,7 @@ The hand-written sources and derived artifacts are deliberately separate:
 | Artifact | Purpose | Ownership |
 |---|---|---|
 | `src/protocol/<P>/*.rs` | Logical state, actions, invariants, and refinement proofs | Hand-written |
-| `*.automan` | Input/output modes and helper signatures | Hand-written |
+| `// @automan` directives (in the spec) | Input/output modes and helper signatures | Hand-written; the legacy `.automan` sidecar form is still accepted |
 | `*_transpile.toml` | Naming, mappings, proof generation, and calling convention | Hand-written |
 | `src/generated/<P>/*_gen.rs` | Concrete types and executable transitions | Generated, plus the hand-written bodies regeneration preserves (Chapter 13) |
 | `src/implementation/<P>/` | Host and runtime-facing protocol integration | Hand-written unless marked otherwise |
@@ -203,7 +203,7 @@ hand-written Verus spec                    optional TLA+ source
                 ├──────── bounded model check ◄─┘
                 │          finite evidence
                 │
-         .automan input/output modes
+         @automan input/output modes
          _transpile.toml codegen policy
                 │
                 ▼
@@ -838,12 +838,31 @@ generation fails.
 
 ### Inputs and outputs
 
-A `.automan` file assigns a mode to every annotated parameter:
+Every annotated parameter carries a mode: an *input* is supplied to the
+executable function, an *output* is synthesized from the relation.
 
-- `+` is an input supplied to the executable function;
-- `-` is an output synthesized from the relation.
+Since Phase 55 the maintained protocol specs carry their modes **inline**, as
+a `// @automan` comment immediately above each `spec fn`. For the action in
+Chapter 4:
 
-For the action in Chapter 4, the maintained annotation is:
+```rust
+// @automan predicate(s: in, s_: out, c: in, rm: in, sent_packets: out)
+pub open spec fn LRMReceivePrepare(
+    s: LState, s_: LState, c: LConstants, rm: int, sent_packets: Seq<LPacket>,
+) -> bool { ... }
+```
+
+Bindings are **named**: an unknown, missing, or duplicated parameter name is
+an error with a file line, so renaming or reordering parameters cannot
+silently rebind the modes — which the older positional form permitted. The
+directive attaches to the adjacent function rather than being looked up by
+name, so equally-named functions in different protocols (nine sidecars used to
+declare an `LInit`) cannot receive each other's modes. A directive that the
+parser cannot bind — malformed, orphaned, inside a function body, or spelled
+as a doc comment — fails loudly; it is never skipped.
+
+The legacy `.automan` sidecar form remains fully supported and uses positional
+modes (`+` input, `-` output):
 
 ```text
 module TwoPhase::twophase {
@@ -852,20 +871,19 @@ module TwoPhase::twophase {
 }
 ```
 
-The five modes of `LRMReceivePrepare` correspond, in order, to `s`, `s_`, `c`,
-`rm`, and `sent_packets`. Its generated function therefore receives the old
-state implicitly as `&mut self`, receives constants and `rm`, mutates the state,
-and returns a `Vec` of concrete messages.
-
-Annotation files allow `#`, `//`, and trailing comments. Validate their syntax
-with:
+The quickstart example keeps a sidecar to demonstrate this path, and the
+TLA-to-Verus pipeline can still emit one (`--gen-modes`,
+`--keep-intermediate`). A function annotated in both places must agree:
+identical definitions warn, conflicting ones fail. To move a sidecar's
+annotations into the spec mechanically:
 
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
-  check --annotations src/protocol/TwoPhase/twophase.automan
+  migrate-inline --spec my_spec.rs --annotations my_spec.automan --write
 ```
 
-`check` parses the annotation file. Full spec/annotation agreement and output
+Sidecar files allow `#`, `//`, and trailing comments. Validate one with
+`check --annotations <file>`. Full spec/annotation agreement and output
 data-flow checks occur when the transpiler analyzes the actual spec during
 generation.
 

@@ -86,9 +86,11 @@ for MODULE in "${MODULES[@]}"; do
         continue
     fi
 
+    annot_args=()
+    [ -f "$AUTOMAN" ] && annot_args=(--annotations "$AUTOMAN")
     $TRANSPILER \
         --input "$SPEC" \
-        --annotations "$AUTOMAN" \
+        "${annot_args[@]}" \
         --config "$CONFIG" \
         --output "$FRESH_DIR/${MODULE}_gen.rs"
 

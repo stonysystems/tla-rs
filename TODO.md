@@ -202,15 +202,13 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 **Next steps (priority order, updated 2026-08-04):**
 
-0. **🔝 Phase 55: Inline AutoMan Annotations** — move mode annotations out of `.automan`
-   sidecars and next to the `spec fn` they describe. Tracking issue
-   [#4](https://github.com/stonysystems/tla-rs/issues/4); branch
-   `feature/inline-automan-annotations`. The sidecars bind modes to parameters by position and
-   match functions by bare name, and `LInit` is declared in nine protocol sidecars — nothing
-   has broken only because transpilation runs one protocol at a time. **Committed scope is
-   55.1 alone** (parser + model, additive, `.automan` still the only source of truth);
-   55.2–55.5 are a separate decision gated on the byte-identical parity proof.
-   See [Phase 55](#phase-55-inline-automan-annotations-in-verus-spec-files---top-priority-plan-only-not-started).
+0. **Phase 55: Inline AutoMan Annotations — COMPLETE (2026-08-10).** All 16 maintained
+   sidecars migrated to named inline `// @automan` directives (188 declarations); byte-identical
+   output proven per protocol before migrating; sidecar form still accepted everywhere; the
+   TLA pipeline now emits self-annotating specs. Found and fixed a pre-existing
+   nondeterminism bug on the way (the transpiler picked an empty-map lemma by HashMap
+   iteration order — same command, same input, different output run to run).
+   See [Phase 55](#phase-55-inline-automan-annotations-in-verus-spec-files--complete-2026-08-10).
 
    *Phase 54 (explicit quantifier triggers) completed on 2026-08-05 and no longer holds this
    slot: 534 → 0 notes, 0 warnings, with a ceiling of 0 enforced in CI.*
@@ -18199,10 +18197,33 @@ Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can be
 
 ---
 
-## Phase 55: Inline AutoMan Annotations in Verus Spec Files — 🔝 TOP PRIORITY (plan only, not started)
+## Phase 55: Inline AutoMan Annotations in Verus Spec Files — **COMPLETE 2026-08-10**
 
 Tracking issue: [#4](https://github.com/stonysystems/tla-rs/issues/4). Branch:
-`feature/inline-automan-annotations`. **This section is a plan. No code has been written.**
+`feature/inline-automan-annotations`.
+
+> **Done, all five stages.** 55.1 parser + model; 55.2 byte-identical parity proven for all
+> 16 maintained sidecars (`phase_55_2_inline_migration_parity_all_protocols`); 55.3 CLI
+> (`--annotations` optional), library (`transpile_file_auto`), and build discovery; 55.4 the
+> real migration — 188 declarations moved inline, sidecars deleted, `migrate-inline`
+> subcommand does the mechanical work; 55.5 the TLA pipeline embeds inline directives into
+> generated specs (sidecar behind `--gen-modes` / `--keep-intermediate`; the clean-subset
+> stop keeps its documented spec+sidecar pair). 2732 tests green.
+>
+> **Where reality corrected the plan:**
+> - *"Predicates need at least one output" was false.* The sidecar grammar never enforced
+>   it and the maintained sidecars contain 15 all-input predicates (pure validity checks
+>   like `IsLogTruncationPointValid(+, +, +)`). The inline grammar accepts them.
+> - *The parity test caught a real nondeterminism bug.* `translator/mod.rs` picked the
+>   empty-map/push-commute helper lemma via `HashMap::keys().next()`; with two same-typed
+>   struct-vec fields (RSL election) the same command produced different — both verifying —
+>   outputs run to run. Fixed with `keys().min()`. The checked-in `election_gen.rs` carries
+>   a 2/6 mix of both lemmas from years of such runs; the next RSL regeneration through the
+>   merge will settle it on the lexicographic minimum.
+> - *55.5 was cheap, not risky.* Reusing the proven migrator on the generated sidecar text
+>   (`embed_inline_annotations`) made the two emission forms equivalent by construction.
+>
+> The original plan below is kept for the record.
 
 ### Motivation
 

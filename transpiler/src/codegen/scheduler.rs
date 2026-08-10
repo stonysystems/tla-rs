@@ -1302,8 +1302,16 @@ mod tests {
     use crate::parser::VerusParser;
 
     fn parse_spec_fns(source: &str) -> Vec<SpecFunction> {
+        // Reader semantics: these tests classify function bodies and are fed
+        // real protocol sources, which carry inline `// @automan` directives
+        // since the Phase 55 migration. The modes are irrelevant here.
         let parser = VerusParser::new(source.to_string());
-        parser.parse_spec_functions().unwrap()
+        parser
+            .parse_spec_functions_annotated()
+            .unwrap()
+            .into_iter()
+            .map(|(func, _)| func)
+            .collect()
     }
 
     #[test]

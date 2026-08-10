@@ -233,6 +233,230 @@ pub fn parse_annotation_file(path: &std::path::Path) -> TranspileResult<Vec<Modu
     parser.parse()
 }
 
+/// Module path under which inline `// @automan` directives are collected when
+/// they are folded into the sidecar-shaped `Vec<ModuleAnnotations>` the
+/// pipeline consumes (Phase 55.3).
+pub const INLINE_MODULE_PATH: &str = "<inline>";
+
+/// Combine sidecar annotations with inline directives into the structure the
+/// transpile pipeline already consumes (Phase 55.3).
+///
+/// Inline directives are appended as one synthetic module. Within a single
+/// spec file bare function names are unique (Rust would reject duplicates),
+/// so the pipeline's name-based lookup is unambiguous over the result.
+///
+/// A function annotated in both sources is accepted with a warning when the
+/// two definitions are identical and rejected when they differ — the pipeline
+/// never silently prefers one source over the other.
+pub fn merge_sidecar_and_inline(
+    sidecar: Vec<ModuleAnnotations>,
+    inline: Vec<FunctionAnnotation>,
+) -> TranspileResult<Vec<ModuleAnnotations>> {
+    if inline.is_empty() {
+        return Ok(sidecar);
+    }
+
+    let mut merged = sidecar;
+    let mut inline_module = ModuleAnnotations {
+        module_path: INLINE_MODULE_PATH.to_string(),
+        functions: HashMap::new(),
+    };
+
+    for ann in inline {
+        for module in &merged {
+            if let Some(existing) = module.functions.get(&ann.name) {
+                if *existing != ann {
+                    return Err(TranspileError::Annotation {
+                        message: format!(
+                            "`{}` is annotated both inline and in the .automan sidecar \
+                             (module `{}`) with different modes; remove one of them. \
+                             sidecar: {:?} {:?} -> {:?}; inline: {:?} {:?} -> {:?}",
+                            ann.name,
+                            module.module_path,
+                            existing.kind,
+                            existing.param_modes,
+                            existing.return_type,
+                            ann.kind,
+                            ann.param_modes,
+                            ann.return_type,
+                        ),
+                        span: None,
+                    });
+                }
+                eprintln!(
+                    "warning: `{}` is annotated identically inline and in the .automan \
+                     sidecar; the sidecar entry is redundant (migration in progress)",
+                    ann.name
+                );
+            }
+        }
+        inline_module.functions.insert(ann.name.clone(), ann);
+    }
+
+    merged.push(inline_module);
+    Ok(merged)
+}
+
+/// Render a [`FunctionAnnotation`] as the inline directive that produces it,
+/// given the function's parameter names in declaration order (Phase 55.2).
+///
+/// Always emits the named form — the whole point of the migration is that a
+/// later parameter rename or reorder fails loudly instead of silently
+/// rebinding modes.
+pub fn render_inline_directive(
+    annotation: &FunctionAnnotation,
+    param_names: &[String],
+) -> TranspileResult<String> {
+    if annotation.param_modes.len() != param_names.len() {
+        return Err(TranspileError::Annotation {
+            message: format!(
+                "cannot render inline directive for `{}`: sidecar lists {} mode(s) but \
+                 the function declares {} parameter(s) {:?}",
+                annotation.name,
+                annotation.param_modes.len(),
+                param_names.len(),
+                param_names
+            ),
+            span: None,
+        });
+    }
+    let kind = match annotation.kind {
+        FunctionKind::Predicate => "predicate",
+        FunctionKind::Helper => "helper",
+    };
+    let bindings: Vec<String> = param_names
+        .iter()
+        .zip(&annotation.param_modes)
+        .map(|(name, mode)| {
+            let word = match mode {
+                ParameterMode::Input => "in",
+                ParameterMode::Output => "out",
+            };
+            format!("{name}: {word}")
+        })
+        .collect();
+    let mut directive = format!("// @automan {kind}({})", bindings.join(", "));
+    if let Some(ty) = &annotation.return_type {
+        directive.push_str(&format!(" -> {ty}"));
+    }
+    Ok(directive)
+}
+
+/// Migrate a spec source from sidecar to inline annotations (Phase 55.2/55.4):
+/// insert a named `// @automan` directive immediately above every `spec fn`
+/// the sidecar annotates. Returns the migrated source and how many directives
+/// were inserted.
+///
+/// Errors rather than losing information: if the source already carries
+/// inline directives, or a sidecar entry matches no function in this file
+/// (a stale entry would otherwise vanish in the migration), or a mode list's
+/// arity disagrees with the declaration.
+pub fn migrate_source_to_inline(
+    spec_source: &str,
+    sidecar: &[ModuleAnnotations],
+) -> TranspileResult<(String, usize)> {
+    use crate::parser::VerusParser;
+
+    let parsed = VerusParser::new(spec_source.to_string()).parse_spec_functions_annotated()?;
+    if let Some((func, _)) = parsed.iter().find(|(_, ann)| ann.is_some()) {
+        return Err(TranspileError::Annotation {
+            message: format!(
+                "`{}` already carries an inline directive; refusing to migrate on top",
+                func.name
+            ),
+            span: None,
+        });
+    }
+
+    // Param names per function, for rendering named bindings.
+    let mut params_by_fn: HashMap<&str, Vec<String>> = HashMap::new();
+    for (func, _) in &parsed {
+        params_by_fn.insert(
+            func.name.as_str(),
+            func.params.iter().map(|p| p.name.clone()).collect(),
+        );
+    }
+
+    // Directive text per function name; also catch sidecar entries that match
+    // nothing in this file.
+    let mut directive_by_fn: HashMap<&str, String> = HashMap::new();
+    for module in sidecar {
+        for annotation in module.functions.values() {
+            let Some(param_names) = params_by_fn.get(annotation.name.as_str()) else {
+                return Err(TranspileError::Annotation {
+                    message: format!(
+                        "sidecar entry `{}` (module `{}`) matches no spec fn in this \
+                         file; migrating would silently drop it — remove the stale \
+                         entry first",
+                        annotation.name, module.module_path
+                    ),
+                    span: None,
+                });
+            };
+            directive_by_fn.insert(
+                annotation.name.as_str(),
+                render_inline_directive(annotation, param_names)?,
+            );
+        }
+    }
+
+    // Insert each directive above its declaration line. Declaration lines are
+    // recognized by shape (`[pub] [open] spec[(checked)] fn <name>`), which a
+    // call site or a comment mention cannot match.
+    let mut output = String::with_capacity(spec_source.len() + directive_by_fn.len() * 64);
+    let mut inserted = 0usize;
+    for line in spec_source.lines() {
+        if let Some(name) = spec_fn_declaration_name(line) {
+            if let Some(directive) = directive_by_fn.remove(name) {
+                let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+                output.push_str(&indent);
+                output.push_str(&directive);
+                output.push('\n');
+                inserted += 1;
+            }
+        }
+        output.push_str(line);
+        output.push('\n');
+    }
+
+    if !directive_by_fn.is_empty() {
+        let mut missing: Vec<&str> = directive_by_fn.keys().copied().collect();
+        missing.sort_unstable();
+        return Err(TranspileError::Annotation {
+            message: format!(
+                "could not locate the declaration line for {missing:?}; the parser sees \
+                 the function(s) but the line scan does not — declaration formatting is \
+                 unexpected"
+            ),
+            span: None,
+        });
+    }
+
+    Ok((output, inserted))
+}
+
+/// If `line` is a `spec fn` declaration, return the function name.
+/// Matches `[pub] [open] spec[(checked)] fn <name>` at the start of the
+/// trimmed line, which call sites and comments cannot match.
+fn spec_fn_declaration_name(line: &str) -> Option<&str> {
+    let mut rest = line.trim_start();
+    rest = rest.strip_prefix("pub ").unwrap_or(rest).trim_start();
+    rest = rest.strip_prefix("open ").unwrap_or(rest).trim_start();
+    rest = rest.strip_prefix("spec")?;
+    rest = rest.strip_prefix("(checked)").unwrap_or(rest);
+    rest = rest.trim_start();
+    rest = rest.strip_prefix("fn ")?;
+    let rest = rest.trim_start();
+    let end = rest
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(rest.len());
+    if end == 0 {
+        None
+    } else {
+        Some(&rest[..end])
+    }
+}
+
 /// Parse the body of an inline `// @automan ...` directive (Phase 55.1).
 ///
 /// `directive` is the text after the `@automan` marker; multi-line directives
@@ -428,25 +652,21 @@ pub fn parse_inline_directive(
         modes
     };
 
-    match kind {
-        FunctionKind::Predicate => {
-            if !param_modes.contains(&ParameterMode::Output) {
-                return Err(err(format!(
-                    "{location}: predicate `{fn_name}` needs at least one `out` parameter"
-                )));
-            }
-        }
-        FunctionKind::Helper => {
-            if let Some(pos) = param_modes.iter().position(|m| *m == ParameterMode::Output) {
-                return Err(err(format!(
-                    "{location}: helper parameters are always inputs, but `{}` is marked \
-                     `out` in the directive on `{fn_name}`",
-                    param_names
-                        .get(pos)
-                        .map(String::as_str)
-                        .unwrap_or("<unknown>")
-                )));
-            }
+    // All-input predicates are legal: the maintained sidecars contain 15 of
+    // them (pure validity checks like `IsLogTruncationPointValid(+, +, +)`),
+    // so the inline form must accept what the sidecar form accepts. Helpers
+    // with an `out` parameter, by contrast, exist nowhere and mean nothing —
+    // a helper computes its return value from inputs.
+    if kind == FunctionKind::Helper {
+        if let Some(pos) = param_modes.iter().position(|m| *m == ParameterMode::Output) {
+            return Err(err(format!(
+                "{location}: helper parameters are always inputs, but `{}` is marked \
+                 `out` in the directive on `{fn_name}`",
+                param_names
+                    .get(pos)
+                    .map(String::as_str)
+                    .unwrap_or("<unknown>")
+            )));
         }
     }
 
@@ -847,12 +1067,18 @@ mod tests {
     }
 
     #[test]
-    fn inline_rejects_predicate_without_output() {
-        expect_err(
+    fn inline_accepts_all_input_predicate() {
+        // Pure validity checks like `IsLogTruncationPointValid(+, +, +)` are
+        // all-input predicates; the maintained sidecars contain 15 of them,
+        // so the inline form must accept them too.
+        let ann = parse_inline_directive(
             " predicate(s: in, c: in)",
-            &["s", "c"],
-            "at least one `out`",
-        );
+            "IsValid",
+            &names(&["s", "c"]),
+            "line 1",
+        )
+        .unwrap();
+        assert!(ann.param_modes.iter().all(|m| *m == ParameterMode::Input));
     }
 
     #[test]
