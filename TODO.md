@@ -18223,6 +18223,26 @@ Tracking issue: [#4](https://github.com/stonysystems/tla-rs/issues/4). Branch:
 > - *55.5 was cheap, not risky.* Reusing the proven migrator on the generated sidecar text
 >   (`embed_inline_annotations`) made the two emission forms equivalent by construction.
 >
+> **Measured, 2026-08-10: the body-level merge is not yet viable for the five kept
+> RSL modules.** `merge_generated.py` was run for real (fresh inline-spec output ×
+> the five kept files, preserve list applied). The drift guard passed, but the
+> installed result did not compile, for three reasons worth keeping:
+> 1. *Placement*: `CElectionStateReflectReceivedRequest` was carried into
+>    `impl CElectionState`, but callers use it as a free function.
+> 2. *Lost definition*: fresh emitted regions call `lemma_empty_seq_map`, whose
+>    definition did not survive the splice.
+> 3. *Trigger regression*: 2 `automatically chose triggers` notes reappeared —
+>    Phase 54 hand-annotated ~53 triggers **inside transpiler-emitted bodies** of
+>    exactly these modules, and fresh output does not carry them.
+> (3) is the real blocker and its fix is already Phase 54's own prescription:
+> teach the codegen to emit those triggers, regenerate, and only then merge.
+> Until that lands, `regenerate_rsl.sh` (whole-file replace for the three clean
+> modules, keep for the five with hand-written bodies) is the working path, and
+> it is proven end to end: fresh generation from inline specs, function-inventory
+> parity, body-drift guard clean, whole crate `1048 verified, 0 errors, 0
+> warnings, 0 notes`, dylib compiles. The election 2/6 lemma mix stays until the
+> merge becomes viable.
+>
 > The original plan below is kept for the record.
 
 ### Motivation
