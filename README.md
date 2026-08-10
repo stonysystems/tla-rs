@@ -206,8 +206,13 @@ are classified in [`docs/rsl-skip-functions.md`](docs/rsl-skip-functions.md).
 
 ## Contributing
 
-Do not hand-edit files under `src/generated/`. Change the protocol source,
-annotations, configuration, or transpiler and regenerate the output. See
+Do not hand-edit transpiler-emitted code: change the protocol source, its
+`// @automan` annotations, the configuration, or the transpiler, and
+regenerate. Files under `src/generated/` can also carry hand-written bodies
+that regeneration deliberately preserves (RSL's `skip_functions`, classified
+in [`docs/rsl-skip-functions.md`](docs/rsl-skip-functions.md)) — those are
+edited in place. When unsure which kind a function is, diff against fresh
+transpiler output rather than guessing. See
 [`AGENTS.md`](AGENTS.md) for project rules, the book's developer guide for the normal
 workflow, and [`TODO.md`](TODO.md) for current work and known gaps.
 
