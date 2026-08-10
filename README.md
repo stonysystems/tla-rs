@@ -24,43 +24,31 @@ deployable C# networking/runtime integration.
 
 ## Quick Start: From a Spec to a Program
 
-Here is a complete counter transition written as a TLA-style relation in Verus:
+Here is a complete counter transition written as a TLA-style relation in Verus
+([`examples/quickstart/counter_spec.rs`](examples/quickstart/counter_spec.rs)):
 
 ```rust
 verus! {
+    // @automan predicate(value: out)
     pub open spec fn LInit(value: int) -> bool {
         value == 0
     }
 
+    // @automan predicate(value: in, value_: out)
     pub open spec fn LIncrement(value: int, value_: int) -> bool {
         value_ == value + 1
     }
 }
 ```
 
-The Rust functions above are relations: their signatures do not say which parameters
-are known before execution. That dataflow is declared separately in
-`examples/quickstart/counter_spec.automan`:
-
-```text
-module counter_spec {
-    LInit(-);
-    LIncrement(+, -);
-}
-```
-
-Each marker corresponds positionally to a parameter in the Rust relation. `+` marks an
-input supplied to the generated function, while `-` marks an output that function must
-compute. Thus `LInit(value)` with `LInit(-)` generates a zero-argument `CInit` returning
-the initial value, and `LIncrement(value, value_)` with `LIncrement(+, -)` generates
-`CIncrement(value)` returning the new value represented by `value_`.
-
-The modes can also live inline in the spec itself, as a named `// @automan` comment
-directly above each function — `// @automan predicate(value: in, value_: out)` — in which
-case no sidecar file is needed and a parameter rename or reorder fails loudly instead of
-silently rebinding the modes. The maintained protocols under `src/protocol/` use the
-inline form; this example keeps the sidecar to demonstrate that path, and
-`migrate-inline` converts one form to the other.
+The functions are relations: their signatures do not say which parameters are
+known before execution. The `// @automan` directive above each function
+declares that dataflow — `in` parameters are supplied to the generated
+function, `out` parameters are what it must compute. Thus `LInit` generates a
+zero-argument `CInit` returning the initial value, and `LIncrement` generates
+`CIncrement(value)` returning the new value represented by `value_`. Bindings
+are matched by parameter name, so renaming or reordering a parameter without
+updating the directive is an error rather than a silent meaning change.
 
 From the repository root, generate the executable functions, verify them, compile them, and
 run the result:
@@ -68,13 +56,19 @@ run the result:
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i examples/quickstart/counter_spec.rs \
-  -a examples/quickstart/counter_spec.automan \
   -c examples/quickstart/counter_transpile.toml \
   -o examples/quickstart/counter_gen.rs
 
 "$VERUS_PATH" --compile examples/quickstart/main.rs -o /tmp/tla-rs-counter
 /tmp/tla-rs-counter
 ```
+
+Inline directives are the default. As an alternative, the same modes can live
+in a separate `.automan` sidecar file passed with `-a`, using positional
+`+`/`-` markers — `LInit(-); LIncrement(+, -);` inside a `module counter_spec
+{ ... }` block. The sidecar form predates the inline form and remains fully
+supported; `migrate-inline` converts a sidecar into inline directives, and a
+function annotated in both places must agree.
 
 The generated `CInit` and `CIncrement` functions have `ensures` clauses tying their concrete
 `i64` results back to `LInit` and `LIncrement`. The final output is:
@@ -84,7 +78,7 @@ verification results:: 2 verified, 0 errors
 Counter: 0 -> 1
 ```
 
-All source, annotation, configuration, generated code, and runner files are in
+All source (with its inline annotations), configuration, generated code, and runner files are in
 [`examples/quickstart/`](examples/quickstart/). CI regenerates the code, rejects proof shortcuts,
 and verifies, compiles, and runs this example.
 

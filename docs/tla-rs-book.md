@@ -332,19 +332,18 @@ verus! {
 `LIncrement` is a relation. It says which pair of old and new values is a
 valid step; it does not yet say how executable Rust computes the new value.
 
-The mode file
-[`counter_spec.automan`](../examples/quickstart/counter_spec.automan) supplies
-that data flow:
+The `// @automan` directive above each function supplies that data flow, in
+the spec itself:
 
-```text
-module counter_spec {
-    LInit(-);
-    LIncrement(+, -);
-}
+```rust
+// @automan predicate(value: in, value_: out)
+pub open spec fn LIncrement(value: int, value_: int) -> bool { ... }
 ```
 
-`+` means the caller supplies the argument. `-` means the generated function
-must synthesize it. The configuration
+`in` means the caller supplies the argument. `out` means the generated
+function must synthesize it. (The same modes can alternatively live in a
+separate `.automan` sidecar with positional `+`/`-` markers, passed with
+`-a`; inline is the default form.) The configuration
 [`counter_transpile.toml`](../examples/quickstart/counter_transpile.toml) maps
 logical `int` to executable `i64`, asks for proof generation, imports the
 logical source, and adds the overflow precondition required by bounded `i64`
@@ -359,7 +358,6 @@ Generate the executable functions from the repository root:
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i examples/quickstart/counter_spec.rs \
-  -a examples/quickstart/counter_spec.automan \
   -c examples/quickstart/counter_transpile.toml \
   -o examples/quickstart/counter_gen.rs
 ```
@@ -871,9 +869,9 @@ module TwoPhase::twophase {
 }
 ```
 
-The quickstart example keeps a sidecar to demonstrate this path, and the
-TLA-to-Verus pipeline can still emit one (`--gen-modes`,
-`--keep-intermediate`). A function annotated in both places must agree:
+The TLA-to-Verus pipeline can still emit one (`--gen-modes`,
+`--keep-intermediate`), and `.automan` files remain in the transpiler's test
+workspaces. A function annotated in both places must agree:
 identical definitions warn, conflicting ones fail. To move a sidecar's
 annotations into the spec mechanically:
 
@@ -1250,7 +1248,6 @@ The transpiler infers additional information from the spec and its sibling
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i examples/quickstart/counter_spec.rs \
-  -a examples/quickstart/counter_spec.automan \
   -c examples/quickstart/counter_transpile.toml \
   --dump-config
 ```
@@ -3434,7 +3431,7 @@ Validate a legacy sidecar file independently with:
 
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
-  check --annotations examples/quickstart/counter_spec.automan
+  check --annotations path/to/spec.automan
 ```
 
 The annotation checker establishes that the file parses. Inline directives
