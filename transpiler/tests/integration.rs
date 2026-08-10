@@ -2785,8 +2785,11 @@ fn test_replica_num_actions_is_transpiled_not_manual_injected() {
     let generated_source = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
         .expect("Failed to read replica_gen.rs");
     let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNumActions");
+    // The emission changed from `result@` to `result as int` (same meaning for
+    // a u64 result) somewhere after the last RSL merge; the 2026-08-10 merge
+    // brought the checked-in file up to the current form.
     assert!(
-        fn_source.contains("result@ == LReplicaNumActions()"),
+        fn_source.contains("result as int == LReplicaNumActions()"),
         "generated CReplicaNumActions should preserve the spec postcondition"
     );
 }
