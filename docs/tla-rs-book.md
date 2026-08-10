@@ -1454,7 +1454,7 @@ Respond at the owning layer:
 
 | Failure | Correct place to act |
 |---|---|
-| Annotation arity or mode error | `.automan` file or spec signature |
+| Annotation arity or mode error | `// @automan` directive (or legacy sidecar) or spec signature |
 | Output not fully constructible | Refactor the logical action's data flow |
 | Wrong concrete name or call | `_transpile.toml` mapping |
 | Missing general expression/pattern support | Transpiler parser/translator/code generator plus tests |
@@ -2584,7 +2584,6 @@ what it actually resolved:
 ```bash
 cargo run --quiet --manifest-path transpiler/Cargo.toml -- \
   -i path/to/spec.rs \
-  -a path/to/spec.automan \
   -c path/to/spec_transpile.toml \
   --dump-config
 ```
@@ -2727,7 +2726,7 @@ A useful issue or review note includes:
 - the commit and dirty diff relevant to the failure;
 - `verus --version`, `rustc --version`, `cargo --version`, and, for integrated
   failures, `dotnet --info` and the platform;
-- the smallest spec, `.automan`, and TOML files that reproduce generation;
+- the smallest spec (with its inline directives; plus the `.automan` if using the sidecar form) and TOML that reproduce generation;
 - the exact command and complete error output;
 - a model configuration and shortest BFS/DFS trace for a state-space failure;
 - whether the generated result contains assumptions or unchecked bodies; and
@@ -5200,15 +5199,18 @@ When no subcommand is supplied, the CLI transpiles annotated Verus specification
 ```bash
 verus-transpile \
   --input spec.rs \
-  --annotations spec.automan \
   --config spec_transpile.toml \
   --output generated.rs
 ```
 
+The spec's modes normally come from its inline `// @automan` directives;
+`--annotations` supplies a legacy sidecar instead of or in addition to them
+(a function annotated in both must agree — identical warns, conflict fails).
+
 | Option | Meaning |
 |---|---|
 | `-i, --input FILE` | Input Verus specification. |
-| `-a, --annotations FILE` | Mode annotations. |
+| `-a, --annotations FILE` | Legacy `.automan` sidecar; optional when the spec carries inline directives. |
 | `-c, --config FILE` | Transpiler TOML. |
 | `-o, --output FILE` | Generated Rust/Verus file. |
 | `--stdout` | Write generated text to stdout. |
@@ -5228,6 +5230,7 @@ missing function.
 |---|---|---|
 | `list-templates` | none | Current recognized quantifier/construction templates. |
 | `check` | `--annotations FILE` | Parses the `.automan` file and reports module/entry counts. Full mode checks require transpilation. |
+| `migrate-inline` | `--spec FILE --annotations FILE [--write]` | Moves a sidecar's annotations inline as named directives; `--write` rewrites the spec and deletes the sidecar, otherwise prints to stdout. |
 | `model-config` | `--model FILE`; optional `--max-depth`, `--max-states`, `--timeout-ms`, `--max-seq-len`, `--max-set-len`, `--max-map-len`, `--int-range MIN..MAX`, `--nat-max`, `--candidate-eval-guardrail` | Resolved model configuration after overrides. |
 | `report-assumes` | `--input-dir DIR [--output FILE]` | JSON inventory of generated `assume(...)` sites in files directly under the directory. |
 
@@ -5317,11 +5320,47 @@ Clap normally uses status 2 for malformed command-line arguments. Commands that 
 a semantic result in JSON, especially `model-check`, require inspecting the result
 field even after status 0.
 
-## Appendix B — `.automan` Grammar and Validation Rules
+## Appendix B — Mode Annotation Grammar and Validation Rules
 
 Mode annotations tell the transpiler which predicate arguments are inputs and which
-must be computed. The grammar implemented by `transpiler/src/annotation/mod.rs` is
-line-oriented and can be summarized as:
+must be computed. They exist in two equivalent forms, both implemented by
+`transpiler/src/annotation/mod.rs`: the inline directive (primary since Phase 55)
+and the `.automan` sidecar (legacy, still fully supported).
+
+### Inline directive grammar
+
+A directive is an ordinary comment placed immediately before the `spec fn` it
+annotates, inside or outside a `verus!` block:
+
+```text
+directive     := "// @automan" body
+body          := kind "(" [ binding { "," binding } ] ")" [ "->" return-type ]
+kind          := "predicate" | "helper"
+binding       := param-name ":" ("in" | "+" | "out" | "-")     named form
+              |  "+" | "-"                                     positional form
+```
+
+- Bindings are resolved **by name** against the adjacent declaration: an unknown,
+  missing, or duplicated name is an error carrying the file and line. Positional
+  `+`/`-` lists are accepted as a migration convenience and checked for arity.
+  The two forms cannot be mixed in one directive, and a bare `in`/`out` without
+  a parameter name is rejected.
+- The `-> Type` override is helper-only; a predicate directive carrying one is
+  an error.
+- A directive may continue across several adjacent `//` lines; the parser joins
+  them before parsing the body.
+- A tagged directive is never silently ignored. One that is malformed, orphaned
+  (no `spec fn` follows), duplicated on one function, spelled as a doc comment
+  (`/// @automan`), or placed inside a function body fails parsing outright.
+- Helper return types work as in the sidecar form: optional, falling back to the
+  parsed specification return type.
+- `migrate-inline` converts a sidecar to directives mechanically; a function
+  annotated in both sources must agree (identical definitions warn, conflicting
+  ones fail).
+
+### Sidecar (`.automan`) grammar
+
+The sidecar grammar is line-oriented and can be summarized as:
 
 ```text
 file          := { comment | module }
@@ -5364,13 +5403,14 @@ receives `s` and `delta` and returns or mutates the concrete representation of `
 
 ### Validation layers
 
-`check --annotations FILE` validates annotation syntax. Full transpilation additionally
-checks the annotation against parsed function signatures and applies:
+`check --annotations FILE` validates sidecar syntax; inline directives are validated
+whenever the spec is parsed. Full transpilation additionally checks the annotation
+against parsed function signatures and applies:
 
 | Rule | Rejected shape | Typical repair |
 |---|---|---|
 | Arity/signature | Mode count differs from parameter count, or function is absent. | Correct the declaration or qualification. |
-| Predicate output | A predicate has no `-` argument. | Mark the actual computed parameter, or model it as a helper. |
+| Predicate output | — (an all-input predicate is legal: it acts as a pure validity check; the maintained specs contain fifteen). | — |
 | Helper discipline | A helper declares output parameters. | Return the value or make the relation a predicate. |
 | Saturation | An output, or a known structured output field, is never assigned. | Cover every branch/field or assign the whole output. |
 | Harmony | An output member receives incompatible duplicate assignments. | Make branches exclusive or construct once. |
@@ -5592,9 +5632,9 @@ Before adopting an advanced config, run a dry generation and resolved dump, then
 the output for proof escape hatches:
 
 ```bash
-verus-transpile --input spec.rs --annotations spec.automan \
+verus-transpile --input spec.rs \
   --config spec_transpile.toml --dump-config > resolved.toml
-verus-transpile --input spec.rs --annotations spec.automan \
+verus-transpile --input spec.rs \
   --config spec_transpile.toml --dry-run --verbose
 ```
 
