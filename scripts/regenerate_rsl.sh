@@ -81,7 +81,9 @@ for MODULE in "${MODULES[@]}"; do
     AUTOMAN="$SPEC_DIR/${MODULE}.automan"
     CONFIG="$SPEC_DIR/${MODULE}_transpile.toml"
 
-    if [ ! -f "$SPEC" ] || [ ! -f "$AUTOMAN" ] || [ ! -f "$CONFIG" ]; then
+    # The sidecar is optional since Phase 55 — the spec carries inline
+    # `// @automan` directives. Only the spec and config are required.
+    if [ ! -f "$SPEC" ] || [ ! -f "$CONFIG" ]; then
         echo "   WARNING: Missing file for $MODULE, skipping."
         continue
     fi

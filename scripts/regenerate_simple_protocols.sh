@@ -56,13 +56,8 @@ for entry in "${PROTOCOLS[@]}"; do
         continue
     fi
 
-    # Check if automan exists
-    if [ ! -f "$SPEC_DIR/${MODULE}.automan" ]; then
-        echo "  WARNING: Annotation file not found: $SPEC_DIR/${MODULE}.automan"
-        echo "  Skipping $PROTOCOL"
-        echo ""
-        continue
-    fi
+    # The sidecar is optional since Phase 55 — the spec carries inline
+    # `// @automan` directives, so a missing .automan is not a skip.
 
     # Generate types (if types.rs exists)
     if [ -f "$SPEC_DIR/types.rs" ]; then
