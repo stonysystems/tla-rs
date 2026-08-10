@@ -18185,3 +18185,148 @@ Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can be
 - If 42.5.c (revert Phase 40): +1-2 days for the revert + Phase 40.3.e salvage.
 
 ---
+
+## Phase 55: Inline AutoMan Annotations in Verus Spec Files — PLAN ONLY (not started)
+
+Tracking issue: [#4](https://github.com/stonysystems/tla-rs/issues/4). Branch:
+`feature/inline-automan-annotations`. **This section is a plan. No code has been written.**
+
+### Motivation
+
+Mode annotations live in `.automan` sidecars, one per spec file. The pairing is positional and
+unchecked:
+
+```text
+src/protocol/Raft/raft.automan:6    LInit(-, +);
+src/protocol/Raft/raft.rs:12        pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+```
+
+`(-, +)` binds to `(s, c)` by position alone. Nothing links the two files, so a parameter
+rename, a reorder of same-typed parameters, or an inserted parameter changes the synthesis
+interface silently. `LGrantVote(+, -, +, +, +, +, +, -)` is eight positions with no names.
+
+The measured hazard is not hypothetical. Annotations are matched by bare function name;
+`module_path` is parsed into `ModuleAnnotations` (`annotation/mod.rs:21`) and then never read
+outside tests. **`LInit` is declared in nine protocol sidecars** — ChainReplication, EPaxos,
+LeaderElection, PBFT, Paxos, PrimaryBackup, Raft, TwoPhase, VerticalPaxos — and `LNodeFail`
+and `LReconfigure` collide too. Nothing has broken yet only because transpilation runs one
+protocol at a time. Binding annotations to the parsed item instead of a global name lookup
+removes the class.
+
+### Scale (measured, `git ls-files`)
+
+| Scope | Sidecars | Declarations |
+|---|---|---|
+| `src/protocol/` | 16 | 188 (174 predicates + 14 helpers) |
+| Whole repo | 54 | 465 (385 + 80) |
+
+### Chosen form
+
+A tagged ordinary comment immediately preceding the function, with **named** modes:
+
+```rust
+// @automan predicate(s: out, c: in)
+pub open spec fn LInit(s: LState, c: LConstants) -> bool { ... }
+
+// @automan helper(s: in, requests: in, limit: in) -> Seq<CPacket>
+pub open spec fn packets_for_requests(...) -> Seq<RslPacket> { ... }
+```
+
+Named parameters are the point: unknown, missing, and duplicate names become errors, so a
+rename or a same-typed reorder cannot silently change meaning. `in`/`out` spell the existing
+`+`/`-`; accept `+`/`-` positionally as a migration-only compatibility form.
+
+Keep the explicit `predicate`/`helper` kind — an all-input predicate returning `bool` is
+indistinguishable from a boolean helper. Keep the optional `-> Type` override: production RSL
+annotations deliberately map a logical return type to a concrete generated one, and that
+information is not recoverable from the Rust signature.
+
+**Not a Rust attribute.** The blocker is ours, not Verus's: `try_parse_spec_fn`
+(`parser/mod.rs:185-214`) matches from `pub`/`open`/`spec`/`fn` and has no attribute handling,
+so an item starting with `#[...]` falls through to `skip_item()` and the function disappears
+from transpilation entirely. Issue #4 also records that the pinned Verus rejects unregistered
+`#[automan(...)]` and that tool-attribute registration is unstable on stable rustc.
+
+### Staging — land 55.1 first, decide on the rest afterwards
+
+The work splits at a natural seam. 55.1 is additive and self-contained: `.automan` stays the
+only source of truth, no protocol file changes, and the new path is exercised only by tests. If
+55.2+ never happens, nothing is left half-migrated.
+
+Everything downstream of the parser already consumes `FunctionAnnotation` / `ParameterMode`
+(`annotation/mod.rs:30`), so the inline path only has to produce the same structs. The mode
+analyzer and every generator stay untouched.
+
+#### 55.1 Parser + model (do this first)
+
+- `skip_whitespace_and_comments` (`parser/mod.rs:2215`) currently discards line comments via
+  `skip_until_pattern("\n")`. Record a comment matching exactly `// @automan ` into a
+  `pending_annotation: Option<(String, usize)>` field on the parser (text + line, for
+  diagnostics) instead of dropping it. Any other comment clears the field.
+- After `try_parse_spec_fn` succeeds, consume the pending marker, resolve named modes against
+  the just-parsed parameter list, and attach a `FunctionAnnotation`.
+- Reject: unknown / missing / duplicate parameter names, arity mismatch, a predicate with no
+  output, a helper with a non-input parameter, a marker with no following `spec fn`, two
+  markers on one function. Every diagnostic carries file and line. **A tagged directive must
+  never be silently ignored** — that failure mode is what the sidecar has today.
+- Unit tests only. No `.automan` file changes, no CLI changes.
+
+#### 55.2 Equivalence proof
+
+- For each of the 16 maintained sidecars, mechanically derive the inline form and assert the
+  transpiler produces **byte-identical** output from either input.
+- The safety net already exists: 18 `regen_matches_checked_in` tests across 9 protocols
+  (`transpiler/tests/`), plus 2349 `#[test]` total. This is what makes the migration provable
+  rather than reviewable, and it is the reason to attempt it at all.
+- RSL is deliberately excluded from those parity tests — its checked-in generated files carry
+  the hand-written bodies of its 36 `skip_functions` entries and are produced through
+  `scripts/regenerate_rsl.sh` + the merge preserve list, not `regenerate_all.sh`. Verify RSL
+  through the merge path and `scripts/check_merge_body_drift.py`; do not add it to the parity
+  tests. See `docs/rsl-skip-functions.md` and Ch.19 of the book.
+
+#### 55.3 CLI and build discovery
+
+- Keep `--annotations` and the existing two-path library methods working unchanged; make the
+  flag optional when inline annotations are present.
+- `build_integration/mod.rs:107-130` discovers `.automan` first and derives the sibling `.rs`.
+  Teach it and the SCons emitter to discover annotated `.rs` sources as well.
+- If a function is annotated in both sources: identical definitions warn, differences are an
+  error. Never silently prefer one.
+
+#### 55.4 Migration
+
+- Write a converter that reads each `.automan` declaration and the corresponding `.rs`
+  signature and emits the named inline form. 465 declarations is too many to hand-edit, and a
+  converter is checkable against 55.2 in a way hand edits are not.
+- Migrate the 16 `src/protocol/` sidecars first; the other 38 are test workspaces and examples.
+- Update `README.md`, the book, and the regeneration scripts.
+
+#### 55.5 TLA pipeline — highest risk, schedule last
+
+TLA→Verus generation must emit inline markers, and the clean-subset pipeline computes projected
+signature modes. This is the only place that has to understand **both** representations at
+once. Keep `.automan` emission as an explicit option. Do not start this before 55.2 passes.
+
+### Risks
+
+- **R1**: An agent attempts 55.1–55.5 in one pass, stalls in 55.5, and leaves 54 files migrated
+  against a half-working pipeline. Mitigation: 55.1 and 55.2 are the deliverable; treat 55.3+
+  as a separate decision with 55.2 green as its entry condition.
+- **R2**: The converter in 55.4 mis-binds a positional mode when a signature has same-typed
+  adjacent parameters — precisely the error the named form exists to prevent, reintroduced by
+  the migration itself. Mitigation: 55.2's byte-identical assertion is what catches it; run it
+  per protocol, not once at the end.
+- **R3**: `main.rs` is 13k lines and the CLI paths are threaded through it. Mitigation: 55.1
+  touches neither `main.rs` nor `build_integration`; keep it that way.
+
+### Acceptance criteria for 55.1 (the only committed scope)
+
+- [ ] Inline predicate and helper directives parse into `FunctionAnnotation` values identical
+      to those the sidecar parser produces for the same content.
+- [ ] Malformed, orphaned, duplicate, unknown-name, missing-name, and arity-mismatched
+      directives each fail with file and line.
+- [ ] Two functions with the same bare name in different modules receive their own annotations.
+- [ ] No `.automan` file, no protocol source, and no generated file changes.
+- [ ] `cargo test` and `cargo fmt --check` clean.
+
+---
