@@ -130,7 +130,7 @@ verus! {
     }
 
     /// Become leader using the quorum required by the membership phase
-    /// derived from the candidate's committed log.
+    /// derived from the latest Configuration entry in the candidate's log.
     pub open spec fn LBecomeLeaderWithMembership(
         s: LState, s_: LState, c: LConstants, sent_packets: Seq<LRaftMessage>,
     ) -> bool {

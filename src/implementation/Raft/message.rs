@@ -167,7 +167,10 @@ impl ProtocolMessage for RaftMessage {
                 Some(RaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term })
             },
             TAG_APPEND_ENTRIES => {
-                if data.len() < 72 {
+                // The original Data-only format used 64 bytes. The temporary
+                // payload-carrying format uses 72 bytes. Accept both until the
+                // native wire protocol has a versioned Configuration encoding.
+                if data.len() < 64 {
                     return None;
                 }
                 let term = read_u64(data, 8);
@@ -175,9 +178,21 @@ impl ProtocolMessage for RaftMessage {
                 let prev_log_index = read_u64(data, 24);
                 let prev_log_term = read_u64(data, 32);
                 let value = read_u64(data, 40);
-                let payload = read_u64(data, 48);
-                let has_entry = read_u64(data, 56) != 0;
-                let leader_commit = read_u64(data, 64);
+                let (payload, has_entry, leader_commit) = if data.len() >= 72 {
+                    (
+                        read_u64(data, 48),
+                        read_u64(data, 56) != 0,
+                        read_u64(data, 64),
+                    )
+                } else {
+                    // Legacy messages had no separate payload field, so their
+                    // scalar value is also the Data payload.
+                    (
+                        value,
+                        read_u64(data, 48) != 0,
+                        read_u64(data, 56),
+                    )
+                };
                 Some(RaftMessage::AppendEntries {
                     term,
                     leader_id,
