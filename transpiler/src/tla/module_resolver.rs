@@ -448,6 +448,38 @@ fn rewrite(
                 })
                 .collect(),
         },
+        // A `LET` inside an instantiated operator is still that module's code:
+        // its definitions call the module's own operators, and without this arm
+        // the whole node was cloned unchanged. Jetpack's
+        // `HandlePreacceptResponse` is where that showed: `IsFastQuorum` was
+        // never qualified to `J!IsFastQuorum`, and `NilCmd` was never qualified
+        // to `J!NilCmd` -- which the projection would have emitted as a bare
+        // `NilCmd` referring to nothing.
+        //
+        // The definitions bind sequentially, as TLA+ says they do: definition
+        // `i` sees `0..i-1` and not itself, so a `LET NilCmd == ..` that shadows
+        // the module's own `NilCmd` hides it only from there on.
+        TlaExpr::LetIn { defs, body } => {
+            let mut inner = shadowed.clone();
+            let mut rewritten = Vec::with_capacity(defs.len());
+            for def in defs {
+                let mut with_params = inner.clone();
+                for p in &def.params {
+                    with_params.insert(p.name.clone());
+                }
+                rewritten.push(TlaOperator {
+                    name: def.name.clone(),
+                    params: def.params.clone(),
+                    body: rewrite(&def.body, subst, local, &with_params, prefix),
+                    ..def.clone()
+                });
+                inner.insert(def.name.clone());
+            }
+            TlaExpr::LetIn {
+                defs: rewritten,
+                body: Box::new(rewrite(body, subst, local, &inner, prefix)),
+            }
+        }
         TlaExpr::Lambda { params, body } => {
             let mut inner = shadowed.clone();
             for p in params {

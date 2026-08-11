@@ -12,6 +12,7 @@
 use std::fmt::Write as _;
 
 use crate::tla::action_projection::{ActionKind, ProjectedModule};
+use crate::tla::projection::MessageVariant;
 
 /// Emit the projected module as Verus source, or the gaps that prevent it.
 pub fn emit(projected: &ProjectedModule) -> Result<String, Vec<String>> {
@@ -222,13 +223,40 @@ fn emit_dispatch(out: &mut String, projected: &ProjectedModule) {
          \x20       c: LConstants,\n        src: int,\n        msg: LMessage,\n\
          \x20       sent_packets: Set<LPacket>,\n    ) -> bool {\n        match msg {\n",
     );
+    // Grouped by variant, not one arm per action. Two handlers may claim the
+    // same tag -- Raft's `Reject`/`AcceptAppendEntriesRequest` are both `aeq`,
+    // and `UpdateTerm` claims all four of its message types -- and a second
+    // `match` arm for a variant is unreachable, so the earlier code silently
+    // dropped every handler after the first. `Next` disjoins them, so the arm
+    // does too.
+    let mut by_variant: Vec<(&MessageVariant, Vec<String>)> = Vec::new();
     for action in &receives {
-        let Some(tag) = &action.handles_tag else {
+        let Some(tags) = &action.handles_tag else {
             continue;
         };
-        let Some(variant) = projected.spec.messages.iter().find(|m| m.tag == *tag) else {
-            continue;
-        };
+        for tag in tags.split(',') {
+            let Some(variant) = projected.spec.messages.iter().find(|m| m.tag == tag) else {
+                continue;
+            };
+            let args: Vec<String> = action
+                .params
+                .iter()
+                .map(|p| p.split(':').next().unwrap_or(p).trim().to_string())
+                .collect();
+            // A handler may take nothing beyond the state -- a `Commit` message
+            // carries no payload and this one does not use the sender -- so the
+            // argument list has to close up rather than leave an empty slot.
+            let mut call_args = vec!["s".to_string(), "s_".to_string(), "c".to_string()];
+            call_args.extend(args);
+            call_args.push("sent_packets".to_string());
+            let call = format!("{}({})", action.name, call_args.join(", "));
+            match by_variant.iter_mut().find(|(v, _)| v.tag == variant.tag) {
+                Some((_, calls)) => calls.push(call),
+                None => by_variant.push((variant, vec![call])),
+            }
+        }
+    }
+    for (variant, calls) in &by_variant {
         let binding = if variant.fields.is_empty() {
             String::new()
         } else {
@@ -242,37 +270,21 @@ fn emit_dispatch(out: &mut String, projected: &ProjectedModule) {
                     .join(", ")
             )
         };
-        let args: Vec<String> = action
-            .params
-            .iter()
-            .map(|p| p.split(':').next().unwrap_or(p).trim().to_string())
-            .collect();
-        // A handler may take nothing beyond the state -- a `Commit` message
-        // carries no payload and this one does not use the sender -- so the
-        // argument list has to close up rather than leave an empty slot.
-        let mut call_args = vec!["s".to_string(), "s_".to_string(), "c".to_string()];
-        call_args.extend(args);
-        call_args.push("sent_packets".to_string());
         let _ = writeln!(
             out,
-            "            LMessage::{}{binding} =>\n                {}({}),",
+            "            LMessage::{}{binding} =>\n                {},",
             variant.name,
-            action.name,
-            call_args.join(", ")
+            calls.join("\n                || ")
         );
     }
     // A message kind no action handles cannot be acted on. Saying so is not the
     // same as omitting it: without this arm the match is non-exhaustive, and
     // with a silent `true` the node could take an arbitrary step on receipt.
-    let handled: Vec<&str> = receives
-        .iter()
-        .filter_map(|a| a.handles_tag.as_deref())
-        .collect();
     if projected
         .spec
         .messages
         .iter()
-        .any(|m| !handled.contains(&m.tag.as_str()))
+        .any(|m| !by_variant.iter().any(|(v, _)| v.tag == m.tag))
     {
         out.push_str("            _ => false,\n");
     }

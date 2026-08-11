@@ -20,10 +20,13 @@
 
 use std::collections::BTreeMap;
 
-use crate::tla::ast::{TlaBinOp, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaModule, TlaUnaryOp};
+use crate::tla::ast::{
+    TlaBinOp, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaModule, TlaQuantBound, TlaUnaryOp,
+};
 use crate::tla::clean_subset::node_parameterized_operators;
 use crate::tla::projection::{
-    to_snake_case, ProjectedSpec, ProjectedType, ProjectionError, ROUTING_FIELDS, TAG_FIELDS,
+    to_pascal_case, to_snake_case, MessageVariant, ProjectedSpec, ProjectedType, ProjectionError,
+    ROUTING_FIELDS, TAG_FIELDS,
 };
 
 /// How an action is reached.
@@ -234,6 +237,18 @@ pub fn project(module: &TlaModule) -> Result<ProjectedModule, ProjectionError> {
             || init_texts.iter().any(|t| references_constant(t, name))
     });
 
+    // Declare the enums the binder domains introduced. `project_actions` names
+    // them by the same formula it rendered them with, so the two agree without
+    // threading state between the passes.
+    for ((op_name, param), set) in action_param_bounds(module) {
+        if let Some(variants) = literal_domain(&spec, &set) {
+            let name = binder_enum_name(&spec, &op_name, &param, &variants);
+            if !spec.enums.iter().any(|(n, _)| *n == name) {
+                spec.enums.push((name, variants));
+            }
+        }
+    }
+
     Ok(ProjectedModule {
         spec,
         helpers,
@@ -330,7 +345,7 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
             Err(gap) => (String::new(), vec![gap]),
         };
         helpers.push(ProjectedHelper {
-            name: format!("L{op_name}"),
+            name: format!("L{}", rust_ident(op_name)),
             source_name: op_name.clone(),
             reads_state: reads_state(&op.body, spec),
             params: op
@@ -370,7 +385,7 @@ fn called_helpers(module: &TlaModule, spec: &ProjectedSpec) -> std::collections:
     for action in project_actions(module, spec) {
         for text in action.conjuncts.iter().chain(action.frame.iter()) {
             for op in module.operators.iter() {
-                if text.contains(&format!("L{}(", op.name)) {
+                if text.contains(&format!("L{}(", rust_ident(&op.name))) {
                     called.insert(op.name.clone());
                 }
             }
@@ -444,6 +459,21 @@ fn infer_helper_param_types(
                 _ => return None,
             },
             TlaExpr::Ident(name) => name,
+            // `m.mcmd` -- a field of the message being handled. As informative
+            // as a state field and it was not being read: Jetpack's
+            // `HasConflict(cmdPool[i], m.mcmd)` typed its second parameter
+            // `int`, and the emitted helper then read `cmd.key` off an integer.
+            // Payload field names are unique because the projection merges
+            // every variant's record set into one list.
+            TlaExpr::RecordAccess { field, .. } => {
+                let field = to_snake_case(field);
+                return spec
+                    .messages
+                    .iter()
+                    .flat_map(|m| m.fields.iter())
+                    .find(|(f, _)| *f == field)
+                    .map(|(_, ty)| ty.clone());
+            }
             _ => return None,
         };
         spec.state_fields
@@ -560,6 +590,7 @@ fn action_param_bounds(module: &TlaModule) -> BTreeMap<(String, String), TlaExpr
         scope: &BTreeMap<String, TlaExpr>,
         module: &TlaModule,
         out: &mut BTreeMap<(String, String), TlaExpr>,
+        seen: &mut std::collections::BTreeSet<String>,
     ) {
         match expr {
             TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
@@ -574,18 +605,31 @@ fn action_param_bounds(module: &TlaModule) -> BTreeMap<(String, String), TlaExpr
                         }
                     }
                 }
-                walk(body, &inner, module, out);
+                walk(body, &inner, module, out, seen);
                 return;
             }
             TlaExpr::OpApply { op, args } => {
                 if let TlaExpr::Ident(callee) = &**op {
                     if let Some(target) = module.operators.iter().find(|o| o.name == *callee) {
+                        let mut inner = BTreeMap::new();
                         for (param, arg) in target.params.iter().zip(args.iter()) {
                             if let TlaExpr::Ident(binder) = arg {
                                 if let Some(set) = scope.get(binder) {
                                     out.insert((callee.clone(), param.name.clone()), set.clone());
+                                    inner.insert(param.name.clone(), set.clone());
                                 }
                             }
+                        }
+                        // A composed spec groups its disjuncts behind an
+                        // intermediate operator -- `Next` binds the node and
+                        // calls `BaseAction(i)`, whose body holds the binders
+                        // for the actions' *other* parameters. Stopping at the
+                        // call left `\E op \in {ReconfigAdd, ReconfigRemove}`
+                        // unseen, so `op` was typed `int` and the emitted spec
+                        // compared it against a string.
+                        if seen.insert(callee.clone()) {
+                            walk(&target.body, &inner, module, out, seen);
+                            seen.remove(callee);
                         }
                     }
                 }
@@ -593,13 +637,19 @@ fn action_param_bounds(module: &TlaModule) -> BTreeMap<(String, String), TlaExpr
             _ => {}
         }
         for child in children(expr) {
-            walk(child, scope, module, out);
+            walk(child, scope, module, out, seen);
         }
     }
 
     let mut out = BTreeMap::new();
     if let Some(next) = module.operators.iter().find(|o| o.name == "Next") {
-        walk(&next.body, &BTreeMap::new(), module, &mut out);
+        walk(
+            &next.body,
+            &BTreeMap::new(),
+            module,
+            &mut out,
+            &mut std::collections::BTreeSet::new(),
+        );
     }
     out
 }
@@ -614,6 +664,103 @@ fn reads_state(expr: &TlaExpr, spec: &ProjectedSpec) -> bool {
 }
 
 /// Project every action of a module that the linter accepted.
+/// A source name as a Rust identifier: the INSTANCE qualifier removed and
+/// nothing else touched.
+///
+/// `B!IsQuorumOf` is `IsQuorumOf` of the module instantiated as `B`, and `!` is
+/// not a legal identifier character -- the tier4 composition emitted
+/// `LB!IsQuorumOf`, which does not parse. Case is deliberately left alone: the
+/// projected name is `L` plus the source's own spelling, so `beats` stays
+/// `Lbeats` and a reader can match output against input by name.
+fn rust_ident(name: &str) -> String {
+    name.replace('!', "")
+}
+
+/// The name of the enum a binder over a set of string literals introduces.
+///
+/// `\E op \in {ReconfigAdd, ReconfigRemove} : RequestReconfig(i, op, t)` gives
+/// `op` a type the source never named. Computed from the action and the
+/// parameter so that the declaration and the use agree without threading state
+/// between the two passes that need it.
+fn binder_enum_name(
+    spec: &ProjectedSpec,
+    action: &str,
+    param: &str,
+    variants: &[String],
+) -> String {
+    // An enum with these variants already declared is the same type, and
+    // minting a second name for it splits one type in two: `RequestReconfig`'s
+    // `op` ranges over exactly the variants of `pendingReconfig`'s `op` field,
+    // and a fresh `LBRequestReconfigOp` then would not typecheck against the
+    // record it is assigned into.
+    // A *subset* match, not equality: `RequestReconfig` binds `op` over two of
+    // `pendingReconfig`'s three variants, and the parameter it feeds is that
+    // record's field. The binder's own restriction survives as the action's
+    // parameter bound, which is where a restriction belongs -- minting a second
+    // enum for it would split one type in two and not typecheck.
+    let covers = |vs: &Vec<String>| variants.iter().all(|v| vs.contains(v));
+    if let Some((name, _)) = spec.enums.iter().find(|(_, vs)| covers(vs)) {
+        return name.clone();
+    }
+    for (_, fields) in &spec.records {
+        for (_, ty) in fields {
+            if let ProjectedType::Enum { name, variants: vs } = ty {
+                if !name.is_empty() && covers(vs) {
+                    return name.clone();
+                }
+            }
+        }
+    }
+    format!(
+        "L{}{}",
+        to_pascal_case(action),
+        to_pascal_case(&to_snake_case(param))
+    )
+}
+
+/// A binder's domain written as a record set -- `[cmd_id: CmdId, key: Key]` --
+/// matched against the structs the projection declared.
+///
+/// Records are structural in TLA+, so the field names are what identify one;
+/// this is the same match `project_expr`'s `Record` arm makes for a value.
+fn record_set_type(spec: &ProjectedSpec, set: &TlaExpr) -> Option<ProjectedType> {
+    let TlaExpr::RecordSet(fields) = set else {
+        return None;
+    };
+    let names: Vec<String> = fields.iter().map(|(n, _)| to_snake_case(n)).collect();
+    spec.records
+        .iter()
+        .find(|(_, fs)| fs.len() == names.len() && fs.iter().all(|(f, _)| names.contains(f)))
+        .map(|(name, fields)| ProjectedType::Record {
+            name: name.clone(),
+            fields: fields.clone(),
+        })
+}
+
+/// A binder's domain as a set of string literals, if that is what it is.
+fn literal_domain(spec: &ProjectedSpec, set: &TlaExpr) -> Option<Vec<String>> {
+    let items = match set {
+        TlaExpr::SetEnum(items) => items,
+        _ => return None,
+    };
+    if items.is_empty() {
+        return None;
+    }
+    items
+        .iter()
+        .map(|item| match item {
+            TlaExpr::String(literal) => Some(variant_name(literal)),
+            TlaExpr::Ident(name) => match spec.operator_bodies.get(name.as_str()) {
+                Some((params, TlaExpr::String(literal))) if params.is_empty() => {
+                    Some(variant_name(literal))
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<ProjectedAction> {
     let receives = receive_handlers(module, spec.network_variable.as_deref());
     let bounds = action_param_bounds(module);
@@ -630,9 +777,45 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         }
 
         let msg_param = receives.get(&op_name).cloned();
+        // An action's own parameters are typed by the set their `Next` binder
+        // ranges over, and the body has to be projected knowing that: without
+        // it `type_of` returns nothing for `op`, `enum_test` declines, and the
+        // guard `op = ReconfigAdd` emits `op == "add"` against an enum.
+        let mut param_types: BTreeMap<String, ProjectedType> = BTreeMap::new();
+        for p in op.params.iter().filter(|p| p.name != *node_param) {
+            let Some(set) = bounds.get(&(op_name.clone(), p.name.clone())) else {
+                continue;
+            };
+            let probe = ActionContext {
+                spec,
+                param_types: Default::default(),
+                msg_tag: None,
+                node_param: node_param.clone(),
+                msg_param: msg_param.clone(),
+                network: spec.network_variable.clone(),
+            };
+            let ty = if let Some(variants) = literal_domain(spec, set) {
+                Some(ProjectedType::Enum {
+                    name: binder_enum_name(spec, &op_name, &p.name, &variants),
+                    variants,
+                })
+            } else if let Some(record) = record_set_type(spec, set) {
+                // `\E cmd \in [cmd_id: CmdId, key: Key]` -- a binder over a
+                // record set, which is a declared struct rather than an `int`.
+                Some(record)
+            } else {
+                match probe.type_of(set) {
+                    Some(ProjectedType::Set(elem)) if !elem.is_unresolved() => Some(*elem),
+                    _ => None,
+                }
+            };
+            if let Some(ty) = ty {
+                param_types.insert(safe_param_name(&p.name), ty);
+            }
+        }
         let mut ctx = ActionContext {
             spec,
-            param_types: Default::default(),
+            param_types: param_types.clone(),
             msg_tag: None,
             node_param: node_param.clone(),
             msg_param: msg_param.clone(),
@@ -716,24 +899,45 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
             } else {
                 Vec::new()
             };
-            if let Some(tag) = &handles_tag {
-                if let Some(variant) = spec.messages.iter().find(|m| m.tag == *tag) {
-                    params.extend(
-                        variant
-                            .fields
-                            .iter()
-                            .map(|(name, ty)| format!("{name}: {}", ty.render())),
-                    );
+            if let Some(tags) = &handles_tag {
+                // A handler that claims several tags can only take the fields
+                // every one of those variants carries: each dispatch arm binds
+                // its own variant's fields, so a field one of them lacks has
+                // nothing to pass. Raft's `UpdateTerm` reads `mterm`, which all
+                // four of its message types have.
+                let claimed: Vec<&MessageVariant> = tags
+                    .split(',')
+                    .filter_map(|tag| spec.messages.iter().find(|m| m.tag == tag))
+                    .collect();
+                if let Some((first, rest)) = claimed.split_first() {
+                    let common = first.fields.iter().filter(|(name, ty)| {
+                        rest.iter()
+                            .all(|v| v.fields.iter().any(|(n, t)| n == name && t == ty))
+                    });
+                    params.extend(common.map(|(name, ty)| format!("{name}: {}", ty.render())));
                 }
             }
             params
         } else {
             // A local action's own parameters survive, minus the node: the
             // source's `Phase1a(a, b)` is this node starting ballot `b`.
+            // A parameter's type comes from the set its `Next` binder ranges
+            // over, not from an assumption that everything is a node id.
+            // `RequestReconfig(i, op, target)` binds `op` over two string
+            // literals and `ClientSendPreaccept(c, cmd)` binds `cmd` over a
+            // record set; typing both `int` emitted `op == "add"` and
+            // `s_.client_pending == cmd` against an `int`, which Verus rejects.
             op.params
                 .iter()
                 .filter(|p| p.name != node_param)
-                .map(|p| format!("{}: int", safe_param_name(&p.name)))
+                .map(|p| {
+                    let safe = safe_param_name(&p.name);
+                    let ty = param_types
+                        .get(&safe)
+                        .map(|t| t.render())
+                        .unwrap_or_else(|| "int".to_string());
+                    format!("{safe}: {ty}")
+                })
                 .collect()
         };
 
@@ -760,7 +964,7 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         };
 
         actions.push(ProjectedAction {
-            name: format!("L{op_name}"),
+            name: format!("L{}", rust_ident(&op_name)),
             source_name: op_name.clone(),
             kind: if msg_param.is_some() {
                 ActionKind::Receive
@@ -872,6 +1076,65 @@ impl<'a> ActionContext<'a> {
     ) -> Option<String> {
         use crate::tla::projection::ProjectedType;
         match (ty, expr) {
+            // A literal in an enum-typed position is a variant, not a `&str`.
+            // The `is` test in a guard already went through `enum_variant`; a
+            // *value* did not, so `ostate = IF .. THEN Follower ELSE NotMember`
+            // emitted `s.ostate == if .. { "follower" } else { "notMember" }`
+            // and Verus rejected `LOstate == &str`. IF/CASE are recursed into
+            // because that is where the literal usually sits.
+            (ProjectedType::Enum { .. }, TlaExpr::String(_) | TlaExpr::Ident(_)) => {
+                self.enum_literal(ty, expr)
+            }
+            (
+                ProjectedType::Enum { .. },
+                TlaExpr::IfThenElse {
+                    cond,
+                    then_expr,
+                    else_expr,
+                },
+            ) => {
+                // A branch that is not a literal -- `ELSE jstate[i]`, the value
+                // the field already has -- is projected normally. Requiring
+                // both branches to be literals made the arm decline and the
+                // whole `IF` fall back, so one branch stayed a `&str`.
+                let branch = |e: &TlaExpr| {
+                    self.typed_value(ty, e)
+                        .or_else(|| self.project_expr(e).ok())
+                };
+                Some(format!(
+                    "if {} {{ {} }} else {{ {} }}",
+                    self.project_expr(cond).ok()?,
+                    branch(then_expr)?,
+                    branch(else_expr)?
+                ))
+            }
+            // A bare integer literal has no type to infer from when the other
+            // side of the `==` is an `int` and the literal sits inside an `if`.
+            // The same reason the `Map::new` closure below takes a suffix.
+            (
+                ProjectedType::Int,
+                TlaExpr::IfThenElse {
+                    cond,
+                    then_expr,
+                    else_expr,
+                },
+            ) if matches!(**then_expr, TlaExpr::Number(_))
+                || matches!(**else_expr, TlaExpr::Number(_)) =>
+            {
+                // The suffix goes on the literals *inside* the `if`, which is
+                // where there is no type to infer from. A literal in a plain
+                // `s_.x == 1` needs nothing and reads better without it.
+                let branch = |e: &TlaExpr| match e {
+                    TlaExpr::Number(_) => Some(format!("{}int", self.project_expr(e).ok()?)),
+                    _ => self.project_expr(e).ok(),
+                };
+                Some(format!(
+                    "if {} {{ {} }} else {{ {} }}",
+                    self.project_expr(cond).ok()?,
+                    branch(then_expr)?,
+                    branch(else_expr)?
+                ))
+            }
             (ProjectedType::Set(inner), TlaExpr::SetEnum(items)) if items.is_empty() => {
                 Some(format!("Set::<{}>::empty()", inner.render()))
             }
@@ -1021,6 +1284,9 @@ impl<'a> ActionContext<'a> {
         if let Some(tag) = self.dispatch_guard(expr) {
             return Ok(DISPATCH_PREFIX.to_string() + &tag);
         }
+        if let Some(tags) = self.dispatch_guard_tags(expr) {
+            return Ok(DISPATCH_PREFIX.to_string() + &tags.join(","));
+        }
 
         // `\E rec \in cmdLog[i] : /\ ... /\ x' = ...` -- an action that picks
         // a record out of its own state and updates from it. The binder is
@@ -1050,13 +1316,57 @@ impl<'a> ActionContext<'a> {
                             parts.push(text);
                         }
                     }
-                    return Ok(format!(
-                        "exists|{}: {elem}| {domain} && {}",
-                        bound.var,
-                        parts.join(" && ")
-                    ));
+                    let var = &bound.var;
+                    let body_text = parts.join(" && ");
+                    // NOTE, and the one thing about this spec that Verus still
+                    // rejects: a range binder whose body indexes a sequence
+                    // gives Verus no trigger. `log[k]` projects to
+                    // `s.log[k - 1]` -- TLA+ counts from 1 -- and Verus will
+                    // not infer a trigger from a term containing arithmetic,
+                    // which CLAUDE.md records as a known workaround needing an
+                    // extra binder. The workaround does not apply as written
+                    // here: a trigger has to cover *every* bound variable, and
+                    // after moving the offset to its own variable `k` itself
+                    // appears only in comparisons. The real answer is to
+                    // re-index the quantifier onto the sequence's own 0-based
+                    // domain, which is a projection pass and not string
+                    // surgery on the emitted text. Not done.
+                    return Ok(format!("exists|{var}: {elem}| {domain} && {body_text}"));
                 }
             }
+        }
+
+        // `LET a == e1  b == e2 IN /\ x' = .. /\ y' = ..` -- definitions shared
+        // by several updates. The body is a conjunction of the action's own
+        // conjuncts, so it is projected as one: `updated` and `sends_seen` are
+        // threaded through, or P5 would frame a field the action assigns.
+        //
+        // The definitions are substituted rather than kept, which is what `LET`
+        // means. TLA+ definitions are pure, so duplicating one is duplicating a
+        // value, not a computation; the cost is only that a definition used
+        // three times is written out three times.
+        if let TlaExpr::LetIn { defs, body } = expr {
+            let expanded = expand_let(defs, body)?;
+            let mut parts = Vec::new();
+            for conjunct in flatten_conjunction(&expanded) {
+                let text = self.project_conjunct(conjunct, updated, sends_seen)?;
+                // A `m.type = ..` guard inside the LET is still the framework's
+                // to read; swallowing it here would leave the handler
+                // unreachable from the dispatch.
+                if let Some(tag) = text.strip_prefix(DISPATCH_PREFIX) {
+                    if !tag.is_empty() {
+                        return Err(format!(
+                            "LET body states the message tag `{tag}`; the dispatch \
+                             reads it from the action's own conjuncts"
+                        ));
+                    }
+                    continue;
+                }
+                if !text.is_empty() {
+                    parts.push(text);
+                }
+            }
+            return Ok(parts.join("\n        &&& "));
         }
 
         // `UNCHANGED <<a, b>>` -- the source's own frame conjuncts. They are
@@ -1101,6 +1411,47 @@ impl<'a> ActionContext<'a> {
             return self.resolve_tag(right);
         }
         None
+    }
+
+    /// The tags a receive handler declares, for a guard that names more than
+    /// one: `m.mtype \in TermCarrying`.
+    ///
+    /// Textbook Raft has exactly one action of this shape -- "a message
+    /// carrying a higher term demotes the receiver", which applies to all four
+    /// of its message types -- and it is the shape a composed spec needs most,
+    /// because C4 gives it one network and the base layer must ignore the other
+    /// layer's messages. Without this the guard projected to a runtime test on
+    /// `mtype`, which the dispatch has already consumed, so the emitted helper
+    /// referred to unbound names and Verus rejected it.
+    fn dispatch_guard_tags(&self, expr: &TlaExpr) -> Option<Vec<String>> {
+        let msg = self.msg_param.as_deref()?;
+        let TlaExpr::BinOp {
+            op: TlaBinOp::In,
+            left,
+            right,
+        } = expr
+        else {
+            return None;
+        };
+        let TlaExpr::RecordAccess { record, field } = &**left else {
+            return None;
+        };
+        if !matches!(&**record, TlaExpr::Ident(n) if n == msg)
+            || !TAG_FIELDS.contains(&field.as_str())
+        {
+            return None;
+        }
+        // The set has to be a literal one, or a name for one: a computed set of
+        // tags is not something the dispatch can be built from.
+        let items = match right.as_ref() {
+            TlaExpr::SetEnum(items) => items.clone(),
+            TlaExpr::Ident(name) => match self.spec.operator_bodies.get(name.as_str()) {
+                Some((params, TlaExpr::SetEnum(items))) if params.is_empty() => items.clone(),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        items.iter().map(|i| self.resolve_tag(i)).collect()
     }
 
     /// `net' = net \cup S` (possibly with a `\ {m}` for the consumed message).
@@ -1155,6 +1506,10 @@ impl<'a> ActionContext<'a> {
             // `BroadcastX(args)` -- an operator whose body is a set
             // comprehension over the peers.
             TlaExpr::OpApply { .. } => self.project_broadcast(expr),
+            // The same comprehension written out in place instead of behind a
+            // `Broadcast*` operator. `project_broadcast` already inlines to
+            // exactly this shape, so routing it here is not a second path.
+            TlaExpr::SetMap { .. } | TlaExpr::SetMapMulti { .. } => self.project_broadcast(expr),
             _ => Err(format!(
                 "send expression not yet projectable: {}",
                 render_source(expr)
@@ -1169,6 +1524,30 @@ impl<'a> ActionContext<'a> {
     /// The constructor is inlined -- its parameters substituted by the call's
     /// arguments -- and the resulting record split into the packet's `dst` and
     /// the message variant's payload.
+    /// A message field the variant declares as an enum, rendered as a variant
+    /// rather than the `&str` the source spells.
+    ///
+    /// The same rule as a record literal, which `project_expr`'s `Record` arm
+    /// applies; the two packet paths each have their own copy of the field loop
+    /// and so did not get it. `typed_value` recurses into the `IF` that Raft's
+    /// `mresult` sits in.
+    fn enum_typed_field(
+        &self,
+        tag: &Option<String>,
+        name: &str,
+        value: &TlaExpr,
+    ) -> Option<String> {
+        let ty = tag
+            .as_deref()
+            .and_then(|t| self.spec.messages.iter().find(|m| m.tag == t))
+            .and_then(|v| v.fields.iter().find(|(f, _)| f == name))
+            .map(|(_, ty)| ty.clone())?;
+        match ty {
+            ProjectedType::Enum { .. } => self.typed_value(&ty, value),
+            _ => None,
+        }
+    }
+
     fn project_packet(&self, expr: &TlaExpr) -> Result<String, String> {
         let record = self.inline_record(expr)?;
 
@@ -1195,7 +1574,14 @@ impl<'a> ActionContext<'a> {
                 // be a literal, so drop it" -- would leave a construction that
                 // does not fill the variant it names.
                 other if !self.variant_carries(&tag, other) => {}
-                other => fields.push((to_snake_case(other), self.project_expr(value)?)),
+                other => {
+                    let name = to_snake_case(other);
+                    let rendered = match self.enum_typed_field(&tag, &name, value) {
+                        Some(text) => text,
+                        None => self.project_expr(value)?,
+                    };
+                    fields.push((name, rendered));
+                }
             }
         }
 
@@ -1225,21 +1611,84 @@ impl<'a> ActionContext<'a> {
 
     /// A broadcast operator: `Broadcast(s, ..) == { Ctor(s, d, ..) : d \in Node \ {s} }`.
     fn project_broadcast(&self, expr: &TlaExpr) -> Result<String, String> {
-        let TlaExpr::SetMap {
-            expr: body,
-            var,
-            set,
-        } = self.inline_call(expr)?
-        else {
-            return Err(format!(
+        match self.inline_call(expr)? {
+            TlaExpr::SetMap {
+                expr: body,
+                var,
+                set,
+            } => {
+                // The comprehension ranges over the peers; the projected form
+                // maps the peer set to packets.
+                let peers = self.project_peer_set(&set)?;
+                let packet = self
+                    .packet_context()
+                    .project_packet_with_binders(&body, &[var.as_str()])?;
+                Ok(format!("{peers}.map(|{var}: int| {packet})"))
+            }
+            TlaExpr::SetMapMulti {
+                expr: body,
+                bindings,
+            } => self.project_multi_broadcast(&body, &bindings),
+            _ => Err(format!(
                 "send expression not yet projectable: {}",
                 render_source(expr)
+            )),
+        }
+    }
+
+    /// A broadcast whose comprehension has more than one binder:
+    ///
+    /// ```text
+    /// { PreacceptReq(i, d, jepoch[i], cmd) : d \in viewProposers[i],
+    ///                                        cmd \in chosenValue[i] }
+    /// ```
+    ///
+    /// The set is the cross product, so the projected form is one `map` per
+    /// binder, innermost first, with a `flatten` for every nesting level the
+    /// maps introduced. Each `map` over a set of sets adds one level, so `n`
+    /// binders need `n - 1` flattens and the result is a `Set<LPacket>` --
+    /// the same type the single-binder path produces, which is what
+    /// `sent_packets` is compared against.
+    fn project_multi_broadcast(
+        &self,
+        body: &TlaExpr,
+        bindings: &[TlaQuantBound],
+    ) -> Result<String, String> {
+        let mut sets = Vec::new();
+        for binding in bindings {
+            let Some(set) = binding.set.as_ref() else {
+                return Err(format!(
+                    "comprehension binder `{}` has no domain",
+                    binding.var
+                ));
+            };
+            sets.push((
+                binding.var.as_str(),
+                self.project_peer_set(set)?,
+                self.binder_type(set)?,
             ));
-        };
-        // The comprehension ranges over the peers; the projected form maps the
-        // peer set to packets.
-        let peers = self.project_peer_set(&set)?;
-        let packet = ActionContext {
+        }
+        let binders: Vec<&str> = sets.iter().map(|(v, ..)| *v).collect();
+        let mut acc = self
+            .packet_context()
+            .project_packet_with_binders(body, &binders)?;
+        // Innermost binder first: it is the one whose `map` produces packets
+        // directly, and every enclosing `map` then needs a `flatten`.
+        for (i, (var, set, ty)) in sets.iter().enumerate().rev() {
+            acc = if i + 1 == sets.len() {
+                format!("{set}.map(|{var}: {ty}| {acc})")
+            } else {
+                format!("{set}.map(|{var}: {ty}| {acc}).flatten()")
+            };
+        }
+        Ok(acc)
+    }
+
+    /// The context a broadcast's packet is projected in: the message being
+    /// handled is not in scope inside a comprehension, so its tag and the
+    /// enclosing helper's parameter types are dropped.
+    fn packet_context(&self) -> ActionContext<'a> {
+        ActionContext {
             spec: self.spec,
             param_types: Default::default(),
             msg_tag: None,
@@ -1247,8 +1696,38 @@ impl<'a> ActionContext<'a> {
             msg_param: self.msg_param.clone(),
             network: self.network.clone(),
         }
-        .project_packet_with_binder(&body, &var)?;
-        Ok(format!("{peers}.map(|{var}: int| {packet})"))
+    }
+
+    /// The Rust type a comprehension binder takes, decided from the projected
+    /// type of the set it ranges over.
+    ///
+    /// The single-binder broadcast can write `int` because its binder ranges
+    /// over the peers. A second binder does not have to: `Resubmit`
+    /// re-proposes over `chosenValue[i]`, a `Set<LCommand>`, and annotating
+    /// that binder `int` emits a closure that does not typecheck. The type is
+    /// therefore read off, never assumed -- and `int` is used only for a set
+    /// the projection has already recognised as the node set, whose elements
+    /// are node ids.
+    fn binder_type(&self, set: &TlaExpr) -> Result<String, String> {
+        if let Some(ProjectedType::Set(elem)) = self.type_of(set) {
+            return Ok(elem.render());
+        }
+        // `Node` and `Node \ {self}` carry no projected type of their own.
+        let base = match set {
+            TlaExpr::BinOp {
+                op: TlaBinOp::Setminus,
+                left,
+                ..
+            } => left.as_ref(),
+            other => other,
+        };
+        match self.project_node_set(base) {
+            Ok(_) => Ok("int".to_string()),
+            Err(_) => Err(format!(
+                "element type of comprehension domain {}",
+                render_source(set)
+            )),
+        }
     }
 
     /// `Proc \ {self}` -> `c.procs.remove(c.node_id)`.
@@ -1305,20 +1784,25 @@ impl<'a> ActionContext<'a> {
         }
     }
 
-    /// Like `project_packet`, but with a comprehension binder in scope so
-    /// `d` resolves to the loop variable rather than to a constant.
-    fn project_packet_with_binder(&self, expr: &TlaExpr, binder: &str) -> Result<String, String> {
+    /// Like `project_packet`, but with the comprehension's binders in scope so
+    /// `d` resolves to a loop variable rather than to a constant.
+    fn project_packet_with_binders(
+        &self,
+        expr: &TlaExpr,
+        binders: &[&str],
+    ) -> Result<String, String> {
         let record = self.inline_record(expr)?;
         let mut dst = None;
         let mut tag = None;
         let mut fields = Vec::new();
         for (name, value) in &record {
             let projected = |v: &TlaExpr| -> Result<String, String> {
-                if matches!(v, TlaExpr::Ident(n) if n == binder) {
-                    Ok(binder.to_string())
-                } else {
-                    self.project_expr_with_binder(v, binder)
+                if let TlaExpr::Ident(n) = v {
+                    if binders.contains(&n.as_str()) {
+                        return Ok(n.clone());
+                    }
                 }
+                self.project_expr_with_binders(v, binders)
             };
             match name.as_str() {
                 "dst" | "mdest" => dst = Some(projected(value)?),
@@ -1333,7 +1817,14 @@ impl<'a> ActionContext<'a> {
                 },
                 "src" | "source" | "sender" | "msource" => {}
                 other if !self.variant_carries(&tag, other) => {}
-                other => fields.push((to_snake_case(other), projected(value)?)),
+                other => {
+                    let name = to_snake_case(other);
+                    let rendered = match self.enum_typed_field(&tag, &name, value) {
+                        Some(text) => text,
+                        None => projected(value)?,
+                    };
+                    fields.push((name, rendered));
+                }
             }
         }
         let (Some(dst), Some(tag)) = (dst, tag) else {
@@ -1358,20 +1849,30 @@ impl<'a> ActionContext<'a> {
     }
 
     fn project_expr_with_binder(&self, expr: &TlaExpr, binder: &str) -> Result<String, String> {
-        // Reads indexed by the comprehension binder: `sendSeq[s][d]` -> the
+        self.project_expr_with_binders(expr, &[binder])
+    }
+
+    fn project_expr_with_binders(
+        &self,
+        expr: &TlaExpr,
+        binders: &[&str],
+    ) -> Result<String, String> {
+        // Reads indexed by a comprehension binder: `sendSeq[s][d]` -> the
         // node's table at `d`.
         if let TlaExpr::FnApply { func, arg } = expr {
-            if matches!(arg.as_ref(), TlaExpr::Ident(n) if n == binder) {
-                if let TlaExpr::FnApply {
-                    func: inner,
-                    arg: outer,
-                } = &**func
-                {
-                    if let TlaExpr::Ident(var) = &**inner {
-                        if let (Some(field), true) =
-                            (self.state_field(var), self.is_node_index(outer))
-                        {
-                            return Ok(format!("s.{field}[{binder}]"));
+            if let TlaExpr::Ident(binder) = arg.as_ref() {
+                if binders.contains(&binder.as_str()) {
+                    if let TlaExpr::FnApply {
+                        func: inner,
+                        arg: outer,
+                    } = &**func
+                    {
+                        if let TlaExpr::Ident(var) = &**inner {
+                            if let (Some(field), true) =
+                                (self.state_field(var), self.is_node_index(outer))
+                            {
+                                return Ok(format!("s.{field}[{binder}]"));
+                            }
                         }
                     }
                 }
@@ -1456,6 +1957,18 @@ impl<'a> ActionContext<'a> {
                 .state_field(var)
                 .ok_or_else(|| format!("unknown variable `{var}`"))?;
             return Ok(format!("s.{field}"));
+        }
+        // A literal in an enum-typed branch is a variant. Without this
+        // `jstate' = [jstate EXCEPT ![i] = IF .. THEN Ready ELSE jstate[i]]`
+        // emitted `if .. { "ready" } else { s.jstate }`, whose two branches do
+        // not even have the same type.
+        if let Some(field) = self.state_field(var) {
+            let field = field.to_string();
+            if let Some(ty @ ProjectedType::Enum { .. }) = &self.field_type(&field) {
+                if let Some(text) = self.typed_value(ty, value) {
+                    return Ok(text);
+                }
+            }
         }
         self.project_update(var, value)
     }
@@ -1771,20 +2284,31 @@ impl<'a> ActionContext<'a> {
     /// The variants a set literal names, when the left-hand side is an
     /// enum-typed field and every element resolves to one of its labels.
     fn enum_variants_of(&self, left: &TlaExpr, right: &TlaExpr) -> Option<Vec<String>> {
-        let field = self
-            .project_expr(left)
-            .ok()?
-            .strip_prefix("s.")?
-            .to_string();
         let TlaExpr::SetEnum(items) = right else {
             return None;
         };
         if items.is_empty() {
             return None;
         }
+        // The left side is usually a state field; since an action parameter can
+        // be enum-typed too -- `\E op \in {ReconfigAdd, ReconfigRemove}` is
+        // the action's own bound -- the type is asked for directly rather than
+        // via the field name. Emitting `set!["add", "remove"].contains(op)`
+        // against an enum-typed `op` is what this stops.
+        let ProjectedType::Enum { variants, .. } = self.type_of(left)? else {
+            return None;
+        };
         items
             .iter()
-            .map(|item| self.enum_variant(&field, item))
+            .map(|item| {
+                let literal = match item {
+                    TlaExpr::String(t) => t.clone(),
+                    TlaExpr::Ident(_) => self.resolve_tag(item)?,
+                    _ => return None,
+                };
+                let wanted = variant_name(&literal);
+                variants.iter().find(|v| **v == wanted).cloned()
+            })
             .collect()
     }
 
@@ -2217,6 +2741,8 @@ impl<'a> ActionContext<'a> {
                     TlaBinOp::Cup => format!("{l}.union({r})"),
                     TlaBinOp::Cap => format!("{l}.intersect({r})"),
                     TlaBinOp::Setminus => format!("{l}.difference({r})"),
+                    // Same spelling the older translator uses (translator.rs).
+                    TlaBinOp::Subseteq => format!("{l}.subset_of({r})"),
                     other => return Err(format!("operator {other:?}")),
                 };
                 Ok(rendered)
@@ -2427,7 +2953,7 @@ impl<'a> ActionContext<'a> {
                     rendered.push(self.project_expr(arg)?);
                 }
                 let _ = params;
-                Ok(format!("L{name}({})", rendered.join(", ")))
+                Ok(format!("L{}({})", rust_ident(name), rendered.join(", ")))
             }
             // `[x EXCEPT ![self] ...]` used as a value, which is how a helper
             // that returns an updated table is written.
@@ -2476,6 +3002,9 @@ impl<'a> ActionContext<'a> {
                 let value = self.project_expr_with_binder(body, var)?;
                 Ok(format!("Map::new({set}, |{var}: int| {value})"))
             }
+            // `LET a == e IN body` in a value position -- a helper body, or the
+            // right-hand side of an update. Same expansion as the conjunct form.
+            TlaExpr::LetIn { defs, body } => self.project_expr(&expand_let(defs, body)?),
             other => Err(format!("expression {}", render_source(other))),
         }
     }
@@ -2488,6 +3017,24 @@ impl<'a> ActionContext<'a> {
             if precedence(op) < parent {
                 return Ok(format!("({text})"));
             }
+        }
+        // A block-like expression in an operand position. Inlining a `LET` puts
+        // one there for the first time: `succ \cup (members \ heard)` with
+        // `succ == IF .. THEN .. ELSE ..` renders as
+        // `if .. { .. } else { .. }.union(..)`. rustc does bind the postfix to
+        // the whole `if`, so this is belt and braces rather than a fix -- but
+        // the reader cannot tell that at a glance, and neither can a
+        // hand-edited derivative.
+        if matches!(
+            expr,
+            TlaExpr::IfThenElse { .. }
+                | TlaExpr::Case { .. }
+                | TlaExpr::LetIn { .. }
+                | TlaExpr::Choose { .. }
+                | TlaExpr::Forall { .. }
+                | TlaExpr::Exists { .. }
+        ) {
+            return Ok(format!("({text})"));
         }
         Ok(text)
     }
@@ -2703,6 +3250,101 @@ fn without<'a>(
         .filter(|(k, _)| !bound.contains(&k.as_str()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect()
+}
+
+/// Expand `LET a == e1  b == e2 IN body` into `body` with the definitions
+/// substituted in.
+///
+/// Sequential *between* definitions and simultaneous *within* each, which is
+/// what TLA+ means and is the opposite of the mistake `inline_call` documents.
+/// A definition sees the ones before it, so `canStill == IsFastQuorum(succ \cup
+/// ..)` has to be built with `succ` already resolved; but the finished map is
+/// then applied to the body in one pass, so a definition whose value mentions a
+/// *later* definition's name keeps meaning the outer one.
+///
+/// Two things are refused rather than guessed:
+///
+///   - a definition whose value mentions a name the body binds, or whose own
+///     name the body rebinds. `substitute_all` does not rename binders, so
+///     `LET t == x IN \E x \in S : t` would silently capture.
+///   - a definition still present after substitution. `substitute_all` does not
+///     walk every node -- `Tuple`, `SetFilter`, `FnConstruct` and `LetIn` are
+///     missing from it -- and a name it failed to replace would be emitted as a
+///     bare identifier referring to nothing. `children` is the complete walk, so
+///     comparing against it is exactly the blind spot.
+fn expand_let(defs: &[crate::tla::ast::TlaOperator], body: &TlaExpr) -> Result<TlaExpr, String> {
+    let mut subs: BTreeMap<String, TlaExpr> = BTreeMap::new();
+    let bound = binders_in(body);
+    for def in defs {
+        if !def.params.is_empty() {
+            return Err(format!("LET definition `{}` takes parameters", def.name));
+        }
+        let value = substitute_all(&def.body, &subs);
+        if bound.contains(&def.name) {
+            return Err(format!(
+                "LET definition `{}` is rebound by a binder in the body",
+                def.name
+            ));
+        }
+        for name in idents_in(&value) {
+            if bound.contains(&name) {
+                return Err(format!(
+                    "LET definition `{}` mentions `{name}`, which the body binds",
+                    def.name
+                ));
+            }
+        }
+        subs.insert(def.name.clone(), value);
+    }
+    let expanded = substitute_all(body, &subs);
+    let residue = idents_in(&expanded);
+    if let Some(name) = subs.keys().find(|n| residue.contains(*n)) {
+        return Err(format!(
+            "LET definition `{name}` is used where the projection cannot \
+             substitute it"
+        ));
+    }
+    Ok(expanded)
+}
+
+/// Every identifier an expression mentions, bound or free.
+fn idents_in(expr: &TlaExpr) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    fn walk(e: &TlaExpr, out: &mut std::collections::BTreeSet<String>) {
+        if let TlaExpr::Ident(n) = e {
+            out.insert(n.clone());
+        }
+        for child in children(e) {
+            walk(child, out);
+        }
+    }
+    walk(expr, &mut out);
+    out
+}
+
+/// Every name a binder introduces anywhere in an expression.
+fn binders_in(expr: &TlaExpr) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    fn walk(e: &TlaExpr, out: &mut std::collections::BTreeSet<String>) {
+        match e {
+            TlaExpr::Forall { vars, .. } | TlaExpr::Exists { vars, .. } => {
+                out.extend(vars.iter().map(|v| v.var.clone()));
+            }
+            TlaExpr::Choose { var, .. }
+            | TlaExpr::SetMap { var, .. }
+            | TlaExpr::SetFilter { var, .. }
+            | TlaExpr::FnConstruct { var, .. } => {
+                out.insert(var.clone());
+            }
+            TlaExpr::LetIn { defs, .. } => out.extend(defs.iter().map(|d| d.name.clone())),
+            _ => {}
+        }
+        for child in children(e) {
+            walk(child, out);
+        }
+    }
+    walk(expr, &mut out);
+    out
 }
 
 /// Substitute one identifier. A thin wrapper over the simultaneous form --

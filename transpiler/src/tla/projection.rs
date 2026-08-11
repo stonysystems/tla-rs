@@ -787,7 +787,16 @@ fn render_set_expr(expr: &TlaExpr) -> String {
 pub fn to_snake_case(name: &str) -> String {
     let mut out = String::with_capacity(name.len() + 4);
     for (i, ch) in name.chars().enumerate() {
-        if ch.is_uppercase() {
+        // `!` is TLA+'s INSTANCE qualifier: `B!Entry` is `Entry` of the module
+        // instantiated as `B`. It is part of the name and it is not a legal
+        // Rust identifier character, so it becomes the separator it already is.
+        // Without this the tier4 composition emitted `LB!Entry` and
+        // `LJ!IsFastQuorum` -- output that does not parse.
+        if ch == '!' {
+            if !out.is_empty() && !out.ends_with('_') {
+                out.push('_');
+            }
+        } else if ch.is_uppercase() {
             if i != 0 && !out.ends_with('_') {
                 out.push('_');
             }
@@ -804,7 +813,9 @@ pub fn to_pascal_case(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut capitalize = true;
     for ch in name.chars() {
-        if ch == '_' {
+        // See `to_snake_case`: `!` is the INSTANCE qualifier, so like `_` it
+        // separates words rather than appearing in the identifier.
+        if ch == '_' || ch == '!' {
             capitalize = true;
         } else if capitalize {
             out.extend(ch.to_uppercase());
