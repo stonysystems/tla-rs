@@ -20,7 +20,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::tla::ast::{TlaBinOp, TlaExceptPath, TlaExpr, TlaModule, TlaUnaryOp};
+use crate::tla::ast::{TlaBinOp, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaModule, TlaUnaryOp};
 use crate::tla::clean_subset::node_parameterized_operators;
 use crate::tla::projection::{
     to_snake_case, ProjectedSpec, ProjectedType, ProjectionError, ROUTING_FIELDS, TAG_FIELDS,
@@ -838,6 +838,30 @@ impl<'a> ActionContext<'a> {
         variants.iter().find(|v| **v == wanted).cloned()
     }
 
+    /// The variant a literal names in a position whose type is an enum,
+    /// qualified by the enum's own name.
+    ///
+    /// [`enum_variant`] answers the same question for a *state field*, where
+    /// the caller already knows it is writing `s.f is Variant`. A record
+    /// literal has no state field to look up -- the type comes from the record
+    /// declaration -- and it needs the qualified `LEnum::Variant`, because the
+    /// value sits in a struct-literal field rather than in an `is` test.
+    fn enum_literal(&self, ty: &ProjectedType, expr: &TlaExpr) -> Option<String> {
+        let ProjectedType::Enum { name, variants } = ty else {
+            return None;
+        };
+        let literal = match expr {
+            TlaExpr::String(literal) => literal.clone(),
+            TlaExpr::Ident(_) => self.resolve_tag(expr)?,
+            _ => return None,
+        };
+        let wanted = variant_name(&literal);
+        variants
+            .iter()
+            .find(|v| **v == wanted)
+            .map(|v| format!("{name}::{v}"))
+    }
+
     /// Render a value in a position whose type is known, which is what makes
     /// `Set::<int>::empty()` and the `int` suffix inside a `Map::new` closure
     /// possible -- Verus cannot infer either from the expression alone.
@@ -1436,6 +1460,67 @@ impl<'a> ActionContext<'a> {
         self.project_update(var, value)
     }
 
+    /// Whether an expression denotes the acting node's own entry of `var` --
+    /// either `var[self]` written out, or the `@` of an enclosing `![self]`
+    /// update, which names the same value.
+    fn is_own_entry(&self, var: &str, expr: &TlaExpr) -> bool {
+        match expr {
+            TlaExpr::Ident(name) => name == "@",
+            TlaExpr::FnApply { func, arg } => {
+                matches!(&**func, TlaExpr::Ident(name) if name == var) && self.is_node_index(arg)
+            }
+            _ => false,
+        }
+    }
+
+    /// `![k] = e, ..` applied to the node's own entry of `field`, which after
+    /// projection *is* `s.field`. The nested spelling of a two-level EXCEPT
+    /// ends where the flat `![self][k]` one does: `.insert(k, e)`. The two are
+    /// not interchangeable in general -- the flat spelling still cannot
+    /// project an `@` in its value, see the `old_value` match below -- but
+    /// where both project they agree.
+    ///
+    /// Restricted to a map-typed field on purpose. A sequence-typed one would
+    /// need `.update(k - 1, e)` -- Verus's `Seq::insert` shifts the tail, and
+    /// the index would lose one -- and an EXCEPT that guessed between the two
+    /// is the off-by-one `project_index` exists to prevent. So it is a gap.
+    fn project_entry_updates(
+        &self,
+        field: &str,
+        updates: &[TlaExceptUpdate],
+    ) -> Result<String, String> {
+        let ty = self.field_type(field);
+        if !matches!(ty, Some(ProjectedType::Map(..))) {
+            return Err(format!(
+                "EXCEPT over the acting node's own `{field}`, which projects to \
+                 `{}`; only a map is updated by key",
+                ty.map(|t| t.render()).unwrap_or_else(|| "?".to_string())
+            ));
+        }
+        let mut acc = format!("s.{field}");
+        for update in updates {
+            let [TlaExceptPath::Index(key)] = update.path.as_slice() else {
+                return Err(format!(
+                    "EXCEPT over the acting node's own `{field}` with a \
+                     {}-component path",
+                    update.path.len()
+                ));
+            };
+            let key = self.project_expr(key)?;
+            // `@` binds to the original function's entry, `s.field[k]`, not to
+            // the accumulator -- the same choice the multi-update path above
+            // makes. It is not literally TLA+'s rule: `[f EXCEPT ![a] = e1,
+            // ![b] = e2]` is defined as `[[f EXCEPT ![a] = e1] EXCEPT ![b] =
+            // e2]`, so `e2`'s `@` sees the partial update. The two agree
+            // unless one EXCEPT writes the same key twice, and disagreeing
+            // with the path above would be worse than agreeing with it.
+            let old = TlaExpr::Ident(format!("{PROJECTED_MARK}s.{field}[{key}]"));
+            let value = self.project_expr(&substitute(&update.value, "@", &old))?;
+            acc = format!("{acc}.insert({key}, {value})");
+        }
+        Ok(acc)
+    }
+
     /// The right-hand side of `x' = ...`, projected to the new value of the
     /// node's field.
     fn project_update(&self, var: &str, rhs: &TlaExpr) -> Result<String, String> {
@@ -1484,6 +1569,29 @@ impl<'a> ActionContext<'a> {
                     return Ok(acc);
                 }
                 let update = &updates[0];
+                // `[x EXCEPT ![self] = [x[self] EXCEPT ![k] = e]]` -- the nested
+                // spelling of `[x EXCEPT ![self][k] = e]`. TLA+ gives the two the
+                // same meaning; only the flat one used to project, so jetpack's
+                // `cmdPool` update was reported as a gap.
+                //
+                // It is recognised here, before the `@` substitution below, on
+                // purpose: an `@` inside the inner EXCEPT is the *inner*
+                // function's old value, and `substitute` does not know `@` is
+                // rebound, so it would capture it and silently read the whole
+                // table where the source asked for one key of it.
+                if let [TlaExceptPath::Index(index)] = update.path.as_slice() {
+                    if self.is_node_index(index) {
+                        if let TlaExpr::FnExcept {
+                            func: inner,
+                            updates: inner_updates,
+                        } = &update.value
+                        {
+                            if self.is_own_entry(var, inner) {
+                                return self.project_entry_updates(field, inner_updates);
+                            }
+                        }
+                    }
+                }
                 // `@` inside an EXCEPT is the component's old value. What that
                 // is depends on the path, so it is substituted before the value
                 // is projected.
@@ -2120,7 +2228,11 @@ impl<'a> ActionContext<'a> {
             // TLA+ records are structural, so the names are what identify one.
             TlaExpr::Record(fields) => {
                 let names: Vec<String> = fields.iter().map(|(n, _)| to_snake_case(n)).collect();
-                let Some((struct_name, _)) = self.spec.records.iter().find(|(_, fs)| {
+                // First match by field-name set. Two declared records sharing a
+                // field-name set but differing in which field is enum-typed
+                // would get the wrong enum qualified below -- pre-existing for
+                // the struct name, newly extended to the field values.
+                let Some((struct_name, declared)) = self.spec.records.iter().find(|(_, fs)| {
                     fs.len() == names.len() && fs.iter().all(|(f, _)| names.contains(f))
                 }) else {
                     return Err(format!(
@@ -2129,12 +2241,44 @@ impl<'a> ActionContext<'a> {
                 };
                 let rendered: Result<Vec<String>, String> = fields
                     .iter()
-                    .map(|(n, v)| Ok(format!("{}: {}", to_snake_case(n), self.project_expr(v)?)))
+                    .map(|(n, v)| {
+                        let name = to_snake_case(n);
+                        // A field the declaration types as an enum takes a
+                        // variant, not the `&str` the source spells: `Entry`'s
+                        // `command` is `LEntryCommand`, and
+                        // `command |-> InitClusterCommand` must render as
+                        // `LEntryCommand::InitCluster`.
+                        let value = match declared
+                            .iter()
+                            .find(|(f, _)| *f == name)
+                            .and_then(|(_, ty)| self.enum_literal(ty, v))
+                        {
+                            Some(variant) => variant,
+                            None => self.project_expr(v)?,
+                        };
+                        Ok(format!("{name}: {value}"))
+                    })
                     .collect();
                 Ok(format!("{struct_name} {{ {} }}", rendered?.join(", ")))
             }
             TlaExpr::SetEnum(items) if items.is_empty() => Ok("Set::empty()".to_string()),
             TlaExpr::Tuple(items) if items.is_empty() => Ok("Seq::empty()".to_string()),
+            // `<<a, b, c>>`. A TLA+ tuple *is* the sequence `[i \in 1..n |-> ..]`
+            // -- the language has no separate product type -- so a literal one
+            // projects to a `Seq` literal, exactly as `{a, b}` projects to
+            // `set![a, b]` just below. Verus's `Seq` is homogeneous, so a spec
+            // that uses a tuple as a heterogeneous pair still does not project;
+            // `t2_02_epaxos` rewrites that shape as a record for the same reason.
+            //
+            // A tuple reaching a field whose projected type is not a `Seq` now
+            // emits rather than gapping. That is loud, not silent -- Verus
+            // rejects `Seq<int>` against `int` -- and the `SetEnum` arm beside
+            // it has carried the same exposure all along.
+            TlaExpr::Tuple(items) => {
+                let rendered: Result<Vec<String>, String> =
+                    items.iter().map(|i| self.project_expr(i)).collect();
+                Ok(format!("seq![{}]", rendered?.join(", ")))
+            }
             TlaExpr::SetEnum(items) => {
                 let rendered: Result<Vec<String>, String> =
                     items.iter().map(|i| self.project_expr(i)).collect();
@@ -2285,6 +2429,24 @@ impl<'a> ActionContext<'a> {
                 },
                 self.project_expr_with_binder(body, var)?
             )),
+            // `{j \in Server : matchIndex[i][j] >= k}` -- a set comprehension
+            // with a *filter* rather than a map. This is P4's own shape: every
+            // counted quorum in the corpus is written as
+            // `Cardinality({j \in S : P(j)}) * 2 > Cardinality(S)`, and until
+            // now the set inside the count was refused.
+            //
+            // `project_set_valued` on the domain, not `project_expr`, for the
+            // same reason a table's domain uses it: the guard is what stops a
+            // domain of unknown type from emitting a name that does not exist.
+            TlaExpr::SetFilter { var, set, filter } => {
+                let domain = self.project_set_valued(set)?;
+                let elem = match self.type_of(set) {
+                    Some(ProjectedType::Set(elem)) => elem.render(),
+                    _ => "int".to_string(),
+                };
+                let predicate = self.project_expr_with_binder(filter, var)?;
+                Ok(format!("{domain}.filter(|{var}: {elem}| {predicate})"))
+            }
             // `[d \in Node |-> e]` -- a table built over the peers.
             TlaExpr::FnConstruct { var, domain, body } => {
                 let set = self.project_set_valued(domain)?;
@@ -2322,6 +2484,25 @@ impl<'a> ActionContext<'a> {
                     }
                 }
                 Err(format!("quantifier domain {}", render_source(set)))
+            }
+            // `\E k \in 1 .. Len(log[i])` -- a binder over an integer range.
+            // A range has no projected *value*, which is the same reason
+            // `x \in a .. b` is emitted as a comparison rather than a
+            // `contains`, so the domain becomes a bound on the emitted
+            // parameter instead.
+            //
+            // The node set is tried first, and the guard is not decoration: a
+            // spec may spell its own node set as a range (`Proc == 0 .. N-1`),
+            // `as_range` follows a name to its body, and without the guard this
+            // arm would take those binders over from `project_node_set` and
+            // change what an already-projecting spec emits.
+            other if self.project_node_set(other).is_err() && self.as_range(other).is_some() => {
+                let (low, high) = self.as_range(other).expect("guarded above");
+                Ok(format!(
+                    "{} <= {var} && {var} <= {}",
+                    self.parenthesised(&low, precedence(&TlaBinOp::Leq))?,
+                    self.parenthesised(&high, precedence(&TlaBinOp::Leq))?
+                ))
             }
             // The node set, or -- as EPaxos's `\E rec \in cmdLog[i]` needs --
             // any set-valued expression the node itself holds. See
@@ -2727,6 +2908,122 @@ Next == \E self \in Proc :
         assert!(
             !body.contains("epoch[cmd]") && !body.contains("dst: cmd"),
             "a parameter captured an identifier from an earlier argument: {body}"
+        );
+    }
+
+    /// `<< e >>` -- a tuple literal with an element in it.
+    ///
+    /// TLA+ has no product type: `<<a, b>>` *is* the sequence
+    /// `[i \in 1..2 |-> ..]`, so a tuple literal projects to `seq![..]`. The
+    /// tier4 Jetpack composition's `Init` gives every member the
+    /// cluster-forming entry -- `<< B!FirstEntry >>` -- and until this the
+    /// whole spec was refused over that one conjunct.
+    ///
+    /// The element is a record whose `command` field is enum-typed, which is
+    /// the other half of the same conjunct: the source spells the variant as a
+    /// string, and `&str` does not typecheck against `LEntryCommand`.
+    #[test]
+    fn projects_a_tuple_literal_as_a_sequence_literal() {
+        const TUPLE: &str = r#"---- MODULE Test ----
+VARIABLES log, network
+Message == [type: {"ping"}, src: Proc, dst: Proc]
+Entry == [command: {"append", "initCluster"}, term: Nat]
+FirstEntry == [command |-> "initCluster", term |-> 0]
+TypeOK == log \in [Proc -> Seq(Entry)]
+Init == /\ log = [p \in Proc |-> << FirstEntry >>]
+        /\ network = {}
+Step(p, m) == /\ m.type = "ping"
+              /\ log' = [log EXCEPT ![p] = Append(log[p], FirstEntry)]
+              /\ network' = network \ {m}
+Next == \E p \in Proc : \E m \in network : Step(p, m)
+===="#;
+        let module = parse_module(TUPLE).expect("test spec must parse");
+        let projected = project(&module).expect("test spec must be clean");
+        assert!(
+            projected.init_gaps.is_empty(),
+            "a tuple literal must project: {:?}",
+            projected.init_gaps
+        );
+        let init = projected.init.join(" ");
+        assert!(
+            init.contains("seq![LEntry { command: LEntryCommand::InitCluster, term: 0 }]"),
+            "a one-element tuple is a one-element Seq, and an enum-typed field \
+             takes a variant rather than a string: {init}"
+        );
+    }
+
+    /// `\E k \in 1 .. Len(log[i])` -- Raft's `AdvanceCommitIndex`. A range has
+    /// no projected *value*, so it cannot become a `.contains(k)`; the domain
+    /// is a bound on the emitted parameter instead. The index inside the body
+    /// still loses one, because TLA+ counts from 1 and Verus's `Seq` from 0.
+    #[test]
+    fn a_range_binder_becomes_a_bound_on_the_parameter() {
+        let source = r#"---- MODULE Test ----
+VARIABLES log, commitIndex
+TypeOK == /\ log \in [Proc -> Seq(Nat)]
+          /\ commitIndex \in [Proc -> Nat]
+Step(p) == \E k \in 1 .. Len(log[p]) :
+             /\ k > commitIndex[p]
+             /\ log[p][k] = 0
+             /\ commitIndex' = [commitIndex EXCEPT ![p] = k]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let acts = actions(source);
+        let body = action(&acts, "Step").conjuncts.join(" ");
+        assert!(
+            body.contains("1 <= k && k <= (s.log.len() as int)"),
+            "the range becomes a bound on the parameter: {body}"
+        );
+        assert!(
+            body.contains("s.log[k - 1]"),
+            "TLA+ counts from 1 and Verus's Seq from 0: {body}"
+        );
+    }
+
+    /// A spec may spell its own node set as a range (`Proc == 1 .. NP`).
+    /// `project_node_set` answers such a binder with the node-set constant
+    /// today, and has to go on doing so: `as_range` follows the name to its
+    /// body, so without the guard the range arm would take the binder over and
+    /// change what an already-projecting spec emits.
+    #[test]
+    fn a_binder_over_a_node_set_written_as_a_range_is_still_the_node_set() {
+        let source = r#"---- MODULE Test ----
+CONSTANT NP
+Proc == 1 .. NP
+VARIABLES ok
+TypeOK == ok \in [Proc -> BOOLEAN]
+Step(p) == /\ \A q \in Proc : ok[p]
+           /\ ok' = [ok EXCEPT ![p] = FALSE]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let acts = actions(source);
+        assert!(
+            action(&acts, "Step")
+                .conjuncts
+                .iter()
+                .any(|c| c.contains("c.proc.contains(q)")),
+            "got {:?}",
+            action(&acts, "Step").conjuncts
+        );
+    }
+
+    /// `{j \in S : P(j)}` -- the set inside every counted quorum in the corpus.
+    #[test]
+    fn a_filtered_set_comprehension_projects_to_filter() {
+        let source = r#"---- MODULE Test ----
+VARIABLES matchIndex, ok
+TypeOK == /\ matchIndex \in [Proc -> [Proc -> Nat]]
+          /\ ok \in [Proc -> BOOLEAN]
+Step(p) == /\ Cardinality({q \in Proc : matchIndex[p][q] >= 1}) * 2 > Cardinality(Proc)
+           /\ ok' = [ok EXCEPT ![p] = TRUE]
+           /\ UNCHANGED matchIndex
+Next == \E p \in Proc : Step(p)
+===="#;
+        let acts = actions(source);
+        let body = action(&acts, "Step").conjuncts.join(" ");
+        assert!(
+            body.contains("c.proc.filter(|q: int| s.match_index[q] >= 1)"),
+            "the counted set must project: {body}"
         );
     }
 
