@@ -159,7 +159,7 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
     };
 
     let mut gaps = Vec::new();
-    let messages = ctx.project_messages(&mut gaps);
+    let mut messages = ctx.project_messages(&mut gaps);
 
     let mut state_fields = Vec::new();
     let mut enums = Vec::new();
@@ -204,6 +204,34 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
                 "variable `{var}` is per-node but its element type could not be \
                  read off a declaration"
             )),
+        }
+    }
+
+    // A message field declared with an inline set of literals --
+    // `mresult: {Ok, StaleTerm, EntryMismatch}` -- is an enum the source never
+    // named, exactly like an unnamed enum inside a record. Unnamed, it is
+    // dropped from `enums` and never declared, and the emitter writes
+    // `Resp { res:  }` -- a field with **no type at all**, and a guard
+    // `res is Ok` naming a variant of nothing.
+    //
+    // The same defect was found and fixed for records-in-state (EPaxos's
+    // `status`) and the message path was missed. Named after the variant and
+    // the field, which is the only naming available: the source has none.
+    for variant in &mut messages {
+        for (field, ty) in &mut variant.fields {
+            name_nested_enums(ty, &mut enums);
+            if let ProjectedType::Enum { name, variants } = ty {
+                if name.is_empty() {
+                    *name = format!(
+                        "L{}{}",
+                        to_pascal_case(&variant.name),
+                        to_pascal_case(field)
+                    );
+                    if !enums.iter().any(|(n, _)| *n == *name) {
+                        enums.push((name.clone(), variants.clone()));
+                    }
+                }
+            }
         }
     }
 

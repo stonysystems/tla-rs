@@ -344,6 +344,21 @@ fn rewrite(
             then_expr: Box::new(go(then_expr, shadowed)),
             else_expr: Box::new(go(else_expr, shadowed)),
         },
+        // `CASE` branches like `IF`, and its arms are ordinary expressions of
+        // the instantiated module. Without this arm the whole CASE fell to the
+        // catch-all clone below, so references to the module's *own*
+        // definitions kept their bare names while every other position was
+        // qualified: base Raft's `CASE m.mresult = Ok -> ..` stayed `Ok` where
+        // `<<Ok, 2>>` two lines away became `<<B!Ok, 2>>`. `Ok` then resolves
+        // to no operator, and the guard projects to a bare `Ok` -- a name the
+        // emitted spec never declares.
+        TlaExpr::Case { arms, other } => TlaExpr::Case {
+            arms: arms
+                .iter()
+                .map(|(cond, result)| (go(cond, shadowed), go(result, shadowed)))
+                .collect(),
+            other: other.as_ref().map(|e| Box::new(go(e, shadowed))),
+        },
         TlaExpr::Unchanged(items) => {
             TlaExpr::Unchanged(items.iter().map(|i| go(i, shadowed)).collect())
         }

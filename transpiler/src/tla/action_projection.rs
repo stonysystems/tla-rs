@@ -1642,6 +1642,29 @@ impl<'a> ActionContext<'a> {
                 self.project_branch_value(var, then_expr)?,
                 self.project_branch_value(var, else_expr)?
             )),
+            // `x' = CASE p -> a [] q -> b [] OTHER -> x`. The same shape as the
+            // `IF` above with one level per arm, so it is folded into nested
+            // `IF`s and projected by that arm rather than rendered again here.
+            // Folding is what keeps `OTHER -> x` meaning "leave it alone":
+            // `project_branch_value` is the only place that rule lives.
+            //
+            // Arms are taken in order. TLA+ defines `CASE` by `CHOOSE`, so the
+            // value is unspecified when two guards hold at once; first-match is
+            // TLC's rule and the one `translator.rs::translate_case` already
+            // follows, and Raft's two guards here are disjoint tests on one
+            // enum field, so nothing is lost for this spec.
+            //
+            // A `CASE` with no `OTHER` has *no value* when no guard holds, so
+            // it is a gap rather than an invented default.
+            TlaExpr::Case { arms, other } => {
+                let Some(other) = other else {
+                    return Err(format!(
+                        "CASE without an OTHER arm assigned to `{var}`: it has no \
+                         value when no guard holds"
+                    ));
+                };
+                self.project_update(var, &case_as_if_then_else(arms, other))
+            }
             other => self.project_expr(other),
         }
     }
@@ -2629,6 +2652,22 @@ fn precedence(op: &TlaBinOp) -> u8 {
     }
 }
 
+/// `CASE p -> a [] q -> b [] OTHER -> c` as `IF p THEN a ELSE IF q THEN b ELSE c`.
+///
+/// Desugaring rather than rendering is deliberate: the arms then travel through
+/// exactly the code an `IF` does, so the rules about what a branch value means
+/// -- and the `@` substitution inside an EXCEPT in one of them -- stay in one
+/// place.
+fn case_as_if_then_else(arms: &[(TlaExpr, TlaExpr)], other: &TlaExpr) -> TlaExpr {
+    arms.iter()
+        .rev()
+        .fold(other.clone(), |acc, (cond, result)| TlaExpr::IfThenElse {
+            cond: Box::new(cond.clone()),
+            then_expr: Box::new(result.clone()),
+            else_expr: Box::new(acc),
+        })
+}
+
 /// For `[x EXCEPT ![self] = v]`, the value `v`; otherwise the expression
 /// itself. Used where the *assigned* value's type matters.
 fn assigned_value(expr: &TlaExpr, is_node: impl Fn(&TlaExpr) -> bool) -> &TlaExpr {
@@ -2721,6 +2760,18 @@ fn substitute_all(expr: &TlaExpr, subs: &BTreeMap<String, TlaExpr>) -> TlaExpr {
             cond: Box::new(substitute_all(cond, subs)),
             then_expr: Box::new(substitute_all(then_expr, subs)),
             else_expr: Box::new(substitute_all(else_expr, subs)),
+        },
+        // `CASE` binds nothing, so its arms substitute like any other
+        // expression. Leaving it to the catch-all clone below meant a parameter
+        // mentioned only inside a `CASE` survived `inline_call` unsubstituted --
+        // the same failure mode as the capture bug this function was written
+        // for, and one that produces wrong output rather than a gap.
+        TlaExpr::Case { arms, other } => TlaExpr::Case {
+            arms: arms
+                .iter()
+                .map(|(cond, result)| (substitute_all(cond, subs), substitute_all(result, subs)))
+                .collect(),
+            other: other.as_ref().map(|e| Box::new(substitute_all(e, subs))),
         },
         // Quantifiers and CHOOSE bind their own variable, so a binder that
         // shadows a parameter hides *that* parameter -- and only that one --
@@ -3024,6 +3075,100 @@ Next == \E p \in Proc : Step(p)
         assert!(
             body.contains("c.proc.filter(|q: int| s.match_index[q] >= 1)"),
             "the counted set must project: {body}"
+        );
+    }
+
+    /// `x' = CASE p -> a [] q -> b [] OTHER -> x`, folded into nested `IF`s so
+    /// the arms travel the code an `IF` does -- which is where `OTHER -> x`
+    /// keeps meaning "leave it alone".
+    #[test]
+    fn a_case_on_the_right_of_an_update_projects() {
+        const CASE_UPDATE: &str = r#"---- MODULE Test ----
+VARIABLES x, pc, network
+Message == [type: {"val"}, src: Proc, dst: Proc, val: Nat]
+TypeOK == /\ x \in [Proc -> Nat]
+          /\ pc \in [Proc -> {"a", "b"}]
+Recv(self, m) == /\ m.type = "val"
+                 /\ x' = CASE m.val = 0 -> [x EXCEPT ![self] = 1]
+                           [] m.val = 1 -> [x EXCEPT ![self] = 2]
+                           [] OTHER -> x
+                 /\ network' = network \ {m}
+                 /\ UNCHANGED pc
+Next == \E self \in Proc : \E m \in network : Recv(self, m)
+===="#;
+        let acts = actions(CASE_UPDATE);
+        let recv = action(&acts, "Recv");
+        assert!(recv.gaps.is_empty(), "CASE must project: {:?}", recv.gaps);
+        let body = recv.conjuncts.join(" ");
+        assert!(
+            body.contains("if val == 0 { 1 } else { if val == 1 { 2 } else { s.x } }"),
+            "arms in order, and OTHER leaves the field alone: {body}"
+        );
+    }
+
+    /// A `CASE` with no `OTHER` has no value when no guard holds, so assigning
+    /// one is a gap rather than an invented default.
+    #[test]
+    fn a_case_without_an_other_arm_is_a_gap() {
+        const NO_OTHER: &str = r#"---- MODULE Test ----
+VARIABLES x, pc, network
+Message == [type: {"val"}, src: Proc, dst: Proc, val: Nat]
+TypeOK == /\ x \in [Proc -> Nat]
+          /\ pc \in [Proc -> {"a", "b"}]
+Recv(self, m) == /\ m.type = "val"
+                 /\ x' = CASE m.val = 0 -> [x EXCEPT ![self] = 1]
+                           [] m.val = 1 -> [x EXCEPT ![self] = 2]
+                 /\ network' = network \ {m}
+                 /\ UNCHANGED pc
+Next == \E self \in Proc : \E m \in network : Recv(self, m)
+===="#;
+        let acts = actions(NO_OTHER);
+        assert!(
+            action(&acts, "Recv")
+                .gaps
+                .iter()
+                .any(|g| g.contains("CASE without an OTHER arm")),
+            "got {:?}",
+            action(&acts, "Recv").gaps
+        );
+    }
+
+    /// A message field declared with an inline set of literals is an enum the
+    /// source never named. Unnamed it was dropped from the declarations and the
+    /// emitter wrote `Resp { res:  }` -- a field with no type at all, and a
+    /// guard `res is Ok` naming a variant of nothing. The same defect was found
+    /// and fixed for records-in-state; the message path was missed.
+    #[test]
+    fn an_inline_enum_in_a_message_field_is_named_and_declared() {
+        const ENUM_FIELD: &str = r#"---- MODULE Test ----
+VARIABLES x, network
+Message == [type: {"resp"}, src: Proc, dst: Proc,
+            res: {"ok", "stale"}]
+TypeOK == x \in [Proc -> Nat]
+Init == /\ x = [p \in Proc |-> 0]
+        /\ network = {}
+Recv(self, m) == /\ m.type = "resp"
+                 /\ x' = [x EXCEPT ![self] = IF m.res = "ok" THEN 1 ELSE 0]
+                 /\ network' = network \ {m}
+Next == \E self \in Proc : \E m \in network : Recv(self, m)
+===="#;
+        let module = parse_module(ENUM_FIELD).expect("test spec must parse");
+        let spec = project_module(&module).expect("test spec must be clean");
+        let res_ty = spec
+            .messages
+            .iter()
+            .flat_map(|v| v.fields.iter())
+            .find(|(f, _)| f == "res")
+            .map(|(_, t)| t.render())
+            .expect("the message has a `res` field");
+        assert!(
+            !res_ty.is_empty(),
+            "an unnamed enum renders as the empty string, which emits `res: `"
+        );
+        assert!(
+            spec.enums.iter().any(|(n, _)| *n == res_ty),
+            "the enum must also be declared, not just named: {res_ty} not in {:?}",
+            spec.enums.iter().map(|(n, _)| n).collect::<Vec<_>>()
         );
     }
 
