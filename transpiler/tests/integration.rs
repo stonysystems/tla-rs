@@ -5132,6 +5132,7 @@ fn test_generate_messages_paxos() {
         enum_name: "PaxosMessage".to_string(),
         import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
         doc_comment: String::new(),
+        extra_imports: vec![],
         variants: vec![
             verus_transpiler::MessageVariant {
                 name: "Prepare".to_string(),
@@ -5405,21 +5406,19 @@ fn run_roundtrip_test(toml_path: &str) {
             for (fi, field) in variant.fields.iter().enumerate() {
                 let fname = &field[0];
                 let ftype = &field[1];
-                let val = if ftype == "bool" {
-                    if fi % 2 == 0 {
-                        "true"
-                    } else {
-                        "false"
-                    }
-                } else {
-                    // Use i*100 + fi to get unique non-zero values
-                    &format!("{}u64", i * 100 + fi + 1)
-                };
-                // Need to own the string for bool case
                 let val_owned = if ftype == "bool" {
-                    val.to_string()
-                } else {
+                    if fi % 2 == 0 {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
+                    }
+                } else if ftype == "u64" {
+                    // Use i*100 + fi to get unique non-zero values
                     format!("{}u64", i * 100 + fi + 1)
+                } else {
+                    // Custom type: construct through the same From<u64> the
+                    // generated deserializer uses.
+                    format!("<{}>::from({}u64)", ftype, i * 100 + fi + 1)
                 };
                 field_inits.push(format!("{}: {}", fname, val_owned));
             }
@@ -5469,15 +5468,35 @@ fn run_roundtrip_test(toml_path: &str) {
         enum_name
     ));
 
-    // Remove the ProtocolMessage import and inner doc comments from generated code
+    // Remove all crate-path imports (the trait import plus any
+    // extra_imports for custom field types) and inner doc comments; the
+    // standalone unit provides its own trait and type stubs.
     let cleaned_code: String = generated_code
         .lines()
-        .filter(|line| {
-            !line.starts_with("use crate::common::framework::protocol_trait::ProtocolMessage;")
-                && !line.starts_with("//!")
-        })
+        .filter(|line| !line.starts_with("use crate::") && !line.starts_with("//!"))
         .collect::<Vec<_>>()
         .join("\n");
+
+    // Stub every custom field type: a u64 newtype with the same From
+    // conversions the real type provides. The harness needs no knowledge of
+    // the real variants — the wire format is u64 either way.
+    let mut custom_types: Vec<&str> = msg_config
+        .variants
+        .iter()
+        .flat_map(|v| v.fields.iter())
+        .map(|f| f[1].as_str())
+        .filter(|t| *t != "u64" && *t != "bool")
+        .collect();
+    custom_types.sort_unstable();
+    custom_types.dedup();
+    let mut type_stubs = String::new();
+    for ty in &custom_types {
+        type_stubs.push_str(&format!(
+            "#[derive(Clone)]\npub struct {ty}(u64);\n\
+             impl From<u64> for {ty} {{ fn from(v: u64) -> Self {{ {ty}(v) }} }}\n\
+             impl From<&{ty}> for u64 {{ fn from(t: &{ty}) -> u64 {{ t.0 }} }}\n"
+        ));
+    }
 
     let test_program = format!(
         r#"// Auto-generated round-trip test
@@ -5487,13 +5506,14 @@ trait ProtocolMessage: Sized {{
 }}
 
 {}
+{}
 
 fn main() {{
 {}
     println!("All round-trip tests passed for {}");
 }}
 "#,
-        cleaned_code, test_body, enum_name,
+        type_stubs, cleaned_code, test_body, enum_name,
     );
 
     // Write to temp file, compile, and run
@@ -5648,8 +5668,11 @@ fn test_analyze_lnext_leader_election() {
 #[test]
 fn test_analyze_lnext_raft() {
     let config = analyze_lnext("../src/protocol/Raft/raft.rs");
-    // Phase 27.4: LNext now uses 5 composite branches
-    assert_eq!(config.actions.len(), 5, "Raft has 5 composite actions");
+    // Membership change (PR #2) added LAppendConfigurationEntry as a sixth
+    // spec-level branch; the executable scheduler still covers five (the
+    // TOML pins action_count = 5 until native Configuration serialization
+    // exists), but this analysis reads the spec.
+    assert_eq!(config.actions.len(), 6, "Raft has 6 composite actions");
     let names: Vec<&str> = config
         .actions
         .iter()
@@ -5660,6 +5683,7 @@ fn test_analyze_lnext_raft() {
     assert!(names.contains(&"LSendAppendEntries"));
     assert!(names.contains(&"LHandleMessage"));
     assert!(names.contains(&"LTryAdvanceCommitIndex"));
+    assert!(names.contains(&"LAppendConfigurationEntry"));
 }
 
 #[test]
@@ -6682,6 +6706,24 @@ fn compile_scaffold(toml_path: &str, protocol: &str) {
         .expect("load toml");
     let msg = config.messages.as_ref().expect("messages");
     let msg_enum = msg.enum_name.clone();
+    // Unit stubs for custom message field types (e.g. CLogValue): the
+    // scaffold only needs the names to resolve, not the real shapes.
+    let mut scaffold_custom: Vec<&str> = msg
+        .variants
+        .iter()
+        .flat_map(|v| v.fields.iter())
+        .filter(|f| f.len() >= 2)
+        .map(|f| f[1].as_str())
+        .filter(|t| *t != "u64" && *t != "bool")
+        .collect();
+    scaffold_custom.sort_unstable();
+    scaffold_custom.dedup();
+    let custom_type_stubs = scaffold_custom
+        .iter()
+        .map(|ty| format!("pub struct {};", ty))
+        .collect::<Vec<_>>()
+        .join("\n                ");
+
     let msg_variants = msg
         .variants
         .iter()
@@ -6811,6 +6853,7 @@ pub mod crate_stub {{
             pub mod {gen_module} {{
                 pub struct CConstants;
                 impl Default for CConstants {{ fn default() -> Self {{ CConstants }} }}
+                {custom_type_stubs}
                 {cstate_def}
                 {cstate_init}
             }}
@@ -6822,6 +6865,7 @@ pub mod crate_stub {{
     pub mod implementation {{
         pub mod {protocol} {{
             pub mod message {{
+                use super::super::super::generated::{protocol}::types_gen::*;
                 pub enum {msg_enum} {{
                     {msg_variants}
                 }}
@@ -6834,6 +6878,7 @@ pub mod crate_stub {{
         gen_module = format!("{}_gen", protocol.to_lowercase()),
         msg_enum = msg_enum,
         msg_variants = msg_variants,
+        custom_type_stubs = custom_type_stubs,
         cstate_def = cstate_def,
         cstate_init = cstate_init,
     );
@@ -16939,13 +16984,17 @@ fn test_model_check_raft_blocker_existential_expansion_limit_is_reproducible() {
         "Raft model-check should fail until existential-domain expansion is further pruned/bounded."
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
+    // The membership-change fields (PR #2) enlarged LState's candidate space,
+    // so struct-candidate expansion now trips the limit before the
+    // existential-domain expansion that used to be the recorded blocker.
     assert!(
-        stderr.contains("Existential domain expansion exceeded limit (200"),
-        "expected existential expansion blocker in stderr, got: {}",
+        stderr.contains("candidate expansion for struct `LState`")
+            && stderr.contains("exceeded limit (200)"),
+        "expected LState candidate-expansion blocker in stderr, got: {}",
         stderr
     );
     assert!(
-        stderr.contains("Reduce quantifier domains/collection bounds or increase"),
+        stderr.contains("Narrow domains or increase"),
         "expected expansion-limit guidance in stderr, got: {}",
         stderr
     );

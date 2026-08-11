@@ -1722,3 +1722,25 @@ pub fn Chas_active_commit_quorum(
 }
 
 } // verus!
+
+// Wire conversions for CLogValue, outside the verus! block: the generated
+// message serialization (message.rs) carries the payload as a fixed 8-byte
+// u64 field and converts through these impls. Ordinary Data payloads keep
+// their value; Configuration payloads wire as 0 for now — the executable
+// scheduler does not send configuration entries yet (LAppendConfigurationEntry
+// is spec-level), so this arm is unreachable at runtime until native
+// Configuration serialization lands, at which point the wire format grows.
+impl From<&CLogValue> for u64 {
+    fn from(payload: &CLogValue) -> u64 {
+        match payload {
+            CLogValue::Data { value } => *value,
+            CLogValue::Configuration { phase: _ } => 0,
+        }
+    }
+}
+
+impl From<u64> for CLogValue {
+    fn from(wire: u64) -> CLogValue {
+        CLogValue::Data { value: wire }
+    }
+}

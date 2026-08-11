@@ -100,17 +100,8 @@ impl ProtocolMessage for RaftMessage {
                 buf.extend_from_slice(&prev_log_index.to_le_bytes());
                 buf.extend_from_slice(&prev_log_term.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-                // Compatibility encoding: ordinary Data payloads preserve their
-                // value. Full configuration-payload encoding is added separately.
-                let payload_value: u64 = match payload {
-                    CLogValue::Data {
-                        value: data_value,
-                    } => *data_value,
-                    CLogValue::Configuration {
-                        phase: _,
-                    } => *value,
-                };
-                buf.extend_from_slice(&payload_value.to_le_bytes());
+                let payload_wire: u64 = u64::from(payload);
+                buf.extend_from_slice(&payload_wire.to_le_bytes());
                 let has_entry_val: u64 = if *has_entry { 1 } else { 0 };
                 buf.extend_from_slice(&has_entry_val.to_le_bytes());
                 buf.extend_from_slice(&leader_commit.to_le_bytes());
@@ -167,10 +158,7 @@ impl ProtocolMessage for RaftMessage {
                 Some(RaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term })
             },
             TAG_APPEND_ENTRIES => {
-                // The original Data-only format used 64 bytes. The temporary
-                // payload-carrying format uses 72 bytes. Accept both until the
-                // native wire protocol has a versioned Configuration encoding.
-                if data.len() < 64 {
+                if data.len() < 72 {
                     return None;
                 }
                 let term = read_u64(data, 8);
@@ -178,33 +166,10 @@ impl ProtocolMessage for RaftMessage {
                 let prev_log_index = read_u64(data, 24);
                 let prev_log_term = read_u64(data, 32);
                 let value = read_u64(data, 40);
-                let (payload, has_entry, leader_commit) = if data.len() >= 72 {
-                    (
-                        read_u64(data, 48),
-                        read_u64(data, 56) != 0,
-                        read_u64(data, 64),
-                    )
-                } else {
-                    // Legacy messages had no separate payload field, so their
-                    // scalar value is also the Data payload.
-                    (
-                        value,
-                        read_u64(data, 48) != 0,
-                        read_u64(data, 56),
-                    )
-                };
-                Some(RaftMessage::AppendEntries {
-                    term,
-                    leader_id,
-                    prev_log_index,
-                    prev_log_term,
-                    value,
-                    payload: CLogValue::Data {
-                        value: payload,
-                    },
-                    has_entry,
-                    leader_commit,
-                })
+                let payload = <CLogValue>::from(read_u64(data, 48));
+                let has_entry = read_u64(data, 56) != 0;
+                let leader_commit = read_u64(data, 64);
+                Some(RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, payload, has_entry, leader_commit })
             },
             TAG_APPEND_RESPONSE => {
                 if data.len() < 40 {

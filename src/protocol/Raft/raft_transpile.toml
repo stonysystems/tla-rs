@@ -133,6 +133,7 @@ custom_imports = [
 
 [messages]
 enum_name = "RaftMessage"
+extra_imports = ["crate::generated::Raft::types_gen::CLogValue"]
 doc_comment = "Raft Consensus protocol network messages."
 
 [[messages.variants]]

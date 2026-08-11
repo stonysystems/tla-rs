@@ -387,6 +387,12 @@ pub struct MessageConfig {
     /// Variant definitions
     #[serde(default)]
     pub variants: Vec<MessageVariant>,
+
+    /// Extra `use` paths emitted after the trait import — for message fields
+    /// whose type lives outside the message module (e.g. a generated enum
+    /// carried as a payload). Phase: Raft membership (PR #2).
+    #[serde(default)]
+    pub extra_imports: Vec<String>,
 }
 
 impl MessageConfig {
