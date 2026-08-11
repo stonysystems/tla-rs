@@ -1,5 +1,6 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
+use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::invariants::*;
 use vstd::prelude::*;
@@ -66,4 +67,55 @@ verus! {
             lemma_next_preserves_invariant(b[i - 1], b[i]);
         }
     }
+
+    /// End-to-end dynamic-membership safety for physical Raft histories.
+    /// At every reachable behavior state, every committed Data or
+    /// Configuration entry is covered by one global commit certificate.
+    /// Consequently, two servers cannot commit different
+    /// physical entries at the same log index.
+    pub proof fn lemma_dynamic_membership_committed_histories_are_safe(
+        b: RaftBehavior,
+        behavior_index: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+        ensures
+            CommittedEntriesHaveLogCertificates(b[behavior_index]),
+            StateMachineSafety(b[behavior_index]),
+            forall |left: int, right: int, log_index: int| #![trigger b[behavior_index].server_states[left], b[behavior_index].server_states[right].log[log_index]] #![trigger b[behavior_index].server_states[right], b[behavior_index].server_states[left].log[log_index]]
+                0 <= left < b[behavior_index].num_servers
+                && 0 <= right < b[behavior_index].num_servers
+                && 0 <= log_index
+                    < b[behavior_index].server_states[left].commit_index
+                && 0 <= log_index
+                    < b[behavior_index].server_states[right].commit_index
+                && log_index
+                    < b[behavior_index].server_states[left].log.len()
+                && log_index
+                    < b[behavior_index].server_states[right].log.len()
+                ==> b[behavior_index].server_states[left].log[log_index]
+                    == b[behavior_index].server_states[right].log[log_index],
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+        assert(RaftSafetyInvariant(b[behavior_index]));
+    }
+
+    /// Certificate-level formulation of dynamic commitment. Unlike the
+    /// legacy EntryCommittedAt predicate, this definition records which
+    /// membership phase and quorum authorized the physical entry.
+    pub open spec fn DynamicallyCommittedAt(
+        ds: RaftDistributedState,
+        log_index: int,
+        entry: LLogEntry,
+    ) -> bool {
+        &&& ds.log_commit_certificates.dom().contains(log_index)
+        &&& ds.log_commit_certificates[log_index].log_index == log_index
+        &&& ds.log_commit_certificates[log_index].entry == entry
+    }
+
+    // `DynamicLeaderCompleteness` now lives in `invariants.rs`, stated directly
+    // over the certificate map, so it can become a conjunct of
+    // `RaftSafetyInvariant` without `invariants.rs` having to import this
+    // module. It reaches here through the glob import.
 }

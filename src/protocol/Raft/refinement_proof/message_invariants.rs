@@ -1,5 +1,6 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
+use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
@@ -256,7 +257,8 @@ verus! {
         forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::AppendEntries { term: t, leader: l, prev_index,
-                                               prev_term, value, has_entry, .. } => {
+                                               prev_term, value, payload,
+                                               has_entry, .. } => {
                     &&& 0 <= l < ds.num_servers
                     &&& p.src == l
                     &&& prev_index >= 0
@@ -271,6 +273,9 @@ verus! {
                     // The entry value matches leader's log
                     &&& (has_entry ==>
                         ds.server_states[l].log[prev_index].value == value)
+                    // The tagged Data/Configuration payload also matches.
+                    &&& (has_entry ==>
+                        ds.server_states[l].log[prev_index].payload == payload)
                     // The entry's term in leader's log matches the message term
                     // (leader only sends entries from current term)
                     &&& (has_entry ==>
@@ -544,6 +549,41 @@ verus! {
                     &&& 0 <= leader < ds.num_servers
                     &&& leader_commit <= ds.server_states[leader].commit_index
                 }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
+    // Message Invariant 12b: Configuration Boundary Integrity
+    // =========================================================================
+    //
+    // A configuration entry sent at `prev_index` may not skip an earlier
+    // uncommitted configuration in the leader's prefix. Every earlier
+    // Configuration entry is below the leader_commit carried by the packet.
+    // Therefore, a follower accepting this boundary also advances its local
+    // commit index beyond any older boundary it already shares with the leader.
+
+    pub open spec fn AppendEntriesConfigurationBoundaryIntegrity(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)]
+            ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::AppendEntries {
+                    leader,
+                    prev_index,
+                    payload,
+                    has_entry,
+                    leader_commit,
+                    ..
+                } => (has_entry && payload is Configuration) ==> {
+                    &&& 0 <= leader < ds.num_servers
+                    &&& forall |index: int| #![trigger ds.server_states[leader].log[index]]
+                        0 <= index < prev_index
+                        && ds.server_states[leader].log[index].payload
+                            is Configuration
+                        ==> index < leader_commit
+                },
                 _ => true,
             }
     }

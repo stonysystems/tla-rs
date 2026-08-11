@@ -387,6 +387,12 @@ pub struct MessageConfig {
     /// Variant definitions
     #[serde(default)]
     pub variants: Vec<MessageVariant>,
+
+    /// Extra `use` paths emitted after the trait import — for message fields
+    /// whose type lives outside the message module (e.g. a generated enum
+    /// carried as a payload). Phase: Raft membership (PR #2).
+    #[serde(default)]
+    pub extra_imports: Vec<String>,
 }
 
 impl MessageConfig {
@@ -957,6 +963,12 @@ pub struct OutputConfig {
     /// The path is relative to the config file.
     #[serde(default)]
     pub manual_code: Option<String>,
+
+    /// Path to manual Verus code inserted only into generate-types output,
+    /// after all generated types inside the generated Verus block.
+    /// This stays separate from function-level manual_code for shared configs.
+    #[serde(default)]
+    pub types_manual_code: Option<String>,
 }
 
 fn default_validity_predicate_name() -> String {
@@ -986,6 +998,7 @@ impl Default for OutputConfig {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            types_manual_code: None,
             assume_postconditions: false,
             proven_functions: Vec::new(),
         }

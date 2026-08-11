@@ -45,6 +45,10 @@ verus! {
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
                 vote_log_len: ds.vote_log_len,
+                configuration_commit_certificates:
+                    ds.configuration_commit_certificates,
+                log_commit_certificates: ds.log_commit_certificates,
+                election_log_len: ds.election_log_len,
             };
 
             assert forall |i: int| #![trigger sub_ds.server_states[i]] 0 <= i < sub_ds.num_servers

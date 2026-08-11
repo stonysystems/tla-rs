@@ -3,6 +3,8 @@
 
 use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::implementation::Raft::helpers::*;
+use crate::implementation::Raft::membership_helpers::*;
+use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
@@ -14,15 +16,35 @@ use vstd::set_lib::*;
 
 verus! {
 
-#[derive(Clone, Copy)]
+pub struct CMembershipConfig {
+    pub servers: Vec<u64>,
+}
+
+impl CMembershipConfig {
+    pub open spec fn valid(&self) -> bool {
+        true
+    }
+}
+
+impl View for CMembershipConfig {
+    type V = LMembershipConfig;
+
+    open spec fn view(&self) -> LMembershipConfig {
+        LMembershipConfig {
+            servers: self.servers@.map(|i: int, x: u64| x as int),
+        }
+    }
+}
+
 pub struct CLogEntry {
     pub term: u64,
     pub value: u64,
+    pub payload: CLogValue,
 }
 
 impl CLogEntry {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& self.payload.valid()
     }
 }
 
@@ -33,6 +55,7 @@ impl View for CLogEntry {
         LLogEntry {
             term: self.term as int,
             value: self.value as int,
+            payload: self.payload@,
         }
     }
 }
@@ -45,6 +68,7 @@ pub struct CState {
     pub log: Arc<Vec<CLogEntry>>,
     pub commit_index: u64,
     pub votes_granted: Arc<HashSet<u64>>,
+    pub election_membership_phase: Option<CMembershipPhase>,
     pub match_index: Arc<HashMap<u64, u64>>,
     pub next_index: Arc<HashMap<u64, u64>>,
 }
@@ -69,15 +93,10 @@ impl Clone for CState {
             log: self.log.clone(),
             commit_index: self.commit_index,
             votes_granted: self.votes_granted.clone(),
+            election_membership_phase: self.election_membership_phase.clone(),
             match_index: self.match_index.clone(),
             next_index: self.next_index.clone(),
         }
-    }
-}
-
-impl CState {
-    pub open spec fn valid(&self) -> bool {
-        &&& self.role.valid()
     }
 }
 
@@ -93,13 +112,16 @@ impl View for CState {
             log: self.log@.map(|i: int, x: CLogEntry| x@),
             commit_index: self.commit_index as int,
             votes_granted: self.votes_granted@.map(|x: u64| x as int),
+            election_membership_phase: match self.election_membership_phase {
+    Some(phase) => Some(membership_phase_view(phase@)),
+    None => None,
+},
             match_index: self.match_index@,
             next_index: self.next_index@,
         }
     }
 }
 
-#[derive(Clone, Copy)]
 pub struct CRaftPacket {
     pub src: u64,
     pub dst: u64,
@@ -193,7 +215,65 @@ impl View for CServerRole {
     }
 }
 
-#[derive(Clone, Copy)]
+pub enum CMembershipPhase {
+    Stable {
+        config: CMembershipConfig,
+    },
+    Joint {
+        old_config: CMembershipConfig,
+        new_config: CMembershipConfig,
+    },
+}
+
+impl CMembershipPhase {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CMembershipPhase::Stable { config } => config.valid(),
+            CMembershipPhase::Joint { old_config, new_config } => old_config.valid() && new_config.valid(),
+        }
+    }
+}
+
+impl View for CMembershipPhase {
+    type V = LMembershipPhase;
+
+    open spec fn view(&self) -> LMembershipPhase {
+        match self {
+            CMembershipPhase::Stable { config } => LMembershipPhase::Stable { config: config@ },
+            CMembershipPhase::Joint { old_config, new_config } => LMembershipPhase::Joint { old_config: old_config@, new_config: new_config@ },
+        }
+    }
+}
+
+pub enum CLogValue {
+    Data {
+        value: u64,
+    },
+    Configuration {
+        phase: CMembershipPhase,
+    },
+}
+
+impl CLogValue {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CLogValue::Data { value } => true,
+            CLogValue::Configuration { phase } => phase.valid(),
+        }
+    }
+}
+
+impl View for CLogValue {
+    type V = LLogValue;
+
+    open spec fn view(&self) -> LLogValue {
+        match self {
+            CLogValue::Data { value } => LLogValue::Data { value: *value as int },
+            CLogValue::Configuration { phase } => LLogValue::Configuration { phase: phase@ },
+        }
+    }
+}
+
 pub enum CRaftMessage {
     RequestVote {
         term: u64,
@@ -214,6 +294,7 @@ pub enum CRaftMessage {
         prev_index: u64,
         prev_term: u64,
         value: u64,
+        payload: CLogValue,
         has_entry: bool,
         leader_commit: u64,
     },
@@ -230,7 +311,7 @@ impl CRaftMessage {
         match self {
             CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => true,
             CRaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } => true,
-            CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } => true,
+            CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, payload, has_entry, leader_commit } => payload.valid(),
             CRaftMessage::AppendResponse { term, success, match_index, follower } => true,
         }
     }
@@ -243,10 +324,228 @@ impl View for CRaftMessage {
         match self {
             CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => LRaftMessage::RequestVote { term: *term as int, candidate: *candidate as int, last_log_index: *last_log_index as int, last_log_term: *last_log_term as int },
             CRaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } => LRaftMessage::VoteResponse { term: *term as int, granted: *granted, voter: *voter as int, voter_last_log_index: *voter_last_log_index as int, voter_last_log_term: *voter_last_log_term as int },
-            CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } => LRaftMessage::AppendEntries { term: *term as int, leader: *leader as int, prev_index: *prev_index as int, prev_term: *prev_term as int, value: *value as int, has_entry: *has_entry, leader_commit: *leader_commit as int },
+            CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, payload, has_entry, leader_commit } => LRaftMessage::AppendEntries { term: *term as int, leader: *leader as int, prev_index: *prev_index as int, prev_term: *prev_term as int, value: *value as int, payload: payload@, has_entry: *has_entry, leader_commit: *leader_commit as int },
             CRaftMessage::AppendResponse { term, success, match_index, follower } => LRaftMessage::AppendResponse { term: *term as int, success: *success, match_index: *match_index as int, follower: *follower as int },
         }
     }
 }
 
+
+impl CState {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.role.valid()
+        &&& match self.election_membership_phase {
+            Some(phase) => phase.valid(),
+            None => true,
+        }
+    }
+}
+
+/// Verified deep clone for the executable membership vector.
+fn clone_membership_servers(
+    servers: &Vec<u64>,
+) -> (result: Vec<u64>)
+    ensures
+        result@ == servers@,
+{
+    let mut result = Vec::<u64>::new();
+    let mut index: usize = 0;
+    while index < servers.len()
+        invariant
+            index <= servers.len(),
+            result@ == servers@.subrange(0, index as int),
+        decreases servers.len() - index,
+    {
+        result.push(servers[index]);
+        index += 1;
+    }
+    result
+}
+
+impl Clone for CMembershipConfig {
+    fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        CMembershipConfig {
+            servers: clone_membership_servers(&self.servers),
+        }
+    }
+}
+
+pub fn clone_membership_config(
+    input: &CMembershipConfig,
+) -> (result: CMembershipConfig)
+    ensures
+        result@ == input@,
+{
+    input.clone()
+}
+
+pub fn clone_membership_phase(
+    input: &CMembershipPhase,
+) -> (result: CMembershipPhase)
+    ensures
+        result@ == input@,
+{
+    input.clone()
+}
+
+pub fn clone_optional_membership_phase(
+    input: &Option<CMembershipPhase>,
+) -> (result: Option<CMembershipPhase>)
+    ensures
+        match result {
+            Some(phase) => Some(membership_phase_view(phase@)),
+            None => None,
+        } == match input {
+            Some(phase) => Some(membership_phase_view(phase@)),
+            None => None,
+        },
+{
+    match input {
+        Some(phase) => Some(phase.clone()),
+        None => None,
+    }
+}
+
+impl Clone for CMembershipPhase {
+    fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        match self {
+            CMembershipPhase::Stable { config } => {
+                CMembershipPhase::Stable {
+                    config: config.clone(),
+                }
+            },
+            CMembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                CMembershipPhase::Joint {
+                    old_config: old_config.clone(),
+                    new_config: new_config.clone(),
+                }
+            },
+        }
+    }
+}
+
+impl Clone for CLogValue {
+    fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        match self {
+            CLogValue::Data { value } => {
+                CLogValue::Data {
+                    value: *value,
+                }
+            },
+            CLogValue::Configuration { phase } => {
+                CLogValue::Configuration {
+                    phase: phase.clone(),
+                }
+            },
+        }
+    }
+}
+
+impl Clone for CLogEntry {
+    fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        CLogEntry {
+            term: self.term,
+            value: self.value,
+            payload: self.payload.clone(),
+        }
+    }
+}
+
+impl Clone for CRaftMessage {
+    fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        match self {
+            CRaftMessage::RequestVote {
+                term,
+                candidate,
+                last_log_index,
+                last_log_term,
+            } => CRaftMessage::RequestVote {
+                term: *term,
+                candidate: *candidate,
+                last_log_index: *last_log_index,
+                last_log_term: *last_log_term,
+            },
+            CRaftMessage::VoteResponse {
+                term,
+                granted,
+                voter,
+                voter_last_log_index,
+                voter_last_log_term,
+            } => CRaftMessage::VoteResponse {
+                term: *term,
+                granted: *granted,
+                voter: *voter,
+                voter_last_log_index: *voter_last_log_index,
+                voter_last_log_term: *voter_last_log_term,
+            },
+            CRaftMessage::AppendEntries {
+                term,
+                leader,
+                prev_index,
+                prev_term,
+                value,
+                payload,
+                has_entry,
+                leader_commit,
+            } => CRaftMessage::AppendEntries {
+                term: *term,
+                leader: *leader,
+                prev_index: *prev_index,
+                prev_term: *prev_term,
+                value: *value,
+                payload: payload.clone(),
+                has_entry: *has_entry,
+                leader_commit: *leader_commit,
+            },
+            CRaftMessage::AppendResponse {
+                term,
+                success,
+                match_index,
+                follower,
+            } => CRaftMessage::AppendResponse {
+                term: *term,
+                success: *success,
+                match_index: *match_index,
+                follower: *follower,
+            },
+        }
+    }
+}
+
+impl Clone for CRaftPacket {
+    fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+    {
+        CRaftPacket {
+            src: self.src,
+            dst: self.dst,
+            msg: self.msg.clone(),
+        }
+    }
+}
 } // verus!

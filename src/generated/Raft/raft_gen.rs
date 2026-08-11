@@ -4,6 +4,8 @@
 use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::generated::Raft::types_gen::*;
 use crate::implementation::Raft::helpers::*;
+use crate::implementation::Raft::membership_helpers::*;
+use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
@@ -89,6 +91,16 @@ ensures
     r.clone()
 }
 
+/// Helper: clone CLogValue preserving view (workaround for missing derive Clone spec).
+#[verifier(external_body)]
+fn clone_payload(r: &CLogValue) -> (res: CLogValue)
+ensures
+    res@ == r@,
+    res.valid() == r.valid(),
+{
+    r.clone()
+}
+
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -104,6 +116,7 @@ ensures
         log: Arc::new(vec![]),
         commit_index: 0u64,
         votes_granted: Arc::new(HashSet::new()),
+        election_membership_phase: None,
         match_index: Arc::new(HashMap::new()),
         next_index: Arc::new(HashMap::new()),
         role: CServerRole::Follower,
@@ -136,6 +149,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(__votes_granted),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Candidate,
@@ -184,6 +198,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
@@ -229,6 +244,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(__votes_granted),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![]) }
@@ -263,6 +279,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: Some(election_membership_phase_exec(s, c)),
     match_index: Arc::new(HashMap::new()),
     next_index: Arc::new(HashMap::new()),
     role: CServerRole::Leader,
@@ -290,6 +307,9 @@ ensures
         __log.push(CLogEntry {
     term: s.current_term.clone(),
     value: (*value),
+    payload: CLogValue::Data {
+        value: (*value),
+    },
 });
         { proof {
             lemma_empty_msg_map();
@@ -301,33 +321,36 @@ ensures
     log: Arc::new(__log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![]) }
     };
     proof {
         lemma_empty_log_map();
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
+        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value, payload: CLogValue::Data { value: *value } });
         assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
 
 }
 
-pub exec fn CSendAppendEntries(s: &CState, c: &CConstants, follower: &u64, entry_value: &u64, prev_log_index: &u64, prev_log_term: &u64, has_entry: bool) -> (result: (CState, Vec<CRaftMessage>))
+pub exec fn CSendAppendEntries(s: &CState, c: &CConstants, follower: &u64, entry_value: &u64, entry_payload: &CLogValue, prev_log_index: &u64, prev_log_term: &u64, has_entry: bool) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
+    entry_payload.valid(),
     s.role is Leader,
     c@.servers.contains(*follower as int),
     (*prev_log_index >= 0),
     (s@.log.len() >= (*prev_log_index + ae_entry_count(has_entry))),
     ((*prev_log_index > 0) ==> s@.log[(*prev_log_index - 1)].term == *prev_log_term),
     (has_entry ==> s@.log[*prev_log_index as int].value == *entry_value),
+    (has_entry ==> s@.log[*prev_log_index as int].payload == entry_payload@),
     (has_entry ==> s@.log[*prev_log_index as int].term == s.current_term),
 ensures
     result.0.valid(),
-    LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
+    LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, entry_payload@, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = (CState {
     current_term: s.current_term.clone(),
@@ -337,6 +360,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![CRaftMessage::AppendEntries {
@@ -345,6 +369,7 @@ ensures
     prev_index: (*prev_log_index),
     prev_term: (*prev_log_term),
     value: (*entry_value),
+    payload: clone_payload(entry_payload),
     has_entry: has_entry.clone(),
     leader_commit: s.commit_index.clone(),
 }]);
@@ -355,24 +380,27 @@ ensures
 
 }
 
-pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
+pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_payload: &CLogValue, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
+    ae_payload.valid(),
     (*ae_term >= s.current_term),
     s.log.len() < u64::MAX,
     *ae_term >= s.current_term,
     s.log@.len() < u64::MAX as int,
 ensures
     result.0.valid(),
-    LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
+    LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_payload@, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
+    let payload_copy = clone_payload(ae_payload);
     let result = {
         let mut __log = clone_log_inner(&s.log);
         if ae_has_entry {
                         __log.push(CLogEntry {
     term: (*ae_term),
     value: (*ae_value),
+    payload: payload_copy,
 });
             
 
@@ -400,6 +428,7 @@ ensures
         s.commit_index.clone()
     },
     votes_granted: Cstep_down_if_needed(&s, &ae_term).votes_granted,
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
@@ -415,8 +444,21 @@ ensures
 }])
     };
     proof {
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: *ae_term, value: *ae_value });
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
+        if ae_has_entry {
+            assert(result.0.log@.len() == s.log@.len() + 1);
+            assert(
+                result.0.log@[s.log@.len() as int].payload@
+                    == ae_payload@
+            );
+            lemma_log_push_map_commute(
+                s.log@,
+                result.0.log@[s.log@.len() as int],
+            );
+        }
+        assert(
+            result.1@.map(|i: int, p: CRaftMessage| p@)
+                =~= Seq::empty().push(result.1@[0]@)
+        );
     }
     result
 
@@ -451,6 +493,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: Arc::new(__match_index),
     next_index: Arc::new(__next_index),
 }, vec![]) }
@@ -493,6 +536,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
 }, vec![]) }
     };
@@ -513,9 +557,12 @@ requires
     (*new_commit_index > s.commit_index),
     (*new_commit_index <= s@.log.len()),
     s@.log[(*new_commit_index - 1)].term == s.current_term,
-    (replicator_count(s@, c@, *new_commit_index as int) >= c.quorum_size),
-    (*new_commit_index as int <= s@.log.len()),
-    s.log@[*new_commit_index as int - 1].term == s.current_term,
+    has_active_commit_quorum(s@, c@, *new_commit_index as int),
+    commit_interval_stops_at_first_configuration(
+        s@.log,
+        s@.commit_index,
+        *new_commit_index as int,
+    ),
 ensures
     result.0.valid(),
     LAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int, result.1@.map(|i, p: CRaftMessage| p@)),
@@ -532,6 +579,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: (*new_commit_index),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![])
@@ -564,6 +612,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(HashSet::new()),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
@@ -654,14 +703,15 @@ ensures
 
 }
 
-pub exec fn CHandleAppendEntriesMsg(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
+pub exec fn CHandleAppendEntriesMsg(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_payload: &CLogValue, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
+    ae_payload.valid(),
     s.log@.len() < u64::MAX as int,
 ensures
     result.0.valid(),
-    LHandleAppendEntriesMsg(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
+    LHandleAppendEntriesMsg(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_payload@, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let s_mid = Cstep_down_if_needed(s, ae_term);
     if ((*ae_term) < s_mid.current_term) {
@@ -707,7 +757,7 @@ ensures
                     assert(s_mid@.log =~= s@.log);
                     assert(s_mid@.log.len() == s@.log.len());
                 }
-                CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit)
+                CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_payload, ae_has_entry, ae_leader_commit)
 
             }
         }
@@ -738,6 +788,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(__votes_granted),
+    election_membership_phase: Some(election_membership_phase_exec(s, c)),
     match_index: Arc::new(HashMap::new()),
     next_index: Arc::new(HashMap::new()),
     role: CServerRole::Leader,
@@ -799,17 +850,7 @@ ensures
                         broadcast use vstd::std_specs::hash::group_hash_axioms;
                         lemma_set_map_contains(c.servers@, *voter);
                     }
-                    if {
-                        let __lhs_0 = {
-                            let mut __set_tmp = clone_hashset_u64(&s_mid.votes_granted);
-                            __set_tmp.insert(voter.clone());
-                            proof {
-                                crate::common::collections::hashsets::lemma_hashset_u64_len_eq_mapped(&__set_tmp);
-                            }
-                            (__set_tmp.len() as u64)
-                        };
-                        (__lhs_0 >= c.quorum_size)
-                    } {
+                    if Chas_active_election_quorum_after_vote(&s_mid, c, voter) {
                         CReceiveVoteAndBecomeLeader(&s_mid, c, term, granted, voter)
                     } else {
                         CReceiveVoteGranted(&s_mid, c, term, granted, voter)
@@ -898,8 +939,8 @@ requires
     c.valid(),
     (!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
         *new_commit_index as int <= s@.log.len()
+        && *new_commit_index <= s.log.len() as u64
         && s.log@[*new_commit_index as int - 1].term == s.current_term
-        && replicator_count(s@, c@, *new_commit_index as int) >= c.quorum_size
     ),
 ensures
     result.0.valid(),
@@ -912,7 +953,31 @@ if (!matches!(s.role, CServerRole::Leader { .. }) || ((*new_commit_index) <= s.c
         (s.clone(), vec![])
 
     } else {
-        CAdvanceCommitIndex(s, c, new_commit_index)
+        let respects_boundary =
+            Ccommit_interval_stops_at_first_configuration(
+                s,
+                new_commit_index,
+            );
+        if !respects_boundary {
+            proof {
+                lemma_empty_msg_map();
+            }
+            (s.clone(), vec![])
+        } else {
+            let has_quorum = Chas_active_commit_quorum(
+            s,
+            c,
+            new_commit_index,
+            );
+            if !has_quorum {
+                proof {
+                    lemma_empty_msg_map();
+                }
+                (s.clone(), vec![])
+            } else {
+                CAdvanceCommitIndex(s, c, new_commit_index)
+            }
+        }
     }
 }
 
@@ -929,7 +994,7 @@ ensures
 match msg {
         CRaftMessage::RequestVote { term: term, candidate: candidate, last_log_index: last_log_index, last_log_term: last_log_term, .. } => CHandleRequestVoteMsg(&s, &c, &term, &candidate, &last_log_index, &last_log_term),
         CRaftMessage::VoteResponse { term: term, granted: granted, voter: voter, .. } => CHandleVoteResponseMsg(&s, &c, &term, (*granted), &voter),
-        CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, has_entry: has_entry, leader_commit: leader_commit, .. } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, (*has_entry), &leader_commit),
+        CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, payload: payload, has_entry: has_entry, leader_commit: leader_commit, .. } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, &payload, (*has_entry), &leader_commit),
         CRaftMessage::AppendResponse { term: term, success: success, match_index: match_index, follower: follower, .. } => CHandleAppendResponseMsg(&s, &c, &term, (*success), &match_index, &follower),
     }
 }

@@ -4,6 +4,7 @@ use crate::common::framework::protocol_trait::*;
 use crate::common::native::io_s::*;
 use crate::generated::Raft::raft_gen;
 use crate::generated::Raft::types_gen::*;
+use crate::implementation::Raft::membership_helpers::Chas_active_commit_quorum;
 use crate::implementation::Raft::message::*;
 use std::collections::HashSet;
 
@@ -23,8 +24,26 @@ fn to_wire(cm: &CRaftMessage) -> RaftMessage {
             RaftMessage::RequestVote { term: *term, candidate_id: *candidate, last_log_index: *last_log_index, last_log_term: *last_log_term },
         CRaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } =>
             RaftMessage::VoteResponse { term: *term, granted: *granted, voter: *voter, voter_last_log_index: *voter_last_log_index, voter_last_log_term: *voter_last_log_term },
-        CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } =>
-            RaftMessage::AppendEntries { term: *term, leader_id: *leader, prev_log_index: *prev_index, prev_log_term: *prev_term, value: *value, has_entry: *has_entry, leader_commit: *leader_commit },
+        CRaftMessage::AppendEntries {
+            term,
+            leader,
+            prev_index,
+            prev_term,
+            value,
+            payload,
+            has_entry,
+            leader_commit,
+        } =>
+            RaftMessage::AppendEntries {
+                term: *term,
+                leader_id: *leader,
+                prev_log_index: *prev_index,
+                prev_log_term: *prev_term,
+                value: *value,
+                payload: payload.clone(),
+                has_entry: *has_entry,
+                leader_commit: *leader_commit,
+            },
         CRaftMessage::AppendResponse { term, success, match_index, follower } =>
             RaftMessage::AppendResponse { term: *term, success: *success, match_index: *match_index, follower: *follower },
     }
@@ -36,8 +55,26 @@ fn from_wire(msg: &RaftMessage) -> Option<CRaftMessage> {
             Some(CRaftMessage::RequestVote { term: *term, candidate: *candidate_id, last_log_index: *last_log_index, last_log_term: *last_log_term }),
         RaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } =>
             Some(CRaftMessage::VoteResponse { term: *term, granted: *granted, voter: *voter, voter_last_log_index: *voter_last_log_index, voter_last_log_term: *voter_last_log_term }),
-        RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, has_entry, leader_commit } =>
-            Some(CRaftMessage::AppendEntries { term: *term, leader: *leader_id, prev_index: *prev_log_index, prev_term: *prev_log_term, value: *value, has_entry: *has_entry, leader_commit: *leader_commit }),
+        RaftMessage::AppendEntries {
+            term,
+            leader_id,
+            prev_log_index,
+            prev_log_term,
+            value,
+            payload,
+            has_entry,
+            leader_commit,
+        } =>
+            Some(CRaftMessage::AppendEntries {
+                term: *term,
+                leader: *leader_id,
+                prev_index: *prev_log_index,
+                prev_term: *prev_log_term,
+                value: *value,
+                payload: payload.clone(),
+                has_entry: *has_entry,
+                leader_commit: *leader_commit,
+            }),
         RaftMessage::AppendResponse { term, success, match_index, follower } =>
             Some(CRaftMessage::AppendResponse { term: *term, success: *success, match_index: *match_index, follower: *follower }),
         _ => None,
@@ -83,10 +120,25 @@ impl RaftHost {
             let ll = self.state.log.len() as u64;
             let has = ni < ll;
             let val = if has { self.state.log[ni as usize].value } else { 0 };
+            let payload = if has {
+                self.state.log[ni as usize].payload.clone()
+            } else {
+                CLogValue::Data {
+                    value: 0,
+                }
+            };
             let pi = if ni > 0 { ni } else { 0 };
             let pt = if ni > 0 && ni - 1 < ll { self.state.log[(ni - 1) as usize].term } else { 0 };
             let (ns, sent) = raft_gen::CSendAppendEntries(
-                &self.state, &config.constants, &fid, &val, &pi, &pt, has);
+                &self.state,
+                &config.constants,
+                &fid,
+                &val,
+                &payload,
+                &pi,
+                &pt,
+                has,
+            );
             self.state = ns;
             if !sent.is_empty() {
                 pkts.push(GenericPacket { dst: config.peers[i].clone_up_to_view(),
@@ -97,17 +149,34 @@ impl RaftHost {
     }
 
     fn find_commit_index(&self, config: &RaftConfig) -> Option<u64> {
-        let mut n = self.state.log.len() as u64;
+        // A commit search is governed by the membership phase derived from
+        // the current committed prefix. Stop the search at the first
+        // Configuration entry so one old-phase quorum cannot skip across a
+        // membership boundary.
+        let mut commit_limit = self.state.log.len() as u64;
+        let mut index = self.state.commit_index;
+
+        while index < commit_limit {
+            if matches!(
+                self.state.log[index as usize].payload,
+                CLogValue::Configuration { .. }
+            ) {
+                commit_limit = index + 1;
+                break;
+            }
+            index += 1;
+        }
+
+        let mut n = commit_limit;
         while n > self.state.commit_index {
             if self.state.log[(n - 1) as usize].term == self.state.current_term {
-                let mut cnt: u64 = 1;
-                for j in 0..config.peers.len() {
-                    let p = j as u64;
-                    if p != config.my_index {
-                        if let Some(mi) = self.state.match_index.get(&p) { if *mi >= n { cnt += 1; } }
-                    }
+                if Chas_active_commit_quorum(
+                    &self.state,
+                    &config.constants,
+                    &n,
+                ) {
+                    return Some(n);
                 }
-                if cnt >= config.constants.quorum_size { return Some(n); }
             }
             n -= 1;
         }

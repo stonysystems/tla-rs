@@ -17950,7 +17950,7 @@ value per hour, not by phase number:
       a strong check that the trigger semantics really are unchanged.
 
       Original 54.16 text follows.
-      
+
       Surfaced by 54.10; see the amendment on 54.4. The 5 are the injectivity axioms
       `axiom_endpoint_view` (`io_s.rs:123`), `axiom_cmessage_view`/`axiom_cpacket_view`
       (`cmessage.rs:222,294`), `axiom_cvote_view`/`axiom_clearner_tuple_view`
@@ -18197,6 +18197,96 @@ Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can be
 
 ---
 
+---
+
+## Research Appendix: Raft Dynamic Membership via Joint Consensus
+
+Branch `adi/raft-membership-change`. Adds membership changes to the Raft protocol as tagged
+log entries, with election and commit quorums derived from the active membership phase, and
+proves safety of the resulting system.
+
+### Design
+
+- **Phases**: `Stable { config }` and `Joint { old_config, new_config }`. A quorum is a
+  majority of `config`, or a majority of *both* configs during a joint phase
+  (`is_quorum_for_phase`, `src/protocol/Raft/membership.rs`).
+- **Membership lives in the log**: log payloads are tagged `Data { value }` or
+  `Configuration { phase }`. The active phase is derived by scanning a log prefix for the
+  last `Configuration` entry (`active_membership_phase_from_raft_log`).
+- **Commit quorums** use the phase from the server's *committed* prefix; **election quorums**
+  use the phase from the candidate's *entire* log, so a candidate never campaigns under a
+  configuration older than one it already carries. Confirmed as intended behaviour by Zihao.
+- **Commit boundaries**: one commit advancement may batch `Data` entries but must stop at the
+  first `Configuration` entry, so a quorum computed under an old configuration cannot skip
+  several membership changes.
+- **Ghost certificates**: `ConfigurationCommitCertificate` / `LogCommitCertificate` record,
+  per committed log index, the entry, the committer, the governing phase, and the quorum.
+  These are proof-only; they do not affect wire messages or runtime state.
+
+### Verification evidence
+
+- Latest Verus version: **0.2026.08.02.b677dd5**.
+- Selected ten-module regression: **192 verified, 0 errors**, with
+  `--triggers-mode silent`.
+- Full `src/protocol/Raft/refinement_proof/invariants.rs` module:
+  **212 verified, 0 errors**.
+- Full `src/protocol/Raft/refinement_proof/induction.rs` module:
+  **3 verified, 0 errors**.
+- No `assume`/`admit`/`external_body` was added by the membership proof cleanup.
+  The inherited Phase 34 assumptions remain outside the active committed-history chain.
+
+### Proved unconditionally at behavior level
+
+- Quorum-overlap lemmas cover every legal `Stable -> Joint -> Stable` progression.
+- Election and commit actions use membership phases derived from the Raft log.
+- Commit advancement stops at each Configuration boundary.
+- Every committed physical log position is tied to one global
+  `LogCommitCertificate`.
+- **Committed histories never conflict**: if two reachable servers have committed the
+  same physical log index, their entries at that index are equal
+  (`lemma_dynamic_membership_committed_histories_are_safe`).
+- The active safety invariant is established at initialization, preserved by every
+  `RaftDistributedNext` case, and lifted to all reachable behavior states.
+
+### Deliberately retired stronger claims
+
+The active dynamic invariant no longer includes the repository's global
+`LogMatching` property for arbitrary uncommitted suffixes. With changing membership,
+a removed stale group can produce uncommitted histories that do not satisfy that
+all-server property, even though it cannot form a valid current commit quorum.
+
+The former Configuration and all-entry Dynamic Leader Completeness theorems depended on
+that stronger property to transfer a quorum member's entire prefix into every later
+leader. Those behavior-level claims and their fixed-majority compatibility proof chain
+were removed from the active proof. Re-establishing them is follow-up work requiring a
+scoped acknowledged-prefix invariant (or a protocol rule that prevents stale leaders),
+not part of the committed-history safety theorem.
+
+### Remaining trust and implementation boundaries
+
+- The repository's inherited Phase 34 `assume` sites remain in legacy compatibility
+  helpers, but the behavior-level committed-history theorem does not call that chain.
+- Generated structural clone helpers are now verified; no membership clone
+  `external_body` remains.
+- Native Configuration serialization is still a compatibility encoding and is not
+  production-ready.
+
+### Practical verification notes
+
+- Use Verus directly; ordinary `cargo check` does not understand the `verus!` model.
+- Report selected-module, full-module, and focused-function results separately.
+- Use `--triggers-mode silent` so CI does not receive automatic-trigger notes.
+- The legacy `LogMatching`, fixed-majority Leader Completeness, and related helper
+  definitions remain as historical compatibility material, but they are not conjuncts
+  of `RaftSafetyInvariant` and their obsolete induction bodies are not part of the
+  active module.
+
+### Native serialization gap
+
+Logical and generated replication carry `Configuration` payloads, but the native serializer
+still uses a compatibility encoding that writes the legacy scalar `value` instead of the full
+membership phase and server vectors. Out of scope for the proof work; required before any
+real deployment of membership changes.
 ## Phase 55: Inline AutoMan Annotations in Verus Spec Files — **COMPLETE 2026-08-10**
 
 Tracking issue: [#4](https://github.com/stonysystems/tla-rs/issues/4). Branch:

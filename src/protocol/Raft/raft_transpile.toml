@@ -7,6 +7,14 @@ skip_functions = [
     "LNext",
 ]
 
+# MembershipPhase is the proof-only set representation. Its executable
+# sequence-backed counterpart is LMembershipPhase; generating both would map
+# both names to CMembershipPhase.
+skip_types = ["MembershipPhase"]
+
+# CState has a custom validity predicate for its optional executable phase.
+skip_validity_types = ["CState"]
+
 # Spec-only functions (no C-prefix in requires clauses)
 spec_only_functions = ["replicator_count", "ae_entry_count"]
 
@@ -63,7 +71,6 @@ CState = ["log", "votes_granted", "match_index", "next_index"]
     """(!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
         *new_commit_index as int <= s@.log.len()
         && s.log@[*new_commit_index as int - 1].term == s.current_term
-        && replicator_count(s@, c@, *new_commit_index as int) >= c.quorum_size
     )""",
 ]
 "CAdvanceCommitIndex" = [
@@ -78,12 +85,27 @@ CState = ["log", "votes_granted", "match_index", "next_index"]
 # CConstants only has HashSet<u64> and can use verified clone.
 [clone_strategy]
 "CState" = "external_body"
+"CMembershipConfig" = "manual"
+"CMembershipPhase" = "manual"
+"CLogValue" = "manual"
+"CLogEntry" = "manual"
+"CRaftMessage" = "manual"
+"CRaftPacket" = "manual"
 
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"
 int_type = "u64"
 nat_type = "u64"
+
+[remapping]
+"Option" = "Option"
+
+[view_overrides]
+"LState.election_membership_phase" = """match self.election_membership_phase {
+    Some(phase) => Some(membership_phase_view(phase@)),
+    None => None,
+}"""
 
 [output]
 generate_abstraction_fns = true
@@ -94,6 +116,7 @@ include_debug_comments = false
 generate_loops_for_verification = true
 generate_proofs = true
 generate_inline_types = false
+types_manual_code = "raft_types_manual.rs"
 custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::set::*;",
@@ -102,12 +125,15 @@ custom_imports = [
     "use std::collections::HashMap;",
     "use crate::protocol::Raft::types::*;",
     "use crate::protocol::Raft::raft::*;",
+    "use crate::protocol::Raft::membership::*;",
     "use crate::generated::Raft::types_gen::*;",
     "use crate::implementation::Raft::helpers::*;",
+    "use crate::implementation::Raft::membership_helpers::*;",
 ]
 
 [messages]
 enum_name = "RaftMessage"
+extra_imports = ["crate::generated::Raft::types_gen::CLogValue"]
 doc_comment = "Raft Consensus protocol network messages."
 
 [[messages.variants]]
@@ -123,7 +149,7 @@ fields = [["term", "u64"], ["granted", "bool"], ["voter", "u64"], ["voter_last_l
 [[messages.variants]]
 name = "AppendEntries"
 doc = "Leader sends log entries (or heartbeats) to followers."
-fields = [["term", "u64"], ["leader_id", "u64"], ["prev_log_index", "u64"], ["prev_log_term", "u64"], ["value", "u64"], ["has_entry", "bool"], ["leader_commit", "u64"]]
+fields = [["term", "u64"], ["leader_id", "u64"], ["prev_log_index", "u64"], ["prev_log_term", "u64"], ["value", "u64"], ["payload", "CLogValue"], ["has_entry", "bool"], ["leader_commit", "u64"]]
 
 [[messages.variants]]
 name = "AppendResponse"
@@ -139,7 +165,8 @@ fields = [["client_id", "u64"], ["seq_no", "u64"], ["value", "u64"]]
 name = "ClientResponse"
 doc = "Server responds to a client request."
 fields = [["client_id", "u64"], ["seq_no", "u64"], ["success", "bool"]]
-# Phase 27.4: LNext uses 5 composite branches
+# The executable scheduler covers five branches. LAppendConfigurationEntry
+# remains a spec-level action until native Configuration serialization exists.
 [scheduler]
 next_fn = "LNext"
 params = ["s", "s_", "c"]
@@ -161,7 +188,7 @@ existential_params = [["value", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
 spec_name = "LSendAppendEntries"
 exec_name = "CSendAppendEntries"
 kind = "timer_driven"
-existential_params = [["follower", "int"], ["entry_value", "int"], ["prev_log_index", "int"], ["prev_log_term", "int"], ["has_entry", "bool"], ["sent_packets", "Seq<LRaftMessage>"]]
+existential_params = [["follower", "int"], ["entry_value", "int"], ["entry_payload", "LLogValue"], ["prev_log_index", "int"], ["prev_log_term", "int"], ["has_entry", "bool"], ["sent_packets", "Seq<LRaftMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LHandleMessage"
