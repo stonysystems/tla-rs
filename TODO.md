@@ -18495,8 +18495,49 @@ and not an argued one. Measured against `jetpack.tla`:
       The refinement mapping against the unmodified originals is **not done** —
       this item's original scope. What exists is the composition checked
       against its own invariants.
-- [ ] **55.6** Translate all three, `verus` check, freeze goldens, write
-      `rewrite.md` recording every decision and every remaining gap.
+- [x] **55.6 — the composition translates (2026-08-11).** `clean-tla` emits it
+      with **no gaps**; six were closed, and closing them exposed **eight
+      further defects that Verus rejected**, every one real and every one
+      previously hidden behind the gap. Two were live before this branch: a
+      second `match` arm for a variant is unreachable, so a spec with two
+      handlers on one tag was silently dropping one; and a receive guard naming
+      a *set* of tags had no dispatch at all. See the commit for the list.
+
+      **One Verus error remains and no golden is frozen.** It is not a type
+      error: `AdvanceCommitIndex` binds `\E k \in 1 .. Len(log[i])` and indexes
+      `s.log[k - 1]`, and Verus will not infer a trigger from a term containing
+      arithmetic. CLAUDE.md's extra-binder workaround does not apply as written
+      -- a trigger must cover every bound variable, and after moving the offset
+      out `k` appears only in comparisons. The fix is to re-index the quantifier
+      onto the sequence's own 0-based domain, in the projection rather than by
+      string surgery on the emitted text.
+
+- [x] **55.5.b — checked against the ORIGINAL's own safety properties
+      (2026-08-11).** `tests/corpus/tier4/t4_01_jetpack_full/jetpack_refinement.tla`
+      INSTANCEs the unmodified upstream composition under an explicit mapping
+      and checks *its* invariant definitions, not retyped copies.
+      **34,718,400 distinct states, depth 73, closed, no violation.**
+
+      Two findings worth more than the pass:
+
+      - **Upstream's `CommittedLogAgreement` is vacuous.**
+        `limit == Min({ci, ci2} \cup {0})` is always 0, so `\A k \in 1..limit`
+        compares nothing. Confirmed by evaluation. It is the first of the five
+        properties in upstream's `Safety`. The vacuity was not hiding a bug:
+        corrected, the original still passes and so does the rewrite. Upstream
+        is left unedited.
+      - **`MaxOneReconfigurationAtATime` is vacuous against the rewrite**, and
+        that one is ours: the rewrite never appends a config log entry, because
+        `RequestReconfig` sets `pendingReconfig` and upstream's
+        `AppendPendingReconfigToLog` was dropped. Reconfiguration is requested
+        and never applied. Recorded, not fixed.
+
+      Anti-vacuity was run, not asserted: a deliberately divergent action makes
+      `O!NoLogDivergence` refute immediately.
+
+      Still **not** trace refinement -- state-wise property preservation under a
+      mapping. Full refinement needs step correspondence, which the bag/set
+      network difference and the handler decomposition put out of reach.
 
 ### Acceptance
 

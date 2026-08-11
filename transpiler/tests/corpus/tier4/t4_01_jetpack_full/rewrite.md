@@ -234,6 +234,73 @@ as one.
 
 ---
 
+## Checked against the original's own safety properties
+
+`jetpack_refinement.tla` INSTANCEs the **unmodified** upstream composition under
+an explicit mapping from the rewrite's state and checks *its* invariant
+definitions -- `O!NoLogDivergence`, not a retyped copy. Retyping is the failure
+mode the construction exists to avoid: a transcription slip in a hand-copied
+invariant makes the check pass and says nothing.
+
+The mapping is two lines, because only two things differ in the state these
+invariants read: the original indexes logs by proposer (`log[i]["sole"]`) and
+its variables range over `Server` rather than `Node`.
+
+**Result: 34,718,400 distinct states, depth 73, state space closed, no
+violation**, with `Commands = {v1, v2}` so the value comparison has something to
+compare.
+
+| invariant | verdict | has teeth? |
+|---|---|---|
+| `O!NoLogDivergence` | holds | **yes** — verified |
+| `O!CommittedLogAgreement` | holds, **after correcting it** | yes, once corrected |
+| `O!MaxOneReconfigurationAtATime` | holds | **no** — vacuous here |
+
+**`CommittedLogAgreement` is vacuous in the upstream spec.** It computes
+
+```tla
+limit == Min({ci, ci2} \cup {0})
+```
+
+and `Min` is a genuine minimum, so with `ci, ci2 >= 0` the limit is **always 0**
+and `\A k \in 1..limit` compares nothing. Confirmed by evaluating it:
+`Min({3,5} \cup {0}) = 0`, `1..0 = {}`. It is the first of the five properties
+in upstream's `Safety`, and the composition re-exports it as "per-proposer
+committed log agreement". The `\cup {0}` was presumably meant to guard `Min`
+against an empty set, but `{ci, ci2}` is never empty. The intended expression is
+`Min({ci, ci2})`.
+
+The vacuity was not hiding a bug: with the invariant corrected, the **original**
+still passes (123,757 states, depth 52), and so does the rewrite. Upstream is
+left unedited — it is not ours to change — and the correction is applied only to
+the staged copy the refinement module reads.
+
+**`MaxOneReconfigurationAtATime` is vacuous against this rewrite**, and that is
+the rewrite's limitation rather than upstream's: it needs two uncommitted config
+entries in a leader's log, and the rewrite never appends a config entry at all.
+`RequestReconfig` sets `pendingReconfig` and nothing turns it into a log entry —
+upstream has `AppendPendingReconfigToLog` and the rewrite dropped it. So
+reconfiguration here is requested and never applied. Recorded, not fixed.
+
+**Anti-vacuity, run rather than asserted.** Adding an action that puts a
+different value at index 1 on one server and commits it makes
+`O!NoLogDivergence` — the original's own definition, reached through the
+INSTANCE — refute immediately. Without that, "no violation" would be a statement
+about the mapping rather than about the rewrite.
+
+**What this is not: trace refinement.** It does not establish that every
+behaviour of the rewrite is a behaviour of the original. It establishes that
+every reachable state of the rewrite, mapped, satisfies the original's stated
+safety invariants. Full refinement additionally needs step correspondence, and
+the bag/set difference in the network plus the rewrite's handler decomposition
+mean that is not a mapping away.
+
+The two invariants that cannot be checked here at all are
+`LogOrderMatchesExecution` and `ExecutionDedupMatches`: both are about
+`execution_cmds`, a history variable the rewrite deletes by design.
+
+---
+
 ## V2
 
 Not available, and the reason is the case rather than the tool. There is no
