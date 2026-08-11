@@ -83,7 +83,7 @@ verus! {
         ensures
             CommittedEntriesHaveLogCertificates(b[behavior_index]),
             StateMachineSafety(b[behavior_index]),
-            forall |left: int, right: int, log_index: int|
+            forall |left: int, right: int, log_index: int| #![trigger b[behavior_index].server_states[left], b[behavior_index].server_states[right].log[log_index]] #![trigger b[behavior_index].server_states[right], b[behavior_index].server_states[left].log[log_index]]
                 0 <= left < b[behavior_index].num_servers
                 && 0 <= right < b[behavior_index].num_servers
                 && 0 <= log_index

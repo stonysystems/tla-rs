@@ -1565,7 +1565,7 @@ pub fn commit_interval_stops_at_first_configuration_exec(
             cursor <= *new_commit_index,
             cursor <= s.log.len() as u64,
             *new_commit_index as int <= s@.log.len(),
-            forall |checked: int|
+            forall |checked: int| #![trigger s@.log[checked]]
                 s@.commit_index <= checked < cursor - 1
                 ==> !(s@.log[checked].payload is Configuration),
         decreases
@@ -1611,7 +1611,7 @@ pub fn commit_interval_stops_at_first_configuration_exec(
 
     proof {
         assert(cursor == *new_commit_index);
-        assert forall |checked: int|
+        assert forall |checked: int| #![trigger s@.log[checked]]
             s@.commit_index
                 <= checked
                 < *new_commit_index as int - 1

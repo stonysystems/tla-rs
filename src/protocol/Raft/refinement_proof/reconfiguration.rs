@@ -617,11 +617,11 @@ verus! {
         requires
             0 <= committed_len <= left_log.len(),
             committed_len <= right_log.len(),
-            forall |index: int|
+            forall |index: int| #![trigger left_log[index]] #![trigger right_log[index]]
                 0 <= index < committed_len
                 ==> ((left_log[index].payload is Configuration)
                     == (right_log[index].payload is Configuration)),
-            forall |index: int|
+            forall |index: int| #![trigger left_log[index]] #![trigger right_log[index]]
                 0 <= index < committed_len
                 && left_log[index].payload is Configuration
                 ==> left_log[index] == right_log[index],
@@ -802,7 +802,7 @@ verus! {
         if max_commit <= 0 {
             Seq::<int>::empty()
         } else {
-            let server_id = choose |id: int| 0 <= id < ds.num_servers
+            let server_id = choose |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
                 && ds.server_states[id].commit_index >= max_commit
                 && ds.server_states[id].log.len() >= max_commit;
             application_values_from_raft_log(
@@ -822,7 +822,7 @@ verus! {
                 == Seq::<int>::empty(),
             MaxCommitIndex(ds) > 0 ==> {
                 let max_commit = MaxCommitIndex(ds);
-                let server_id = choose |id: int| 0 <= id < ds.num_servers
+                let server_id = choose |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
                     && ds.server_states[id].commit_index >= max_commit
                     && ds.server_states[id].log.len() >= max_commit;
                 GetApplicationCommittedLog(ds)
@@ -923,7 +923,7 @@ verus! {
             ),
             s_.election_membership_phase
                 == s.election_membership_phase,
-            forall |index: int|
+            forall |index: int| #![trigger s_.log[index]]
                 s_.commit_index <= index < s_.log.len()
                 && s_.log[index].payload is Configuration
                 ==> index == s.log.len(),
@@ -957,7 +957,7 @@ verus! {
             s.commit_index,
         );
 
-        assert forall |index: int|
+        assert forall |index: int| #![trigger s_.log[index]]
             s_.commit_index <= index < s_.log.len()
             && s_.log[index].payload is Configuration
             implies index == s.log.len()
@@ -1374,7 +1374,7 @@ verus! {
             let votes = s_mid.votes_granted.insert(voter);
 
             assert(votes.subset_of(c.servers)) by {
-                assert forall |server: int|
+                assert forall |server: int| #![trigger votes.contains(server)]
                     votes.contains(server)
                     implies c.servers.contains(server)
                 by {
@@ -1503,7 +1503,7 @@ verus! {
         c: LConstants,
     ) -> bool {
         if s.role is Leader {
-            exists |election_log_len: int| {
+            exists |election_log_len: int| #![trigger active_membership_phase_from_raft_log(s.log, election_log_len, MembershipPhase::Stable { config: c.servers })] {
                 &&& 0 <= election_log_len <= s.log.len()
                 &&& s.election_membership_phase == Some(
                     active_membership_phase_from_raft_log(
@@ -1618,7 +1618,7 @@ verus! {
         ensures
             has_recorded_election_log_provenance(s_, c),
     {
-        let election_log_len = choose |election_log_len: int| {
+        let election_log_len = choose |election_log_len: int| #![trigger active_membership_phase_from_raft_log(s.log, election_log_len, MembershipPhase::Stable { config: c.servers })] {
             &&& 0 <= election_log_len <= s.log.len()
             &&& s.election_membership_phase == Some(
                 active_membership_phase_from_raft_log(
@@ -2413,7 +2413,7 @@ verus! {
     )
         requires
             0 <= earlier_len <= later_len <= log.len(),
-            forall |index: int|
+            forall |index: int| #![trigger log[index]]
                 earlier_len <= index < later_len
                 ==> !(log[index].payload is Configuration),
         ensures
@@ -2476,7 +2476,7 @@ verus! {
             config: c.servers,
         };
 
-        if forall |index: int|
+        if forall |index: int| #![trigger s.log[index]]
             s.commit_index <= index < s.log.len()
             ==> !(s.log[index].payload is Configuration)
         {
@@ -2490,11 +2490,11 @@ verus! {
                 active_membership_phase_for_state(s, c),
             );
         } else {
-            let boundary = choose |index: int|
+            let boundary = choose |index: int| #![trigger s.log[index]]
                 s.commit_index <= index < s.log.len()
                 && s.log[index].payload is Configuration;
 
-            assert forall |index: int|
+            assert forall |index: int| #![trigger s.log[index]]
                 s.commit_index <= index < boundary
                 implies !(s.log[index].payload is Configuration)
             by {
@@ -2509,7 +2509,7 @@ verus! {
                 }
             };
 
-            assert forall |index: int|
+            assert forall |index: int| #![trigger s.log[index]]
                 boundary + 1 <= index < s.log.len()
                 implies !(s.log[index].payload is Configuration)
             by {
@@ -2576,7 +2576,7 @@ verus! {
         requires
             raft_membership_log_is_well_formed(log, initial_phase),
             0 <= earlier_len <= later_len <= log.len(),
-            forall |a: int, b: int|
+            forall |a: int, b: int| #![trigger log[a], log[b]]
                 earlier_len <= a < later_len
                 && earlier_len <= b < later_len
                 && log[a].payload is Configuration
@@ -2590,7 +2590,7 @@ verus! {
                     log, later_len, initial_phase),
             ),
     {
-        if forall |index: int|
+        if forall |index: int| #![trigger log[index]]
             earlier_len <= index < later_len
             ==> !(log[index].payload is Configuration)
         {
@@ -2601,11 +2601,11 @@ verus! {
                     log, earlier_len, initial_phase),
             );
         } else {
-            let boundary = choose |index: int|
+            let boundary = choose |index: int| #![trigger log[index]]
                 earlier_len <= index < later_len
                 && log[index].payload is Configuration;
 
-            assert forall |index: int|
+            assert forall |index: int| #![trigger log[index]]
                 earlier_len <= index < boundary
                 implies !(log[index].payload is Configuration)
             by {
@@ -2615,7 +2615,7 @@ verus! {
                 }
             };
 
-            assert forall |index: int|
+            assert forall |index: int| #![trigger log[index]]
                 boundary + 1 <= index < later_len
                 implies !(log[index].payload is Configuration)
             by {
@@ -3193,7 +3193,7 @@ verus! {
         let replicators = replicator_set(s, c, idx);
 
         assert(replicators.subset_of(c.servers)) by {
-            assert forall |server: int|
+            assert forall |server: int| #![trigger replicators.contains(server)]
                 replicators.contains(server)
                 implies c.servers.contains(server)
             by {
@@ -3879,7 +3879,7 @@ verus! {
     )
         requires
             0 <= earlier_len <= later_len <= log.len(),
-            forall |index: int|
+            forall |index: int| #![trigger log[index]]
                 earlier_len <= index < later_len
                 ==> !(log[index].payload is Configuration),
             is_quorum_for_phase(
@@ -4322,7 +4322,7 @@ verus! {
                 LLogValue::Data { value: _ } => false,
             },
         ensures
-            exists |server: int|
+            exists |server: int| #![trigger resulting_quorum.contains(server)]
                 certificate.quorum.contains(server)
                 && resulting_quorum.contains(server),
     {

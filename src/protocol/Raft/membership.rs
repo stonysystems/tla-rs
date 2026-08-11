@@ -323,7 +323,7 @@ verus! {
         committed_len: int,
     ) -> bool {
         &&& 0 <= committed_len <= log.len()
-        &&& forall |index: int|
+        &&& forall |index: int| #![trigger log[index]]
             committed_len <= index < log.len()
             ==> !(log[index].payload is Configuration)
     }
@@ -337,7 +337,7 @@ verus! {
         committed_len: int,
     ) -> bool {
         &&& 0 <= committed_len <= log.len()
-        &&& forall |left: int, right: int|
+        &&& forall |left: int, right: int| #![trigger log[left], log[right]]
             committed_len <= left < log.len()
             && committed_len <= right < log.len()
             && log[left].payload is Configuration
@@ -360,7 +360,7 @@ verus! {
         &&& 0 <= old_committed_len
         &&& old_committed_len < new_committed_len
         &&& new_committed_len <= log.len()
-        &&& forall |index: int|
+        &&& forall |index: int| #![trigger log[index]]
             old_committed_len <= index < new_committed_len - 1
             ==> !(log[index].payload is Configuration)
     }

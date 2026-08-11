@@ -175,7 +175,7 @@ verus! {
     pub open spec fn LeaderHasStablePhaseQuorum(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]]
             0 <= i < ds.num_servers
             && ds.server_states[i].role is Leader
             ==> is_quorum_for_phase(
@@ -191,7 +191,7 @@ verus! {
     pub open spec fn LeaderHasRecordedElectionQuorum(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]]
             0 <= i < ds.num_servers
             ==> has_recorded_election_quorum(
                 ds.server_states[i],
@@ -203,7 +203,7 @@ verus! {
     pub open spec fn LeaderHasRecordedElectionLogProvenance(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]] #![trigger ds.server_constants[i]]
             0 <= i < ds.num_servers
             ==> has_recorded_election_log_provenance(
                 ds.server_states[i],
@@ -327,7 +327,7 @@ verus! {
             && !(ds.server_states[leader_id].log.len() > index
                 && ds.server_states[leader_id].log[index]
                     == ds.configuration_commit_certificates[index].entry)
-            ==> exists |certificate_witness: int, election_commit_len: int| {
+            ==> exists |certificate_witness: int, election_commit_len: int| #![trigger ds.configuration_commit_certificates[index].quorum.contains(certificate_witness), active_membership_phase_from_raft_log(ds.server_states[leader_id].log, election_commit_len, MembershipPhase::Stable { config: ds.server_constants[leader_id].servers })] {
                 &&& ds.configuration_commit_certificates[index].quorum
                     .contains(certificate_witness)
                 &&& 0 <= election_commit_len
@@ -346,7 +346,7 @@ verus! {
                     ==> ds.server_states[leader_id].log[prefix_index]
                         == ds.server_states[certificate_witness]
                             .log[prefix_index]
-                &&& forall |prefix_index: int|
+                &&& forall |prefix_index: int| #![trigger ds.server_states[certificate_witness].log[prefix_index]]
                     election_commit_len <= prefix_index < index
                     ==> !(ds.server_states[certificate_witness]
                         .log[prefix_index].payload is Configuration)
@@ -368,7 +368,7 @@ verus! {
     pub open spec fn CertifiedBoundaryTransfersToVotedLeader(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |index: int, leader_id: int, overlap_voter: int|
+        forall |index: int, leader_id: int, overlap_voter: int| #![trigger ds.configuration_commit_certificates.dom().contains(index), ds.server_states[leader_id].votes_granted.contains(overlap_voter)]
             ds.configuration_commit_certificates.dom().contains(index)
             && 0 <= leader_id < ds.num_servers
             && 0 <= overlap_voter < ds.num_servers
@@ -423,7 +423,7 @@ verus! {
     {
         assert(LogCommitCertificatesValid(ds));
         assert(0 <= index);
-        assert forall |a: int, e: int|
+        assert forall |a: int, e: int| #![trigger ds.server_constants[a], ds.server_constants[e]]
             0 <= a < ds.num_servers && 0 <= e < ds.num_servers
             implies ds.server_constants[a].servers
                 == ds.server_constants[e].servers
@@ -560,7 +560,7 @@ verus! {
         assert(leader.commit_index <= cut);
 
         // Every certified boundary below the target is held by the leader.
-        assert forall |m: int|
+        assert forall |m: int| #![trigger ds.configuration_commit_certificates.dom().contains(m)]
             0 <= m < log_index
             && ds.configuration_commit_certificates.dom().contains(m)
             implies ds.server_states[leader_id].log.len() > m
@@ -573,7 +573,7 @@ verus! {
         };
 
         // Hence the committer carries no boundary past the leader's log end.
-        assert forall |p: int| cut <= p < log_index
+        assert forall |p: int| #![trigger ds.server_states[committer].log[p]] cut <= p < log_index
         implies !(ds.server_states[committer].log[p].payload is Configuration)
         by {
             if ds.server_states[committer].log[p].payload is Configuration {
@@ -618,7 +618,7 @@ verus! {
 
         assert(AllRaftMembershipLogsWellFormed(ds));
         assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
-        assert forall |a: int, b: int|
+        assert forall |a: int, b: int| #![trigger leader.log[a], leader.log[b]]
             leader.commit_index <= a < leader.log.len()
             && leader.commit_index <= b < leader.log.len()
             && leader.log[a].payload is Configuration
@@ -734,7 +734,7 @@ verus! {
 
         // Every certified boundary below the target is older than it, hence
         // older than the leader's term, hence held by the leader.
-        assert forall |m: int|
+        assert forall |m: int| #![trigger ds.configuration_commit_certificates.dom().contains(m)]
             0 <= m < log_index
             && ds.configuration_commit_certificates.dom().contains(m)
             implies ds.server_states[leader_id].log.len() > m
@@ -771,7 +771,7 @@ verus! {
 
         assert(AllRaftMembershipLogsWellFormed(ds));
         assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
-        assert forall |a: int, b: int|
+        assert forall |a: int, b: int| #![trigger leader.log[a], leader.log[b]]
             leader.commit_index <= a < leader.log.len()
             && leader.commit_index <= b < leader.log.len()
             && leader.log[a].payload is Configuration
@@ -891,7 +891,7 @@ verus! {
         assert(0 <= snapshot <= leader.log.len());
         assert(CommitIndexBounded(ds));
 
-        assert forall |j: int|
+        assert forall |j: int| #![trigger leader.log[j]]
             snapshot <= j < leader.commit_index
             implies !(leader.log[j].payload is Configuration)
         by {
@@ -977,7 +977,7 @@ verus! {
             election_phase,
         );
 
-        let overlap_voter = choose |server: int|
+        let overlap_voter = choose |server: int| #![trigger certificate.quorum.contains(server)]
             certificate.quorum.contains(server)
             && ds.server_states[leader_id].votes_granted.contains(server);
 
@@ -1039,7 +1039,7 @@ verus! {
             certificate.governing_phase,
         );
 
-        let overlap_voter = choose |server: int|
+        let overlap_voter = choose |server: int| #![trigger certificate.quorum.contains(server)]
             ds.server_states[leader_id].votes_granted.contains(server)
             && certificate.quorum.contains(server);
 
@@ -1146,7 +1146,7 @@ verus! {
 
         assert(cut <= ds.server_states[committer].log.len());
 
-        assert forall |j: int| 0 <= j < committed_len implies
+        assert forall |j: int| #![trigger leader.log[j]] 0 <= j < committed_len implies
             ((leader.log[j].payload is Configuration)
                 == (ds.server_states[committer].log[j].payload
                     is Configuration))
@@ -1160,7 +1160,7 @@ verus! {
                     ds, committer, leader_id, j);
             }
         };
-        assert forall |j: int|
+        assert forall |j: int| #![trigger leader.log[j]]
             0 <= j < committed_len
             && leader.log[j].payload is Configuration
         implies leader.log[j] == ds.server_states[committer].log[j]
@@ -1189,11 +1189,11 @@ verus! {
             constants,
         );
 
-        if forall |j: int|
+        if forall |j: int| #![trigger leader.log[j]]
             committed_len <= j < cut
             ==> !(leader.log[j].payload is Configuration)
         {
-            assert forall |j: int|
+            assert forall |j: int| #![trigger ds.server_states[committer].log[j]]
                 committed_len <= j < cut
                 implies !(ds.server_states[committer].log[j].payload
                     is Configuration)
@@ -1215,11 +1215,11 @@ verus! {
                 initial_phase,
             );
         } else {
-            let boundary = choose |j: int|
+            let boundary = choose |j: int| #![trigger leader.log[j]]
                 committed_len <= j < cut
                 && leader.log[j].payload is Configuration;
 
-            assert forall |j: int|
+            assert forall |j: int| #![trigger leader.log[j]]
                 committed_len <= j < leader.log.len()
                 && leader.log[j].payload is Configuration
                 implies j == boundary
@@ -1242,7 +1242,7 @@ verus! {
                         ds, boundary, committer);
                 };
 
-                assert forall |j: int|
+                assert forall |j: int| #![trigger ds.server_states[committer].log[j]]
                     committed_len <= j < cut
                     && ds.server_states[committer].log[j].payload
                         is Configuration
@@ -1256,7 +1256,7 @@ verus! {
                         ds, j);
                 };
 
-                assert forall |j: int| 0 <= j < cut implies
+                assert forall |j: int| #![trigger leader.log[j]] 0 <= j < cut implies
                     ((leader.log[j].payload is Configuration)
                         == (ds.server_states[committer].log[j].payload
                             is Configuration))
@@ -1273,7 +1273,7 @@ verus! {
                         }
                     }
                 };
-                assert forall |j: int|
+                assert forall |j: int| #![trigger leader.log[j]]
                     0 <= j < cut
                     && leader.log[j].payload is Configuration
                 implies leader.log[j]
@@ -1290,7 +1290,7 @@ verus! {
                     cut,
                     initial_phase,
                 );
-                assert forall |j: int|
+                assert forall |j: int| #![trigger leader.log[j]]
                     cut <= j < leader.log.len()
                     implies !(leader.log[j].payload is Configuration)
                 by {
@@ -1307,7 +1307,7 @@ verus! {
                 );
                 lemma_phase_progression_reflexive(target_governing_phase);
             } else {
-                assert forall |j: int|
+                assert forall |j: int| #![trigger ds.server_states[committer].log[j]]
                     committed_len <= j < cut
                     implies !(ds.server_states[committer].log[j].payload
                         is Configuration)
@@ -1469,7 +1469,7 @@ verus! {
     pub open spec fn CertifiedLogEntryTransfersToVotedLeader(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |index: int, leader_id: int, overlap_voter: int|
+        forall |index: int, leader_id: int, overlap_voter: int| #![trigger ds.log_commit_certificates.dom().contains(index), ds.server_states[leader_id].votes_granted.contains(overlap_voter)]
             ds.log_commit_certificates.dom().contains(index)
             && 0 <= leader_id < ds.num_servers
             && 0 <= overlap_voter < ds.num_servers
@@ -1508,7 +1508,7 @@ verus! {
         ensures
             CertifiedLogEntryTransfersToVotedLeader(ds),
     {
-        assert forall |index: int, leader_id: int, overlap_voter: int|
+        assert forall |index: int, leader_id: int, overlap_voter: int| #![trigger ds.log_commit_certificates.dom().contains(index), ds.server_states[leader_id].votes_granted.contains(overlap_voter)]
             ds.log_commit_certificates.dom().contains(index)
             && 0 <= leader_id < ds.num_servers
             && 0 <= overlap_voter < ds.num_servers
@@ -1536,7 +1536,7 @@ verus! {
 
             if overlap_voter != leader_id {
                 assert(VotersVotedForCandidate(ds));
-                let vote = choose |packet: LRaftPacket| {
+                let vote = choose |packet: LRaftPacket| #![trigger ds.network.contains(packet)] {
                     &&& ds.network.contains(packet)
                     &&& packet.dst == leader_id
                     &&& packet.msg matches LRaftMessage::VoteResponse {
@@ -1619,7 +1619,7 @@ verus! {
                 assert(FirstMissingConfigurationBoundaryProvenance(ds));
                 let (certificate_witness, election_commit_len):
                     (int, int) = choose
-                    |certificate_witness: int, election_commit_len: int| {
+                    |certificate_witness: int, election_commit_len: int| #![trigger ds.configuration_commit_certificates[index].quorum.contains(certificate_witness), active_membership_phase_from_raft_log(ds.server_states[leader_id].log, election_commit_len, MembershipPhase::Stable { config: ds.server_constants[leader_id].servers })] {
                         &&& ds.configuration_commit_certificates[index].quorum
                             .contains(certificate_witness)
                         &&& 0 <= election_commit_len
@@ -1639,7 +1639,7 @@ verus! {
                             ==> ds.server_states[leader_id].log[prefix_index]
                                 == ds.server_states[certificate_witness]
                                     .log[prefix_index]
-                        &&& forall |prefix_index: int|
+                        &&& forall |prefix_index: int| #![trigger ds.server_states[certificate_witness].log[prefix_index]]
                             election_commit_len <= prefix_index < index
                             ==> !(ds.server_states[certificate_witness]
                                 .log[prefix_index].payload is Configuration)
@@ -2008,7 +2008,7 @@ verus! {
 
         // The committer holds no Configuration between the leader's log end
         // and the boundary: such an entry would be certified, hence held.
-        assert forall |p: int| leader_len <= p < index
+        assert forall |p: int| #![trigger ds.server_states[committer].log[p]] leader_len <= p < index
         implies !(ds.server_states[committer].log[p].payload is Configuration)
         by {
             if ds.server_states[committer].log[p].payload is Configuration {
@@ -2028,7 +2028,7 @@ verus! {
         );
 
         // Both logs carry the same Configurations below that length.
-        assert forall |j: int| 0 <= j < leader_len implies
+        assert forall |j: int| #![trigger ds.server_states[leader_id].log[j]] #![trigger ds.server_states[committer].log[j]] 0 <= j < leader_len implies
             ((ds.server_states[leader_id].log[j].payload is Configuration)
                 == (ds.server_states[committer].log[j].payload
                     is Configuration))
@@ -2039,7 +2039,7 @@ verus! {
             }
         };
 
-        assert forall |j: int|
+        assert forall |j: int| #![trigger ds.server_states[leader_id].log[j]] #![trigger ds.server_states[committer].log[j]]
             0 <= j < leader_len
             && ds.server_states[leader_id].log[j].payload is Configuration
         implies ds.server_states[leader_id].log[j]
@@ -2206,7 +2206,7 @@ verus! {
     /// Well-formedness of the election-snapshot ghost map, mirroring
     /// `VoteLogLenBounded`.
     pub open spec fn ElectionLogLenBounded(ds: RaftDistributedState) -> bool {
-        forall |v: int, t: int| ds.election_log_len.dom().contains((v, t)) ==> {
+        forall |v: int, t: int| #![trigger ds.election_log_len.dom().contains((v, t))] ds.election_log_len.dom().contains((v, t)) ==> {
             &&& 0 <= v < ds.num_servers
             &&& 0 <= ds.election_log_len[(v, t)]
             &&& ds.election_log_len[(v, t)]
@@ -2283,7 +2283,7 @@ verus! {
             &&& RaftServerStepWithNetwork(ds, ds_, sid)
         };
 
-        assert forall |v: int, t: int|
+        assert forall |v: int, t: int| #![trigger ds_.election_log_len.dom().contains((v, t))]
             ds_.election_log_len.dom().contains((v, t))
         implies {
             &&& 0 <= v < ds_.num_servers
@@ -2313,7 +2313,7 @@ verus! {
         lemma_log_append_only(ds, ds_);
         lemma_distributed_next_implies_legacy(ds, ds_);
 
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -2373,7 +2373,7 @@ verus! {
         lemma_log_append_only(ds, ds_);
         lemma_distributed_next_implies_legacy(ds, ds_);
 
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -2382,7 +2382,7 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]]
             0 <= i < ds_.num_servers
             && ds_.server_states[i].role is Leader
         implies {
@@ -2672,7 +2672,7 @@ verus! {
             config: constants.servers,
         };
 
-        if forall |j: int|
+        if forall |j: int| #![trigger leader.log[j]]
             leader.commit_index <= j < index
             ==> !(leader.log[j].payload is Configuration)
         {
@@ -2680,12 +2680,12 @@ verus! {
                 ds, index, leader_id);
         } else {
             // Some boundary waits below `index`.
-            let waiting = choose |j: int|
+            let waiting = choose |j: int| #![trigger leader.log[j]]
                 leader.commit_index <= j < index
                 && leader.log[j].payload is Configuration;
 
             // At most one boundary waits, so none sits at or above `index`.
-            assert forall |m: int|
+            assert forall |m: int| #![trigger leader.log[m]]
                 index <= m < leader.log.len()
             implies !(leader.log[m].payload is Configuration)
             by {
@@ -2857,7 +2857,7 @@ verus! {
             ));
 
         // Same Configuration entries at the same positions below `index`.
-        assert forall |j: int| 0 <= j < index implies
+        assert forall |j: int| #![trigger ds.server_states[leader_id].log[j]] #![trigger ds.server_states[committer].log[j]] 0 <= j < index implies
             ((ds.server_states[leader_id].log[j].payload is Configuration)
                 == (ds.server_states[committer].log[j].payload
                     is Configuration))
@@ -2868,7 +2868,7 @@ verus! {
             }
         };
 
-        assert forall |j: int|
+        assert forall |j: int| #![trigger ds.server_states[leader_id].log[j]] #![trigger ds.server_states[committer].log[j]]
             0 <= j < index
             && ds.server_states[leader_id].log[j].payload is Configuration
         implies ds.server_states[leader_id].log[j]
@@ -3184,7 +3184,7 @@ verus! {
         // Both candidate prefixes sit at or above the commit index, so the
         // stretch up to the target lies in the uncommitted suffix and carries
         // at most one boundary.
-        assert forall |a: int, b: int|
+        assert forall |a: int, b: int| #![trigger leader.log[a], leader.log[b]]
             leader.commit_index <= a < target_len
             && leader.commit_index <= b < target_len
             && leader.log[a].payload is Configuration
@@ -3206,7 +3206,7 @@ verus! {
                 initial_phase,
             );
         } else {
-            assert forall |a: int, b: int|
+            assert forall |a: int, b: int| #![trigger leader.log[a], leader.log[b]]
                 index <= a < target_len
                 && index <= b < target_len
                 && leader.log[a].payload is Configuration
@@ -3316,7 +3316,7 @@ verus! {
         lemma_minimal_missing_governing_phase_progresses_to_election(
             ds, index, leader_id);
 
-        assert forall |a: int, b: int|
+        assert forall |a: int, b: int| #![trigger leader.log[a], leader.log[b]]
             leader.commit_index <= a < leader.log.len()
             && leader.commit_index <= b < leader.log.len()
             && leader.log[a].payload is Configuration
@@ -3444,7 +3444,7 @@ verus! {
             // A committed Configuration after this leader's election would
             // simultaneously have a term at least the election term and no
             // greater than the older target boundary's term.
-            assert forall |j: int|
+            assert forall |j: int| #![trigger leader.log[j]]
                 snapshot <= j < leader.commit_index
                 implies !(leader.log[j].payload is Configuration)
             by {
@@ -3510,7 +3510,7 @@ verus! {
                 assert(governing_phase
                     == active_membership_phase_from_raft_log(
                         leader.log, index, initial_phase));
-                assert forall |a: int, b: int|
+                assert forall |a: int, b: int| #![trigger leader.log[a], leader.log[b]]
                     leader.commit_index <= a < index
                     && leader.commit_index <= b < index
                     && leader.log[a].payload is Configuration
@@ -3611,7 +3611,7 @@ verus! {
         assert(0 <= snapshot <= leader.log.len());
         assert(CommitIndexBounded(ds));
 
-        assert forall |j: int|
+        assert forall |j: int| #![trigger leader.log[j]]
             snapshot <= j < leader.commit_index
             implies !(leader.log[j].payload is Configuration)
         by {
@@ -3731,7 +3731,7 @@ verus! {
 
         // The committer has no boundary between the leader's log end and the
         // target: such an entry would be certified and therefore held.
-        assert forall |p: int| cut <= p < certificate_index
+        assert forall |p: int| #![trigger ds.server_states[committer].log[p]] cut <= p < certificate_index
         implies !(ds.server_states[committer].log[p].payload is Configuration)
         by {
             if ds.server_states[committer].log[p].payload is Configuration {
@@ -3766,7 +3766,7 @@ verus! {
 
         assert(AllRaftMembershipLogsWellFormed(ds));
         assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
-        assert forall |a: int, b: int|
+        assert forall |a: int, b: int| #![trigger leader.log[a], leader.log[b]]
             leader.commit_index <= a < leader.log.len()
             && leader.commit_index <= b < leader.log.len()
             && leader.log[a].payload is Configuration
@@ -3936,7 +3936,7 @@ verus! {
             assert(0 <= index);
 
             // All servers share one universe of identities.
-            assert forall |a: int, e: int|
+            assert forall |a: int, e: int| #![trigger ds.server_constants[a], ds.server_constants[e]]
                 0 <= a < ds.num_servers && 0 <= e < ds.num_servers
                 implies ds.server_constants[a].servers
                     == ds.server_constants[e].servers
@@ -3946,7 +3946,7 @@ verus! {
 
             // Certificate terms increase with position, so the leader's term
             // exceeds every certified boundary up to and including this one.
-            assert forall |m: int|
+            assert forall |m: int| #![trigger ds.configuration_commit_certificates.dom().contains(m)]
                 0 <= m < index + 1
                 && ds.configuration_commit_certificates.dom().contains(m)
                 implies ds.server_states[leader_id].current_term
@@ -4099,7 +4099,7 @@ verus! {
             certificate.governing_phase,
         );
 
-        let overlap_voter = choose |server: int|
+        let overlap_voter = choose |server: int| #![trigger certificate.quorum.contains(server)]
             ds.server_states[leader_id].votes_granted.contains(server)
             && certificate.quorum.contains(server);
 
@@ -4219,7 +4219,7 @@ verus! {
             election_phase,
         );
 
-        let overlap_voter = choose |server: int|
+        let overlap_voter = choose |server: int| #![trigger certificate.quorum.contains(server)]
             certificate.quorum.contains(server)
             && ds.server_states[leader_id].votes_granted.contains(server);
 
@@ -4265,7 +4265,7 @@ verus! {
         assert(is_majority_of(certificate.quorum, config));
         assert(certificate.quorum.len() >= ds.num_servers / 2 + 1);
 
-        assert forall |id: int| certificate.quorum.contains(id) implies {
+        assert forall |id: int| #![trigger certificate.quorum.contains(id)] certificate.quorum.contains(id) implies {
             &&& 0 <= id < ds.num_servers
             &&& ds.server_states[id].log.len() > index
             &&& ds.server_states[id].log[index] == certificate.entry
@@ -4318,7 +4318,7 @@ verus! {
         ensures
             LeaderCompleteness(ds),
     {
-        assert forall |k: int, entry: LLogEntry, leader_id: int|
+        assert forall |k: int, entry: LLogEntry, leader_id: int| #![trigger EntryCommittedAt(ds, k, entry), ds.server_states[leader_id]]
             0 <= k
             && EntryCommittedAt(ds, k, entry)
             && 0 <= leader_id < ds.num_servers
@@ -4371,7 +4371,7 @@ verus! {
         assert(certificate.quorum.len() >= ds.num_servers / 2 + 1);
 
         // Every member of that quorum holds the certified entry.
-        assert forall |id: int| certificate.quorum.contains(id) implies {
+        assert forall |id: int| #![trigger certificate.quorum.contains(id)] certificate.quorum.contains(id) implies {
             &&& 0 <= id < ds.num_servers
             &&& ds.server_states[id].log.len() > index
             &&& ds.server_states[id].log[index] == certificate.entry
@@ -4558,7 +4558,7 @@ verus! {
         ensures
             CertifiedBoundaryTransfersToVotedLeader(ds),
     {
-        assert forall |index: int, leader_id: int, overlap_voter: int|
+        assert forall |index: int, leader_id: int, overlap_voter: int| #![trigger ds.configuration_commit_certificates.dom().contains(index), ds.server_states[leader_id].votes_granted.contains(overlap_voter)]
             ds.configuration_commit_certificates.dom().contains(index)
             && 0 <= leader_id < ds.num_servers
             && 0 <= overlap_voter < ds.num_servers
@@ -4592,7 +4592,7 @@ verus! {
                 // The leader collected this voter's grant, so the granting
                 // VoteResponse is still in the network.
                 assert(VotersVotedForCandidate(ds));
-                let vote = choose |packet: LRaftPacket| {
+                let vote = choose |packet: LRaftPacket| #![trigger ds.network.contains(packet)] {
                     &&& ds.network.contains(packet)
                     &&& packet.dst == leader_id
                     &&& packet.msg matches LRaftMessage::VoteResponse {
@@ -4686,7 +4686,7 @@ verus! {
             forall |p: int| 0 <= p < election_commit_len
                 ==> ds.server_states[leader_id].log[p]
                     == ds.server_states[certificate_witness].log[p],
-            forall |p: int| election_commit_len <= p < index
+            forall |p: int| #![trigger ds.server_states[certificate_witness].log[p]] election_commit_len <= p < index
                 ==> !(ds.server_states[certificate_witness].log[p].payload
                     is Configuration),
         ensures
@@ -4705,7 +4705,7 @@ verus! {
             forall |p: int| 0 <= p < election_commit_len
                 ==> ds_.server_states[leader_id].log[p]
                     == ds_.server_states[certificate_witness].log[p],
-            forall |p: int| election_commit_len <= p < index
+            forall |p: int| #![trigger ds_.server_states[certificate_witness].log[p]] election_commit_len <= p < index
                 ==> !(ds_.server_states[certificate_witness].log[p].payload
                     is Configuration),
     {
@@ -4731,7 +4731,7 @@ verus! {
         };
 
         // Likewise the absence of an earlier Configuration boundary.
-        assert forall |p: int| election_commit_len <= p < index
+        assert forall |p: int| #![trigger ds_.server_states[certificate_witness].log[p]] election_commit_len <= p < index
             implies !(ds_.server_states[certificate_witness].log[p].payload
                 is Configuration)
         by {
@@ -4777,7 +4777,7 @@ verus! {
                 ds.configuration_commit_certificates[index].governing_phase,
             ),
         ensures
-            exists |server: int|
+            exists |server: int| #![trigger election_quorum.contains(server)]
                 ds.configuration_commit_certificates[index].quorum
                     .contains(server)
                 && election_quorum.contains(server),
@@ -4886,7 +4886,7 @@ verus! {
                 0 <= prefix_index < election_commit_len
                 ==> ds.server_states[leader_id].log[prefix_index]
                     == ds.server_states[certificate_witness].log[prefix_index],
-            forall |prefix_index: int|
+            forall |prefix_index: int| #![trigger ds.server_states[certificate_witness].log[prefix_index]]
                 election_commit_len <= prefix_index < index
                 ==> !(ds.server_states[certificate_witness]
                     .log[prefix_index].payload is Configuration),
@@ -4991,7 +4991,7 @@ verus! {
             ));
         } else {
             assert(VotersVotedForCandidate(ds));
-            let vote = choose |packet: LRaftPacket| {
+            let vote = choose |packet: LRaftPacket| #![trigger ds.network.contains(packet)] {
                 &&& ds.network.contains(packet)
                 &&& packet.dst == leader_id
                 &&& packet.msg matches LRaftMessage::VoteResponse {
@@ -5077,7 +5077,7 @@ verus! {
                 ==> ds.server_states[leader_id].log[prefix_index]
                     == ds.server_states[certificate_witness]
                         .log[prefix_index],
-            forall |prefix_index: int|
+            forall |prefix_index: int| #![trigger ds.server_states[certificate_witness].log[prefix_index]]
                 election_commit_len <= prefix_index < index
                 ==> !(ds.server_states[certificate_witness]
                     .log[prefix_index].payload is Configuration),
@@ -5143,7 +5143,7 @@ verus! {
                     #![trigger ds.configuration_commit_certificates[index]
                         .quorum.contains(certificate_witness)]
                 {
-                    exists |election_commit_len: int| {
+                    exists |election_commit_len: int| #![trigger active_membership_phase_from_raft_log(ds.server_states[leader_id].log, election_commit_len, MembershipPhase::Stable { config: ds.server_constants[leader_id].servers })] {
                         &&& ds.configuration_commit_certificates[index].quorum
                             .contains(certificate_witness)
                         &&& 0 <= election_commit_len
@@ -5162,13 +5162,13 @@ verus! {
                             ==> ds.server_states[leader_id].log[prefix_index]
                                 == ds.server_states[certificate_witness]
                                     .log[prefix_index]
-                        &&& forall |prefix_index: int|
+                        &&& forall |prefix_index: int| #![trigger ds.server_states[certificate_witness].log[prefix_index]]
                             election_commit_len <= prefix_index < index
                             ==> !(ds.server_states[certificate_witness]
                                 .log[prefix_index].payload is Configuration)
                     }
                 };
-                let election_commit_len = choose |election_commit_len: int| {
+                let election_commit_len = choose |election_commit_len: int| #![trigger active_membership_phase_from_raft_log(ds.server_states[leader_id].log, election_commit_len, MembershipPhase::Stable { config: ds.server_constants[leader_id].servers })] {
                     &&& ds.configuration_commit_certificates[index].quorum
                         .contains(certificate_witness)
                     &&& 0 <= election_commit_len
@@ -5186,7 +5186,7 @@ verus! {
                         0 <= prefix_index < election_commit_len
                         ==> ds.server_states[leader_id].log[prefix_index]
                             == ds.server_states[certificate_witness].log[prefix_index]
-                    &&& forall |prefix_index: int|
+                    &&& forall |prefix_index: int| #![trigger ds.server_states[certificate_witness].log[prefix_index]]
                         election_commit_len <= prefix_index < index
                         ==> !(ds.server_states[certificate_witness]
                             .log[prefix_index].payload is Configuration)
@@ -5390,7 +5390,7 @@ verus! {
                         &&& index < ds.server_states[replica].log.len()
                         &&& ds.server_states[replica].log[index]
                             == certificate.entry
-                        &&& forall |prefix_index: int|
+                        &&& forall |prefix_index: int| #![trigger ds.server_states[replica].log[prefix_index]]
                             0 <= prefix_index <= index
                             ==> ds.server_states[replica].log[prefix_index]
                                 == ds.server_states[certificate.committer]
@@ -5440,7 +5440,7 @@ verus! {
         requires CommittedEntriesHaveLogCertificates(ds)
         ensures StateMachineSafety(ds)
     {
-        assert forall |left: int, right: int, index: int|
+        assert forall |left: int, right: int, index: int| #![trigger ds.server_states[left], ds.server_states[right].log[index]] #![trigger ds.server_states[right], ds.server_states[left].log[index]]
             0 <= left < ds.num_servers
             && 0 <= right < ds.num_servers
             && 0 <= index < ds.server_states[left].commit_index
@@ -5501,7 +5501,7 @@ verus! {
         ensures
             LeaderHasStablePhaseQuorum(ds),
     {
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds.server_states[i]]
             0 <= i < ds.num_servers
             && ds.server_states[i].role is Leader
             implies is_quorum_for_phase(
@@ -5557,7 +5557,7 @@ verus! {
 
     /// Commit indexes are lengths and therefore never negative.
     pub open spec fn CommitIndexNonnegative(ds: RaftDistributedState) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]]
             0 <= i < ds.num_servers
             ==> 0 <= ds.server_states[i].commit_index
     }
@@ -5805,7 +5805,7 @@ verus! {
     pub open spec fn AllRaftMembershipLogsWellFormed(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |server_id: int|
+        forall |server_id: int| #![trigger ds.server_states[server_id]]
             0 <= server_id < ds.num_servers
             ==> raft_membership_log_is_well_formed(
                 ds.server_states[server_id].log,
@@ -5824,7 +5824,7 @@ verus! {
     pub open spec fn CommittedMembershipPrefixAgreement(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |left: int, right: int, committed_len: int|
+        forall |left: int, right: int, committed_len: int| #![trigger ds.server_states[left], active_membership_phase_from_raft_log(ds.server_states[right].log, committed_len, MembershipPhase::Stable { config: ds.server_constants[right].servers })] #![trigger ds.server_states[right], active_membership_phase_from_raft_log(ds.server_states[left].log, committed_len, MembershipPhase::Stable { config: ds.server_constants[left].servers })]
             0 <= left < ds.num_servers
             && 0 <= right < ds.num_servers
             && 0 <= committed_len
@@ -5859,7 +5859,7 @@ verus! {
         ensures
             CommittedMembershipPrefixAgreement(ds),
     {
-        assert forall |left: int, right: int, committed_len: int|
+        assert forall |left: int, right: int, committed_len: int| #![trigger ds.server_states[left], active_membership_phase_from_raft_log(ds.server_states[right].log, committed_len, MembershipPhase::Stable { config: ds.server_constants[right].servers })] #![trigger ds.server_states[right], active_membership_phase_from_raft_log(ds.server_states[left].log, committed_len, MembershipPhase::Stable { config: ds.server_constants[left].servers })]
             0 <= left < ds.num_servers
             && 0 <= right < ds.num_servers
             && 0 <= committed_len
@@ -5917,7 +5917,7 @@ verus! {
     pub open spec fn UncommittedSuffixesHaveAtMostOneConfiguration(
         ds: RaftDistributedState,
     ) -> bool {
-        forall |server_id: int|
+        forall |server_id: int| #![trigger ds.server_states[server_id]]
             0 <= server_id < ds.num_servers ==>
             uncommitted_suffix_has_at_most_one_configuration(
                 ds.server_states[server_id].log,
@@ -6037,7 +6037,7 @@ verus! {
         ensures
             AllRaftMembershipLogsWellFormed(ds),
     {
-        assert forall |server_id: int|
+        assert forall |server_id: int| #![trigger ds.server_states[server_id]]
             0 <= server_id < ds.num_servers
             implies raft_membership_log_is_well_formed(
                 ds.server_states[server_id].log,
@@ -9244,7 +9244,7 @@ verus! {
             LeaderHasRecordedElectionQuorum(ds_),
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(
                 ds.server_states[server_id],
@@ -9262,7 +9262,7 @@ verus! {
             ds.server_constants[server_id],
         );
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]]
             0 <= i < ds_.num_servers
             implies has_recorded_election_quorum(
                 ds_.server_states[i],
@@ -9293,7 +9293,7 @@ verus! {
             LeaderHasRecordedElectionLogProvenance(ds_),
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(
                 ds.server_states[server_id],
@@ -9311,7 +9311,7 @@ verus! {
             ds.server_constants[server_id],
         );
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]] #![trigger ds_.server_constants[i]]
             0 <= i < ds_.num_servers
             implies has_recorded_election_log_provenance(
                 ds_.server_states[i],
@@ -9784,7 +9784,7 @@ verus! {
             CommitIndexNonnegative(ds_),
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(
                 ds.server_states[server_id],
@@ -9802,7 +9802,7 @@ verus! {
             ds.server_constants[server_id],
         );
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]]
             0 <= i < ds_.num_servers
             implies 0 <= ds_.server_states[i].commit_index
         by {
@@ -11376,7 +11376,7 @@ verus! {
         assert(ds.server_states[ae_leader].log[k].payload
             == s_.log[k].payload);
 
-        assert forall |prefix_index: int|
+        assert forall |prefix_index: int| #![trigger s_.log[prefix_index]]
             0 <= prefix_index < k
             implies ds.server_states[ae_leader].log[prefix_index]
                 == s_.log[prefix_index]
@@ -11391,7 +11391,7 @@ verus! {
                 assert(ds.server_states[ae_leader].log[k - 1].term
                     == s.log[k - 1].term);
 
-                assert forall |matching_index: int|
+                assert forall |matching_index: int| #![trigger s.log[matching_index]]
                     0 <= matching_index <= k - 1
                     && matching_index
                         < ds.server_states[ae_leader].log.len()
@@ -11544,7 +11544,7 @@ verus! {
                     sent_packets,
                 );
             } else {
-                let pkt = choose |pkt: LRaftPacket| {
+                let pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                     &&& received_from == Some(pkt.src)
                     &&& ds.network.contains(pkt)
                     &&& pkt.dst == server_id
@@ -11942,7 +11942,7 @@ verus! {
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j])
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds.configuration_commit_certificates.dom().contains(index)] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
                 ds.configuration_commit_certificates.dom().contains(index)
                 ==> {
                     &&& ds_.configuration_commit_certificates.dom().contains(index)
@@ -11957,7 +11957,7 @@ verus! {
                     &&& ds_.configuration_commit_certificates[index].quorum
                         == ds.configuration_commit_certificates[index].quorum
                 })
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
                 0 <= index < ds_.server_states[server_id].commit_index
                 && index < ds_.server_states[server_id].log.len()
                 && ds_.server_states[server_id].log[index].payload is Configuration
@@ -11968,7 +11968,7 @@ verus! {
                     &&& ds_.configuration_commit_certificates[index].entry
                         == ds_.server_states[server_id].log[index]
                 })
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds_.configuration_commit_certificates.dom().contains(index)] #![trigger ds.configuration_commit_certificates.dom().contains(index)]
                 ds_.configuration_commit_certificates.dom().contains(index)
                 && !ds.configuration_commit_certificates.dom().contains(index)
                 ==> {
@@ -11999,7 +11999,7 @@ verus! {
                             ds_.server_states[server_id].commit_index,
                         )
                 })
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds.log_commit_certificates.dom().contains(index)] #![trigger ds_.log_commit_certificates.dom().contains(index)]
                 ds.log_commit_certificates.dom().contains(index)
                 ==> {
                     &&& ds_.log_commit_certificates.dom().contains(index)
@@ -12014,7 +12014,7 @@ verus! {
                     &&& ds_.log_commit_certificates[index].quorum
                         == ds.log_commit_certificates[index].quorum
                 })
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds_.log_commit_certificates.dom().contains(index)] #![trigger ds.log_commit_certificates.dom().contains(index)]
                 ds_.log_commit_certificates.dom().contains(index)
                 && !ds.log_commit_certificates.dom().contains(index)
                 ==> {
@@ -12043,7 +12043,7 @@ verus! {
                             ds_.server_states[server_id].commit_index,
                         )
                 })
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds_.log_commit_certificates.dom().contains(index)]
                 0 <= index < ds_.server_states[server_id].commit_index
                 && index < ds_.server_states[server_id].log.len()
                 ==> {
@@ -12261,7 +12261,7 @@ verus! {
                     &&& index < ds_.server_states[replica].log.len()
                     &&& ds_.server_states[replica].log[index]
                         == certificate.entry
-                    &&& forall |prefix_index: int|
+                    &&& forall |prefix_index: int| #![trigger ds_.server_states[replica].log[prefix_index]]
                         0 <= prefix_index <= index
                         ==> ds_.server_states[replica].log[prefix_index]
                             == ds_.server_states[certificate.committer]
@@ -12321,7 +12321,7 @@ verus! {
                         &&& index < ds_.server_states[replica].log.len()
                         &&& ds_.server_states[replica].log[index]
                             == certificate.entry
-                        &&& forall |prefix_index: int|
+                        &&& forall |prefix_index: int| #![trigger ds_.server_states[replica].log[prefix_index]]
                             0 <= prefix_index <= index
                             ==> ds_.server_states[replica].log[prefix_index]
                                 == ds_.server_states[certificate.committer]
@@ -12333,7 +12333,7 @@ verus! {
                         >= ds.server_states[replica].log.len());
                     assert(ds_.server_states[replica].log[index]
                         == ds.server_states[replica].log[index]);
-                    assert forall |prefix_index: int|
+                    assert forall |prefix_index: int| #![trigger ds_.server_states[replica].log[prefix_index]]
                         0 <= prefix_index <= index
                         implies ds_.server_states[replica].log[prefix_index]
                             == ds_.server_states[certificate.committer]
@@ -12370,7 +12370,7 @@ verus! {
                 assert(0 < leader_.commit_index <= leader.log.len());
                 assert(has_active_commit_quorum(
                     leader, constants, leader_.commit_index));
-                assert forall |data_index: int|
+                assert forall |data_index: int| #![trigger leader.log[data_index]]
                     leader.commit_index <= data_index < index
                     implies !(leader.log[data_index].payload is Configuration)
                 by {
@@ -12407,7 +12407,7 @@ verus! {
                         &&& index < ds_.server_states[replica].log.len()
                         &&& ds_.server_states[replica].log[index]
                             == certificate.entry
-                        &&& forall |prefix_index: int|
+                        &&& forall |prefix_index: int| #![trigger ds_.server_states[replica].log[prefix_index]]
                             0 <= prefix_index <= index
                             ==> ds_.server_states[replica].log[prefix_index]
                                 == ds_.server_states[certificate.committer]
@@ -12423,7 +12423,7 @@ verus! {
                         == ds.server_states[replica].log[index]);
                     assert(ds.server_states[replica].log[index]
                         == leader.log[index]);
-                    assert forall |prefix_index: int|
+                    assert forall |prefix_index: int| #![trigger ds_.server_states[replica].log[prefix_index]]
                         0 <= prefix_index <= index
                         implies ds_.server_states[replica].log[prefix_index]
                             == ds_.server_states[certificate.committer]
@@ -12792,7 +12792,7 @@ verus! {
             leader.log,
             initial_phase,
         ));
-        assert forall |data_index: int|
+        assert forall |data_index: int| #![trigger leader.log[data_index]]
             leader.commit_index <= data_index < index
             implies !(leader.log[data_index].payload is Configuration)
         by {
@@ -12868,7 +12868,7 @@ verus! {
                 <= ds.server_states[replica].log.len());
             assert(ds_.server_states[replica].log.len()
                 >= ds.server_states[replica].log.len());
-            assert forall |prefix_index: int|
+            assert forall |prefix_index: int| #![trigger leader.log[prefix_index]]
                 0 <= prefix_index < leader_.commit_index
                 implies ds_.server_states[replica].log[prefix_index]
                     == leader.log[prefix_index]
@@ -16620,7 +16620,7 @@ verus! {
 
         lemma_log_append_only(ds, ds_);
 
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::AppendEntries {
                     leader,
@@ -16631,7 +16631,7 @@ verus! {
                     ..
                 } => (has_entry && payload is Configuration) ==> {
                     &&& 0 <= leader < ds_.num_servers
-                    &&& forall |index: int|
+                    &&& forall |index: int| #![trigger ds_.server_states[leader].log[index]]
                         0 <= index < prev_index
                         && ds_.server_states[leader].log[index].payload
                             is Configuration
@@ -16650,7 +16650,7 @@ verus! {
                 if ds.network.contains(p) {
                     assert(AppendEntriesConfigurationBoundaryIntegrity(ds));
                     assert(0 <= leader < ds.num_servers);
-                    assert forall |index: int|
+                    assert forall |index: int| #![trigger ds_.server_states[leader].log[index]]
                         0 <= index < boundary
                         && ds_.server_states[leader].log[index].payload
                             is Configuration
@@ -16670,7 +16670,7 @@ verus! {
                     assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
                     assert(uncommitted_suffix_has_at_most_one_configuration(
                         s.log, s.commit_index));
-                    assert forall |index: int|
+                    assert forall |index: int| #![trigger s_.log[index]]
                         0 <= index < boundary
                         && s_.log[index].payload is Configuration
                         implies index < leader_commit
@@ -16706,7 +16706,7 @@ verus! {
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
 
-        assert forall |id: int| 0 <= id < ds_.num_servers implies
+        assert forall |id: int| #![trigger ds_.server_states[id]] 0 <= id < ds_.num_servers implies
             uncommitted_suffix_has_at_most_one_configuration(
                 ds_.server_states[id].log,
                 ds_.server_states[id].commit_index,
@@ -16716,7 +16716,7 @@ verus! {
                 assert(ds_.server_states[id] == ds.server_states[id]);
             } else {
                 assert(0 <= s_.commit_index <= s_.log.len());
-                assert forall |left: int, right: int|
+                assert forall |left: int, right: int| #![trigger s_.log[left], s_.log[right]]
                     s_.commit_index <= left < s_.log.len()
                     && s_.commit_index <= right < s_.log.len()
                     && s_.log[left].payload is Configuration
@@ -16739,7 +16739,7 @@ verus! {
 
                         if recv_from is Some {
                             let source = recv_from->Some_0;
-                            let pkt = choose |pkt: LRaftPacket| {
+                            let pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                                 &&& recv_from == Some(pkt.src)
                                 &&& ds.network.contains(pkt)
                                 &&& pkt.dst == server_id
@@ -16759,7 +16759,7 @@ verus! {
                                 == pkt.msg->AppendEntries_prev_term);
                             assert(ds.server_states[source].log[new_index - 1].term
                                 == pkt.msg->AppendEntries_prev_term);
-                            assert forall |index: int|
+                            assert forall |index: int| #![trigger s.log[index]]
                                 0 <= index <= new_index - 1
                                 implies ds.server_states[source].log[index]
                                     == s.log[index]

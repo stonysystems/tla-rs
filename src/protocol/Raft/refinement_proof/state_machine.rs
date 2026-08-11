@@ -175,7 +175,7 @@ verus! {
             // Ghost state: election_log_len records the stepping server's log
             // length at the moment it becomes leader. Existing entries are
             // immutable, a promotion records one, and nothing else is added.
-            &&& (forall |v: int, t: int| ds.election_log_len.dom().contains((v, t))
+            &&& (forall |v: int, t: int| #![trigger ds_.election_log_len[(v, t)]] #![trigger ds.election_log_len[(v, t)]] ds.election_log_len.dom().contains((v, t))
                 ==> ds_.election_log_len.dom().contains((v, t))
                     && ds_.election_log_len[(v, t)] == ds.election_log_len[(v, t)])
             &&& (!(s.role is Leader) && s_.role is Leader ==> {
@@ -193,7 +193,7 @@ verus! {
                     && !(s.role is Leader)
                     && s_.role is Leader)
             // Existing configuration-commit certificates are immutable.
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds.configuration_commit_certificates.dom().contains(index)] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
                 ds.configuration_commit_certificates.dom().contains(index)
                 ==> {
                     &&& ds_.configuration_commit_certificates.dom().contains(index)
@@ -210,7 +210,7 @@ verus! {
                 })
             // A new certificate can only be created when a local leader commit
             // ends exactly at a Configuration entry.
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger s_.log[index]]
                 ds_.configuration_commit_certificates.dom().contains(index)
                 && !ds.configuration_commit_certificates.dom().contains(index)
                 ==> {
@@ -255,7 +255,7 @@ verus! {
             // post-state prefix is tied to the same global history
             // certificate. Followers therefore reuse an existing leader-created
             // certificate rather than inventing a new one.
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger s_.log[index]]
                 0 <= index < s_.commit_index
                 && index < s_.log.len()
                 && s_.log[index].payload is Configuration
@@ -268,7 +268,7 @@ verus! {
                 }
             )
             // Existing all-entry commit certificates are immutable.
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger ds.log_commit_certificates.dom().contains(index)] #![trigger ds_.log_commit_certificates.dom().contains(index)]
                 ds.log_commit_certificates.dom().contains(index)
                 ==> {
                     &&& ds_.log_commit_certificates.dom().contains(index)
@@ -285,7 +285,7 @@ verus! {
                 })
             // New all-entry certificates can only describe entries in one
             // local leader's newly committed physical-log interval.
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger s_.log[index]]
                 ds_.log_commit_certificates.dom().contains(index)
                 && !ds.log_commit_certificates.dom().contains(index)
                 ==> {
@@ -309,7 +309,7 @@ verus! {
             // all-entry certificate backed by the quorum for the interval.
             &&& (received_from is None
                 && s_.commit_index > s.commit_index
-                ==> forall |index: int|
+                ==> forall |index: int| #![trigger s_.log[index]]
                     s.commit_index <= index < s_.commit_index
                     ==> {
                         &&& ds_.log_commit_certificates.dom().contains(index)
@@ -327,7 +327,7 @@ verus! {
                     })
             // Every committed post-state entry, including follower-learned
             // entries, is tied to the unique global certificate at its index.
-            &&& (forall |index: int|
+            &&& (forall |index: int| #![trigger s_.log[index]]
                 0 <= index < s_.commit_index
                 && index < s_.log.len()
                 ==> {

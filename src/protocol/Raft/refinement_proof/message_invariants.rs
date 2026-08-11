@@ -578,7 +578,7 @@ verus! {
                     ..
                 } => (has_entry && payload is Configuration) ==> {
                     &&& 0 <= leader < ds.num_servers
-                    &&& forall |index: int|
+                    &&& forall |index: int| #![trigger ds.server_states[leader].log[index]]
                         0 <= index < prev_index
                         && ds.server_states[leader].log[index].payload
                             is Configuration
