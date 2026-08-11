@@ -151,4 +151,3 @@ impl View for CVPMessage {
 }
 
 } // verus!
-

@@ -6,9 +6,10 @@ example_dir="$repo_root/examples/quickstart"
 scratch_dir=$(mktemp -d /tmp/tla-rs-quickstart-XXXXXX)
 trap 'rm -rf -- "$scratch_dir"' EXIT
 
+# The spec carries inline `// @automan` directives (the default form); no
+# sidecar is passed.
 cargo run --quiet --manifest-path "$repo_root/transpiler/Cargo.toml" -- \
   -i "$example_dir/counter_spec.rs" \
-  -a "$example_dir/counter_spec.automan" \
   -c "$example_dir/counter_transpile.toml" \
   -o "$scratch_dir/counter_gen.rs"
 

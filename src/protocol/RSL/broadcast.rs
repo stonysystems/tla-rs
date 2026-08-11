@@ -7,6 +7,7 @@ use vstd::prelude::verus;
 use vstd::prelude::*;
 
 verus! {
+    // @automan predicate(c: in, myidx: in, m: in, sent_packets: out)
     pub open spec fn LBroadcastToEveryone(
         c: LConfiguration,
         myidx: int,
@@ -23,6 +24,7 @@ verus! {
         }
     }
 
+    // @automan helper(src: in, dsts: in, m: in) -> Seq<CPacket>
     pub open spec fn BuildLBroadcast(
         src: AbstractEndPoint,
         dsts: Seq<AbstractEndPoint>,

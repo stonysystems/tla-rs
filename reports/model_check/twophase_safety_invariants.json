@@ -42,7 +42,7 @@
       {
         "branch_label": "branch_0",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 2,
+        "cumulative_solve_elapsed_ms": 3,
         "deferred_constraint_evaluations": 2,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -60,7 +60,7 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 4,
+        "cumulative_solve_elapsed_ms": 7,
         "deferred_constraint_evaluations": 4,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -78,7 +78,7 @@
       {
         "branch_label": "branch_2",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 5,
+        "cumulative_solve_elapsed_ms": 4,
         "deferred_constraint_evaluations": 5,
         "direct_assigned_fields": 5,
         "direct_solver_hits": 1,
@@ -191,7 +191,7 @@
     "direct_assignment_branch_solves": 8,
     "distinct_states": 3,
     "duplicate_states": 2,
-    "elapsed_ms": 29,
+    "elapsed_ms": 36,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "explored_states": 3,
@@ -205,14 +205,14 @@
     "successor_cache_misses": 1,
     "symmetry_collapses": 0,
     "timing": {
-      "candidate_generation_evaluation_ms": 0,
-      "dedup_hashing_normalization_ms": 8,
-      "initial_state_construction_ms": 0,
+      "candidate_generation_evaluation_ms": 1,
+      "dedup_hashing_normalization_ms": 10,
+      "initial_state_construction_ms": 1,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 2,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 8,
-      "successor_solving_ms": 21
+      "source_ingestion_parsing_ms": 12,
+      "successor_solving_ms": 24
     },
     "transitions": 4
   },

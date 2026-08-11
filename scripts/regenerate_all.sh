@@ -40,19 +40,67 @@ regenerate_simple() {
         -c "$spec_dir/${module}_transpile.toml" \
         -o "$out_dir/types_gen.rs"
 
-    # Functions
+    # Functions. Mode annotations live inline in the spec (Phase 55); pass a
+    # sidecar only when one still exists (pre-migration protocols, examples).
     echo "  Generating ${module}_gen.rs..."
+    annot_args=()
+    [ -f "$spec_dir/${module}.automan" ] && annot_args=(--annotations "$spec_dir/${module}.automan")
+    action_output="$out_dir/${module}_gen.rs"
+    fresh_output=""
+    preserve_flags=()
+    if [ "$name" = "Raft" ]; then
+        preserve_list="$PROJECT_ROOT/scripts/raft_merge_preserve.txt"
+        [ -f "$preserve_list" ] || { echo "Missing $preserve_list"; return 1; }
+        fresh_output=$(mktemp /tmp/raft_gen_fresh_XXXXXX.rs)
+        action_output="$fresh_output"
+        while read -r preserve_module preserve_function rest; do
+            case "$preserve_module" in
+                ''|\#*) continue ;;
+            esac
+            if [ "$preserve_module" = "raft-actions" ] && [ "$rest" != "accept-fresh" ]; then
+                preserve_flags+=(--preserve "$preserve_function")
+            fi
+        done < "$preserve_list"
+    fi
     $TRANSPILER \
         --input "$spec_dir/${module}.rs" \
-        --annotations "$spec_dir/${module}.automan" \
+        "${annot_args[@]}" \
         --config "$spec_dir/${module}_transpile.toml" \
-        --output "$out_dir/${module}_gen.rs"
+        --output "$action_output"
+    if [ -n "$fresh_output" ]; then
+        python3 "$PROJECT_ROOT/scripts/merge_generated.py" \
+            "$fresh_output" "$out_dir/${module}_gen.rs" \
+            -o "$out_dir/${module}_gen.rs" \
+            "${preserve_flags[@]}"
+        rm -f "$fresh_output"
+    fi
 
     # Messages
     echo "  Generating message.rs..."
-    $TRANSPILER generate-messages \
-        -c "$spec_dir/${module}_transpile.toml" \
-        -o "$PROJECT_ROOT/src/implementation/$name/message.rs"
+    if [ "$name" = "Raft" ]; then
+        message_fresh=$(mktemp /tmp/raft_message_fresh_XXXXXX.rs)
+        $TRANSPILER generate-messages \
+            -c "$spec_dir/${module}_transpile.toml" \
+            -o "$message_fresh"
+        message_flags=()
+        while read -r preserve_module preserve_function rest; do
+            case "$preserve_module" in
+                ''|\#*) continue ;;
+            esac
+            if [ "$preserve_module" = "raft-message" ] && [ "$rest" != "accept-fresh" ]; then
+                message_flags+=(--preserve "$preserve_function")
+            fi
+        done < "$preserve_list"
+        python3 "$PROJECT_ROOT/scripts/merge_generated.py" \
+            "$message_fresh" "$PROJECT_ROOT/src/implementation/$name/message.rs" \
+            -o "$PROJECT_ROOT/src/implementation/$name/message.rs" \
+            "${message_flags[@]}"
+        rm -f "$message_fresh"
+    else
+        $TRANSPILER generate-messages \
+            -c "$spec_dir/${module}_transpile.toml" \
+            -o "$PROJECT_ROOT/src/implementation/$name/message.rs"
+    fi
 
     echo "  Done."
 }
@@ -85,9 +133,11 @@ regenerate_rsl() {
     # Per-module functions (each has its own *_transpile.toml)
     for module in acceptor learner executor proposer replica broadcast election; do
         echo "  Generating ${module}_gen.rs..."
+        annot_args=()
+        [ -f "$spec_dir/${module}.automan" ] && annot_args=(--annotations "$spec_dir/${module}.automan")
         $TRANSPILER \
             --input "$spec_dir/${module}.rs" \
-            --annotations "$spec_dir/${module}.automan" \
+            "${annot_args[@]}" \
             --config "$spec_dir/${module}_transpile.toml" \
             --output "$out_dir/${module}_gen.rs"
     done

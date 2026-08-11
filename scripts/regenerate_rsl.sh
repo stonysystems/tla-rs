@@ -55,7 +55,10 @@ fi
 # --- Step 1: Generate fresh transpiler output to a temp directory ---
 
 FRESH_DIR=$(mktemp -d /tmp/rsl_fresh_XXXXXX)
-trap "rm -rf $FRESH_DIR" EXIT
+# Removed on exit unless a kept module printed a merge invocation that
+# references it — deleting it then would hand the operator dead paths.
+KEEP_FRESH=false
+trap '[ "$KEEP_FRESH" = true ] || rm -rf "$FRESH_DIR"' EXIT
 
 echo "1. Generating fresh transpiler output to $FRESH_DIR..."
 
@@ -81,14 +84,18 @@ for MODULE in "${MODULES[@]}"; do
     AUTOMAN="$SPEC_DIR/${MODULE}.automan"
     CONFIG="$SPEC_DIR/${MODULE}_transpile.toml"
 
-    if [ ! -f "$SPEC" ] || [ ! -f "$AUTOMAN" ] || [ ! -f "$CONFIG" ]; then
+    # The sidecar is optional since Phase 55 — the spec carries inline
+    # `// @automan` directives. Only the spec and config are required.
+    if [ ! -f "$SPEC" ] || [ ! -f "$CONFIG" ]; then
         echo "   WARNING: Missing file for $MODULE, skipping."
         continue
     fi
 
+    annot_args=()
+    [ -f "$AUTOMAN" ] && annot_args=(--annotations "$AUTOMAN")
     $TRANSPILER \
         --input "$SPEC" \
-        --annotations "$AUTOMAN" \
+        "${annot_args[@]}" \
         --config "$CONFIG" \
         --output "$FRESH_DIR/${MODULE}_gen.rs"
 
@@ -114,8 +121,8 @@ for MODULE in types broadcast acceptor learner executor election proposer replic
     fi
 
     # Extract "pub exec fn NAME" from both files
-    FRESH_FNS=$(grep -oP '(?<=^pub exec fn )\w+' "$FRESH_FILE" 2>/dev/null | sort || true)
-    EXISTING_FNS=$(grep -oP '(?<=^pub exec fn )\w+' "$EXISTING_FILE" 2>/dev/null | sort || true)
+    FRESH_FNS=$(grep -oP '^\s*pub exec fn \K\w+' "$FRESH_FILE" 2>/dev/null | sort || true)
+    EXISTING_FNS=$(grep -oP '^\s*pub exec fn \K\w+' "$EXISTING_FILE" 2>/dev/null | sort || true)
 
     # Functions in fresh but not in existing = unexpected new functions
     ONLY_FRESH=$(comm -23 <(echo "$FRESH_FNS") <(echo "$EXISTING_FNS") || true)
@@ -171,8 +178,8 @@ for MODULE in types broadcast acceptor learner executor election proposer replic
     fi
 
     # For types and broadcast (no skip_functions), just copy fresh output
-    EXISTING_FNS=$(grep -oP '(?<=^pub exec fn )\w+' "$EXISTING_FILE" 2>/dev/null | sort || true)
-    FRESH_FNS=$(grep -oP '(?<=^pub exec fn )\w+' "$FRESH_FILE" 2>/dev/null | sort || true)
+    EXISTING_FNS=$(grep -oP '^\s*pub exec fn \K\w+' "$EXISTING_FILE" 2>/dev/null | sort || true)
+    FRESH_FNS=$(grep -oP '^\s*pub exec fn \K\w+' "$FRESH_FILE" 2>/dev/null | sort || true)
     ONLY_EXISTING=$(comm -13 <(echo "$FRESH_FNS") <(echo "$EXISTING_FNS") || true)
 
     if [ -z "$ONLY_EXISTING" ]; then
@@ -181,10 +188,17 @@ for MODULE in types broadcast acceptor learner executor election proposer replic
         echo "   $MODULE: replaced (no skip_functions)"
     else
         # Has skip_functions — keep existing file (it has the hand-written bodies)
-        # Just report what would need manual review
+        # and hand the operator the exact merge invocation, preserve flags
+        # included. Running the merge without them takes fresh bodies for the
+        # hand-verified functions and does not compile (measured 2026-08-10).
         echo "   $MODULE: KEPT EXISTING (has $(echo $ONLY_EXISTING | wc -w) skip_functions)"
-        echo "     To update: diff $FRESH_FILE $EXISTING_FILE"
-        echo "     skip_functions: $(echo $ONLY_EXISTING | tr '\n' ' ')"
+        PRESERVE_FLAGS=$(awk -v mod="$MODULE" '$1==mod && $3!="accept-fresh" {printf "--preserve %s ", $2}' "scripts/rsl_merge_preserve.txt")
+        KEEP_FRESH=true
+        echo "     To merge codegen improvements in:"
+        echo "       python3 scripts/merge_generated.py $FRESH_FILE $EXISTING_FILE -o $EXISTING_FILE $PRESERVE_FLAGS"
+        python3 "scripts/check_merge_body_drift.py" "$FRESH_FILE" "$EXISTING_FILE" \
+            --preserve-list "scripts/rsl_merge_preserve.txt" --module "$MODULE" --quiet \
+            || echo "     WARNING: body drift detected (see above)"
     fi
 done
 echo ""

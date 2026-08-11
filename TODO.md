@@ -126,7 +126,7 @@ A full verification pass emits 534 `automatically chose triggers` notes, all in 
 The Verus team raised this while evaluating tla-rs as a compatibility test target: an
 auto-chosen trigger can change between Verus releases, so a proof that verifies today can
 fail tomorrow as an uninformative `rlimit exceeded`. See
-[Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+[Phase 54](#phase-54-explicit-quantifier-triggers--complete-2026-08-05).
 
 Phases 52/53 were sequenced behind this and are no longer waiting: both are
 **COMPLETE (2026-08-04)** — eight `clean.tla` specs translate, all eight goldens pass
@@ -202,11 +202,16 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 **Next steps (priority order, updated 2026-08-04):**
 
-0. **🔝 Phase 54: Explicit Quantifier Triggers** — 534 auto-chosen triggers make our proofs
-   sensitive to Verus version changes. Raised by the Verus team while evaluating tla-rs as a
-   compatibility test target. **Do this first.** (Phases 52/53 were sequenced behind it;
-   they completed independently on 2026-08-04 and are no longer waiting.)
-   See [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+0. **Phase 55: Inline AutoMan Annotations — COMPLETE (2026-08-10).** All 16 maintained
+   sidecars migrated to named inline `// @automan` directives (188 declarations); byte-identical
+   output proven per protocol before migrating; sidecar form still accepted everywhere; the
+   TLA pipeline now emits self-annotating specs. Found and fixed a pre-existing
+   nondeterminism bug on the way (the transpiler picked an empty-map lemma by HashMap
+   iteration order — same command, same input, different output run to run).
+   See [Phase 55](#phase-55-inline-automan-annotations-in-verus-spec-files--complete-2026-08-10).
+
+   *Phase 54 (explicit quantifier triggers) completed on 2026-08-05 and no longer holds this
+   slot: 534 → 0 notes, 0 warnings, with a ceiling of 0 enforced in CI.*
 
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
@@ -17383,7 +17388,13 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
 
 ---
 
-## Phase 54: Explicit Quantifier Triggers — 🔝 TOP PRIORITY (current work)
+## Phase 54: Explicit Quantifier Triggers — **COMPLETE 2026-08-05**
+
+> 534 auto-chosen trigger notes → **0**, and 0 warnings, on the pinned
+> `0.2026.08.02.b677dd5` (`1048 verified, 0 errors`). `reports/triggers/ceiling.json` holds the
+> result at `max_notes: 0` with `enforce: true`, so a new unannotated quantifier fails the
+> build rather than quietly regrowing the count. The three unchecked boxes below are
+> struck-through — superseded or deliberately not chosen — not open work.
 
 ### Background (2026-08)
 
@@ -18276,3 +18287,193 @@ Logical and generated replication carry `Configuration` payloads, but the native
 still uses a compatibility encoding that writes the legacy scalar `value` instead of the full
 membership phase and server vectors. Out of scope for the proof work; required before any
 real deployment of membership changes.
+## Phase 55: Inline AutoMan Annotations in Verus Spec Files — **COMPLETE 2026-08-10**
+
+Tracking issue: [#4](https://github.com/stonysystems/tla-rs/issues/4). Branch:
+`feature/inline-automan-annotations`.
+
+> **Done, all five stages.** 55.1 parser + model; 55.2 byte-identical parity proven for all
+> 16 maintained sidecars (`phase_55_2_inline_migration_parity_all_protocols`); 55.3 CLI
+> (`--annotations` optional), library (`transpile_file_auto`), and build discovery; 55.4 the
+> real migration — 188 declarations moved inline, sidecars deleted, `migrate-inline`
+> subcommand does the mechanical work; 55.5 the TLA pipeline embeds inline directives into
+> generated specs (sidecar behind `--gen-modes` / `--keep-intermediate`; the clean-subset
+> stop keeps its documented spec+sidecar pair). 2732 tests green.
+>
+> **Where reality corrected the plan:**
+> - *"Predicates need at least one output" was false.* The sidecar grammar never enforced
+>   it and the maintained sidecars contain 15 all-input predicates (pure validity checks
+>   like `IsLogTruncationPointValid(+, +, +)`). The inline grammar accepts them.
+> - *The parity test caught a real nondeterminism bug.* `translator/mod.rs` picked the
+>   empty-map/push-commute helper lemma via `HashMap::keys().next()`; with two same-typed
+>   struct-vec fields (RSL election) the same command produced different — both verifying —
+>   outputs run to run. Fixed with `keys().min()`. The checked-in `election_gen.rs` carries
+>   a 2/6 mix of both lemmas from years of such runs; the next RSL regeneration through the
+>   merge will settle it on the lexicographic minimum.
+> - *55.5 was cheap, not risky.* Reusing the proven migrator on the generated sidecar text
+>   (`embed_inline_annotations`) made the two emission forms equivalent by construction.
+>
+> **Measured, 2026-08-10 (corrected the same day): the body-level merge works —
+> with the preserve list.** The first attempt ran `merge_generated.py` without
+> `--preserve` flags and concluded the merge was broken; all three observed
+> failures (a method landing outside its callers' convention, a lost lemma
+> definition, 2 trigger notes returning) were artifacts of fresh bodies
+> replacing the hand-verified in-both functions the preserve list exists to
+> protect. Rerun with `--preserve` drawn from `scripts/rsl_merge_preserve.txt`:
+> learner byte-identical, and executor/election/proposer/replica total a
+> 31-line diff — import ordering plus `result@` → `result as int` — with the
+> whole crate at `1048 verified, 0 errors, 0 warnings, 0 notes` and the dylib
+> compiling. Landed.
+>
+> Two tooling defects found and fixed on the way: `regenerate_rsl.sh`'s
+> function inventory grepped `^pub exec fn` and missed every indented impl
+> method, making both its report and one earlier "Validation PASSED" vacuous;
+> and the script never printed the merge invocation the book describes. It now
+> prints the exact `merge_generated.py` command with preserve flags, runs
+> `check_merge_body_drift.py` itself, and keeps the fresh dir alive when a
+> merge is pending. The election 2/6 lemma mix persists inside preserved
+> bodies — normalizing it still waits on codegen emitting the ~53 hand-added
+> triggers (Phase 54's prescription), which is also what would let those
+> functions return to fresh authority.
+>
+> The original plan below is kept for the record.
+
+### Motivation
+
+Mode annotations live in `.automan` sidecars, one per spec file. The pairing is positional and
+unchecked:
+
+```text
+src/protocol/Raft/raft.automan:6    LInit(-, +);
+src/protocol/Raft/raft.rs:12        pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+```
+
+`(-, +)` binds to `(s, c)` by position alone. Nothing links the two files, so a parameter
+rename, a reorder of same-typed parameters, or an inserted parameter changes the synthesis
+interface silently. `LGrantVote(+, -, +, +, +, +, +, -)` is eight positions with no names.
+
+The measured hazard is not hypothetical. Annotations are matched by bare function name;
+`module_path` is parsed into `ModuleAnnotations` (`annotation/mod.rs:21`) and then never read
+outside tests. **`LInit` is declared in nine protocol sidecars** — ChainReplication, EPaxos,
+LeaderElection, PBFT, Paxos, PrimaryBackup, Raft, TwoPhase, VerticalPaxos — and `LNodeFail`
+and `LReconfigure` collide too. Nothing has broken yet only because transpilation runs one
+protocol at a time. Binding annotations to the parsed item instead of a global name lookup
+removes the class.
+
+### Scale (measured, `git ls-files`)
+
+| Scope | Sidecars | Declarations |
+|---|---|---|
+| `src/protocol/` | 16 | 188 (174 predicates + 14 helpers) |
+| Whole repo | 54 | 465 (385 + 80) |
+
+### Chosen form
+
+A tagged ordinary comment immediately preceding the function, with **named** modes:
+
+```rust
+// @automan predicate(s: out, c: in)
+pub open spec fn LInit(s: LState, c: LConstants) -> bool { ... }
+
+// @automan helper(s: in, requests: in, limit: in) -> Seq<CPacket>
+pub open spec fn packets_for_requests(...) -> Seq<RslPacket> { ... }
+```
+
+Named parameters are the point: unknown, missing, and duplicate names become errors, so a
+rename or a same-typed reorder cannot silently change meaning. `in`/`out` spell the existing
+`+`/`-`; accept `+`/`-` positionally as a migration-only compatibility form.
+
+Keep the explicit `predicate`/`helper` kind — an all-input predicate returning `bool` is
+indistinguishable from a boolean helper. Keep the optional `-> Type` override: production RSL
+annotations deliberately map a logical return type to a concrete generated one, and that
+information is not recoverable from the Rust signature.
+
+**Not a Rust attribute.** The blocker is ours, not Verus's: `try_parse_spec_fn`
+(`parser/mod.rs:185-214`) matches from `pub`/`open`/`spec`/`fn` and has no attribute handling,
+so an item starting with `#[...]` falls through to `skip_item()` and the function disappears
+from transpilation entirely. Issue #4 also records that the pinned Verus rejects unregistered
+`#[automan(...)]` and that tool-attribute registration is unstable on stable rustc.
+
+### Staging — land 55.1 first, decide on the rest afterwards
+
+The work splits at a natural seam. 55.1 is additive and self-contained: `.automan` stays the
+only source of truth, no protocol file changes, and the new path is exercised only by tests. If
+55.2+ never happens, nothing is left half-migrated.
+
+Everything downstream of the parser already consumes `FunctionAnnotation` / `ParameterMode`
+(`annotation/mod.rs:30`), so the inline path only has to produce the same structs. The mode
+analyzer and every generator stay untouched.
+
+#### 55.1 Parser + model (do this first)
+
+- `skip_whitespace_and_comments` (`parser/mod.rs:2215`) currently discards line comments via
+  `skip_until_pattern("\n")`. Record a comment matching exactly `// @automan ` into a
+  `pending_annotation: Option<(String, usize)>` field on the parser (text + line, for
+  diagnostics) instead of dropping it. Any other comment clears the field.
+- After `try_parse_spec_fn` succeeds, consume the pending marker, resolve named modes against
+  the just-parsed parameter list, and attach a `FunctionAnnotation`.
+- Reject: unknown / missing / duplicate parameter names, arity mismatch, a predicate with no
+  output, a helper with a non-input parameter, a marker with no following `spec fn`, two
+  markers on one function. Every diagnostic carries file and line. **A tagged directive must
+  never be silently ignored** — that failure mode is what the sidecar has today.
+- Unit tests only. No `.automan` file changes, no CLI changes.
+
+#### 55.2 Equivalence proof
+
+- For each of the 16 maintained sidecars, mechanically derive the inline form and assert the
+  transpiler produces **byte-identical** output from either input.
+- The safety net already exists: 18 `regen_matches_checked_in` tests across 9 protocols
+  (`transpiler/tests/`), plus 2349 `#[test]` total. This is what makes the migration provable
+  rather than reviewable, and it is the reason to attempt it at all.
+- RSL is deliberately excluded from those parity tests — its checked-in generated files carry
+  the hand-written bodies of its 36 `skip_functions` entries and are produced through
+  `scripts/regenerate_rsl.sh` + the merge preserve list, not `regenerate_all.sh`. Verify RSL
+  through the merge path and `scripts/check_merge_body_drift.py`; do not add it to the parity
+  tests. See `docs/rsl-skip-functions.md` and Ch.19 of the book.
+
+#### 55.3 CLI and build discovery
+
+- Keep `--annotations` and the existing two-path library methods working unchanged; make the
+  flag optional when inline annotations are present.
+- `build_integration/mod.rs:107-130` discovers `.automan` first and derives the sibling `.rs`.
+  Teach it and the SCons emitter to discover annotated `.rs` sources as well.
+- If a function is annotated in both sources: identical definitions warn, differences are an
+  error. Never silently prefer one.
+
+#### 55.4 Migration
+
+- Write a converter that reads each `.automan` declaration and the corresponding `.rs`
+  signature and emits the named inline form. 465 declarations is too many to hand-edit, and a
+  converter is checkable against 55.2 in a way hand edits are not.
+- Migrate the 16 `src/protocol/` sidecars first; the other 38 are test workspaces and examples.
+- Update `README.md`, the book, and the regeneration scripts.
+
+#### 55.5 TLA pipeline — highest risk, schedule last
+
+TLA→Verus generation must emit inline markers, and the clean-subset pipeline computes projected
+signature modes. This is the only place that has to understand **both** representations at
+once. Keep `.automan` emission as an explicit option. Do not start this before 55.2 passes.
+
+### Risks
+
+- **R1**: An agent attempts 55.1–55.5 in one pass, stalls in 55.5, and leaves 54 files migrated
+  against a half-working pipeline. Mitigation: 55.1 and 55.2 are the deliverable; treat 55.3+
+  as a separate decision with 55.2 green as its entry condition.
+- **R2**: The converter in 55.4 mis-binds a positional mode when a signature has same-typed
+  adjacent parameters — precisely the error the named form exists to prevent, reintroduced by
+  the migration itself. Mitigation: 55.2's byte-identical assertion is what catches it; run it
+  per protocol, not once at the end.
+- **R3**: `main.rs` is 13k lines and the CLI paths are threaded through it. Mitigation: 55.1
+  touches neither `main.rs` nor `build_integration`; keep it that way.
+
+### Acceptance criteria for 55.1 (the only committed scope)
+
+- [ ] Inline predicate and helper directives parse into `FunctionAnnotation` values identical
+      to those the sidecar parser produces for the same content.
+- [ ] Malformed, orphaned, duplicate, unknown-name, missing-name, and arity-mismatched
+      directives each fail with file and line.
+- [ ] Two functions with the same bare name in different modules receive their own annotations.
+- [ ] No `.automan` file, no protocol source, and no generated file changes.
+- [ ] `cargo test` and `cargo fmt --check` clean.
+
+---

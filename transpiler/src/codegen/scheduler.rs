@@ -1302,8 +1302,16 @@ mod tests {
     use crate::parser::VerusParser;
 
     fn parse_spec_fns(source: &str) -> Vec<SpecFunction> {
+        // Reader semantics: these tests classify function bodies and are fed
+        // real protocol sources, which carry inline `// @automan` directives
+        // since the Phase 55 migration. The modes are irrelevant here.
         let parser = VerusParser::new(source.to_string());
-        parser.parse_spec_functions().unwrap()
+        parser
+            .parse_spec_functions_annotated()
+            .unwrap()
+            .into_iter()
+            .map(|(func, _)| func)
+            .collect()
     }
 
     #[test]
@@ -1500,15 +1508,11 @@ mod tests {
             .expect("Failed to read Raft spec");
         let fns = parse_spec_fns(&source);
         let config = find_and_analyze_lnext(&fns, "LNext", "L", "C").unwrap();
-        // Phase 27.4: LNext now uses composite actions (5 branches)
-        // - LTimeout, LClientRequest, LSendAppendEntries (timer-driven)
+        // LNext uses six branches, including the spec-level membership change.
+        // - LTimeout, LClientRequest, LAppendConfigurationEntry, LSendAppendEntries
         // - LHandleMessage (composite message dispatch)
         // - LTryAdvanceCommitIndex (composite commit advancement)
-        assert_eq!(
-            config.actions.len(),
-            5,
-            "Raft LNext has 5 composite branches"
-        );
+        assert_eq!(config.actions.len(), 6, "Raft LNext has 6 branches");
 
         let names: Vec<&str> = config
             .actions
@@ -1518,6 +1522,7 @@ mod tests {
         assert!(names.contains(&"LTimeout"));
         assert!(names.contains(&"LClientRequest"));
         assert!(names.contains(&"LSendAppendEntries"));
+        assert!(names.contains(&"LAppendConfigurationEntry"));
         assert!(names.contains(&"LHandleMessage"));
         assert!(names.contains(&"LTryAdvanceCommitIndex"));
     }

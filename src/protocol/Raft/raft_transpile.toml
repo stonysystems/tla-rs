@@ -164,7 +164,8 @@ fields = [["client_id", "u64"], ["seq_no", "u64"], ["value", "u64"]]
 name = "ClientResponse"
 doc = "Server responds to a client request."
 fields = [["client_id", "u64"], ["seq_no", "u64"], ["success", "bool"]]
-# Phase 27.4: LNext uses 5 composite branches
+# The executable scheduler covers five branches. LAppendConfigurationEntry
+# remains a spec-level action until native Configuration serialization exists.
 [scheduler]
 next_fn = "LNext"
 params = ["s", "s_", "c"]

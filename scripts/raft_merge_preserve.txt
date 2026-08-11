@@ -1,0 +1,27 @@
+# Raft generated functions whose checked-in bodies contain membership-specific
+# verified clone, view, guard, or indexing reasoning that fresh code generation
+# does not yet reproduce. The preserve-aware regeneration path fails if any
+# listed name disappears, so this cannot silently protect stale code.
+#
+# Format: <surface> <free-function-or-method-name>
+
+# Generated action bodies repaired with membership-specific Verus reasoning.
+raft-actions CInit
+raft-actions CTimeout
+raft-actions CGrantVote
+raft-actions CReceiveVoteGranted
+raft-actions CBecomeLeader
+raft-actions CClientRequest
+raft-actions CSendAppendEntries
+raft-actions CFollowerAppendEntries
+raft-actions CHandleAppendResponse
+raft-actions CHandleAppendReject
+raft-actions CAdvanceCommitIndex
+raft-actions CStepDown
+raft-actions CReceiveVoteAndBecomeLeader
+raft-actions CHandleVoteResponseMsg
+raft-actions CTryAdvanceCommitIndex
+
+# Native Data compatibility encoding until Configuration gets a versioned format.
+raft-message ProtocolMessage::serialize_to_bytes
+raft-message ProtocolMessage::deserialize_from_bytes

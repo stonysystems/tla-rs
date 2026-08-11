@@ -19,32 +19,36 @@ IronFleet's specifications, proofs, and runtime structure are ported to Verus, w
 specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
 
 The repository also extends that foundation with additional distributed protocols, bidirectional
-TLA+/Verus translation, source-first and DPOR-based model checking, mutation-oriented code
-generation, and deployable C# networking/runtime integration.
+TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
+deployable C# networking/runtime integration.
 
 ## Quick Start: From a Spec to a Program
 
-Here is a complete counter transition written as a TLA-style relation in Verus:
+Here is a complete counter transition written as a TLA-style relation in Verus
+([`examples/quickstart/counter_spec.rs`](examples/quickstart/counter_spec.rs)):
 
 ```rust
 verus! {
+    // @automan predicate(value: out)
     pub open spec fn LInit(value: int) -> bool {
         value == 0
     }
 
+    // @automan predicate(value: in, value_: out)
     pub open spec fn LIncrement(value: int, value_: int) -> bool {
         value_ == value + 1
     }
 }
 ```
 
-The accompanying AutoMan annotation marks supplied inputs with `+` and outputs for the
-transpiler to synthesize with `-`:
-
-```text
-LInit(-);
-LIncrement(+, -);
-```
+The functions are relations: their signatures do not say which parameters are
+known before execution. The `// @automan` directive above each function
+declares that dataflow — `in` parameters are supplied to the generated
+function, `out` parameters are what it must compute. Thus `LInit` generates a
+zero-argument `CInit` returning the initial value, and `LIncrement` generates
+`CIncrement(value)` returning the new value represented by `value_`. Bindings
+are matched by parameter name, so renaming or reordering a parameter without
+updating the directive is an error rather than a silent meaning change.
 
 From the repository root, generate the executable functions, verify them, compile them, and
 run the result:
@@ -52,13 +56,19 @@ run the result:
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i examples/quickstart/counter_spec.rs \
-  -a examples/quickstart/counter_spec.automan \
   -c examples/quickstart/counter_transpile.toml \
   -o examples/quickstart/counter_gen.rs
 
 "$VERUS_PATH" --compile examples/quickstart/main.rs -o /tmp/tla-rs-counter
 /tmp/tla-rs-counter
 ```
+
+Inline directives are the default. As an alternative, the same modes can live
+in a separate `.automan` sidecar file passed with `-a`, using positional
+`+`/`-` markers — `LInit(-); LIncrement(+, -);` inside a `module counter_spec
+{ ... }` block. The sidecar form predates the inline form and remains fully
+supported; `migrate-inline` converts a sidecar into inline directives, and a
+function annotated in both places must agree.
 
 The generated `CInit` and `CIncrement` functions have `ensures` clauses tying their concrete
 `i64` results back to `LInit` and `LIncrement`. The final output is:
@@ -68,7 +78,7 @@ verification results:: 2 verified, 0 errors
 Counter: 0 -> 1
 ```
 
-All source, annotation, configuration, generated code, and runner files are in
+All source (with its inline annotations), configuration, generated code, and runner files are in
 [`examples/quickstart/`](examples/quickstart/). CI regenerates the code, rejects proof shortcuts,
 and verifies, compiles, and runs this example.
 
@@ -79,8 +89,7 @@ and verifies, compiles, and runs this example.
   Bully leader election.
 - A spec-to-executable transpiler that generates Rust implementations and Verus
   refinement contracts.
-- TLA+/Verus translation, bounded model checking with DPOR, and a deployable C#/.NET
-  networking runtime.
+- TLA+/Verus translation, bounded model checking, and a deployable C#/.NET networking runtime.
 
 ## Requirements
 
@@ -191,8 +200,13 @@ are classified in [`docs/rsl-skip-functions.md`](docs/rsl-skip-functions.md).
 
 ## Contributing
 
-Do not hand-edit files under `src/generated/`. Change the protocol source,
-annotations, configuration, or transpiler and regenerate the output. See
+Do not hand-edit transpiler-emitted code: change the protocol source, its
+`// @automan` annotations, the configuration, or the transpiler, and
+regenerate. Files under `src/generated/` can also carry hand-written bodies
+that regeneration deliberately preserves (RSL's `skip_functions`, classified
+in [`docs/rsl-skip-functions.md`](docs/rsl-skip-functions.md)) — those are
+edited in place. When unsure which kind a function is, diff against fresh
+transpiler output rather than guessing. See
 [`AGENTS.md`](AGENTS.md) for project rules, the book's developer guide for the normal
 workflow, and [`TODO.md`](TODO.md) for current work and known gaps.
 

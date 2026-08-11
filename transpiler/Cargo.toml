@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Transpiler from Verus spec functions to verified exec implementations"
 license = "MIT"
-repository = "https://github.com/verus-lang/tla-rs"
+repository = "https://github.com/stonysystems/tla-rs"
 keywords = ["verus", "transpiler", "verification", "tla"]
 categories = ["development-tools"]
 

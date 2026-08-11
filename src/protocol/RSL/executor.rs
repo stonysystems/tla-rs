@@ -35,6 +35,7 @@ verus! {
         pub reply_cache:ReplyCache,
     }
 
+    // @automan predicate(s: out, c: in)
     pub open spec fn LExecutorInit(s:LExecutor, c:LReplicaConstants) -> bool
     {
         &&& s.constants == c
@@ -45,6 +46,7 @@ verus! {
         &&& s.reply_cache == Map::<AbstractEndPoint, Reply>::empty()
     }
 
+    // @automan predicate(s: in, s_: out, bal: in, opn: in, v: in)
     pub open spec fn LExecutorGetDecision(s:LExecutor, s_:LExecutor, bal:Ballot, opn:OperationNumber, v:RequestBatch) -> bool
         recommends
             opn == s.ops_complete,
@@ -60,6 +62,7 @@ verus! {
         }
     }
 
+    // @automan helper(me: in, requests: in, replies: in) -> Seq<CPacket>
     pub open spec fn GetPacketsFromReplies(me:AbstractEndPoint, requests:Seq<Request>, replies:Seq<Reply>) -> (ps:Seq<RslPacket>)
         recommends
             requests.len() == replies.len(),
@@ -84,6 +87,7 @@ verus! {
         }
     }
 
+    // @automan helper(replies: in) -> CReplyCache
     pub open spec fn LClientsInReplies(replies:Seq<Reply>) -> (r:ReplyCache)
         decreases replies.len()
     {
@@ -94,12 +98,14 @@ verus! {
         }
     }
 
+    // @automan predicate(replies: in)
     pub open spec fn RepliesAreReplyType(replies:Seq<RslPacket>) -> bool
     {
         forall |p:RslPacket| #![trigger replies.contains(p)] replies.contains(p) ==> p.msg is RslMessageReply
     }
 
 
+    // @automan predicate(c: in, c_: in, replies: in)
     pub open spec fn UpdateNewCache(c:ReplyCache, c_:ReplyCache, replies:Seq<Reply>) -> bool
     {
         &&& (forall |client:AbstractEndPoint| #![trigger c_[client]] #![trigger c[client]] c_.contains_key(client) ==> (c.contains_key(client) && c_[client] == c[client])
@@ -112,6 +118,7 @@ verus! {
                                                                                                 && c_[client] == if c.contains_key(client) {c[client]} else {LClientsInReplies(replies)[client]})
     }
 
+    // @automan predicate(s: in, s_: out, sent_packets: out)
     pub open spec fn LExecutorExecute(
         s:LExecutor,
         s_:LExecutor,
@@ -137,6 +144,7 @@ verus! {
         &&& RepliesAreReplyType(sent_packets)
     }
 
+    // @automan predicate(s: in, s_: out, inp: in)
     pub open spec fn LExecutorProcessAppStateSupply(
         s:LExecutor,
         s_:LExecutor,
@@ -158,6 +166,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, inp: in, sent_packets: out)
     pub open spec fn LExecutorProcessAppStateRequest(
         s:LExecutor,
         s_:LExecutor,
@@ -190,6 +199,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, inp: in, sent_packets: out)
     pub open spec fn LExecutorProcessStartingPhase2(
         s:LExecutor,
         s_:LExecutor,
@@ -214,6 +224,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, inp: in, sent_packets: out)
     pub open spec fn LExecutorProcessRequest(
         s:LExecutor,
         inp:RslPacket,

@@ -4,11 +4,19 @@
 //! It extracts `spec fn` declarations from `verus! { ... }` macro blocks and
 //! converts them to our internal AST representation.
 
+use crate::annotation::{parse_inline_directive, FunctionAnnotation};
 use crate::ast::{
     BinOp, Binding, Expr, GenericParam, Generics, Literal, MatchArm, Parameter, Path, Pattern,
     SpecFunction, Type, TypeBound, VariableMode,
 };
 use crate::error::{TranspileError, TranspileResult};
+
+/// Marker word that introduces an inline mode directive (Phase 55.1).
+/// Recognized only in an ordinary `// @automan ...` comment in item-leading
+/// position inside a `verus!` block; everywhere else the word is flagged as an
+/// error rather than skipped, so a mis-placed directive can never be silently
+/// ignored.
+const INLINE_DIRECTIVE_MARKER: &str = "@automan";
 
 /// Parser for Verus source files
 pub struct VerusParser {
@@ -34,22 +42,80 @@ impl VerusParser {
     }
 
     /// Parse all spec functions from the source
+    ///
+    /// This is the sidecar-era entry point. It rejects sources that carry
+    /// inline `@automan` directives: the pipelines behind it read modes from
+    /// `.automan` files only, and dropping a directive here would silently
+    /// discard metadata the author wrote next to the function (Phase 55.1's
+    /// core rule is that a tagged directive is never silently ignored).
     pub fn parse_spec_functions(&self) -> TranspileResult<Vec<SpecFunction>> {
+        let annotated = self.parse_spec_functions_annotated()?;
+        if let Some((func, _)) = annotated.iter().find(|(_, ann)| ann.is_some()) {
+            return Err(TranspileError::Parse {
+                message: format!(
+                    "`{}` carries an inline @automan directive, but this pipeline reads \
+                     modes from .automan sidecar files only; inline directives are not \
+                     yet wired through it (Phase 55.1)",
+                    func.name
+                ),
+                span: None,
+            });
+        }
+        Ok(annotated.into_iter().map(|(func, _)| func).collect())
+    }
+
+    /// Parse all spec functions, pairing each with the inline `@automan`
+    /// directive that precedes it, if any (Phase 55.1).
+    ///
+    /// The annotation is bound to the adjacent parsed item — never looked up
+    /// by name — so two functions sharing a bare name in different modules
+    /// cannot receive each other's modes. After parsing, every line of the
+    /// source that leads with the marker must have been consumed by exactly
+    /// this binding; a directive inside a function body, outside a `verus!`
+    /// block, or spelled as a doc comment is an error, not a no-op.
+    pub fn parse_spec_functions_annotated(&self) -> TranspileResult<Vec<AnnotatedSpecFn>> {
         let mut functions = Vec::new();
+        let mut consumed_lines: Vec<usize> = Vec::new();
 
-        // Find verus! macro blocks
-        let verus_blocks = self.find_verus_blocks()?;
-
-        for block_content in verus_blocks {
-            let block_fns = self.parse_verus_block(&block_content)?;
+        for (block_content, line_offset) in self.find_verus_blocks()? {
+            let (block_fns, block_consumed) =
+                self.parse_verus_block(&block_content, line_offset)?;
             functions.extend(block_fns);
+            consumed_lines.extend(block_consumed);
         }
 
+        self.check_no_unconsumed_directives(&consumed_lines)?;
         Ok(functions)
     }
 
-    /// Find all verus! { ... } macro blocks in the source
-    fn find_verus_blocks(&self) -> TranspileResult<Vec<String>> {
+    /// Fail if any line that leads with the `@automan` marker was not consumed
+    /// as a directive. Comment prose that merely mentions the word is fine —
+    /// only lines whose comment content *starts* with the marker count.
+    fn check_no_unconsumed_directives(&self, consumed_lines: &[usize]) -> TranspileResult<()> {
+        for (idx, line) in self.source.lines().enumerate() {
+            let line_no = idx + 1;
+            let lead = line
+                .trim_start()
+                .trim_start_matches(['/', '*'])
+                .trim_start();
+            if lead.starts_with(INLINE_DIRECTIVE_MARKER) && !consumed_lines.contains(&line_no) {
+                return Err(TranspileError::Parse {
+                    message: format!(
+                        "line {line_no}: @automan directive was not applied; a directive \
+                         must be an ordinary `// @automan ...` comment immediately \
+                         preceding a `spec fn` inside a verus! block (not a doc comment, \
+                         not inside a function body)"
+                    ),
+                    span: None,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Find all verus! { ... } macro blocks in the source, each paired with
+    /// the 1-based source line its `{` sits on (for directive diagnostics).
+    fn find_verus_blocks(&self) -> TranspileResult<Vec<(String, usize)>> {
         let mut blocks = Vec::new();
         let source = &self.source;
 
@@ -106,7 +172,8 @@ impl VerusParser {
 
                     if depth == 0 {
                         let block_content = source[start..i - 1].to_string();
-                        blocks.push(block_content);
+                        let brace_line = chars[..start].iter().filter(|&&c| c == '\n').count() + 1;
+                        blocks.push((block_content, brace_line));
                     }
                 }
             } else {
@@ -117,27 +184,44 @@ impl VerusParser {
         Ok(blocks)
     }
 
-    /// Parse spec functions from a verus block
-    fn parse_verus_block(&self, content: &str) -> TranspileResult<Vec<SpecFunction>> {
+    /// Parse spec functions from a verus block, returning each with its
+    /// inline annotation (if any) and the source lines of consumed directives.
+    fn parse_verus_block(
+        &self,
+        content: &str,
+        line_offset: usize,
+    ) -> TranspileResult<(Vec<AnnotatedSpecFn>, Vec<usize>)> {
         let mut functions = Vec::new();
-        let mut parser = VerusBlockParser::new(content);
+        let mut parser = VerusBlockParser::new(content, line_offset);
 
         while let Some(item) = parser.next_item()? {
             match item {
-                VerusItem::SpecFn(func) => functions.push(*func),
+                VerusItem::SpecFn(func, annotation) => functions.push((*func, annotation)),
                 VerusItem::Other => {} // Skip non-spec-fn items
             }
         }
 
-        Ok(functions)
+        Ok((functions, parser.consumed_directive_lines))
     }
 
     /// Parse a single spec function from a string
+    ///
+    /// Like [`Self::parse_spec_functions`], this is a sidecar-era API and
+    /// rejects an inline directive rather than dropping it.
     pub fn parse_single_spec_fn(&self, fn_source: &str) -> TranspileResult<SpecFunction> {
-        let mut parser = VerusBlockParser::new(fn_source);
+        let mut parser = VerusBlockParser::new(fn_source, 1);
 
         match parser.next_item()? {
-            Some(VerusItem::SpecFn(func)) => Ok(*func),
+            Some(VerusItem::SpecFn(func, None)) => Ok(*func),
+            Some(VerusItem::SpecFn(func, Some(_))) => Err(TranspileError::Parse {
+                message: format!(
+                    "`{}` carries an inline @automan directive, but this pipeline reads \
+                     modes from .automan sidecar files only; inline directives are not \
+                     yet wired through it (Phase 55.1)",
+                    func.name
+                ),
+                span: None,
+            }),
             _ => Err(TranspileError::Parse {
                 message: "Expected spec function".to_string(),
                 span: None,
@@ -146,39 +230,230 @@ impl VerusParser {
     }
 }
 
+/// A parsed spec function paired with the inline `// @automan` directive
+/// that precedes it, if any (Phase 55.1).
+pub type AnnotatedSpecFn = (SpecFunction, Option<FunctionAnnotation>);
+
 /// Item parsed from verus block
 enum VerusItem {
-    SpecFn(Box<SpecFunction>),
+    SpecFn(Box<SpecFunction>, Option<FunctionAnnotation>),
     Other,
+}
+
+/// A `// @automan ...` directive seen in item-leading position, waiting for
+/// the `spec fn` it annotates.
+struct PendingDirective {
+    /// Directive text after the marker; continuation comment lines are joined
+    /// in while the parentheses are still unbalanced.
+    text: String,
+    /// 1-based source line of the marker, for diagnostics.
+    line: usize,
+}
+
+/// A directive is complete once its parenthesized binding list has closed.
+/// Until then, following comment lines are continuations of it.
+fn directive_is_complete(text: &str) -> bool {
+    let mut depth = 0i64;
+    let mut seen_open = false;
+    for c in text.chars() {
+        match c {
+            '(' => {
+                depth += 1;
+                seen_open = true;
+            }
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    seen_open && depth <= 0
 }
 
 /// Parser for content inside a verus block
 struct VerusBlockParser<'a> {
     content: &'a str,
     pos: usize,
+    /// 1-based source line where this block's content begins.
+    line_offset: usize,
+    /// Directive captured in item-leading position, not yet bound to a fn.
+    pending_directive: Option<PendingDirective>,
+    /// Source lines whose directives were successfully bound; the caller
+    /// checks these against every marker line in the file so a directive can
+    /// never be silently ignored.
+    consumed_directive_lines: Vec<usize>,
 }
 
 impl<'a> VerusBlockParser<'a> {
-    fn new(content: &'a str) -> Self {
-        Self { content, pos: 0 }
+    fn new(content: &'a str, line_offset: usize) -> Self {
+        Self {
+            content,
+            pos: 0,
+            line_offset,
+            pending_directive: None,
+            consumed_directive_lines: Vec::new(),
+        }
+    }
+
+    /// 1-based source line of the current position.
+    fn current_line(&self) -> usize {
+        self.line_offset + self.content[..self.pos].matches('\n').count()
     }
 
     /// Get the next item from the block
     fn next_item(&mut self) -> TranspileResult<Option<VerusItem>> {
-        self.skip_whitespace_and_comments();
+        self.skip_to_item_capturing_directives()?;
 
         if self.pos >= self.content.len() {
+            if let Some(pending) = self.pending_directive.take() {
+                return Err(TranspileError::Parse {
+                    message: format!(
+                        "line {}: @automan directive is not followed by a spec fn",
+                        pending.line
+                    ),
+                    span: None,
+                });
+            }
             return Ok(None);
         }
 
         // Try to parse a spec function
         if let Some(func) = self.try_parse_spec_fn()? {
-            return Ok(Some(VerusItem::SpecFn(Box::new(func))));
+            let annotation = match self.pending_directive.take() {
+                Some(pending) => {
+                    let param_names: Vec<String> =
+                        func.params.iter().map(|p| p.name.clone()).collect();
+                    let annotation = parse_inline_directive(
+                        &pending.text,
+                        &func.name,
+                        &param_names,
+                        &format!("line {}", pending.line),
+                    )?;
+                    self.consumed_directive_lines.push(pending.line);
+                    Some(annotation)
+                }
+                None => None,
+            };
+            return Ok(Some(VerusItem::SpecFn(Box::new(func), annotation)));
+        }
+
+        // A directive must annotate a spec fn, not whatever item comes next.
+        if let Some(pending) = self.pending_directive.take() {
+            return Err(TranspileError::Parse {
+                message: format!(
+                    "line {}: @automan directive is not followed by a spec fn",
+                    pending.line
+                ),
+                span: None,
+            });
         }
 
         // Skip other items (structs, enums, type aliases, etc.)
         self.skip_item();
         Ok(Some(VerusItem::Other))
+    }
+
+    /// Skip whitespace and comments up to the next item, capturing `@automan`
+    /// directives on the way (Phase 55.1). This runs only in item-leading
+    /// position — comment skipping *inside* items goes through the plain
+    /// [`Self::skip_whitespace_and_comments`], so a marker in a function body
+    /// is not captured here (the whole-source check reports it instead).
+    fn skip_to_item_capturing_directives(&mut self) -> TranspileResult<()> {
+        loop {
+            // Pure whitespace only. `skip_whitespace` also swallows comments,
+            // which would eat a directive before this function could see it.
+            while let Some(c) = self.peek() {
+                if c.is_whitespace() {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+
+            if self.peek_str(2) == Some("//") {
+                let line_no = self.current_line();
+                self.advance();
+                self.advance();
+                let comment_start = self.pos;
+                while self.pos < self.content.len() && self.peek() != Some('\n') {
+                    self.advance();
+                }
+                let comment = &self.content[comment_start..self.pos];
+                let trimmed = comment.trim_start();
+
+                if let Some(body) = trimmed.strip_prefix(INLINE_DIRECTIVE_MARKER) {
+                    if let Some(pending) = &self.pending_directive {
+                        return Err(TranspileError::Parse {
+                            message: format!(
+                                "line {line_no}: second @automan directive while the one \
+                                 at line {} has not been bound to a spec fn",
+                                pending.line
+                            ),
+                            span: None,
+                        });
+                    }
+                    self.pending_directive = Some(PendingDirective {
+                        text: body.to_string(),
+                        line: line_no,
+                    });
+                } else if trimmed
+                    .trim_start_matches('/')
+                    .trim_start()
+                    .starts_with(INLINE_DIRECTIVE_MARKER)
+                {
+                    // `/// @automan ...` — doc comments are documentation
+                    // metadata, not directive carriers, and silently skipping
+                    // one would drop the modes the author wrote.
+                    return Err(TranspileError::Parse {
+                        message: format!(
+                            "line {line_no}: @automan directives must be ordinary \
+                             `// @automan` comments, not doc comments"
+                        ),
+                        span: None,
+                    });
+                } else if let Some(pending) = &mut self.pending_directive {
+                    if !directive_is_complete(&pending.text) {
+                        // Continuation line of a multi-line directive.
+                        pending.text.push(' ');
+                        pending.text.push_str(comment.trim());
+                    }
+                    // A complete directive tolerates ordinary comments between
+                    // itself and the fn it annotates.
+                }
+                continue;
+            }
+
+            if self.peek_str(2) == Some("/*") {
+                self.advance();
+                self.advance();
+                let mut depth = 1;
+                while depth > 0 && self.pos < self.content.len() {
+                    if self.peek_str(2) == Some("/*") {
+                        depth += 1;
+                        self.advance();
+                    } else if self.peek_str(2) == Some("*/") {
+                        depth -= 1;
+                        self.advance();
+                    }
+                    self.advance();
+                }
+                continue;
+            }
+
+            break;
+        }
+
+        if let Some(pending) = &self.pending_directive {
+            if !directive_is_complete(&pending.text) {
+                return Err(TranspileError::Parse {
+                    message: format!(
+                        "line {}: unterminated @automan directive (unbalanced parentheses)",
+                        pending.line
+                    ),
+                    span: None,
+                });
+            }
+        }
+
+        Ok(())
     }
 
     /// Try to parse a spec function
@@ -2409,15 +2684,27 @@ impl<'a> VerusBlockParser<'a> {
 }
 
 /// Parse Verus source from a file
+///
+/// Reader-oriented: inline `// @automan` directives are parsed and validated
+/// (a malformed or misplaced one still fails), then dropped, because every
+/// caller of this function consumes signatures and bodies only — the
+/// spec analyzer, the Verus→TLA converter, the model-check spec reader.
+/// Pipelines that consume modes go through
+/// [`VerusParser::parse_spec_functions_annotated`] instead.
 pub fn parse_file(path: &std::path::Path) -> TranspileResult<Vec<SpecFunction>> {
     let source = std::fs::read_to_string(path)?;
     let parser = VerusParser::new(source).with_file_path(path.display().to_string());
-    parser.parse_spec_functions()
+    Ok(parser
+        .parse_spec_functions_annotated()?
+        .into_iter()
+        .map(|(func, _)| func)
+        .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::{FunctionKind, ParameterMode};
 
     #[test]
     fn test_parser_creation() {
@@ -2425,6 +2712,287 @@ mod tests {
         let result = parser.parse_spec_functions();
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    // ---- Phase 55.1: inline @automan directives ----
+
+    fn annotated(source: &str) -> Vec<AnnotatedSpecFn> {
+        VerusParser::new(source.to_string())
+            .parse_spec_functions_annotated()
+            .unwrap()
+    }
+
+    fn annotated_err(source: &str) -> String {
+        match VerusParser::new(source.to_string()).parse_spec_functions_annotated() {
+            Err(TranspileError::Parse { message, .. })
+            | Err(TranspileError::Annotation { message, .. }) => message,
+            other => panic!("expected an error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inline_directive_attaches_to_adjacent_fn() {
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out, c: in)
+            pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+                true
+            }
+
+            pub open spec fn unannotated(x: bool) -> bool {
+                x
+            }
+        }
+        "#;
+        let funcs = annotated(source);
+        assert_eq!(funcs.len(), 2);
+
+        let (init, ann) = &funcs[0];
+        assert_eq!(init.name, "LInit");
+        let ann = ann.as_ref().expect("LInit should carry an annotation");
+        assert_eq!(ann.kind, FunctionKind::Predicate);
+        assert_eq!(
+            ann.param_modes,
+            vec![ParameterMode::Output, ParameterMode::Input]
+        );
+
+        assert!(funcs[1].1.is_none(), "unannotated fn must stay unannotated");
+    }
+
+    #[test]
+    fn inline_directive_multi_line() {
+        let source = r#"
+        verus! {
+            // @automan predicate(
+            //   state: in,
+            //   next_state: out,
+            // )
+            pub open spec fn LNext(state: LState, next_state: LState) -> bool {
+                true
+            }
+        }
+        "#;
+        let funcs = annotated(source);
+        let ann = funcs[0].1.as_ref().unwrap();
+        assert_eq!(
+            ann.param_modes,
+            vec![ParameterMode::Input, ParameterMode::Output]
+        );
+    }
+
+    #[test]
+    fn inline_directive_survives_ordinary_comment_between() {
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out)
+            // Initial state: everything zeroed.
+            pub open spec fn F(s: LState) -> bool { true }
+        }
+        "#;
+        let funcs = annotated(source);
+        assert!(funcs[0].1.is_some());
+    }
+
+    #[test]
+    fn inline_directive_helper_via_parser() {
+        let source = r#"
+        verus! {
+            // @automan helper(s: in, n: in) -> Seq<CPacket>
+            pub open spec fn build(s: LState, n: nat) -> Seq<RslPacket> {
+                arbitrary()
+            }
+        }
+        "#;
+        let funcs = annotated(source);
+        let ann = funcs[0].1.as_ref().unwrap();
+        assert_eq!(ann.kind, FunctionKind::Helper);
+        assert_eq!(ann.return_type, Some("Seq<CPacket>".to_string()));
+    }
+
+    #[test]
+    fn inline_directive_positional_via_parser() {
+        let source = r#"
+        verus! {
+            // @automan predicate(-, +)
+            pub open spec fn LInit(s: LState, c: LConstants) -> bool { true }
+        }
+        "#;
+        let funcs = annotated(source);
+        assert_eq!(
+            funcs[0].1.as_ref().unwrap().param_modes,
+            vec![ParameterMode::Output, ParameterMode::Input]
+        );
+    }
+
+    #[test]
+    fn same_bare_name_in_two_blocks_binds_separately() {
+        // The sidecar loader matches by bare name and would conflate these;
+        // inline binding is positional and must not.
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out, c: in)
+            pub open spec fn LInit(s: AState, c: AConst) -> bool { true }
+        }
+
+        verus! {
+            // @automan predicate(s: in, c: out)
+            pub open spec fn LInit(s: BState, c: BConst) -> bool { true }
+        }
+        "#;
+        let funcs = annotated(source);
+        assert_eq!(funcs.len(), 2);
+        assert_eq!(
+            funcs[0].1.as_ref().unwrap().param_modes,
+            vec![ParameterMode::Output, ParameterMode::Input]
+        );
+        assert_eq!(
+            funcs[1].1.as_ref().unwrap().param_modes,
+            vec![ParameterMode::Input, ParameterMode::Output]
+        );
+    }
+
+    #[test]
+    fn inline_directive_error_carries_file_line() {
+        // Directive sits on line 3 of the source; the diagnostic must say so.
+        let source = "verus! {\n    // filler\n    // @automan predicate(s: out, wrong: in)\n    pub open spec fn F(s: LState, c: LConstants) -> bool { true }\n}\n";
+        let msg = annotated_err(source);
+        assert!(msg.contains("line 3"), "got: {msg}");
+        assert!(msg.contains("unknown parameter"), "got: {msg}");
+    }
+
+    #[test]
+    fn orphaned_directive_before_struct_is_an_error() {
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out)
+            pub struct NotAFunction { x: bool }
+        }
+        "#;
+        let msg = annotated_err(source);
+        assert!(msg.contains("not followed by a spec fn"), "got: {msg}");
+    }
+
+    #[test]
+    fn orphaned_directive_at_end_of_block_is_an_error() {
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out)
+        }
+        "#;
+        let msg = annotated_err(source);
+        assert!(msg.contains("not followed by a spec fn"), "got: {msg}");
+    }
+
+    #[test]
+    fn two_directives_on_one_fn_is_an_error() {
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out)
+            // @automan predicate(s: out)
+            pub open spec fn F(s: LState) -> bool { true }
+        }
+        "#;
+        let msg = annotated_err(source);
+        assert!(msg.contains("second @automan directive"), "got: {msg}");
+    }
+
+    #[test]
+    fn unterminated_directive_is_an_error() {
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out,
+            pub open spec fn F(s: LState) -> bool { true }
+        }
+        "#;
+        let msg = annotated_err(source);
+        assert!(msg.contains("unterminated"), "got: {msg}");
+    }
+
+    #[test]
+    fn doc_comment_directive_is_an_error() {
+        let source = r#"
+        verus! {
+            /// @automan predicate(s: out)
+            pub open spec fn F(s: LState) -> bool { true }
+        }
+        "#;
+        let msg = annotated_err(source);
+        assert!(msg.contains("doc comments"), "got: {msg}");
+    }
+
+    #[test]
+    fn directive_inside_fn_body_is_an_error_not_a_noop() {
+        let source = r#"
+        verus! {
+            pub open spec fn F(s: LState) -> bool {
+                // @automan predicate(s: out)
+                true
+            }
+        }
+        "#;
+        let msg = annotated_err(source);
+        assert!(msg.contains("was not applied"), "got: {msg}");
+    }
+
+    #[test]
+    fn directive_outside_verus_block_is_an_error() {
+        let source = r#"
+        // @automan predicate(s: out)
+        verus! {
+            pub open spec fn F(s: LState) -> bool { true }
+        }
+        "#;
+        let msg = annotated_err(source);
+        assert!(msg.contains("was not applied"), "got: {msg}");
+    }
+
+    #[test]
+    fn prose_mentioning_the_marker_is_fine() {
+        let source = r#"
+        verus! {
+            // Modes for this file live in the @automan sidecar.
+            pub open spec fn F(s: LState) -> bool { true }
+        }
+        "#;
+        let funcs = annotated(source);
+        assert_eq!(funcs.len(), 1);
+        assert!(funcs[0].1.is_none());
+    }
+
+    #[test]
+    fn legacy_api_rejects_inline_directives_loudly() {
+        let source = r#"
+        verus! {
+            // @automan predicate(s: out)
+            pub open spec fn F(s: LState) -> bool { true }
+        }
+        "#;
+        let result = VerusParser::new(source.to_string()).parse_spec_functions();
+        let msg = match result {
+            Err(TranspileError::Parse { message, .. }) => message,
+            other => panic!("expected loud rejection, got {other:?}"),
+        };
+        assert!(msg.contains("sidecar"), "got: {msg}");
+        assert!(msg.contains('F'), "got: {msg}");
+    }
+
+    #[test]
+    fn annotated_api_on_plain_source_matches_legacy() {
+        let source = r#"
+        verus! {
+            pub open spec fn F(s: LState) -> bool { true }
+            pub open spec fn G(x: bool) -> bool { x }
+        }
+        "#;
+        let legacy = VerusParser::new(source.to_string())
+            .parse_spec_functions()
+            .unwrap();
+        let pairs = annotated(source);
+        assert_eq!(legacy.len(), pairs.len());
+        for (l, (a, ann)) in legacy.iter().zip(pairs.iter()) {
+            assert_eq!(l.name, a.name);
+            assert!(ann.is_none());
+        }
     }
 
     #[test]

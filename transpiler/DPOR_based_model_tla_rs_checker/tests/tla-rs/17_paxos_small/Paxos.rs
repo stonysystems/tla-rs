@@ -15,51 +15,60 @@ pub struct LState {
 
 
 /// Acceptors operator
+// @automan helper()
 pub open spec fn LAcceptors() -> Set<int> {
     set![1, 2, 3, 4, 5, 6, 7, 8]
 }
 
 /// Values operator
+// @automan helper()
 pub open spec fn LValues() -> Set<int> {
     set![1, 2, 3, 4, 5]
 }
 
 /// Init operator
+// @automan predicate(s: out)
 pub open spec fn LInit(s: LState) -> bool {
     (((s.maxBal == Set::<int>::empty()) && (s.maxVBal == Set::<int>::empty())) && (s.maxVal == Set::<int>::empty()))
 }
 
 /// Send1a operator
+// @automan predicate(s: in, s_: out, b: in)
 pub open spec fn LSend1a(s: LState, s_: LState, b: int) -> bool {
     (((LAcceptors().contains(b) && (s_.maxBal == s.maxBal)) && (s_.maxVBal == s.maxVBal)) && (s_.maxVal == s.maxVal))
 }
 
 /// Send1b operator
+// @automan predicate(s: in, s_: out, a: in, b: in)
 pub open spec fn LSend1b(s: LState, s_: LState, a: int, b: int) -> bool {
     ((((LAcceptors().contains(a) && LAcceptors().contains(b)) && (s_.maxBal == s.maxBal.union(set![b]))) && (s_.maxVBal == s.maxVBal)) && (s_.maxVal == s.maxVal))
 }
 
 /// Send2a operator
+// @automan predicate(s: in, s_: out, b: in, v: in)
 pub open spec fn LSend2a(s: LState, s_: LState, b: int, v: int) -> bool {
     (((((LAcceptors().contains(b) && LValues().contains(v)) && ((s.maxVal == Set::<int>::empty()) || s.maxVal.contains(v))) && (s_.maxBal == s.maxBal)) && (s_.maxVBal == s.maxVBal.union(set![b]))) && (s_.maxVal == s.maxVal))
 }
 
 /// Send2b operator
+// @automan predicate(s: in, s_: out, a: in, b: in, v: in)
 pub open spec fn LSend2b(s: LState, s_: LState, a: int, b: int, v: int) -> bool {
     ((((((LAcceptors().contains(a) && LAcceptors().contains(b)) && LValues().contains(v)) && ((s.maxVal == Set::<int>::empty()) || s.maxVal.contains(v))) && (s_.maxBal == s.maxBal)) && (s_.maxVBal == s.maxVBal.union(set![b]))) && (s_.maxVal == s.maxVal.union(set![v])))
 }
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState) -> bool {
-    exists |b: int| LAcceptors().contains(b) && (LSend1a(s, s_, b) || exists |a: int, b: int| (LAcceptors().contains(a) && LAcceptors().contains(b)) && (LSend1b(s, s_, a, b) || exists |b: int, v: int| (LAcceptors().contains(b) && LValues().contains(v)) && (LSend2a(s, s_, b, v) || exists |a: int, b: int, v: int| (LAcceptors().contains(a) && LAcceptors().contains(b) && LValues().contains(v)) && LSend2b(s, s_, a, b, v))))
+    (((exists |b: int| LAcceptors().contains(b) && LSend1a(s, s_, b) || exists |a: int, b: int| (LAcceptors().contains(a) && LAcceptors().contains(b)) && LSend1b(s, s_, a, b)) || exists |b: int, v: int| (LAcceptors().contains(b) && LValues().contains(v)) && LSend2a(s, s_, b, v)) || exists |a: int, b: int, v: int| (LAcceptors().contains(a) && LAcceptors().contains(b) && LValues().contains(v)) && LSend2b(s, s_, a, b, v))
 }
 
 /// ChosenValueAgreement operator
+// @automan predicate(s: in)
 pub open spec fn LChosenValueAgreement(s: LState) -> bool {
     forall |v1: int, v2: int| #![trigger (v1 + 0)] #![trigger (v2 + 0)] (s.maxVal.contains(v1) && s.maxVal.contains(v2)) ==> (v1 == v2)
 }
 
 /// TypeOK operator
+// @automan predicate(s: in)
 pub open spec fn LTypeOK(s: LState) -> bool {
     ((s.maxBal.subset_of(LAcceptors()) && s.maxVBal.subset_of(LAcceptors())) && s.maxVal.subset_of(LValues()))
 }
