@@ -22,6 +22,7 @@ verus! {
             #[tag = 2]
             CInvalid,
         }
+    [split mod = lock_message_marshal_arms]
     [rlimit attr = verifier::rlimit(25)]
     }
 

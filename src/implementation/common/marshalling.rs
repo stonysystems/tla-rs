@@ -811,6 +811,52 @@ impl<T: Marshalable> Marshalable for Option<T> {
   }
 }
 
+/// Split out of `Vec::<T>::lemma_serialization_is_not_a_prefix_of`, where the
+/// same decomposition was proven inline twice (once for each side). The 08-12
+/// vstd slice specs (verus#2744) grew the instantiation space enough to push
+/// that doubled body over its rlimit; giving the decomposition its own solver
+/// budget restores the margin without raising any limit.
+proof fn lemma_vec_ghost_serialize_decomposes_at<T: Marshalable>(v: &Vec<T>, idx: int)
+  requires
+    0 <= idx < v@.len(),
+  ensures ({
+    let emp = Seq::<u8>::empty();
+    let g = |x: T| x.ghost_serialize();
+    let accg = |acc: Seq<u8>, x: T| acc + g(x);
+    v.ghost_serialize() =~= ((v@.len() as usize).ghost_serialize()
+        + v@.subrange(0, idx).fold_left(emp, accg))
+        + g(v@[idx])
+        + v@.subrange(idx + 1, v@.len() as int).fold_left(emp, accg)
+  }),
+{
+  lemma_auto_spec_u64_to_from_le_bytes();
+  let emp = Seq::<u8>::empty();
+  let g = |x: T| x.ghost_serialize();
+  let accg = |acc: Seq<u8>, x: T| acc + g(x);
+  let accgs = |acc: Seq<u8>, x: T| acc + x.ghost_serialize();
+  let gs = |s: Seq<T>, start: int, end: int| s.subrange(start, end).fold_left(emp, accg);
+  // Bridge to the closure literal inside Vec::ghost_serialize's definition.
+  assert(accg =~= accgs);
+  assert(gs(v@, 0, v@.len() as int) == gs(v@, 0, idx) + gs(v@, idx, v@.len() as int)) by {
+    let s1 = v@.subrange(0, idx);
+    let s2 = v@.subrange(idx, v@.len() as int);
+    lemma_fold_left_append_merge(s1, s2, g);
+    assert(v@.subrange(0, v@.len() as int) =~= s1 + s2);
+  }
+  assert(gs(v@, idx, v@.len() as int) == g(v@[idx]) + gs(v@, idx + 1, v@.len() as int)) by {
+    let s1 = v@.subrange(idx, idx + 1);
+    let s2 = v@.subrange(idx + 1, v@.len() as int);
+    lemma_fold_left_append_merge(s1, s2, g);
+    assert(v@.subrange(idx, v@.len() as int) =~= s1 + s2);
+    assert(v@.subrange(idx, idx + 1) =~= seq![v@[idx]]);
+    reveal_with_fuel(Seq::fold_left, 2);
+    assert(emp + g(v@[idx]) =~= g(v@[idx]));
+  }
+  assert((v@.len() as usize).ghost_serialize() + gs(v@, 0, v@.len() as int) == v.ghost_serialize()) by {
+    assert(v@.subrange(0, v@.len() as int) =~= v@);
+  }
+}
+
 impl<T: Marshalable> Marshalable for Vec<T> {
   open spec fn view_equal(&self, other: &Self) -> bool {
     let s = self@;
@@ -1127,46 +1173,13 @@ impl<T: Marshalable> Marshalable for Vec<T> {
       let accgs = |acc: Seq<u8>, x: T| acc + x.ghost_serialize();
       let gs = |s: Seq<T>, start: int, end: int| s.subrange(start, end).fold_left(emp, accg);
       assert(accg =~= accgs);
-      assert(self.ghost_serialize() =~= ((self@.len() as usize).ghost_serialize() + gs(self@, 0, idx)) + g(self@[idx]) + gs(self@, idx + 1, self.len() as int)) by {
-        assert(gs(self@, 0, self.len() as int) == gs(self@, 0, idx) + gs(self@, idx, self.len() as int)) by {
-          let s1 = self@.subrange(0, idx);
-          let s2 = self@.subrange(idx, self.len() as int);
-          lemma_fold_left_append_merge(s1, s2, g);
-          assert(self@.subrange(0, self.len() as int) =~= s1 + s2);
-        }
-        assert(gs(self@, idx, self.len() as int) == g(self@[idx]) + gs(self@, idx + 1, self.len() as int)) by {
-          let s1 = self@.subrange(idx, idx + 1);
-          let s2 = self@.subrange(idx + 1, self.len() as int);
-          lemma_fold_left_append_merge(s1, s2, g);
-          assert(self@.subrange(idx, self.len() as int) =~= s1 + s2);
-          assert(self@.subrange(idx, idx + 1) =~= seq![self@[idx]]);
-          reveal_with_fuel(Seq::fold_left, 2);
-          assert(emp + g(self@[idx]) =~= g(self@[idx]));
-        }
-        assert((self@.len() as usize).ghost_serialize() + gs(self@, 0, self.len() as int) == self.ghost_serialize()) by {
-          assert(self@.subrange(0, self.len() as int) =~= self@);
-        }
-      }
-      assert(other.ghost_serialize() =~= ((other@.len() as usize).ghost_serialize() + gs(other@, 0, idx)) + g(other@[idx]) + gs(other@, idx + 1, other.len() as int)) by {
-        assert(gs(other@, 0, other.len() as int) == gs(other@, 0, idx) + gs(other@, idx, other.len() as int)) by {
-          let s1 = other@.subrange(0, idx);
-          let s2 = other@.subrange(idx, other.len() as int);
-          lemma_fold_left_append_merge(s1, s2, g);
-          assert(other@.subrange(0, other.len() as int) =~= s1 + s2);
-        }
-        assert(gs(other@, idx, other.len() as int) == g(other@[idx]) + gs(other@, idx + 1, other.len() as int)) by {
-          let s1 = other@.subrange(idx, idx + 1);
-          let s2 = other@.subrange(idx + 1, other.len() as int);
-          lemma_fold_left_append_merge(s1, s2, g);
-          assert(other@.subrange(idx, other.len() as int) =~= s1 + s2);
-          assert(other@.subrange(idx, idx + 1) =~= seq![other@[idx]]);
-          reveal_with_fuel(Seq::fold_left, 2);
-          assert(emp + g(other@[idx]) =~= g(other@[idx]));
-        }
-        assert((other@.len() as usize).ghost_serialize() + gs(other@, 0, other.len() as int) == other.ghost_serialize()) by {
-          assert(other@.subrange(0, other.len() as int) =~= other@);
-        }
-      }
+      // Decomposition proven once, in its own solver budget (see the helper's
+      // comment); the identical inline copies were what tipped this body over
+      // its rlimit under the 08-12 vstd slice specs.
+      lemma_vec_ghost_serialize_decomposes_at(self, idx);
+      assert(self.ghost_serialize() =~= ((self@.len() as usize).ghost_serialize() + gs(self@, 0, idx)) + g(self@[idx]) + gs(self@, idx + 1, self.len() as int));
+      lemma_vec_ghost_serialize_decomposes_at(other, idx);
+      assert(other.ghost_serialize() =~= ((other@.len() as usize).ghost_serialize() + gs(other@, 0, idx)) + g(other@[idx]) + gs(other@, idx + 1, other.len() as int));
       assert((self@.len() as usize).ghost_serialize() == (other@.len() as usize).ghost_serialize());
       assert(gs(self@, 0, idx) == gs(other@, 0, idx)) by {
         assert forall |i:int| 0 <= i < idx implies g(self@.subrange(0, idx)[i]) == g(other@.subrange(0, idx)[i]) by {
@@ -1600,9 +1613,100 @@ macro_rules! derive_marshalable_for_enum {
       ),+
       $(,)?
     }
+    [split mod = $splitmod:ident]
     $( [rlimit attr = $rlimitattr:meta] )?
   } => {
     ::verus_builtin_macros::verus! {
+      // Per-variant proof bodies, one fn per variant, so each match arm of the
+      // big enum lemmas gets its own solver budget. Eleven arms sharing one
+      // query is what verus a8751f2's six new slice broadcast axioms pushed
+      // over the rlimit: the vstd seq axioms instantiate across every arm's
+      // concatenation terms at once. Function names cannot be concatenated in
+      // macro_rules, but the variant identifiers themselves are unique, so
+      // they serve as the helper names, namespaced by a caller-chosen module.
+      #[allow(non_snake_case)]
+      $pub mod $splitmod {
+        #[allow(unused_imports)]
+        use super::*;
+        pub mod prefix {
+        #[allow(unused_imports)]
+        use super::super::*;
+        $(
+          // Note: the split helpers do not carry the enum's generic
+          // parameters — macro_rules cannot mix the per-generic and
+          // per-variant repetition scopes in one transcription. None of the
+          // current users are generic; a generic enum adopting [split mod =]
+          // will fail here loudly rather than silently.
+          #[verifier::spinoff_prover]
+          pub proof fn $variant(
+            $( $($member : &$memberty,)* )?
+            $( $($memother : &$memberty,)* )?
+          )
+            ensures ({
+              let si = seq![($tag as u8)] $( $(+ $member.ghost_serialize())* )?;
+              let so = seq![($tag as u8)] $( $(+ $memother.ghost_serialize())* )?;
+              ((!(true $( $(&& $member.view_equal($memother))* )?))
+                  && si.len() <= so.len())
+                  ==> si != so.subrange(0, si.len() as int)
+            }),
+          {
+            let si = seq![($tag as u8)] $( $(+ $member.ghost_serialize())* )?;
+            let so = seq![($tag as u8)] $( $(+ $memother.ghost_serialize())* )?;
+            if (!(true $( $(&& $member.view_equal($memother))* )?))
+                && si.len() <= so.len() {
+              let mid: int = 1;
+              $($(
+                if !$member.view_equal($memother) {
+                  let (x0, x1) = ($member, $memother);
+                  let (s0, s1) = (x0.ghost_serialize(), x1.ghost_serialize());
+                  x0.lemma_view_equal_symmetric(&x1);
+                  let (x0, x1, s0, s1) = if s0.len() <= s1.len() {
+                    (x0, x1, s0, s1)
+                  } else {
+                    (x1, x0, s1, s0)
+                  };
+                  x0.lemma_serialization_is_not_a_prefix_of(&x1);
+                  assert(!(s0 =~= s1.subrange(0, s0.len() as int))); // OBSERVE
+                  let idx = choose |i:int| 0 <= i < s0.len() as int && s0[i] != s1[i];
+                  if si == so.subrange(0, si.len() as int) {
+                    assert(si[mid + idx] == so[mid + idx]); // OBSERVE
+                  }
+                  return;
+                } else {
+                  $member.lemma_same_views_serialize_the_same($memother);
+                }
+                let mid = mid + $member.ghost_serialize().len();
+              )*)?
+              // Every member compared view-equal, contradicting the guard.
+              assert(false);
+            }
+          }
+        )+
+        }
+        pub mod marsh {
+        #[allow(unused_imports)]
+        use super::super::*;
+        $(
+          #[verifier::spinoff_prover]
+          pub exec fn $variant(
+            $( $($member : &$memberty,)* )?
+          ) -> (b: bool)
+            ensures b == ({
+              &&& true
+              $( $(&&& $member.is_marshalable())* )?
+              &&& 1int $( $(+ $member.ghost_serialize().len())* )? <= usize::MAX as int
+            }),
+          {
+            let res = {
+              &&& true
+              $( $(&&& $member._is_marshalable())* )?
+              $( &&& no_usize_overflows!(1, $($member.serialized_size()),*) )?
+            };
+            res
+          }
+        )+
+        }
+      }
       impl $(< $($poly : Marshalable),+ >)? Marshalable for $newenum $(< $($poly),+ >)? {
         open spec fn view_equal(&self, other: &Self) -> bool {
           &&& match (self, other) {
@@ -1648,16 +1752,11 @@ macro_rules! derive_marshalable_for_enum {
           match self {
             $(
               $newenum::$variant $( { $($member),* } )? => {
-                let res = {
-                  &&& true
-                  $( $(&&& $member._is_marshalable())* )?
-                  $( &&& no_usize_overflows!(1, $($member.serialized_size()),*) )?
-                };
+                // Per-variant marshalability lives in $splitmod::marsh with
+                // its own solver budget; this arm only unfolds the enum spec.
+                let res = $splitmod::marsh::$variant($( $($member,)* )?);
                 proof {
-                  // Isolate each variant's serialization arithmetic. Without this
-                  // boundary, recent Verus versions repeatedly instantiate sequence
-                  // axioms for every variant in one oversized query.
-                  assert(res == self.is_marshalable()) by {}
+                  assert(res == self.is_marshalable());
                 }
                 res
               }
@@ -1750,29 +1849,12 @@ macro_rules! derive_marshalable_for_enum {
                 $newenum::$variant $( { $($member),* } )?,
                 $newenum::$variant $( { $($member: $memother),* } )?
               ) => {
-                let mid: int = 1;
-                $($(
-                  if !$member.view_equal(&$memother) {
-                    let (x0, x1) = ($member, $memother);
-                    let (s0, s1) = (x0.ghost_serialize(), x1.ghost_serialize());
-                    x0.lemma_view_equal_symmetric(&x1);
-                    let (x0, x1, s0, s1) = if s0.len() <= s1.len() {
-                      (x0, x1, s0, s1)
-                    } else {
-                      (x1, x0, s1, s0)
-                    };
-                    x0.lemma_serialization_is_not_a_prefix_of(&x1);
-                    assert(!(s0 =~= s1.subrange(0, s0.len() as int))); // OBSERVE
-                    let idx = choose |i:int| 0 <= i < s0.len() as int && s0[i] != s1[i];
-                    if si == so.subrange(0, si.len() as int) {
-                      assert(si[mid + idx] == so[mid + idx]); // OBSERVE
-                    }
-                    return;
-                  } else {
-                    $member.lemma_same_views_serialize_the_same(&$memother);
-                  }
-                  let mid = mid + $member.ghost_serialize().len();
-                )*)?
+                // The heavy per-variant body lives in $splitmod::$variant,
+                // one solver budget per variant; this arm only connects the
+                // enum serialization to the variant-local shape.
+                $splitmod::prefix::$variant($( $($member,)* )? $( $($memother,)* )?);
+                assert(si == seq![($tag as u8)] $( $(+ $member.ghost_serialize())* )?);
+                assert(so == seq![($tag as u8)] $( $(+ $memother.ghost_serialize())* )?);
               }
             ),+
             _ => {
@@ -1850,6 +1932,7 @@ macro_rules! define_enum_and_derive_marshalable {
       ),+
       $(,)?
     }
+    [split mod = $splitmod:ident]
     $( [rlimit attr = $rlimitattr:meta] )?
   } => {
 
@@ -1872,6 +1955,7 @@ macro_rules! define_enum_and_derive_marshalable {
           $variant $( { $(#[o=$memother] $member : $memberty),* } )?
         ),+
       }
+      [split mod = $splitmod]
       $( [rlimit attr = $rlimitattr] )?
     }
   };

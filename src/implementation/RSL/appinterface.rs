@@ -35,6 +35,7 @@ verus! {
             #[tag = 2]
             CAppInvalid,
         }
+        [split mod = cappmessage_marshal_arms]
         [rlimit attr = verifier::rlimit(25)]
     }
 
