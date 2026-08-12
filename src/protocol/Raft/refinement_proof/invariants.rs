@@ -1494,12 +1494,15 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             LogCommitCertificatesValid(ds),
             VotersVotedForCandidate(ds),
             VoteResponseIntegrity(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
             VoteResponseHasRequestVote(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
@@ -4544,12 +4547,15 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             ConfigurationCommitCertificatesValid(ds),
             VotersVotedForCandidate(ds),
             VoteResponseIntegrity(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
             VoteResponseHasRequestVote(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
@@ -4941,6 +4947,7 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             ConfigurationCommitCertificatesValid(ds),
             LeaderHasRecordedElectionQuorum(ds),
             VotersVotedForCandidate(ds),
@@ -4948,6 +4955,8 @@ verus! {
             LogMatching(ds),
             LogTermsMonotonic(ds),
             VoteResponseHasRequestVote(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
@@ -5042,6 +5051,7 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             ConfigurationCommitCertificatesValid(ds),
             LeaderHasRecordedElectionQuorum(ds),
             VotersVotedForCandidate(ds),
@@ -5049,6 +5059,8 @@ verus! {
             LogMatching(ds),
             LogTermsMonotonic(ds),
             VoteResponseHasRequestVote(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
@@ -5108,6 +5120,7 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             ConfigurationCommitCertificatesValid(ds),
             LeaderHasRecordedElectionQuorum(ds),
             VotersVotedForCandidate(ds),
@@ -5115,6 +5128,8 @@ verus! {
             LogMatching(ds),
             LogTermsMonotonic(ds),
             VoteResponseHasRequestVote(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
@@ -5698,6 +5713,76 @@ verus! {
                     0 <= a < voters.len() && 0 <= b < voters.len() && a != b
                     ==> voters[a] != voters[b])
             }
+    }
+
+    /// Materialize the witnesses promised by `EntryTermHasVoteQuorum` for one
+    /// concrete log position.  Keeping this extraction in a small lemma avoids
+    /// exposing the invariant's nested quantifiers to the much larger legacy
+    /// LeaderCompleteness proofs.
+    proof fn lemma_entry_term_vote_quorum_witness(
+        ds: RaftDistributedState,
+        server: int,
+        index: int,
+    ) -> (result: (int, Seq<int>))
+        requires
+            EntryTermHasVoteQuorum(ds),
+            0 <= server < ds.num_servers,
+            0 <= index < ds.server_states[server].log.len(),
+        ensures ({
+            let (destination, voters) = result;
+            let quorum_size = ds.num_servers / 2 + 1;
+            &&& 0 <= destination < ds.num_servers
+            &&& ds.server_states[destination].log.len() > index
+            &&& ds.server_states[destination].log[index]
+                == ds.server_states[server].log[index]
+            &&& voters.len() >= quorum_size - 1
+            &&& (forall |a: int| #![trigger voters[a]]
+                0 <= a < voters.len() ==> {
+                    &&& 0 <= voters[a] < ds.num_servers
+                    &&& voters[a] != destination
+                    &&& ExistsGrantedVoteResponse(
+                        ds,
+                        voters[a],
+                        destination,
+                        ds.server_states[server].log[index].term,
+                    )
+                })
+            &&& (forall |a: int, b: int|
+                #![trigger voters[a], voters[b]]
+                0 <= a < voters.len()
+                && 0 <= b < voters.len()
+                && a != b
+                ==> voters[a] != voters[b])
+        }),
+    {
+        assert(entry_term_has_vote_quorum_trigger(ds, server, index));
+        let witnesses = choose |destination: int, voters: Seq<int>|
+            #![trigger ds.server_states[destination].log[index], voters.len()]
+        {
+            &&& 0 <= destination < ds.num_servers
+            &&& ds.server_states[destination].log.len() > index
+            &&& ds.server_states[destination].log[index]
+                == ds.server_states[server].log[index]
+            &&& voters.len() >= ds.num_servers / 2 + 1 - 1
+            &&& (forall |a: int| #![trigger voters[a]]
+                0 <= a < voters.len() ==> {
+                    &&& 0 <= voters[a] < ds.num_servers
+                    &&& voters[a] != destination
+                    &&& ExistsGrantedVoteResponse(
+                        ds,
+                        voters[a],
+                        destination,
+                        ds.server_states[server].log[index].term,
+                    )
+                })
+            &&& (forall |a: int, b: int|
+                #![trigger voters[a], voters[b]]
+                0 <= a < voters.len()
+                && 0 <= b < voters.len()
+                && a != b
+                ==> voters[a] != voters[b])
+        };
+        witnesses
     }
 
     /// Packet-level helper: there exists a granted VoteResponse packet from
@@ -6659,6 +6744,7 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             LogMatching(ds),
             TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
@@ -7144,6 +7230,7 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             LogMatching(ds),
             TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
@@ -7834,7 +7921,8 @@ verus! {
     /// LogMatching at j: s and d1 agree at k.
     /// So s.log[k] == d1.log[k] == d2.log[k] == entry.
     ///
-    /// Uses assume for ETHVQ witness extraction (sound: ETHVQ in caller's scope).
+    /// ETHVQ witnesses are materialized by
+    /// `lemma_entry_term_vote_quorum_witness`.
     proof fn lemma_same_term_committed_entry_transfer(
         ds: RaftDistributedState,
         s: int,
@@ -7844,6 +7932,7 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             LogMatching(ds),
             OneVotePerTermInNetwork(ds),
             VoteResponseHasRequestVote(ds),
@@ -7859,49 +7948,33 @@ verus! {
         let n = ds.num_servers;
         let T = entry.term;
 
-        // ETHVQ extraction at j on s → (d1, voters1) at T
-        // Sound: caller has EntryTermHasVoteQuorum in scope
-        let d1 = 0int;
-        let voters1 = Seq::<int>::empty();
-        assume({
-            &&& 0 <= d1 < n
-            &&& ds.server_states[d1].log.len() > j
-            &&& ds.server_states[d1].log[j] == ds.server_states[s].log[j]
-            &&& voters1.len() >= n / 2 + 1 - 1
-            &&& (forall |a: int| #![trigger voters1[a]]
-                0 <= a < voters1.len() ==> {
-                    &&& 0 <= voters1[a] < n
-                    &&& voters1[a] != d1
-                    &&& ExistsGrantedVoteResponse(ds, voters1[a], d1, T)
-                })
-            &&& (forall |a: int, b: int|
-                #![trigger voters1[a], voters1[b]]
-                0 <= a < voters1.len() && 0 <= b < voters1.len()
-                && a != b ==> voters1[a] != voters1[b])
-        });
+        // ETHVQ extraction at j on s → (d1, voters1) at T.
+        let (d1, voters1) =
+            lemma_entry_term_vote_quorum_witness(ds, s, j);
 
         // ETHVQ extraction at k on a committed server → (d2, voters2) at T
         // Sound: EntryCommittedAt(ds, k, entry) guarantees some server c has
         // c.log[k] == entry (term T). EntryTermHasVoteQuorum on c at k gives
         // (d2, voters2) at T with d2.log[k] == c.log[k] == entry.
-        let d2 = 0int;
-        let voters2 = Seq::<int>::empty();
-        assume({
-            &&& 0 <= d2 < n
-            &&& ds.server_states[d2].log.len() > k
-            &&& ds.server_states[d2].log[k] == entry
-            &&& voters2.len() >= n / 2 + 1 - 1
-            &&& (forall |a: int| #![trigger voters2[a]]
-                0 <= a < voters2.len() ==> {
-                    &&& 0 <= voters2[a] < n
-                    &&& voters2[a] != d2
-                    &&& ExistsGrantedVoteResponse(ds, voters2[a], d2, T)
+        let commit_quorum = choose |q: Set<int>| {
+            &&& q.len() >= n / 2 + 1
+            &&& (forall |id: int| #![trigger q.contains(id)]
+                q.contains(id) ==> {
+                    &&& 0 <= id < n
+                    &&& ds.server_states[id].log.len() > k
+                    &&& ds.server_states[id].log[k] == entry
                 })
-            &&& (forall |a: int, b: int|
-                #![trigger voters2[a], voters2[b]]
-                0 <= a < voters2.len() && 0 <= b < voters2.len()
-                && a != b ==> voters2[a] != voters2[b])
-        });
+        };
+        assert(commit_quorum.len() > 0);
+        vstd::set_lib::lemma_set_empty_equivalency_len(commit_quorum);
+        let committed_server = choose |committed_server: int|
+            commit_quorum.contains(committed_server);
+        assert(0 <= committed_server < n);
+        assert(ds.server_states[committed_server].log.len() > k);
+        assert(ds.server_states[committed_server].log[k] == entry);
+        let (d2, voters2) = lemma_entry_term_vote_quorum_witness(
+            ds, committed_server, k);
+        assert(ds.server_states[committed_server].log[k].term == T);
 
         // Prove d1 == d2
         lemma_ethvq_vote_dest_unique(
@@ -7947,8 +8020,8 @@ verus! {
 
     /// Phase 34.7.4 step 1: ETHVQ extraction + commit quorum overlap.
     ///
-    /// Takes only WellFormed (for quorum overlap). ETHVQ witness is
-    /// extracted via assume (sound when caller has EntryTermHasVoteQuorum).
+    /// Takes WellFormed plus the explicit ETHVQ invariant. The witness is
+    /// extracted by `lemma_entry_term_vote_quorum_witness`.
     /// Returns (ov, d) where ov has entry and d shares anchor with server.
     proof fn lemma_ethvq_committed_overlap(
         ds: RaftDistributedState,
@@ -7959,9 +8032,11 @@ verus! {
     ) -> (result: (int, int))
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             EntryCommittedAt(ds, k, entry),
             0 <= k,
             0 <= server < ds.num_servers,
+            0 <= anchor_idx,
             anchor_idx < ds.server_states[server].log.len(),
         ensures ({
             let (ov, d) = result;
@@ -7978,27 +8053,9 @@ verus! {
     {
         let T = ds.server_states[server].log[anchor_idx].term;
 
-        // ETHVQ witness extraction via assume (sound: caller has ETHVQ in scope)
-        let d = 0int;
-        let voters = Seq::<int>::empty();
-        assume({
-            &&& 0 <= d < ds.num_servers
-            &&& ds.server_states[d].log.len() > anchor_idx
-            &&& ds.server_states[d].log[anchor_idx]
-                == ds.server_states[server].log[anchor_idx]
-            &&& ds.server_states[d].log[anchor_idx].term == T
-            &&& voters.len() >= ds.num_servers / 2 + 1 - 1
-            &&& (forall |a: int| #![trigger voters[a]]
-                0 <= a < voters.len() ==> {
-                    &&& 0 <= voters[a] < ds.num_servers
-                    &&& voters[a] != d
-                    &&& ExistsGrantedVoteResponse(ds, voters[a], d, T)
-                })
-            &&& (forall |a: int, b: int|
-                #![trigger voters[a], voters[b]]
-                0 <= a < voters.len() && 0 <= b < voters.len()
-                && a != b ==> voters[a] != voters[b])
-        });
+        let (d, voters) =
+            lemma_entry_term_vote_quorum_witness(ds, server, anchor_idx);
+        assert(ds.server_states[d].log[anchor_idx].term == T);
 
         let ov = lemma_ethvq_commit_quorum_overlap(
             ds, k, entry, d, voters, T);
@@ -8105,9 +8162,12 @@ verus! {
     )
         requires
             WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
             VoteResponseHasRequestVote(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
@@ -8278,19 +8338,34 @@ verus! {
                         // vote dests at term vtl for both (voter, L-1) and
                         // (leader, rli-1). vote_dest_unique → same dest d.
                         // LogMatching chains through d to transfer entry.
-                        // Sound: EntryTermHasVoteQuorum + OneVotePerTermInNetwork
-                        // + VoteResponseHasRequestVote + CandidateVoteDestination-
-                        // Unique all in scope at lemma_leader_completeness_inductive.
-                        let n = ds.num_servers;
-                        let d = 0int;
-                        assume({
-                            &&& 0 <= d < n
-                            &&& ds.server_states[d].log.len() > rli - 1
-                            &&& ds.server_states[d].log[L - 1]
-                                == ds.server_states[overlap_voter].log[L - 1]
-                            &&& ds.server_states[d].log[rli - 1]
-                                == ds.server_states[leader_id].log[rli - 1]
-                        });
+                        // Extract the two ETHVQ certificates at the common
+                        // term, prove that they have the same vote
+                        // destination, and use that destination as the log
+                        // matching bridge.
+                        let (voter_destination, voter_witnesses) =
+                            lemma_entry_term_vote_quorum_witness(
+                                ds, overlap_voter, L - 1);
+                        let (leader_destination, leader_witnesses) =
+                            lemma_entry_term_vote_quorum_witness(
+                                ds, leader_id, rli - 1);
+                        assert(ds.server_states[voter_destination].log[L - 1].term
+                            == vtl);
+                        assert(ds.server_states[leader_destination].log[rli - 1].term
+                            == rlt);
+                        lemma_ethvq_vote_dest_unique(
+                            ds,
+                            voter_destination,
+                            voter_witnesses,
+                            leader_destination,
+                            leader_witnesses,
+                            rlt,
+                        );
+                        assert(voter_destination == leader_destination);
+                        let d = voter_destination;
+                        assert(ds.server_states[d].log[L - 1]
+                            == ds.server_states[overlap_voter].log[L - 1]);
+                        assert(ds.server_states[d].log[rli - 1]
+                            == ds.server_states[leader_id].log[rli - 1]);
                         // LogMatching(d, voter) at L-1 → agree at k
                         assert(ds.server_states[d].log[L - 1].term
                             == ds.server_states[overlap_voter].log[L - 1].term);
@@ -9943,27 +10018,8 @@ verus! {
         let n = ds.num_servers;
         let quorum_size = n / 2 + 1;
 
-        // Sound assume: extract d and voters from EntryTermHasVoteQuorum(ds).
-        // ETHVQ is in scope, but choose on its nested existentials crashes Z3
-        // (OOM). The assume is tracked for future removal.
-        assert(EntryTermHasVoteQuorum(ds));
-        let d = 0int;
-        let voters = Seq::<int>::empty();
-        assume({
-            &&& 0 <= d < n
-            &&& ds.server_states[d].log.len() > k
-            &&& ds.server_states[d].log[k] == ds.server_states[i].log[k]
-            &&& voters.len() >= quorum_size - 1
-            &&& (forall |a: int| #![trigger voters[a]] 0 <= a < voters.len() ==> {
-                &&& 0 <= voters[a] < n
-                &&& voters[a] != d
-                &&& ExistsGrantedVoteResponse(ds, voters[a], d, T)
-            })
-            &&& (forall |a: int, b: int|
-                #![trigger voters[a], voters[b]]
-                0 <= a < voters.len() && 0 <= b < voters.len() && a != b
-                ==> voters[a] != voters[b])
-        });
+        let (d, voters) =
+            lemma_entry_term_vote_quorum_witness(ds, i, k);
 
         if d == server_id {
             // d == server_id: s.log.len() > k → s_.log.len() >= s.log.len() > k.
@@ -11846,8 +11902,8 @@ verus! {
     /// - If both are the stepping server: trivial (same server).
     /// - If exactly one stepped and its old commit_index already covered k:
     ///   SMS(ds) + LogAppendOnly gives result.
-    /// - If exactly one stepped and k is NEWLY committed: requires
-    ///   LeaderCompleteness (blocked on term induction).
+    /// - If exactly one stepped and k is NEWLY committed: the post-state
+    ///   commit-certificate map identifies the same entry for both servers.
     proof fn lemma_state_machine_safety_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -11857,6 +11913,8 @@ verus! {
         ensures
             StateMachineSafety(ds_)
     {
+        lemma_committed_entries_have_log_certificates_inductive(ds, ds_);
+        lemma_log_certificate_coverage_implies_state_machine_safety(ds_);
         lemma_distributed_next_implies_legacy(ds, ds_);
         lemma_log_append_only(ds, ds_);
 
@@ -11897,10 +11955,9 @@ verus! {
                     assert(k < ds.server_states[other].commit_index);
                 } else {
                     // k is NEWLY committed by the stepping server.
-                    // Requires LeaderCompleteness + quorum overlap.
-                    // Blocked on term induction (7 LC assumes).
-                    assume(ds_.server_states[i].log[k]
-                        == ds_.server_states[j].log[k]);
+                    // The post-state certificate map gives both committed
+                    // entries the same unique certificate value.
+                    assert(StateMachineSafety(ds_));
                 }
             }
         }
