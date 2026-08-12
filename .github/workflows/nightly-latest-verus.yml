@@ -1,0 +1,129 @@
+# Nightly verification against the newest rolling Verus release.
+#
+# Purpose: learn about upstream regressions before verus-lang's nightly-verita
+# does. Their run fires at ~08:00 UTC against Verus main; rolling releases are
+# cut around 02:30 UTC, so a 04:00 UTC (midnight EDT) run here catches any
+# regression that rode a rolling release about five hours earlier — the
+# 2026-08-12 marshalling rlimit failure (verus#2744) is exactly the case this
+# would have caught first. Regressions merged to Verus main but not yet cut
+# into a rolling release remain verita's to find; that is the deliberate
+# boundary, since rolling is also what our PR gate verifies against.
+#
+# On failure the job opens a GitHub issue (one at a time, guarded by label)
+# so the redness is loud rather than buried in the Actions tab.
+
+name: nightly-latest-verus
+
+on:
+  schedule:
+    # 04:00 UTC = midnight EDT (23:00 EST in winter)
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  verify-latest:
+    name: Verus Verification (nightly, latest rolling)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve latest rolling release
+        id: verus
+        run: |
+          set -o pipefail
+          TAG=$(gh api repos/verus-lang/verus/releases \
+            --jq '[.[] | select(.prerelease==true)] | .[0].tag_name')
+          if [ -z "$TAG" ]; then
+            echo "no rolling prerelease found" >&2
+            exit 1
+          fi
+          VERSION="${TAG#release/rolling/}"
+          SHA="${VERSION##*.}"
+          TOOLCHAIN=$(curl -sfL \
+            "https://raw.githubusercontent.com/verus-lang/verus/${SHA}/rust-toolchain.toml" \
+            | sed -n 's/^channel = "\(.*\)"/\1/p')
+          if [ -z "$TOOLCHAIN" ]; then
+            echo "could not read rust-toolchain.toml at ${SHA}" >&2
+            exit 1
+          fi
+          echo "tag=$TAG"             >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "toolchain=$TOOLCHAIN" >> "$GITHUB_OUTPUT"
+          echo "Resolved $VERSION (toolchain $TOOLCHAIN) from $TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install Python and scons
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install scons
+
+      - name: Cache Verus
+        id: cache-verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus
+          key: verus-ubuntu-24.04-${{ steps.verus.outputs.version }}
+
+      - name: Download Verus
+        if: steps.cache-verus.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          V="${{ steps.verus.outputs.version }}"
+          gh release download "${{ steps.verus.outputs.tag }}" \
+            --repo verus-lang/verus \
+            --pattern "verus-${V}-x86-linux.zip" \
+            --output verus.zip
+          unzip -q verus.zip -d ~/
+          mv ~/verus-x86-linux ~/verus
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Ensure Verus is executable
+        run: chmod +x ~/verus/verus
+
+      - name: Install Rust toolchain for Verus
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.verus.outputs.toolchain }}
+          components: rustfmt
+
+      - name: Verify with Verus
+        run: |
+          set -o pipefail
+          scons --verus-path=$HOME/verus/verus --skip-dotnet 2>&1 \
+            | tee verus-nightly.log
+
+      - name: Open an issue on failure
+        if: failure()
+        run: |
+          set -o pipefail
+          V="${{ steps.verus.outputs.version }}"
+          # One open nightly issue at a time; a still-open one means the
+          # breakage is already known.
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label nightly-latest-verus --state open --json number --jq 'length')
+          if [ "$existing" != "0" ]; then
+            echo "an open nightly-latest-verus issue already exists; not filing another"
+            exit 0
+          fi
+          tail -n 60 verus-nightly.log > tail.txt 2>/dev/null || echo "(no log)" > tail.txt
+          gh label create nightly-latest-verus \
+            --repo "$GITHUB_REPOSITORY" \
+            --description "opened automatically by the nightly latest-Verus run" \
+            --color D93F0B 2>/dev/null || true
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --label nightly-latest-verus \
+            --title "nightly: verification fails on rolling $V" \
+            --body "$(printf 'cc @ZhangZihao270 — the nightly run against the newest rolling Verus release failed.\n\nVersion: `%s`\nRun: %s\n\nLast lines of the log:\n\n```\n%s\n```\n\nIf the pinned CI on main is still green, this is an upstream change; see the run log and `verus-lang/verus` commits since the previous rolling release.' \
+              "$V" \
+              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              "$(cat tail.txt)")"
+        env:
+          GH_TOKEN: ${{ github.token }}
