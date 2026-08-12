@@ -18,6 +18,21 @@ Both original systems use Dafny. This project re-expresses their core ideas in v
 IronFleet's specifications, proofs, and runtime structure are ported to Verus, while AutoMan's
 specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
 
+## Verified refinement theorems
+
+The two flagship protocols carry machine-checked refinement proofs, verified end to end by Verus:
+
+- **RSL (Multi-Paxos)** —
+  [`lemma_GetBehaviorRefinement`](src/protocol/RSL/refinement_proof/refinement.rs):
+  every behavior of the distributed protocol refines an abstract replicated
+  state machine — the IronFleet theorem, mechanized in Verus.
+- **Raft** —
+  [`lemma_refinement_correct`](src/protocol/Raft/refinement_proof/refinement.rs):
+  every valid distributed behavior refines a sequential state machine over the
+  committed log (no two reachable servers commit different entries at the same
+  index), including dynamic membership changes via joint consensus — a
+  property IronFleet's original development did not cover.
+
 The repository also extends that foundation with additional distributed protocols, bidirectional
 TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
 deployable C# networking/runtime integration.
@@ -128,7 +143,7 @@ scons --skip-verus
 ```
 
 The Verus invocation covers all ten protocol modules in the crate. The current full-crate
-gate reports `1048 verified, 0 errors`, with no warnings or automatically chosen trigger
+gate reports `1290 verified, 0 errors`, with no warnings or automatically chosen trigger
 notes, and runs on every push. Verification remains relative to the declared trusted and
 externally implemented boundaries; Appendix F of the book records those boundaries and
 the remaining proof escapes.
