@@ -358,13 +358,12 @@ verus! {
     /// strictly higher-term leader cannot still be holding a certified
     /// Configuration boundary that the leader lacks.
     ///
-    /// This is the classic static-Raft log-transfer step. It is stated as an
-    /// explicit hypothesis rather than discharged through
-    /// `lemma_overlap_voter_entry_transfer`, whose hard cases the inherited
-    /// proof base closes with `assume(false)`. Keeping it explicit separates
-    /// the membership-specific reasoning — quorum overlap across joint
-    /// consensus phases — from the inherited gap, so the dynamic-membership
-    /// result is exactly as strong as static Raft's own transfer lemma.
+    /// This is the classic static-Raft log-transfer step. The legacy proof now
+    /// discharges it when the certificate also denotes a fixed majority
+    /// (`LegacyCertificatesAreFixedMajorityCommitted`). It remains an explicit
+    /// hypothesis for general dynamic membership because a phase quorum need
+    /// not be a majority of every server in `0..num_servers`; that missing
+    /// cross-phase premise is distinct from the now-closed term induction.
     pub open spec fn CertifiedBoundaryTransfersToVotedLeader(
         ds: RaftDistributedState,
     ) -> bool {
@@ -1487,6 +1486,34 @@ verus! {
             }
     }
 
+    /// Compatibility condition for the retired fixed-membership proof chain.
+    ///
+    /// Dynamic-membership certificates are authorized by their recorded
+    /// membership phase and need not be majorities of every server in
+    /// `0..num_servers`.  The legacy ETHVQ/LeaderCompleteness argument below
+    /// uses fixed-majority intersection, so callers must state explicitly
+    /// when certificate entries also satisfy that older commitment notion.
+    pub open spec fn LegacyCertificatesAreFixedMajorityCommitted(
+        ds: RaftDistributedState,
+    ) -> bool {
+        &&& (forall |index: int|
+            #![trigger ds.log_commit_certificates[index]]
+            ds.log_commit_certificates.dom().contains(index)
+            ==> EntryCommittedAt(
+                ds,
+                index,
+                ds.log_commit_certificates[index].entry,
+            ))
+        &&& (forall |index: int|
+            #![trigger ds.configuration_commit_certificates[index]]
+            ds.configuration_commit_certificates.dom().contains(index)
+            ==> EntryCommittedAt(
+                ds,
+                index,
+                ds.configuration_commit_certificates[index].entry,
+            ))
+    }
+
     /// The all-entry transfer obligation is discharged by the same inherited
     /// lemma as the Configuration one — no new trust boundary.
     pub proof fn lemma_log_entry_transfer_obligation_discharged_by_inherited_lemma(
@@ -1495,15 +1522,19 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             EntryTermHasVoteQuorum(ds),
+            LegacyCertificatesAreFixedMajorityCommitted(ds),
             LogCommitCertificatesValid(ds),
             VotersVotedForCandidate(ds),
             VoteResponseIntegrity(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
+            TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
             OneVotePerTermInNetwork(ds),
             CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
@@ -1567,6 +1598,8 @@ verus! {
                     assert(VoteResponseIntegrity(ds));
                 };
 
+                assert(LegacyCertificatesAreFixedMajorityCommitted(ds));
+                assert(EntryCommittedAt(ds, index, certificate.entry));
                 lemma_overlap_voter_entry_transfer(
                     ds,
                     leader_id,
@@ -4548,15 +4581,19 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             EntryTermHasVoteQuorum(ds),
+            LegacyCertificatesAreFixedMajorityCommitted(ds),
             ConfigurationCommitCertificatesValid(ds),
             VotersVotedForCandidate(ds),
             VoteResponseIntegrity(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
+            TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
             OneVotePerTermInNetwork(ds),
             CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
@@ -4626,6 +4663,8 @@ verus! {
                     assert(VoteResponseIntegrity(ds));
                 };
 
+                assert(LegacyCertificatesAreFixedMajorityCommitted(ds));
+                assert(EntryCommittedAt(ds, index, certificate.entry));
                 lemma_overlap_voter_entry_transfer(
                     ds,
                     leader_id,
@@ -4948,16 +4987,20 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             EntryTermHasVoteQuorum(ds),
+            LegacyCertificatesAreFixedMajorityCommitted(ds),
             ConfigurationCommitCertificatesValid(ds),
             LeaderHasRecordedElectionQuorum(ds),
             VotersVotedForCandidate(ds),
             VoteResponseIntegrity(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
+            TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
             OneVotePerTermInNetwork(ds),
             CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
@@ -5028,6 +5071,8 @@ verus! {
                 assert(VoteResponseIntegrity(ds));
             };
 
+            assert(LegacyCertificatesAreFixedMajorityCommitted(ds));
+            assert(EntryCommittedAt(ds, index, certificate.entry));
             lemma_overlap_voter_entry_transfer(
                 ds,
                 leader_id,
@@ -5052,16 +5097,20 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             EntryTermHasVoteQuorum(ds),
+            LegacyCertificatesAreFixedMajorityCommitted(ds),
             ConfigurationCommitCertificatesValid(ds),
             LeaderHasRecordedElectionQuorum(ds),
             VotersVotedForCandidate(ds),
             VoteResponseIntegrity(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
+            TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
             OneVotePerTermInNetwork(ds),
             CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
@@ -5121,16 +5170,20 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             EntryTermHasVoteQuorum(ds),
+            LegacyCertificatesAreFixedMajorityCommitted(ds),
             ConfigurationCommitCertificatesValid(ds),
             LeaderHasRecordedElectionQuorum(ds),
             VotersVotedForCandidate(ds),
             VoteResponseIntegrity(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
+            TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
             OneVotePerTermInNetwork(ds),
             CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
@@ -6879,10 +6932,8 @@ verus! {
                     lemma_ethvq_committed_entry_transfer(
                         ds, d, k + 1, k, entry);
                 } else {
-                    // d.log.len() == k + 1: d.log[k].term == d_rlt > entry.term.
-                    // d.log[k].term != entry.term, so this case is unreachable
-                    // by global term induction (Raft safety).
-                    assume(false);
+                    lemma_strict_term_anchor_contains_committed_entry(
+                        ds, d, d_rli, d_rlt, k, entry);
                 }
             } else {
                 // k > d_rli - 1: d.log may not extend to k.
@@ -6895,9 +6946,8 @@ verus! {
                         == ds.server_states[ov].log[k]);
                     assert(ds.server_states[d].log[k] == entry);
                 } else {
-                    // d.log too short or d.log[k].term != entry.term:
-                    // unreachable by global term induction (Raft safety).
-                    assume(false);
+                    lemma_strict_term_anchor_contains_committed_entry(
+                        ds, d, d_rli, d_rlt, k, entry);
                 }
             }
         }
@@ -7466,9 +7516,12 @@ verus! {
                             assert(ds.server_states[server].log[k]
                                 == entry);
                         } else {
-                            // server.log[k].term != entry.term:
-                            // unreachable by global term induction.
-                            assume(false);
+                            lemma_strict_term_anchor_contains_committed_entry(
+                                ds, d2, d2_rli, d2_rlt, k, entry);
+                            lemma_ethvq_log_matching_transfer(
+                                ds, d, d2, k + 1, k, entry);
+                            lemma_ethvq_log_matching_transfer(
+                                ds, server, d, anchor_idx, k, entry);
                         }
                     }
                 }
@@ -7999,6 +8052,227 @@ verus! {
         // So s.log[k] == s.log[j] == d1.log[j] == entry
     }
 
+    /// A concrete election quorum at term `T` transfers every entry committed
+    /// at a lower term into its vote destination's log.
+    ///
+    /// This is the term-indexed induction missing from the older anchor-based
+    /// proof.  In the strict-last-term case, ETHVQ identifies the election
+    /// quorum that created the candidate's last entry.  The recursive call
+    /// proves that lower-term vote destination already contains `entry` at
+    /// `k`; log-term monotonicity then forces the newer-term anchor to occur
+    /// after `k`, where LogMatching transfers the entry to `destination`.
+    proof fn lemma_election_quorum_contains_committed_entry(
+        ds: RaftDistributedState,
+        destination: int,
+        voters: Seq<int>,
+        election_term: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
+            LogMatching(ds),
+            TermsNonNegative(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
+            LogTermsMonotonic(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            election_term > entry.term,
+            0 <= destination < ds.num_servers,
+            voters.len() >= ds.num_servers / 2 + 1 - 1,
+            (forall |a: int| #![trigger voters[a]]
+                0 <= a < voters.len() ==> {
+                    &&& 0 <= voters[a] < ds.num_servers
+                    &&& voters[a] != destination
+                    &&& ExistsGrantedVoteResponse(
+                        ds, voters[a], destination, election_term)
+                }),
+            (forall |a: int, b: int|
+                #![trigger voters[a], voters[b]]
+                0 <= a < voters.len()
+                && 0 <= b < voters.len()
+                && a != b
+                ==> voters[a] != voters[b]),
+        ensures
+            ds.server_states[destination].log.len() > k,
+            ds.server_states[destination].log[k] == entry,
+        decreases election_term - entry.term,
+    {
+        let overlap_voter = lemma_ethvq_commit_quorum_overlap(
+            ds,
+            k,
+            entry,
+            destination,
+            voters,
+            election_term,
+        );
+
+        if overlap_voter == destination {
+            return;
+        }
+
+        let (last_index, last_term, vote_log_len, handled) =
+            lemma_ethvq_voter_to_d_packet_extraction(
+                ds,
+                overlap_voter,
+                destination,
+                election_term,
+                k,
+                entry,
+            );
+        if handled {
+            return;
+        }
+
+        let voter_last_term = if vote_log_len == 0 {
+            0int
+        } else {
+            ds.server_states[overlap_voter].log[vote_log_len - 1].term
+        };
+        assert(vote_log_len > k);
+        assert(vote_log_len > 0);
+        if k < vote_log_len - 1 {
+            lemma_log_terms_monotonic_entry_bound(
+                ds, overlap_voter, k, vote_log_len - 1);
+        } else {
+            assert(k == vote_log_len - 1);
+            assert(voter_last_term == entry.term);
+        }
+        assert(voter_last_term >= entry.term);
+        assert(last_term >= voter_last_term);
+        assert(last_index > 0);
+        assert(last_index <= ds.server_states[destination].log.len());
+        assert(ds.server_states[destination].log[last_index - 1].term
+            == last_term);
+
+        if last_term == entry.term {
+            assert(last_term == voter_last_term);
+            assert(last_index > vote_log_len);
+            assert(k <= last_index - 1);
+            lemma_same_term_committed_entry_transfer(
+                ds,
+                destination,
+                last_index - 1,
+                k,
+                entry,
+            );
+            return;
+        }
+
+        assert(last_term > entry.term);
+        assert(last_term < election_term);
+        let (previous_destination, previous_voters) =
+            lemma_entry_term_vote_quorum_witness(
+                ds, destination, last_index - 1);
+        assert(ds.server_states[previous_destination].log[last_index - 1]
+            == ds.server_states[destination].log[last_index - 1]);
+        assert(ds.server_states[previous_destination].log[last_index - 1].term
+            == last_term);
+
+        lemma_election_quorum_contains_committed_entry(
+            ds,
+            previous_destination,
+            previous_voters,
+            last_term,
+            k,
+            entry,
+        );
+
+        if last_index - 1 < k {
+            lemma_log_terms_monotonic_entry_bound(
+                ds, previous_destination, last_index - 1, k);
+            assert(ds.server_states[previous_destination].log[last_index - 1].term
+                <= ds.server_states[previous_destination].log[k].term);
+            assert(ds.server_states[previous_destination].log[k].term
+                == entry.term);
+            assert(last_term <= entry.term);
+            assert(false);
+        }
+        assert(k <= last_index - 1);
+        assert(ds.server_states[destination].log[k]
+            == ds.server_states[previous_destination].log[k]);
+        assert(ds.server_states[destination].log[k] == entry);
+    }
+
+    /// Transfer a committed entry through a concrete newer-term log anchor.
+    /// The anchor's ETHVQ witness identifies the election that created it;
+    /// term induction proves that election's destination already contains the
+    /// committed entry, forcing the anchor to lie at or after `k`.
+    proof fn lemma_strict_term_anchor_contains_committed_entry(
+        ds: RaftDistributedState,
+        server: int,
+        anchor_len: int,
+        anchor_term: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            EntryTermHasVoteQuorum(ds),
+            LogMatching(ds),
+            TermsNonNegative(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
+            LogTermsMonotonic(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            0 <= server < ds.num_servers,
+            0 < anchor_len <= ds.server_states[server].log.len(),
+            ds.server_states[server].log[anchor_len - 1].term
+                == anchor_term,
+            anchor_term > entry.term,
+        ensures
+            ds.server_states[server].log.len() > k,
+            ds.server_states[server].log[k] == entry,
+    {
+        let (creator, creator_voters) =
+            lemma_entry_term_vote_quorum_witness(
+                ds, server, anchor_len - 1);
+        assert(ds.server_states[creator].log[anchor_len - 1]
+            == ds.server_states[server].log[anchor_len - 1]);
+        assert(ds.server_states[creator].log[anchor_len - 1].term
+            == anchor_term);
+
+        lemma_election_quorum_contains_committed_entry(
+            ds,
+            creator,
+            creator_voters,
+            anchor_term,
+            k,
+            entry,
+        );
+
+        if anchor_len - 1 < k {
+            lemma_log_terms_monotonic_entry_bound(
+                ds, creator, anchor_len - 1, k);
+            assert(ds.server_states[creator].log[anchor_len - 1].term
+                <= ds.server_states[creator].log[k].term);
+            assert(ds.server_states[creator].log[k].term == entry.term);
+            assert(anchor_term <= entry.term);
+            assert(false);
+        }
+        assert(k <= anchor_len - 1);
+        assert(ds.server_states[server].log[k]
+            == ds.server_states[creator].log[k]);
+        assert(ds.server_states[server].log[k] == entry);
+    }
+
     /// Helper: LogTermsMonotonic on a server implies later entries have
     /// term >= earlier entries. Isolated to avoid LogTermsMonotonic triggers
     /// leaking into the main recursive function.
@@ -8165,14 +8439,18 @@ verus! {
             EntryTermHasVoteQuorum(ds),
             LogMatching(ds),
             LogTermsMonotonic(ds),
+            TermsNonNegative(ds),
             VoteResponseHasRequestVote(ds),
             OneVotePerTermInNetwork(ds),
             CandidateVoteDestinationUnique(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
+            EntryCommittedAt(ds, k, entry),
             0 <= leader_id < ds.num_servers,
             0 <= overlap_voter < ds.num_servers,
             overlap_voter != leader_id,
@@ -8383,6 +8661,22 @@ verus! {
             } else {
                 // Strict-term (rlt > vtl).
                 assert(rlt > vtl);
+                assert(L > k);
+                assert(L > 0);
+                if k < L - 1 {
+                    lemma_log_terms_monotonic_entry_bound(
+                        ds, overlap_voter, k, L - 1);
+                } else {
+                    assert(k == L - 1);
+                    assert(vtl == entry.term);
+                }
+                assert(vtl >= entry.term);
+                assert(rlt > entry.term);
+                assert(rli > 0);
+                assert(rli <= ds.server_states[leader_id].log.len());
+                assert(ds.server_states[leader_id].log[rli - 1].term == rlt);
+                lemma_strict_term_anchor_contains_committed_entry(
+                    ds, leader_id, rli, rlt, k, entry);
                 if rli > L {
                     // rli > L > 0, so rli > 0.
                     assert(rli > 0);
@@ -8417,9 +8711,7 @@ verus! {
                                 == ds.server_states[overlap_voter].log[k]);
                             assert(ds.server_states[leader_id].log[k] == entry);
                         } else {
-                            // leader.log[k].term != entry.term: unreachable
-                            // by global term induction (Raft safety).
-                            assume(false);
+                            assert(ds.server_states[leader_id].log[k] == entry);
                         }
                     }
                 } else if k < rli {
@@ -8441,9 +8733,7 @@ verus! {
                             == ds.server_states[overlap_voter].log[k]);
                         assert(ds.server_states[leader_id].log[k] == entry);
                     } else {
-                        // leader.log[k].term != entry.term: unreachable
-                        // by global term induction (Raft safety).
-                        assume(false);
+                        assert(ds.server_states[leader_id].log[k] == entry);
                     }
                 } else {
                     // rli <= L and k >= rli: leader's log may not reach index k.
@@ -8455,9 +8745,7 @@ verus! {
                             == ds.server_states[overlap_voter].log[k]);
                         assert(ds.server_states[leader_id].log[k] == entry);
                     } else {
-                        // leader.log too short or leader.log[k].term != entry.term:
-                        // unreachable by global term induction (Raft safety).
-                        assume(false);
+                        assert(ds.server_states[leader_id].log[k] == entry);
                     }
                 }
             }
@@ -9970,8 +10258,9 @@ verus! {
     /// with term T exists, use EntryTermHasVoteQuorum + quorum intersection
     /// + OneVotePerTermInNetwork to derive server_id.log.len() > k.
     ///
-    /// ETHVQ witness extraction uses sound assume (ETHVQ is in scope via
-    /// requires, but choose on its nested existentials crashes Z3).
+    /// ETHVQ witness extraction is isolated in
+    /// `lemma_entry_term_vote_quorum_witness` to keep the nested existentials
+    /// out of this function's prover context.
     /// The witnesses are passed to lemma_lllong_d_neq_sid_contradiction which
     /// does the quorum overlap without ETHVQ in scope.
     ///

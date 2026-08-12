@@ -1,4 +1,4 @@
-# Raft refinement assume-reduction experiment
+# Raft refinement assume-elimination experiment
 
 Date: 2026-08-12
 
@@ -6,54 +6,64 @@ Branch: `codex/raft-refinement-remove-assumes`
 
 ## Result
 
-The experiment reduces executable `assume` sites in
-`src/protocol/Raft/refinement_proof/invariants.rs` from 12 to 6 without adding
-`external_body`, `admit`, or replacement assumptions.
+The experiment eliminates all 12 executable `assume` sites from
+`src/protocol/Raft/refinement_proof/invariants.rs` without adding
+`external_body`, `admit`, or replacement assumptions. There are now no such
+trust shortcuts in `src/protocol/Raft/refinement_proof/`.
 
-The removed sites were:
+The first six sites were removed by:
 
-- four direct extractions of nested `EntryTermHasVoteQuorum` witnesses;
-- one same-term bridge that previously assumed a common vote destination;
-- the legacy `StateMachineSafety` induction's newly committed-entry equality.
+- extracting nested `EntryTermHasVoteQuorum` witnesses in
+  `lemma_entry_term_vote_quorum_witness`;
+- deriving the common vote destination in the same-term bridge with
+  `lemma_ethvq_vote_dest_unique`;
+- proving the legacy `StateMachineSafety` induction case from maintained log
+  certificates and unique certificate coverage.
 
-`lemma_entry_term_vote_quorum_witness` now performs the nested existential
-extraction. Callers explicitly require `EntryTermHasVoteQuorum`; previously
-several helpers only claimed in comments that the caller had this invariant,
-while their signatures did not require it. The same-term bridge now extracts
-both vote-quorum certificates and applies `lemma_ethvq_vote_dest_unique`.
+The remaining six sites all represented the same strict-term case: a voter
+contains committed entry `e` at index `k`, while the candidate's RequestVote
+summary has a strictly newer last-log term whose index may be at or before
+`k`. Equal-term vote-destination uniqueness and a local LogMatching step alone
+cannot provide an anchor at or above `k`.
 
-The state-machine-safety case now follows the maintained proof architecture:
-`CommittedEntriesHaveLogCertificates` is preserved into the post-state, and
-unique certificate coverage implies `StateMachineSafety` directly.
+`lemma_election_quorum_contains_committed_entry` now supplies the missing
+term-indexed induction. It intersects the concrete election quorum with the
+commit quorum, follows the `EntryTermHasVoteQuorum` certificate for the newer
+last-log entry, and recursively proves that the earlier election destination
+already contains `e`. Since that destination contains both entries, log-term
+monotonicity forces the newer-term anchor to occur at or after `k`, and
+LogMatching transfers `e` to the current destination.
 
-## Remaining six sites
+`lemma_strict_term_anchor_contains_committed_entry` adapts this result to the
+existing anchor-based helpers. Together these lemmas discharge all six former
+strict-term assumptions.
 
-All six remaining `assume(false)` sites are instances of the same strict-term
-case. A voter contains committed entry `e` at index `k`, but the candidate's
-RequestVote summary has a strictly newer last-log term and an index at or before
-`k`. Equal-term vote-destination uniqueness and ordinary LogMatching do not
-provide an anchor at or above `k`.
+## Fixed-majority compatibility boundary
 
-Closing this case requires the Raft paper's induction over leader/election term:
-the leader that created the newer-term entry must already contain `e`; append-only
-log construction then places that newer-term entry after `k`. The existing
-helpers recurse over a concrete higher-term log anchor and cannot express this
-historical leader fact when that anchor is at or before `k`.
+The retired/static LeaderCompleteness chain reasons about
+`EntryCommittedAt`, whose quorum is a fixed majority of all servers. A
+dynamic-membership certificate is instead authorized by its recorded phase;
+such a phase quorum need not be a fixed majority of every server in
+`0..num_servers`.
 
-A sound next step is therefore a term-indexed ghost invariant or history
-certificate recording the elected leader/log snapshot for every term. Merely
-adding another local log lemma, hiding the case behind a stronger `requires`, or
-deleting the retired legacy chain would make the source look assumption-free
-without completing the missing argument, so this experiment does none of those.
+The compatibility predicate
+`LegacyCertificatesAreFixedMajorityCommitted` now states this relationship
+explicitly for callers of the retired chain. It is required by the legacy
+certificate-to-LeaderCompleteness discharge lemmas before they invoke the new
+term induction. This is a real semantic precondition, not a replacement proof
+assumption: the active dynamic-membership committed-history refinement remains
+certificate-based and does not rely on it.
 
 ## Verification
 
-Using Verus `0.2026.08.02.b677dd5`:
+Using Verus `0.2026.08.02.b677dd5` with `--rlimit 220` and
+`--triggers-mode silent`:
 
-- full `invariants.rs`: `213 verified, 0 errors`;
+- full `invariants.rs`: `215 verified, 0 errors`;
 - full `induction.rs`: `3 verified, 0 errors`;
 - full `refinement.rs`: `3 verified, 0 errors`;
-- all runs used `--triggers-mode silent` and produced no automatic-trigger notes.
+- all runs produced no automatic-trigger notes.
 
-The maintained certificate-based committed-history refinement remains separate
-from the six residual legacy LeaderCompleteness assumptions.
+Repository searches confirm zero executable `assume` calls under
+`src/protocol/Raft/`, and zero `external_body` or `admit` markers under
+`src/protocol/Raft/refinement_proof/`.
