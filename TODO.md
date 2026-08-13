@@ -17565,6 +17565,47 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
       --fail-on-regression`, skipped with a message until `reports/triggers/timing-baseline.json`
       exists. 21 new tests, incl. a guard that an `enforce=true` ceiling must carry a number.
 
+- [ ] **55.7 — reconfiguration is requested and never applied, and the
+      refinement mapping does not speak upstream's vocabulary (2026-08-13).**
+      Two findings, one measured fix, not yet applied.
+
+      **(a) The mapping's tags do not match upstream's.** The rewrite writes
+      `InitClusterCommand == "initCluster"`; upstream writes
+      `"InitClusterCommand"`. `O!IsConfigCommand` is evaluated inside the
+      INSTANCE, against upstream's strings, so it is false on every mapped
+      entry. Confirmed by probe: an invariant asserting no entry is a config
+      command survives 1.8M states, where `FirstEntry`'s own
+      `InitClusterCommand` would refute it in the *initial* state if the
+      spellings matched. This is a defect in the refinement module, not in the
+      rewrite, and it was reported as "the rewrite lacks the action" alone.
+      `NoLogDivergence` and `CommittedLogAgreement` are unaffected — they
+      compare entries against each other and mention no upstream constant.
+
+      **(b) `AppendPendingReconfigToLog` was dropped**, so `RequestReconfig`
+      sets `pendingReconfig` and nothing consumes it.
+
+      The fix was designed and measured end to end and has three parts. What
+      the measurement showed is why it is not one:
+
+      - the type problem **dissolves** — `Entry.command` already lists the
+        config tags and `IsConfigCommand` never reads `.value`, so the entry
+        appends with the sentinel `FirstEntry` already uses. No type change,
+        no new translator gap, composition still lints clean;
+      - adding the action *alone* leaves it **dead**: the state space closes
+        25% smaller and coverage goes 34/34 -> 34/35, because upstream's guard
+        (a leader may not reconfigure until it has committed an entry of its
+        own term) cannot be met at `MaxLogLen = 2`;
+      - **the vacuity was hiding a second fidelity gap.** Without that guard,
+        `MaxOneReconfigurationAtATime` is *violated at depth 10* — the rewrite
+        permits two uncommitted config entries. With guard + tags + upstream's
+        Init shape, the action fires at depth 3 and the probes refute
+        properly.
+
+      Not applied: the adversarial check of that plan had not returned. The
+      plan also reports two further latent translator defects it hit on the
+      way, of the same "a pass gated on a node property degrades silently just
+      outside the gate" shape as the rest of this phase.
+
 ### Acceptance — status 2026-08-05
 
 | criterion | status |

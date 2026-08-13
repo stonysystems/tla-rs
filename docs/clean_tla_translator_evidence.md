@@ -206,7 +206,7 @@ slip in a hand-copied invariant makes the check pass and says nothing.
 |---|---|---|
 | `NoLogDivergence` | holds | **yes** — verified by injecting a divergence |
 | `CommittedLogAgreement` | holds, **after correcting it** | yes, once corrected |
-| `MaxOneReconfigurationAtATime` | holds | **no** — vacuous against this rewrite |
+| `MaxOneReconfigurationAtATime` | holds | **no** — vacuous, twice over (below) |
 | `LogOrderMatchesExecution` | not checkable | reads a deleted history variable |
 | `ExecutionDedupMatches` | not checkable | same |
 
@@ -216,6 +216,17 @@ slip in a hand-copied invariant makes the check pass and says nothing.
 Confirmed by evaluating it, not by reading it. It is the first of the five
 properties in upstream's `Safety`. It was not hiding a bug — corrected, the
 original still passes — and upstream is left unedited.
+
+**`MaxOneReconfigurationAtATime` is vacuous for two reasons**, and the second
+is a defect in the mapping rather than in the rewrite. The rewrite never appends
+a config entry (upstream's `AppendPendingReconfigToLog` was dropped) — *and* the
+tag spellings differ, so upstream's `IsConfigCommand`, evaluated inside the
+INSTANCE against upstream's own strings, is false on every mapped entry
+regardless. Confirmed by probe: an invariant asserting no entry is a config
+command survives 1.8M states, where `FirstEntry`'s `InitClusterCommand` would
+refute it in the initial state if the spellings matched. The two invariants that
+do have teeth are unaffected — they compare entries against each other and
+mention no upstream constant.
 
 **This is not trace refinement.** It establishes that every reachable state of
 the rewrite, mapped, satisfies the original's stated safety invariants. Full

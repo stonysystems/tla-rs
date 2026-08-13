@@ -275,12 +275,34 @@ still passes (123,757 states, depth 52), and so does the rewrite. Upstream is
 left unedited — it is not ours to change — and the correction is applied only to
 the staged copy the refinement module reads.
 
-**`MaxOneReconfigurationAtATime` is vacuous against this rewrite**, and that is
-the rewrite's limitation rather than upstream's: it needs two uncommitted config
-entries in a leader's log, and the rewrite never appends a config entry at all.
-`RequestReconfig` sets `pendingReconfig` and nothing turns it into a log entry —
-upstream has `AppendPendingReconfigToLog` and the rewrite dropped it. So
-reconfiguration here is requested and never applied. Recorded, not fixed.
+**`MaxOneReconfigurationAtATime` is vacuous against this rewrite, for two
+reasons, and the second is a defect in the mapping rather than in the rewrite.**
+
+1. It needs two uncommitted config entries in a leader's log, and the rewrite
+   never appends a config entry at all. `RequestReconfig` sets
+   `pendingReconfig` and nothing turns it into a log entry — upstream has
+   `AppendPendingReconfigToLog` and the rewrite dropped it. Reconfiguration
+   here is requested and never applied.
+
+2. **The tag spellings differ, so upstream's `IsConfigCommand` is false on
+   every entry regardless.** Upstream writes `InitClusterCommand ==
+   "InitClusterCommand"`; the rewrite writes `"initCluster"`. `O!IsConfigCommand`
+   is evaluated *inside* the INSTANCE, so it tests membership in upstream's
+   strings, and the mapped log carries the rewrite's. Confirmed rather than
+   reasoned: a probe asserting no entry is a config command survives 1.8M
+   states, when `FirstEntry`'s own `InitClusterCommand` would refute it in the
+   **initial state** if the spellings matched.
+
+Reason 2 is mine and it is the more serious of the two: it means the mapping
+passes values through that upstream's definitions cannot recognise. It does not
+touch the two invariants that *do* have teeth — `NoLogDivergence` and
+`CommittedLogAgreement` compare entries against each other and mention no
+upstream constant — but any `O!` predicate that tests against upstream's tags is
+silently false-y under this mapping, and the write-up above said only that the
+rewrite lacked the action.
+
+Both recorded, neither fixed. The measured shape of the fix is in `TODO.md`
+55.7.
 
 **Anti-vacuity, run rather than asserted.** Adding an action that puts a
 different value at index 1 on one server and commits it makes
