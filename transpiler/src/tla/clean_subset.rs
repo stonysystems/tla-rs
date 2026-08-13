@@ -69,8 +69,17 @@ pub struct Finding {
 }
 
 /// The rules `lint_module` actually evaluates today. Reported alongside the
-/// verdict: "clean" means "no violation of these rules", and claiming more than
-/// that would be dishonest while C2/C3/C4 are unimplemented.
+/// verdict: "clean" means "no violation of these rules".
+///
+/// All five are implemented now. The comment here said "while C2/C3/C4 are
+/// unimplemented" long after they were, which mattered because
+/// `unchecked_rules` reads this list and a reader auditing "what was actually
+/// checked" was being told, in the same breath, both that the list is complete
+/// and that three of it were not written yet.
+///
+/// The list is kept rather than deleted because `rules_skipped` answers a
+/// different question -- a rule that is implemented can still decline to run on
+/// a particular spec, and that is the distinction the report exists to make.
 pub const RULES_CHECKED: &[CleanRule] = &[
     CleanRule::C1,
     CleanRule::C2,
@@ -123,6 +132,12 @@ impl CleanSubsetReport {
     }
 
     /// Rules not yet implemented, so callers can qualify a "clean" verdict.
+    ///
+    /// Empty today, and that is the honest answer rather than a dead branch:
+    /// all five are implemented. What a caller wants instead is
+    /// `skipped_rules`, which records a rule that *is* implemented and still
+    /// declined to run on this spec -- and that is the case a low violation
+    /// count must never be read past.
     pub fn unchecked_rules(&self) -> Vec<CleanRule> {
         [
             CleanRule::C1,
@@ -879,9 +894,23 @@ impl<'a> LintContext<'a> {
         // More than one candidate means the guard tests several fields; any of
         // them routes, so requiring all would be wrong. Requiring *some* is the
         // honest weakening.
-        if fields.is_empty() {
-            return;
-        }
+        // With no guard to read the routing field off, fall back to the
+        // conventional spellings and check the *messages* instead.
+        //
+        // "No receive tests an addressing field" is NOT "no message is
+        // addressed": once the projection replaces the network with framework
+        // send/receive, delivery is by address and a handler has no reason to
+        // re-test it. Reporting on the guard's absence flagged specs whose
+        // messages carry a perfectly good `dst`. What C4 is owed is that the
+        // message says who it is for, so that is what gets checked.
+        let fields: BTreeSet<String> = if fields.is_empty() {
+            crate::tla::projection::ROUTING_FIELDS
+                .iter()
+                .map(|f| (*f).to_string())
+                .collect()
+        } else {
+            fields
+        };
 
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for op in &self.module.operators {
@@ -2502,11 +2531,24 @@ Next == \E p \in Proc : Send(p) \/ Recv(p)
         );
     }
 
-    /// A spec whose receive guard tests no field of the message gives nothing to
-    /// infer from. Staying silent is the honest answer -- guessing a field name
-    /// is what produced the false positives above.
+    /// **This test used to assert the opposite, and the change is deliberate.**
+    ///
+    /// It read: "A spec whose receive guard tests no field of the message gives
+    /// nothing to infer from. Staying silent is the honest answer -- guessing a
+    /// field name is what produced the false positives above." That reasoning
+    /// is right about *guessing which field routes* and it left the rule unable
+    /// to fire on a network that is not addressed at all: remove `dst` from
+    /// every constructor **and** from the guard, and a spec went from three C4
+    /// findings back to `clean`.
+    ///
+    /// The distinction that makes reporting honest here: this does not pick a
+    /// field and demand it. It observes that the message carries **no
+    /// candidate at all** -- neither a field some receive routes on, nor any of
+    /// the recognised spellings. A receive that guards on nothing lets any node
+    /// consume any message, which is not something framework delivery can
+    /// implement whatever the fields are called.
     #[test]
-    fn no_receive_guard_means_no_addressing_claim() {
+    fn a_network_with_no_addressing_anywhere_is_reported() {
         let source = r#"---- MODULE Test ----
 EXTENDS Naturals
 VARIABLES msgs, state
@@ -2518,11 +2560,9 @@ Next == \E p \in Proc : Send(p) \/ Recv(p)
 ===="#;
         let report = lint(source);
         assert!(
-            !report
-                .findings
-                .iter()
-                .any(|f| f.message.contains("carries no")),
-            "nothing to infer from, so no claim: {:?}",
+            report.findings.iter().any(|f| f.rule == CleanRule::C4),
+            "no message carries any addressing and no receive routes on \
+             anything, so nothing can be delivered: {:?}",
             report.findings
         );
     }

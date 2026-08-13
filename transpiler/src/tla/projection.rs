@@ -613,12 +613,14 @@ impl ProjectionContext<'_> {
             }
         }
         let record_set = &merged;
-        let tag_expr = TlaExpr::SetEnum(tag_literals);
-
-        let TlaExpr::SetEnum(tags) = &tag_expr else {
-            gaps.push("message tag field is not a set of literals".into());
-            return Vec::new();
-        };
+        // No refutable pattern here: `tag_literals` is built above, so a match
+        // on it can only succeed. There *was* one, whose gap message ("message
+        // tag field is not a set of literals") could never fire -- the
+        // condition it named is real and reachable, but it arrives as an
+        // **empty** `tag_literals` and used to fall straight through the loop
+        // below producing zero variants. That is now reported where it happens,
+        // in the tag harvesting above.
+        let tags = tag_literals;
 
         let payload: Vec<(String, ProjectedType)> = record_set
             .iter()
@@ -629,7 +631,7 @@ impl ProjectionContext<'_> {
             .collect();
 
         let mut variants = Vec::new();
-        for tag in tags {
+        for tag in &tags {
             // A spec usually names its tags (`RequestVoteRequest == "rvq"`),
             // so follow a 0-ary operator to the literal behind it.
             let tag = match tag {
