@@ -32,16 +32,29 @@ incomplete, for a reason the case records.
 
 | Case | Tier | Clean-distance | Status | V1 verus | V2 state-set | V3 golden |
 |---|---|---|---|---|---|---|
-| `t0_01_simple` | 0 | 1 (C2) | **green** | pass | EQUAL | pass |
+| `t0_01_simple` | 0 | 2 (C2) | **green** | pass | EQUAL | pass |
 | `t0_03_dining_philosophers` | 0 | 6 (C2) | **green** | pass | EQUAL | pass |
 | `t0_05_lamport_mutex` | 0 | 2 (C1, C4) | **green** | pass | EQUAL | pass |
 | `t1_01_paxos` | 1 | 1 (C5) | **green** | pass | EQUAL | pass |
 | `t1_02_twophase` | 1 | 2 (C1) | **green** | pass | EQUAL | pass |
 | `t2_01_raft` | 2 | 6 (C1,C3,C4,C5) | golden | pass | bounded only | pass |
 | `t2_02_epaxos` | 2 | 3 (C1) | golden | pass | n/a | pass |
-| `t3_01_jetpack` | 3 | 2 (C4, C5) | golden | pass | n/a | pass |
+| `t3_01_jetpack` | 3 | 15 (C1,C4,C5) | golden | pass | n/a | pass |
+| `t4_01_jetpack_full` | 4 | 15 (C1,C4,C5) | golden | pass | refinement, below | pass |
 | `t0_02_bakery` | 0 | 3 (C2) | reject-only | — | — | — |
 | `t0_04_readers_writers` | 0 | 1 (C5) | reject-only | — | — | — |
+
+**Jetpack appears twice, and the difference is the point.** `t3_01` is a slice
+— 11 of 22 variables, `grep -ci preaccept` = 0 against 15 in the original, so
+the fast path the paper is named for is absent. `t4_01` is the whole thing in
+the shape upstream has it: two library modules and a composition that INSTANCEs
+them, with the fast path, the base protocol, views, reconfiguration and the
+client layer. It is the first genuine multi-module TLA+ composition the
+translator handles end to end.
+
+> Jetpack's clean-distance of "2" was reported in three documents before anyone
+> could see through `INSTANCE`. The real number is 15. A small distance can mean
+> the linter never got started — see the playbook's intake step.
 
 The two `reject-only` cases exist so the linter has specimens it **must**
 reject; rewriting them would produce a different algorithm, not a rewrite. See
@@ -157,12 +170,91 @@ account for fifteen of the twenty-eight. Jetpack, the hardest protocol in the
 corpus, exposed none — every gap it would have hit had already been closed by
 Raft.
 
+**Two defects were found frozen inside goldens**, which is what V1 and V2
+cannot catch on their own. Paxos declares `CONSTANT Value, Acceptor, MaxBallot`
+and the node-set constant was named by "the first constant with a set type", so
+`{ Msg1a(s, d, b) : d \in Acceptor }` was emitted as `c.value.map(..)` — 1a
+broadcast to the set of *values*, in a **green** case. V1 typechecks because
+both are `Set<int>`; V2 compares the two TLA+ specs and never looks at the
+golden; V3 froze the wrong answer as the reference. Separately, operator
+inlining substituted parameters in sequence, so a later parameter captured an
+identifier an earlier substitution had introduced — `PreacceptReq(s, d, e, c)`
+called with `e := clientEpoch[c]` and a fourth parameter named `c` produced
+`msource |-> cmd`, a message sent from the wrong node, which would have
+verified.
+
 **Silent wrongness is the category that matters.** Three defects would have
 produced a *plausible, verifying* spec that says something else: the `----`
 truncation, the missing parentheses, and the `..` precedence bug. `0 .. N - 1` —
 `t0_01_simple`'s node set — was mis-parsed as `(0 .. N) - 1` for the whole
 project, and never changed a golden only because the node set survives as
 rendered text.
+
+---
+
+## The strongest check the corpus has: the original's own invariants
+
+`tier4/t4_01_jetpack_full/jetpack_refinement.tla` INSTANCEs the **unmodified**
+upstream composition under an explicit mapping from the rewrite's state, and
+checks *its* invariant definitions — `O!NoLogDivergence`, not a retyped copy.
+Retyping is the failure mode the construction exists to avoid: a transcription
+slip in a hand-copied invariant makes the check pass and says nothing.
+
+**34,718,400 distinct states, depth 73, state space closed, no violation.**
+
+| the original's invariant | verdict | has teeth? |
+|---|---|---|
+| `NoLogDivergence` | holds | **yes** — verified by injecting a divergence |
+| `CommittedLogAgreement` | holds, **after correcting it** | yes, once corrected |
+| `MaxOneReconfigurationAtATime` | holds | **no** — vacuous against this rewrite |
+| `LogOrderMatchesExecution` | not checkable | reads a deleted history variable |
+| `ExecutionDedupMatches` | not checkable | same |
+
+**Upstream's `CommittedLogAgreement` is vacuous.** It computes
+`limit == Min({ci, ci2} \cup {0})`, and `Min` is a genuine minimum, so with
+`ci, ci2 >= 0` the limit is always 0 and `\A k \in 1..limit` compares nothing.
+Confirmed by evaluating it, not by reading it. It is the first of the five
+properties in upstream's `Safety`. It was not hiding a bug — corrected, the
+original still passes — and upstream is left unedited.
+
+**This is not trace refinement.** It establishes that every reachable state of
+the rewrite, mapped, satisfies the original's stated safety invariants. Full
+refinement additionally needs step correspondence, which the bag/set difference
+in the network and the rewrite's handler decomposition put out of reach.
+
+---
+
+## What Verus caught that nothing else did
+
+Closing the last translator gaps on the tier4 composition made it emit for the
+first time, and Verus then rejected it **nine times**. Every one was a real
+defect the gap had been hiding, and two were live long before that case existed:
+
+| defect | why nothing else saw it |
+|---|---|
+| two handlers on one tag produced two `match` arms, the second unreachable | no earlier case had two handlers on one tag |
+| a receive guard naming a *set* of tags had no dispatch at all | same |
+| INSTANCE prefixes leaked into Rust identifiers (`LB!Entry`) | no earlier case was multi-module |
+| a helper parameter fed a message field was typed `int` | — |
+| enum-typed values stayed `&str` in three separate places | — |
+| action parameters were typed `int` whatever their binder ranged over | — |
+| `action_param_bounds` stopped at the grouping operator | no earlier case grouped its disjuncts |
+| a per-binder enum was minted where an existing one covered it | — |
+| a range binder gave Verus no legal trigger | — |
+
+The last one is worth stating in full, because it is a translator artifact
+rather than a spec problem. TLA+ counts sequences from 1 and Verus's `Seq` from
+0, so `log[i][k]` projects to `s.log[k - 1]` — and Verus refuses to infer a
+trigger from a subscript with arithmetic in it. Every other term mentioning `k`
+was a comparison or had `k` captured inside a closure. The fix is to re-index
+the quantifier onto the sequence's own 0-based domain: same set of witnesses,
+stated one lower, and the only form Verus accepts.
+
+Fixing *that* exposed one more: `substitute_all` covered 15 of the AST's 34
+node kinds, so a name inside a `SetFilter`, `FnConstruct`, `Tuple`, `LetIn` or
+any of eight other forms survived substitution unchanged and was emitted meaning
+whatever it happened to mean at the use site. It now covers every node with a
+sub-expression.
 
 ---
 

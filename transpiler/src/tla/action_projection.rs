@@ -664,6 +664,20 @@ fn reads_state(expr: &TlaExpr, spec: &ProjectedSpec) -> bool {
 }
 
 /// Project every action of a module that the linter accepted.
+/// Whether `body` applies a function to exactly `var` -- `log[i][k]`.
+///
+/// The test for whether re-indexing a range binder buys anything: it does only
+/// when the binder is used as an index, which is where the projection's `- 1`
+/// would otherwise appear.
+fn indexes_with(body: &TlaExpr, var: &str) -> bool {
+    if let TlaExpr::FnApply { arg, .. } = body {
+        if matches!(arg.as_ref(), TlaExpr::Ident(n) if n == var) {
+            return true;
+        }
+    }
+    children(body).into_iter().any(|c| indexes_with(c, var))
+}
+
 /// A source name as a Rust identifier: the INSTANCE qualifier removed and
 /// nothing else touched.
 ///
@@ -1296,6 +1310,26 @@ impl<'a> ActionContext<'a> {
         if let TlaExpr::Exists { vars, body } = expr {
             if vars.len() == 1 && mentions_prime(body) {
                 let bound = &vars[0];
+                // `\E k \in 1 .. Len(log[i])` re-indexed onto the sequence's own
+                // 0-based domain, because otherwise the projected quantifier has
+                // no legal Verus trigger.
+                //
+                // TLA+ counts sequences from 1 and Verus's `Seq` from 0, so
+                // `log[i][k]` projects to `s.log[k - 1]` -- and Verus refuses to
+                // infer a trigger from a term with arithmetic in it. Every other
+                // term mentioning `k` is a comparison or has `k` captured inside
+                // a closure, neither of which can be a trigger either, so the
+                // whole action was rejected. Quantifying over `k` one lower and
+                // writing `k + 1` wherever the source said `k` leaves `s.log[k]`
+                // as the trigger and changes nothing about what is stated.
+                //
+                // The `- 1` is put there by the projection, not by the source,
+                // which is why the fix belongs here.
+                let reindexed = self.reindex_range_binder(bound, body);
+                let (bound, body) = match &reindexed {
+                    Some((b, e)) => (b, e),
+                    None => (bound, body.as_ref()),
+                };
                 if let Some(set) = &bound.set {
                     let elem = match self.type_of(set) {
                         Some(ProjectedType::Set(elem)) => elem.render(),
@@ -1757,6 +1791,59 @@ impl<'a> ActionContext<'a> {
         } else {
             Err(format!("node set {rendered}"))
         }
+    }
+
+    /// `\E k \in 1 .. hi` rewritten as `\E k \in 0 .. hi - 1` with every use of
+    /// `k` in the body replaced by `k + 1`.
+    ///
+    /// Same set of witnesses, stated one lower. Its whole purpose is that a
+    /// sequence read then projects to `s.log[k]` rather than `s.log[k - 1]`,
+    /// and Verus can use the former as a trigger and not the latter. Only a
+    /// range whose lower bound is literally 1 qualifies -- that is the TLA+
+    /// sequence convention, and re-indexing anything else would be a guess.
+    fn reindex_range_binder(
+        &self,
+        bound: &TlaQuantBound,
+        body: &TlaExpr,
+    ) -> Option<(TlaQuantBound, TlaExpr)> {
+        let set = bound.set.as_ref()?;
+        let (low, high) = self.as_range(set)?;
+        if !matches!(&low, TlaExpr::Number(n) if n.to_i64() == Some(1)) {
+            return None;
+        }
+        // Only worth doing when the body actually indexes with the binder;
+        // otherwise it is churn that changes emitted text for no reason.
+        if !indexes_with(body, &bound.var) {
+            return None;
+        }
+        let shifted = TlaExpr::BinOp {
+            op: TlaBinOp::Plus,
+            left: Box::new(TlaExpr::Ident(bound.var.clone())),
+            right: Box::new(TlaExpr::Number(crate::tla::ast::TlaNumber::Decimal(
+                "1".to_string(),
+            ))),
+        };
+        let body = substitute(body, &bound.var, &shifted);
+        let set = TlaExpr::BinOp {
+            op: TlaBinOp::DotDot,
+            left: Box::new(TlaExpr::Number(crate::tla::ast::TlaNumber::Decimal(
+                "0".to_string(),
+            ))),
+            right: Box::new(TlaExpr::BinOp {
+                op: TlaBinOp::Minus,
+                left: Box::new(high),
+                right: Box::new(TlaExpr::Number(crate::tla::ast::TlaNumber::Decimal(
+                    "1".to_string(),
+                ))),
+            }),
+        };
+        Some((
+            TlaQuantBound {
+                var: bound.var.clone(),
+                set: Some(set),
+            },
+            body,
+        ))
     }
 
     /// The node set, or any other expression the projection **knows** to be
@@ -2533,6 +2620,21 @@ impl<'a> ActionContext<'a> {
                 if let TlaExpr::Number(n) = index {
                     if let Some(v) = n.to_i64() {
                         return Ok((v - 1).to_string());
+                    }
+                }
+                // `(k + 1) - 1` is `k`, and folding it is not cosmetic: a
+                // re-indexed range binder writes `k + 1` where the source said
+                // `k`, and leaving the arithmetic in the subscript is exactly
+                // what stops Verus inferring a trigger -- which is the whole
+                // reason the binder was re-indexed.
+                if let TlaExpr::BinOp {
+                    op: TlaBinOp::Plus,
+                    left,
+                    right,
+                } = index
+                {
+                    if matches!(right.as_ref(), TlaExpr::Number(n) if n.to_i64() == Some(1)) {
+                        return self.project_expr(left);
                     }
                 }
                 Ok(format!("{text} - 1"))
@@ -3415,6 +3517,77 @@ fn substitute_all(expr: &TlaExpr, subs: &BTreeMap<String, TlaExpr>) -> TlaExpr {
                 .collect(),
             other: other.as_ref().map(|e| Box::new(substitute_all(e, subs))),
         },
+        // The nodes below were reaching the catch-all clone, which returns the
+        // expression **unchanged** -- so a name inside any of them survived
+        // substitution and was emitted referring to whatever it happened to
+        // mean at the use site. Found by re-indexing a range binder: `k` inside
+        // `{j \in Server : matchIndex[i][j] >= k}` was not rewritten, and the
+        // emitted quantifier compared against the wrong value. `inline_call`
+        // and `expand_let` go through here too, so the hole was general.
+        TlaExpr::Tuple(items) => {
+            TlaExpr::Tuple(items.iter().map(|i| substitute_all(i, subs)).collect())
+        }
+        TlaExpr::Unchanged(items) => {
+            TlaExpr::Unchanged(items.iter().map(|i| substitute_all(i, subs)).collect())
+        }
+        TlaExpr::Prime(inner) => TlaExpr::Prime(Box::new(substitute_all(inner, subs))),
+        TlaExpr::Enabled(inner) => TlaExpr::Enabled(Box::new(substitute_all(inner, subs))),
+        TlaExpr::RecordSet(fields) => TlaExpr::RecordSet(
+            fields
+                .iter()
+                .map(|(n, v)| (n.clone(), substitute_all(v, subs)))
+                .collect(),
+        ),
+        TlaExpr::FnSet { domain, range } => TlaExpr::FnSet {
+            domain: Box::new(substitute_all(domain, subs)),
+            range: Box::new(substitute_all(range, subs)),
+        },
+        // Binding forms: the bound name is hidden inside the body, and only
+        // that one -- the domain is outside the binder's own scope.
+        TlaExpr::SetFilter { var, set, filter } => TlaExpr::SetFilter {
+            var: var.clone(),
+            set: Box::new(substitute_all(set, subs)),
+            filter: Box::new(substitute_all(filter, &without(subs, [var.as_str()]))),
+        },
+        TlaExpr::FnConstruct { var, domain, body } => TlaExpr::FnConstruct {
+            var: var.clone(),
+            domain: Box::new(substitute_all(domain, subs)),
+            body: Box::new(substitute_all(body, &without(subs, [var.as_str()]))),
+        },
+        TlaExpr::SetMapMulti { expr, bindings } => {
+            let bound: Vec<&str> = bindings.iter().map(|b| b.var.as_str()).collect();
+            TlaExpr::SetMapMulti {
+                expr: Box::new(substitute_all(expr, &without(subs, bound.iter().copied()))),
+                bindings: bindings
+                    .iter()
+                    .map(|b| crate::tla::ast::TlaQuantBound {
+                        var: b.var.clone(),
+                        set: b.set.as_ref().map(|s| substitute_all(s, subs)),
+                    })
+                    .collect(),
+            }
+        }
+        TlaExpr::Lambda { params, body } => {
+            let bound: Vec<&str> = params.iter().map(|p| p.as_str()).collect();
+            TlaExpr::Lambda {
+                params: params.clone(),
+                body: Box::new(substitute_all(body, &without(subs, bound))),
+            }
+        }
+        TlaExpr::LetIn { defs, body } => {
+            let bound: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+            let inner = without(subs, bound);
+            TlaExpr::LetIn {
+                defs: defs
+                    .iter()
+                    .map(|d| crate::tla::ast::TlaOperator {
+                        body: substitute_all(&d.body, &inner),
+                        ..d.clone()
+                    })
+                    .collect(),
+                body: Box::new(substitute_all(body, &inner)),
+            }
+        }
         // Quantifiers and CHOOSE bind their own variable, so a binder that
         // shadows a parameter hides *that* parameter -- and only that one --
         // inside the body. The binding sets are outside the binder's scope,
@@ -3647,8 +3820,14 @@ Next == \E p \in Proc : \E m \in network : Step(p, m)
 
     /// `\E k \in 1 .. Len(log[i])` -- Raft's `AdvanceCommitIndex`. A range has
     /// no projected *value*, so it cannot become a `.contains(k)`; the domain
-    /// is a bound on the emitted parameter instead. The index inside the body
-    /// still loses one, because TLA+ counts from 1 and Verus's `Seq` from 0.
+    /// is a bound on the emitted parameter instead.
+    ///
+    /// And because the body indexes with the binder, the whole quantifier is
+    /// re-indexed onto the sequence's own 0-based domain: `s.log[k]`, with
+    /// `k + 1` wherever the source said `k`. Same set of witnesses, stated one
+    /// lower -- and the only form Verus can infer a trigger for, since it
+    /// refuses a subscript with arithmetic in it. Without this the tier4
+    /// Jetpack composition was rejected on exactly this action.
     #[test]
     fn a_range_binder_becomes_a_bound_on_the_parameter() {
         let source = r#"---- MODULE Test ----
@@ -3664,12 +3843,16 @@ Next == \E p \in Proc : Step(p)
         let acts = actions(source);
         let body = action(&acts, "Step").conjuncts.join(" ");
         assert!(
-            body.contains("1 <= k && k <= (s.log.len() as int)"),
-            "the range becomes a bound on the parameter: {body}"
+            body.contains("0 <= k && k <= (s.log.len() as int) - 1"),
+            "the range becomes a bound on the parameter, re-indexed from 0: {body}"
         );
         assert!(
-            body.contains("s.log[k - 1]"),
-            "TLA+ counts from 1 and Verus's Seq from 0: {body}"
+            body.contains("s.log[k]") && !body.contains("s.log[k - 1]"),
+            "a subscript with arithmetic in it is what Verus cannot trigger on: {body}"
+        );
+        assert!(
+            body.contains("k + 1 > s.commit_index") && body.contains("s_.commit_index == k + 1"),
+            "every other use of the binder moves up by one, or the meaning changes: {body}"
         );
     }
 

@@ -201,3 +201,18 @@ expected_rules = ["C1", "C4", "C5"]
 rules_skipped = []
 milestone_gate = "52.M4b"
 notes = "Heavy rewrite: instantaneous global reads, 3-D log, INSTANCE composition. `original.tla` is the *composition* module, the only one of the three with Init/Next/Spec; the other two are kept beside it as `original_jetpack_layer.tla` and `original_base_raft.tla`. The clean-distance of 2 is NOT comparable to the other cases: the composition module has no type invariant, so the linter cannot identify the node set and never reaches C1/C2 — the two findings are the message *array* (C4) and that failure itself (C5). Reading it as 'nearly clean' would be wrong. The Phase 51 reference spec is PARTIAL (entry actions 51.9 missing) — it is a review aid, not a golden, and golden.rs is MORE complete than it. `clean.tla` translated first try and passed verus first try, the only case in the corpus to do so; Raft is what paid for that. TLC closes the state space at both 2 and 3 servers (19.5M distinct at 3, depth 78, TypeOK + Consistency hold), which is stronger than Raft. `golden` not `green` only because V2 as defined is clean-vs-original and the slice shares no observable with the composition module — the same gap Paxos has."
+
+[[case]]
+id = "t4_01_jetpack_full"
+tier = 4
+status = "golden"
+source_repo = "local"
+source_path = "transpiler/tests/corpus/tier3/t3_01_jetpack/{original,jetpack,base_raft}.tla"
+source_commit = ""
+golden_kind = "translator_output"
+reference = ""
+clean_distance = "15"
+expected_rules = ["C1", "C4", "C5"]
+rules_skipped = []
+milestone_gate = "55.6"
+notes = "The WHOLE Jetpack, where t3_01 is a slice: the fast path is here (t3_01 has `grep -ci preaccept` = 0 against 15 in the original), and so are the base protocol, views, reconfiguration and the client layer. Three files rather than one, matching upstream's structure: two library modules with no Init/Next, INSTANCEd by a composition. Linting a library alone correctly reports \"no next-state relation\"; the composition is what is measured, and it is clean with 34 per-node variables. clean_distance is inherited from t3_01 -- it is the same upstream and the same measurement. Model-checked closed at 17,570,820 states, depth 73, 34 of 34 actions covered. Separately checked against the ORIGINAL's own safety invariants under an explicit mapping (jetpack_refinement.tla): 34,718,400 states, closed, no violation -- and that check found upstream's `CommittedLogAgreement` to be vacuous, `Min({ci,ci2} \\cup {0})` being always 0. `golden` not `green` because V2 as defined is clean-vs-original and there is no single original module to compare against; the refinement check is the stronger thing that replaces it here. Reconfiguration is requested and never applied -- upstream's AppendPendingReconfigToLog was dropped -- which makes O!MaxOneReconfigurationAtATime vacuous against this rewrite. Recorded in rewrite.md."

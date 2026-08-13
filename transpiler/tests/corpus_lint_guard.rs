@@ -304,17 +304,34 @@ fn roles_match_what_the_cases_actually_contain() {
                         case.id
                     ));
                 }
-                if dir.join("golden.rs").exists() && !dir.join("clean.tla").exists() {
+                // A case is usually one `clean.tla`. A *composition* is
+                // several modules -- tier4's Jetpack is two libraries and the
+                // spec that INSTANCEs them -- and naming one of them
+                // `clean.tla` would say the other two are not part of the
+                // rewrite. So: at least one `*clean*.tla`, whatever it is
+                // called.
+                let clean_modules: Vec<String> = std::fs::read_dir(&dir)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .filter_map(|e| {
+                        let name = e.file_name().to_string_lossy().to_string();
+                        (name.contains("clean") && name.ends_with(".tla")).then_some(name)
+                    })
+                    .collect();
+                if dir.join("golden.rs").exists() && clean_modules.is_empty() {
                     problems.push(format!(
-                        "{}: has a golden.rs but no clean.tla to generate it from",
+                        "{}: has a golden.rs but no clean-subset module to \
+                         generate it from",
                         case.id
                     ));
                 }
-                if dir.join("clean.tla").exists() && !dir.join("rewrite.md").exists() {
+                if !clean_modules.is_empty() && !dir.join("rewrite.md").exists() {
                     problems.push(format!(
-                        "{}: has a clean.tla but no rewrite.md recording what \
-                         the human decided",
-                        case.id
+                        "{}: has {} clean-subset module(s) but no rewrite.md \
+                         recording what the human decided",
+                        case.id,
+                        clean_modules.len()
                     ));
                 }
             }
