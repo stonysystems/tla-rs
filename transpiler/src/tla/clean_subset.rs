@@ -1544,7 +1544,30 @@ impl<'a> LintContext<'a> {
         let node_set = self.infer_node_set(next, &expanded);
         let mut seeds = Vec::new();
         for disjunct in flatten_disjunction(&expanded) {
-            if let TlaExpr::Exists { vars, body } = disjunct {
+            // The quantifier may sit under a guard: an expanded group is
+            // `/\ on /\ \E p \in Proc : Handle(p)`, a conjunction rather than
+            // an `Exists`. Matching only a bare `Exists` left every action
+            // under such a group unseeded, so C2 never looked at it -- the same
+            // read is reported the moment the guard is deleted.
+            let mut conjuncts = vec![disjunct];
+            let mut i = 0;
+            while i < conjuncts.len() {
+                if let TlaExpr::BinOp {
+                    op: TlaBinOp::And,
+                    left,
+                    right,
+                } = conjuncts[i]
+                {
+                    conjuncts[i] = left;
+                    conjuncts.push(right);
+                    continue;
+                }
+                i += 1;
+            }
+            for conjunct in conjuncts {
+                let TlaExpr::Exists { vars, body } = conjunct else {
+                    continue;
+                };
                 for bound in vars {
                     let over_node_set = match (&bound.set, &node_set) {
                         (Some(set), Some(ns)) => self.show(set) == *ns,
@@ -2316,14 +2339,27 @@ fn collect_called_names(expr: &TlaExpr, out: &mut Vec<String>) {
 /// -- which C5 would then reject, because a name is exactly how a spec says
 /// "this disjunct is deliberate".
 fn groups_actions(body: &TlaExpr) -> bool {
-    matches!(
-        body,
+    match body {
         TlaExpr::Exists { .. }
-            | TlaExpr::BinOp {
-                op: TlaBinOp::Or,
-                ..
-            }
-    )
+        | TlaExpr::BinOp {
+            op: TlaBinOp::Or, ..
+        } => true,
+        // `ServerAction == /\ on /\ \E p \in Proc : Handle(p)` -- a group
+        // behind a guard. Recognising only a bare `\E` or `\/` meant every
+        // action under such a group escaped C2 entirely: the same read
+        // reported when the guard is removed went unmentioned with it there.
+        //
+        // This is the third shape; the rule was extended once already for
+        // EPaxos's `Next == \/ ReplicaAction \/ ..`, keyed on two shapes, and
+        // any further one re-opened it. Keying on "contains a quantifier
+        // rather than *is* one" is what stops a fourth.
+        TlaExpr::BinOp {
+            op: TlaBinOp::And,
+            left,
+            right,
+        } => groups_actions(left) || groups_actions(right),
+        _ => false,
+    }
 }
 
 #[cfg(test)]

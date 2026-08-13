@@ -673,7 +673,21 @@ impl ProjectionContext<'_> {
 
     /// The fields a constructor for `tag` fills with something other than a
     /// literal, i.e. the ones that carry information.
+    /// The payload fields a tag's constructors put in the message.
+    ///
+    /// The **union** across every constructor for that tag, not the first one
+    /// found. A spec may have more than one -- a thin form and a form carrying
+    /// an extra field -- and taking the first in declaration order meant
+    /// swapping two definitions decided whether the variant carried its
+    /// payload at all. With the thin one first the emitted variant was
+    /// `LMessage::M` with no fields while the handler still referred to `val`,
+    /// which is an unbound name; with the other order everything worked.
+    ///
+    /// The union is what the declared `Message` type already says the variant
+    /// holds, so it cannot invent a field, and it cannot drop one either.
     fn constructor_payload(&self, tag: &str) -> Option<Vec<String>> {
+        let mut union: Vec<String> = Vec::new();
+        let mut seen_any = false;
         for op in &self.module.operators {
             let TlaExpr::Record(fields) = &op.body else {
                 continue;
@@ -693,20 +707,21 @@ impl ProjectionContext<'_> {
             if !tags_match {
                 continue;
             }
-            return Some(
-                fields
-                    .iter()
-                    .filter(|(_, value)| {
-                        !matches!(
-                            value,
-                            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_)
-                        )
-                    })
-                    .map(|(name, _)| to_snake_case(name))
-                    .collect(),
-            );
+            seen_any = true;
+            for (name, value) in fields.iter().filter(|(_, value)| {
+                !matches!(
+                    value,
+                    TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_)
+                )
+            }) {
+                let _ = value;
+                let name = to_snake_case(name);
+                if !union.contains(&name) {
+                    union.push(name);
+                }
+            }
         }
-        None
+        seen_any.then_some(union)
     }
 }
 

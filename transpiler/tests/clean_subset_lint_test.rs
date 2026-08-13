@@ -397,6 +397,48 @@ Spec == TypeOK /\ [][RealNext]_x
     }
 }
 
+/// A group behind a guard -- `ServerAction == /\ on /\ \E p \in Proc : H(p)`.
+///
+/// Two gates had to open and only one did. `groups_actions` matched a body that
+/// *is* an `\E` or a `\/`, and the node-parameter seed matched a `Next`
+/// disjunct that *is* an `\E`. With a guard in front, neither did, and every
+/// action under the group escaped C2 -- the same read is reported the moment
+/// the guard is deleted.
+///
+/// This is the third shape. The rule was extended once for EPaxos's
+/// `Next == \/ ReplicaAction \/ ..`, keyed on two shapes, and any further one
+/// re-opened it; both gates now key on *containing* a quantifier.
+#[test]
+fn a_group_behind_a_guard_does_not_escape_c2() {
+    const GUARDED: &str = r#"---- MODULE Test ----
+VARIABLES x, on
+TypeOK == /\ x \in [Proc -> Nat]
+          /\ on \in BOOLEAN
+Handle(p, q) == /\ x' = [x EXCEPT ![p] = x[q]]
+                /\ UNCHANGED on
+ServerAction == /\ on
+                /\ \E p, q \in Proc : Handle(p, q)
+Next == \/ ServerAction
+        \/ \E p \in Proc : /\ x' = [x EXCEPT ![p] = 0]
+                           /\ UNCHANGED on
+===="#;
+    let bare = GUARDED.replace(
+        "ServerAction == /\\ on
+                /\\ \\E p, q \\in Proc : Handle(p, q)",
+        "ServerAction == \\E p, q \\in Proc : Handle(p, q)",
+    );
+    for (what, source) in [("guarded", GUARDED), ("bare", bare.as_str())] {
+        let module = parse_module(source).expect("fixture must parse");
+        assert!(
+            lint_module(&module)
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C2),
+            "{what}: the cross-node read in `Handle` must be reported either way"
+        );
+    }
+}
+
 #[test]
 fn every_finding_says_what_the_human_has_to_decide() {
     for name in [
