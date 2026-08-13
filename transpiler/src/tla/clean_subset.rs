@@ -271,6 +271,29 @@ impl<'a> LintContext<'a> {
             return;
         };
 
+        // A tie was broken by the domain's printed name, silently. Say so: the
+        // rules that follow are all stated against whichever set won, so a
+        // reader has to know the choice was arbitrary before reading the count.
+        let tied = self.tied_node_sets(&expanded);
+        if tied.len() > 1 {
+            report.findings.push(self.finding(
+                CleanRule::C5,
+                Some(next),
+                format!(
+                    "the node set is ambiguous: {} are equally good candidates -- \
+                     each is quantified over in `Next` and carries the same amount \
+                     of declared state. `{node_set}` was chosen, and every other \
+                     rule below is stated against it, so a read of another \
+                     candidate's state is not reported. Say which set the \
+                     protocol's nodes are drawn from.",
+                    tied.iter()
+                        .map(|d| format!("`{d}`"))
+                        .collect::<Vec<_>>()
+                        .join(" and ")
+                ),
+            ));
+        }
+
         for disjunct in flatten_disjunction(&expanded) {
             self.check_c5_disjunct(disjunct, next, &node_set, report);
         }
@@ -365,6 +388,47 @@ impl<'a> LintContext<'a> {
             .filter(|(domain, _)| quantified.contains(domain))
             .max_by_key(|(domain, count)| (*count, domain.clone()))
             .map(|(domain, _)| domain)
+    }
+
+    /// The domains that tie for the node set, when more than one does.
+    ///
+    /// `infer_node_set` breaks a tie by the domain's printed name -- the one
+    /// that sorts last wins -- and nothing recorded that the choice was a coin
+    /// flip. It is not a harmless one: with the wrong set designated, C1/C2/C3
+    /// are stated against the wrong dimension, real cross-node reads of the
+    /// true per-node variable vanish from the report, and the violation count
+    /// goes **down**. Renaming an unrelated set from `Aux` to `Zux` took a spec
+    /// from 2 findings to 1 and dropped a genuine `log[j]`.
+    ///
+    /// There is no better implicit rule to reach for here: in a real tie both
+    /// domains are quantified by `Next` and both are written at, which is
+    /// everything the subset says a node set looks like. So the answer is to
+    /// say so rather than to choose better in silence.
+    fn tied_node_sets(&self, expanded: &TlaExpr) -> Vec<String> {
+        let mut domain_counts: BTreeMap<String, usize> = BTreeMap::new();
+        for var in &self.module.variables {
+            for domain in self.declared_domains(var) {
+                *domain_counts.entry(domain).or_default() += 1;
+            }
+        }
+        let quantified = Self::quantified_sets(expanded, self);
+        let candidates: Vec<(String, usize)> = domain_counts
+            .into_iter()
+            .filter(|(domain, _)| quantified.contains(domain))
+            .collect();
+        let Some(best) = candidates.iter().map(|(_, c)| *c).max() else {
+            return Vec::new();
+        };
+        let tied: Vec<String> = candidates
+            .into_iter()
+            .filter(|(_, c)| *c == best)
+            .map(|(d, _)| d)
+            .collect();
+        if tied.len() > 1 {
+            tied
+        } else {
+            Vec::new()
+        }
     }
 
     /// The sets `Next` quantifies over, at any depth.
@@ -1423,13 +1487,12 @@ impl<'a> LintContext<'a> {
                 if matches!(&**left, TlaExpr::Prime(_)) {
                     if let TlaExpr::FnExcept { updates, .. } = &**right {
                         for update in updates {
-                            if let Some(crate::tla::ast::TlaExceptPath::Index(index)) =
-                                update.path.first()
+                            if let Some(crate::tla::ast::TlaExceptPath::Index(TlaExpr::Ident(
+                                name,
+                            ))) = update.path.first()
                             {
-                                if let TlaExpr::Ident(name) = index {
-                                    if params.contains(name.as_str()) {
-                                        out.insert(name.clone());
-                                    }
+                                if params.contains(name.as_str()) {
+                                    out.insert(name.clone());
                                 }
                             }
                         }

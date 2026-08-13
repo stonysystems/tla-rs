@@ -331,6 +331,36 @@ Next == \E i, j \in Proc : Peek(i, j)
     );
 }
 
+/// The node set was chosen by lexicographic tie-break, silently, and the choice
+/// is not harmless: every other rule is stated against the winner, so a real
+/// cross-node read of the *other* candidate's state vanishes and the violation
+/// count goes **down**. Renaming an unrelated set `Aux` -> `Zux` took this spec
+/// from 2 findings to 1 and dropped a genuine `log[j]`.
+///
+/// There is no better implicit rule available: in a real tie both domains are
+/// quantified by `Next` and both are written at, which is everything the subset
+/// says a node set looks like. So the fix is to say so.
+#[test]
+fn an_ambiguous_node_set_is_reported_rather_than_guessed() {
+    const TIE: &str = r#"---- MODULE Test ----
+VARIABLES log, tally
+TypeOK == /\ log \in [Server -> Nat]
+          /\ tally \in [Aux -> Nat]
+Step(i, k, j) == /\ log' = [log EXCEPT ![i] = log[j]]
+                 /\ tally' = [tally EXCEPT ![k] = 0]
+Next == \E i, j \in Server : \E k \in Aux : Step(i, k, j)
+===="#;
+    for (what, source) in [("Aux", TIE.to_string()), ("Zux", TIE.replace("Aux", "Zux"))] {
+        let module = parse_module(&source).expect("fixture must parse");
+        assert!(
+            lint_module(&module).findings.iter().any(|f| {
+                f.rule == CleanRule::C5 && f.message.contains("node set is ambiguous")
+            }),
+            "{what}: the tie must be reported, whichever name happens to win"
+        );
+    }
+}
+
 #[test]
 fn every_finding_says_what_the_human_has_to_decide() {
     for name in [
