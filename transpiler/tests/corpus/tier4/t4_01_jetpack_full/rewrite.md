@@ -261,7 +261,8 @@ invariants read: the original indexes logs by proposer (`log[i]["sole"]`) and
 its variables range over `Server` rather than `Node`.
 
 **Result: 34,718,400 distinct states, depth 73, state space closed, no
-violation**, with `Commands = {v1, v2}` so the value comparison has something to
+violation** — reproduced from the repository through `stage_originals.sh
+<outdir> --fix-vacuous-min`, matching to the state, with `Commands = {v1, v2}` so the value comparison has something to
 compare.
 
 | invariant | verdict | has teeth? |
