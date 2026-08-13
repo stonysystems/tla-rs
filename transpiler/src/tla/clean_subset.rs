@@ -739,6 +739,16 @@ impl<'a> LintContext<'a> {
         for op in &self.module.operators {
             self.collect_addressing_fields(&op.body, net, &mut fields);
         }
+        // The *tag* is not routing. A handler guards on both `m.dst = i` and
+        // `m.type = "req"`, so the candidate set picks up `type` -- and since
+        // the rule accepts a message carrying **any** candidate, and every
+        // message carries its tag, it could never fail. That is the second
+        // reason this rule never fired; following the call into the handler
+        // was only the first.
+        let fields: BTreeSet<String> = fields
+            .into_iter()
+            .filter(|f| !crate::tla::projection::TAG_FIELDS.contains(&f.as_str()))
+            .collect();
         // More than one candidate means the guard tests several fields; any of
         // them routes, so requiring all would be wrong. Requiring *some* is the
         // honest weakening.
@@ -793,16 +803,54 @@ impl<'a> LintContext<'a> {
     }
 
     /// `m.f = x` / `x = m.f` for a message variable `m`.
+    ///
+    /// **Follows a call.** Almost every spec writes
+    /// `\E m \in msgs : Handler(i, m)` and puts the `m.dst = i` guard in the
+    /// handler, so reading only the literal body of the `\E` found no
+    /// addressing field at all -- and `check_message_addressing` returns early
+    /// when the set is empty. The rule therefore never executed on any of the
+    /// corpus's clean specs. It reports rather than being silently wrong: the
+    /// projection refuses an unaddressed message with "broadcast message has
+    /// no destination or no tag". But a lint that never runs makes `clean`
+    /// claim more than was checked, and the diagnostic belongs here, where it
+    /// can say what to do, rather than at translation.
     fn collect_guarded_fields(&self, expr: &TlaExpr, msg: &[&str], out: &mut BTreeSet<String>) {
+        if let TlaExpr::OpApply { op, args } = expr {
+            if let TlaExpr::Ident(callee) = &**op {
+                for (i, arg) in args.iter().enumerate() {
+                    let passes_msg = matches!(arg, TlaExpr::Ident(v) if msg.contains(&v.as_str()));
+                    if !passes_msg {
+                        continue;
+                    }
+                    if let Some(target) = self.operator(callee) {
+                        if let Some(param) = target.params.get(i) {
+                            // One level. A handler that itself dispatches to
+                            // another handler is the composition shape, and
+                            // `Receive`'s own body holds the guards there.
+                            self.collect_guarded_fields(&target.body, &[param.name.as_str()], out);
+                        }
+                    }
+                }
+            }
+        }
         if let TlaExpr::BinOp {
             op: TlaBinOp::Eq,
             left,
             right,
         } = expr
         {
-            for side in [left, right] {
+            for (side, other) in [(left, right), (right, left)] {
                 if let TlaExpr::RecordAccess { record, field } = &**side {
-                    if matches!(&**record, TlaExpr::Ident(v) if msg.contains(&v.as_str())) {
+                    if !matches!(&**record, TlaExpr::Ident(v) if msg.contains(&v.as_str())) {
+                        continue;
+                    }
+                    // Routing is a comparison against a plain *name* -- the
+                    // acting node. `m.mdest = i` routes; `m.mdeps =
+                    // leaderDeps[i]` is a payload agreement test, and taking it
+                    // as a routing candidate made EPaxos report a message for
+                    // carrying no `mdeps`. A node identity is a bare
+                    // identifier; a state read is not.
+                    if matches!(&**other, TlaExpr::Ident(_)) {
                         out.insert(field.clone());
                     }
                 }
@@ -870,16 +918,38 @@ impl<'a> LintContext<'a> {
             TlaExpr::OpApply { op, .. } => {
                 if let TlaExpr::Ident(name) = &**op {
                     if let Some(target) = self.operator(name) {
-                        if let TlaExpr::Record(fields) = &target.body {
-                            out.push((
-                                fields.iter().map(|(n, _)| n.clone()).collect(),
-                                format!("{}(..)", name),
-                            ));
-                            return;
+                        match &target.body {
+                            TlaExpr::Record(fields) => {
+                                out.push((
+                                    fields.iter().map(|(n, _)| n.clone()).collect(),
+                                    format!("{}(..)", name),
+                                ));
+                                return;
+                            }
+                            // A broadcast helper:
+                            // `Broadcast(s, ..) == { Ctor(s, d, ..) : d \in .. }`.
+                            // The messages are the comprehension's elements, and
+                            // they were invisible here -- the body is not a
+                            // `Record`, so this fell through to the walk below
+                            // and picked up whatever record-shaped *argument*
+                            // the call happened to take. EPaxos passes
+                            // `Inst(i, crtInst[i])`, an instance identifier, and
+                            // it was reported as an unaddressed message.
+                            TlaExpr::SetMap { expr: body, .. }
+                            | TlaExpr::SetMapMulti { expr: body, .. } => {
+                                self.collect_sent_messages(body, out);
+                                return;
+                            }
+                            _ => {}
                         }
                     }
                 }
-                walk_children(expr, &mut |child| self.collect_sent_messages(child, out));
+                // An unresolved call: its arguments are not messages, so there
+                // is nothing here to look at. Descending into them is what
+                // produced the false positive above.
+                if !matches!(&**op, TlaExpr::Ident(name) if self.operator(name).is_some()) {
+                    walk_children(expr, &mut |child| self.collect_sent_messages(child, out));
+                }
             }
             other => walk_children(other, &mut |child| self.collect_sent_messages(child, out)),
         }

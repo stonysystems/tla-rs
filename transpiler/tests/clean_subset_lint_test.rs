@@ -192,6 +192,64 @@ Next == \/ \E p \in Proc : Step(p)
     );
 }
 
+/// C4's message-addressing rule -- "every message must say who it is for" --
+/// had never executed on any corpus spec, for two independent reasons, and a
+/// third kept it from seeing broadcasts:
+///
+/// 1. the candidate routing fields were read only out of the literal body of
+///    `\E m \in msgs : ..`, and every spec puts the `m.dst = i` guard in the
+///    handler it calls;
+/// 2. the tag counts as a guarded field, and a message carrying *any* candidate
+///    passed -- so `type` alone was enough and the check could never fail;
+/// 3. a broadcast helper's body is a set comprehension rather than a record, so
+///    its messages were invisible while whatever record-shaped *argument* the
+///    call took was reported instead.
+///
+/// It reported rather than being silently wrong -- the projection refuses an
+/// unaddressed message with "broadcast message has no destination or no tag" --
+/// but a lint that never runs makes `clean` claim more than was checked.
+#[test]
+fn a_message_with_no_destination_is_reported() {
+    const UNADDRESSED: &str = r#"---- MODULE Test ----
+VARIABLES x, msgs
+Message == [type: {"m"}, src: Proc, dst: Proc]
+TypeOK == x \in [Proc -> Nat]
+Mk(s, d) == [type |-> "m", src |-> s]
+Bcast(s) == { Mk(s, d) : d \in Proc }
+Send(self) == /\ msgs' = msgs \cup Bcast(self)
+              /\ x' = [x EXCEPT ![self] = 1]
+Recv(self, m) == /\ m.dst = self
+                 /\ m.type = "m"
+                 /\ x' = [x EXCEPT ![self] = 0]
+                 /\ msgs' = msgs \ {m}
+Next == \E self \in Proc : Send(self) \/ \E m \in msgs : Recv(self, m)
+===="#;
+    let module = parse_module(UNADDRESSED).expect("fixture must parse");
+    let report = lint_module(&module);
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.rule == CleanRule::C4 && f.message.contains("dst")),
+        "a message sent through a broadcast helper with no `dst` must be \
+         reported: {:?}",
+        report.findings
+    );
+
+    // The same spec with the destination present must stay clean, or the rule
+    // is just noise.
+    let addressed = UNADDRESSED.replace(
+        r#"Mk(s, d) == [type |-> "m", src |-> s]"#,
+        r#"Mk(s, d) == [type |-> "m", src |-> s, dst |-> d]"#,
+    );
+    let module = parse_module(&addressed).expect("fixture must parse");
+    assert!(
+        lint_module(&module).is_clean(),
+        "an addressed message must stay clean: {:?}",
+        lint_module(&module).findings
+    );
+}
+
 #[test]
 fn every_finding_says_what_the_human_has_to_decide() {
     for name in [
