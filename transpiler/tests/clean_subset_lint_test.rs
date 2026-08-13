@@ -285,6 +285,52 @@ Next == \E p \in Proc : Step(p)
     }
 }
 
+/// Which parameter is "the node" must not depend on argument order at the call
+/// site. `enqueue_callees` took the first binder that reached the callee, so
+/// `Own(a, b) == x' = [x EXCEPT ![a] = ..]` -- which touches only `a` -- was
+/// clean as `Own(i, j)` and reported a cross-node read of `x[a]` as
+/// `Own(j, i)`. A false positive, and swapping two arguments changed the
+/// verdict on an operator that had not changed.
+#[test]
+fn the_acting_node_is_what_the_action_writes_at_not_argument_order() {
+    const A: &str = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Own(a, b) == /\ x[a] = 0
+             /\ x' = [x EXCEPT ![a] = 1]
+Next == \E i, j \in Proc : Own(i, j)
+===="#;
+    let b = A.replace("Own(i, j)", "Own(j, i)");
+    for (what, source) in [("Own(i, j)", A), ("Own(j, i)", b.as_str())] {
+        let module = parse_module(source).expect("fixture must parse");
+        let report = lint_module(&module);
+        assert!(
+            report.is_clean(),
+            "{what}: the action touches only its first parameter, so it is \
+             clean whichever way the arguments are written: {:?}",
+            report.findings
+        );
+    }
+
+    // And a genuine cross-node read is still reported, or the fix is just a
+    // way of never finding anything.
+    const REAL: &str = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Peek(a, b) == x' = [x EXCEPT ![a] = x[b]]
+Next == \E i, j \in Proc : Peek(i, j)
+===="#;
+    let module = parse_module(REAL).expect("fixture must parse");
+    assert!(
+        lint_module(&module)
+            .findings
+            .iter()
+            .any(|f| f.rule == CleanRule::C2),
+        "a read at a parameter the action does not write at is still a \
+         cross-node read"
+    );
+}
+
 #[test]
 fn every_finding_says_what_the_human_has_to_decide() {
     for name in [

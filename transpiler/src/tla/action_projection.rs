@@ -2121,6 +2121,46 @@ impl<'a> ActionContext<'a> {
         Ok(acc)
     }
 
+    /// `s.field` updated at one index, with the operation and the index chosen
+    /// from the field's projected type.
+    ///
+    /// TLA+'s `[f EXCEPT ![k] = v]` **replaces**. For a `Map` that is
+    /// `insert(k, v)` and the key passes through untouched. For a `Seq` it is
+    /// `update(k - 1, v)`: vstd's `Seq::insert` is
+    /// `subrange(0,i).push(a).add(subrange(i, len))`, which *grows* the
+    /// sequence and shifts the tail, and the index still has to lose one
+    /// because TLA+ counts from 1.
+    ///
+    /// Emitting `insert` for both was two independent wrongs on one line: the
+    /// guard read `s.log[k - 1]` while the update wrote at `k`, and the write
+    /// lengthened the log instead of overwriting an entry. Verus accepts it --
+    /// both are `Seq` operations of the right type.
+    ///
+    /// A field whose type the projection does not know is a gap, because the
+    /// two operations are not interchangeable and guessing picks one.
+    fn project_indexed_update(
+        &self,
+        field: &str,
+        index: &TlaExpr,
+        value: &str,
+    ) -> Result<String, String> {
+        match self.field_type(field) {
+            Some(ProjectedType::Map(..)) => Ok(format!(
+                "s.{field}.insert({}, {value})",
+                self.project_expr(index)?
+            )),
+            Some(ProjectedType::Seq(_)) => Ok(format!(
+                "s.{field}.update({}, {value})",
+                self.seq_index(index)?
+            )),
+            other => Err(format!(
+                "EXCEPT at an index of `{field}`, which projects to `{}` -- \
+                 only a map is updated by key and only a sequence by position",
+                other.map(|t| t.render()).unwrap_or_else(|| "?".to_string())
+            )),
+        }
+    }
+
     /// The right-hand side of `x' = ...`, projected to the new value of the
     /// node's field.
     fn project_update(&self, var: &str, rhs: &TlaExpr) -> Result<String, String> {
@@ -2160,10 +2200,14 @@ impl<'a> ActionContext<'a> {
                             arg: Box::new(inner.clone()),
                         };
                         let value_expr = substitute(&update.value, "@", &old_value);
+                        let value = self.project_expr(&value_expr)?;
+                        let one = self.project_indexed_update(field, inner, &value)?;
+                        // The accumulator has already applied earlier updates,
+                        // so only the operation and its arguments come from the
+                        // helper; the receiver is whatever we have built.
                         acc = format!(
-                            "{acc}.insert({}, {})",
-                            self.project_expr(inner)?,
-                            self.project_expr(&value_expr)?
+                            "{acc}{}",
+                            one.strip_prefix(&format!("s.{field}")).unwrap_or(&one)
                         );
                     }
                     return Ok(acc);
@@ -2220,8 +2264,7 @@ impl<'a> ActionContext<'a> {
                     [TlaExceptPath::Index(outer), TlaExceptPath::Index(inner)]
                         if self.is_node_index(outer) =>
                     {
-                        let key = self.project_expr(inner)?;
-                        Ok(format!("s.{field}.insert({key}, {value})"))
+                        self.project_indexed_update(field, inner, &value)
                     }
                     other => Err(format!(
                         "EXCEPT path with {} components is not yet projectable",
@@ -3439,7 +3482,41 @@ fn binders_in(expr: &TlaExpr) -> std::collections::BTreeSet<String> {
                 out.insert(var.clone());
             }
             TlaExpr::LetIn { defs, .. } => out.extend(defs.iter().map(|d| d.name.clone())),
-            _ => {}
+            // The other two binding forms. `expand_let` refuses a definition
+            // whose value mentions a name the body binds, because
+            // `substitute_all` does not rename binders -- so a binder this
+            // misses is a capture the guard waves through. Named explicitly
+            // rather than left to the catch-all below for the reason the whole
+            // walker audit exists.
+            TlaExpr::SetMapMulti { bindings, .. } => {
+                out.extend(bindings.iter().map(|b| b.var.clone()))
+            }
+            TlaExpr::Lambda { params, .. } => out.extend(params.iter().cloned()),
+            TlaExpr::Ident(_)
+            | TlaExpr::Number(_)
+            | TlaExpr::String(_)
+            | TlaExpr::Bool(_)
+            | TlaExpr::Prime(_)
+            | TlaExpr::BinOp { .. }
+            | TlaExpr::UnaryOp { .. }
+            | TlaExpr::OpApply { .. }
+            | TlaExpr::FnApply { .. }
+            | TlaExpr::SetEnum(_)
+            | TlaExpr::Tuple(_)
+            | TlaExpr::Unchanged(_)
+            | TlaExpr::Record(_)
+            | TlaExpr::RecordSet(_)
+            | TlaExpr::RecordAccess { .. }
+            | TlaExpr::FnSet { .. }
+            | TlaExpr::FnExcept { .. }
+            | TlaExpr::IfThenElse { .. }
+            | TlaExpr::Case { .. }
+            | TlaExpr::Enabled(_)
+            | TlaExpr::Always(_)
+            | TlaExpr::Eventually(_)
+            | TlaExpr::LeadsTo { .. }
+            | TlaExpr::WeakFairness { .. }
+            | TlaExpr::StrongFairness { .. } => {}
         }
         for child in children(e) {
             walk(child, out);
@@ -4097,6 +4174,60 @@ Next == \E self \in Proc : Send(self) \/ \E m \in msgs : RecvA(self, m) \/ RecvB
             tags.contains(&"a") && tags.contains(&"b"),
             "a tag set behind a name must still produce its variants, or the \
              message kind disappears from the spec: {tags:?}"
+        );
+    }
+
+    /// `[log EXCEPT ![i][k] = v]` on a **sequence**-typed per-node field.
+    ///
+    /// Two independent wrongs on one emitted line, and Verus accepted both
+    /// because they are `Seq` operations of the right type: the update wrote at
+    /// `k` while the guard read `s.log[k - 1]`, and it used `insert`, which in
+    /// vstd is `subrange(0,i).push(a).add(subrange(i, len))` -- it *grows* the
+    /// sequence and shifts the tail, where TLA+'s EXCEPT replaces.
+    #[test]
+    fn an_indexed_update_of_a_sequence_replaces_at_the_adjusted_index() {
+        const SEQ: &str = r#"---- MODULE Test ----
+EXTENDS Integers, Sequences
+VARIABLES log
+TypeOK == log \in [Proc -> Seq(Nat)]
+Init == log = [p \in Proc |-> << 0 >>]
+Step(p, k) == /\ log[p][k] = 0
+              /\ log' = [log EXCEPT ![p][k] = 1]
+Next == \E p \in Proc : \E k \in 1 .. 1 : Step(p, k)
+===="#;
+        let acts = actions(SEQ);
+        let body = action(&acts, "Step").conjuncts.join(" ");
+        assert!(
+            body.contains("s.log.update(k - 1, 1)"),
+            "a sequence is replaced at the 0-based index, not grown at the \
+             1-based one: {body}"
+        );
+        assert!(
+            !body.contains("s.log.insert("),
+            "`Seq::insert` shifts the tail; EXCEPT replaces: {body}"
+        );
+        assert!(
+            body.contains("s.log[k - 1]"),
+            "and the read the write must agree with: {body}"
+        );
+    }
+
+    /// The same shape on a **map**-typed field keeps `insert` and the key
+    /// untouched -- a map is updated by key, and a key is not an offset.
+    #[test]
+    fn an_indexed_update_of_a_map_still_inserts_by_key() {
+        const MAP: &str = r#"---- MODULE Test ----
+VARIABLES tbl
+TypeOK == tbl \in [Proc -> [Proc -> Nat]]
+Init == tbl = [p \in Proc |-> [q \in Proc |-> 0]]
+Step(p, q) == tbl' = [tbl EXCEPT ![p][q] = 1]
+Next == \E p \in Proc : \E q \in Proc : Step(p, q)
+===="#;
+        let acts = actions(MAP);
+        let body = action(&acts, "Step").conjuncts.join(" ");
+        assert!(
+            body.contains("s.tbl.insert(q, 1)"),
+            "a map takes its key as written: {body}"
         );
     }
 

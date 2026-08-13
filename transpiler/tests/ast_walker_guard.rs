@@ -152,6 +152,9 @@ const WALKERS: &[(&str, &str)] = &[
     // variant it misses keeps bare names that then resolve to nothing --
     // `Case` and `LetIn` both sat in its catch-all.
     ("module_resolver.rs", "rewrite"),
+    // The capture-avoidance guard  relies on: a binding form it
+    // misses is a capture waved through.
+    ("action_projection.rs", "binders_in"),
 ];
 
 #[test]

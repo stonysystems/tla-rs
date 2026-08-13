@@ -1402,6 +1402,46 @@ impl<'a> LintContext<'a> {
         found
     }
 
+    /// The parameter this operator updates its own state at: the `p` of
+    /// `x' = [x EXCEPT ![p] = ..]`.
+    ///
+    /// In the clean subset that *is* the acting node -- C1 says state is
+    /// per-node and a node writes its own -- so it is the right answer when
+    /// several parameters could be the node and argument order would otherwise
+    /// decide. `None` when the body writes at no parameter or at more than one,
+    /// which is not a tie this can break.
+    fn parameter_written_at(&self, op: &TlaOperator) -> Option<String> {
+        let params: BTreeSet<&str> = op.params.iter().map(|p| p.name.as_str()).collect();
+        let mut found: BTreeSet<String> = BTreeSet::new();
+        fn walk(expr: &TlaExpr, params: &BTreeSet<&str>, out: &mut BTreeSet<String>) {
+            if let TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                left,
+                right,
+            } = expr
+            {
+                if matches!(&**left, TlaExpr::Prime(_)) {
+                    if let TlaExpr::FnExcept { updates, .. } = &**right {
+                        for update in updates {
+                            if let Some(crate::tla::ast::TlaExceptPath::Index(index)) =
+                                update.path.first()
+                            {
+                                if let TlaExpr::Ident(name) = index {
+                                    if params.contains(name.as_str()) {
+                                        out.insert(name.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            walk_children(expr, &mut |child| walk(child, params, out));
+        }
+        walk(&op.body, &params, &mut found);
+        (found.len() == 1).then(|| found.into_iter().next().expect("len checked"))
+    }
+
     /// Record every operator `body` calls with `node_var` in some argument
     /// position, under the name that argument has in the callee.
     fn enqueue_callees(
@@ -1421,7 +1461,30 @@ impl<'a> LintContext<'a> {
             let Some(param) = op.params.get(index) else {
                 continue;
             };
-            found.entry(callee).or_insert_with(|| param.name.clone());
+            // First-wins, EXCEPT that a parameter the body actually updates
+            // *at* wins over one that merely arrived first.
+            //
+            // With `\E i, j \in Proc : Own(j, i)` the seeds are visited in
+            // binder order, so `i` reached argument 1 and designated the
+            // callee's second parameter "the node" -- and `Own(a, b) == x' =
+            // [x EXCEPT ![a] = ..]`, which touches only `a`, was reported for a
+            // cross-node read of `x[a]`. Swapping the two arguments at the call
+            // site flipped the verdict on an operator that had not changed.
+            //
+            // In the clean subset the acting node is the one whose own state
+            // the action updates, so that is the tie-break rather than
+            // argument order.
+            let writes_at = self.parameter_written_at(op);
+            match found.get(&callee) {
+                Some(existing) if Some(existing.as_str()) == writes_at.as_deref() => {}
+                _ if writes_at.as_deref() == Some(param.name.as_str()) => {
+                    found.insert(callee, param.name.clone());
+                }
+                Some(_) => {}
+                None => {
+                    found.insert(callee, param.name.clone());
+                }
+            }
         }
     }
 
