@@ -1099,6 +1099,14 @@ impl<'a> ActionContext<'a> {
             (ProjectedType::Enum { .. }, TlaExpr::String(_) | TlaExpr::Ident(_)) => {
                 self.enum_literal(ty, expr)
             }
+            // A `CASE` in an enum-typed position folds to the `IF` chain the
+            // arm below already knows how to render. Without this the fold ran
+            // in `project_expr`, which has no target type, and the branches
+            // came out as `&str` against an enum.
+            (ProjectedType::Enum { .. }, TlaExpr::Case { arms, other }) => {
+                let other = other.as_ref()?;
+                self.typed_value(ty, &case_as_if_then_else(arms, other))
+            }
             (
                 ProjectedType::Enum { .. },
                 TlaExpr::IfThenElse {
@@ -2254,7 +2262,17 @@ impl<'a> ActionContext<'a> {
                     _ => TlaExpr::Ident("@".to_string()),
                 };
                 let value_expr = substitute(&update.value, "@", &old_value);
-                let value = self.project_expr(&value_expr)?;
+                // The field's own type first: `mark' = [mark EXCEPT ![self] =
+                // CASE ..]` replaces the whole field, so the value sits in a
+                // position whose type is known, and a literal there is a
+                // variant rather than a `&str`.
+                let value = match self
+                    .field_type(field)
+                    .and_then(|ty| self.typed_value(ty, &value_expr))
+                {
+                    Some(text) => text,
+                    None => self.project_expr(&value_expr)?,
+                };
                 match update.path.as_slice() {
                     // `![self] = e` -- one index, the acting node: the whole
                     // projected field becomes `e`.
@@ -3150,6 +3168,19 @@ impl<'a> ActionContext<'a> {
             // `LET a == e IN body` in a value position -- a helper body, or the
             // right-hand side of an update. Same expansion as the conjunct form.
             TlaExpr::LetIn { defs, body } => self.project_expr(&expand_let(defs, body)?),
+            // `CASE p -> a [] OTHER -> b` in a *value* position, which is where
+            // it sits when the update is `x' = [x EXCEPT ![i] = CASE ..]`
+            // rather than `x' = CASE ..`. `project_update` folds the outer
+            // form; this is the same fold one level in, and without it the
+            // shape was a gap depending only on where the CASE was written.
+            TlaExpr::Case { arms, other } => {
+                let Some(other) = other else {
+                    return Err("CASE without an OTHER arm has no value when no \
+                                guard holds"
+                        .to_string());
+                };
+                self.project_expr(&case_as_if_then_else(arms, other))
+            }
             other => Err(format!("expression {}", render_source(other))),
         }
     }
@@ -4228,6 +4259,37 @@ Next == \E p \in Proc : \E q \in Proc : Step(p, q)
         assert!(
             body.contains("s.tbl.insert(q, 1)"),
             "a map takes its key as written: {body}"
+        );
+    }
+
+    /// A `CASE` inside an EXCEPT's *value* rather than at the top of the
+    /// update: `mark' = [mark EXCEPT ![self] = CASE big -> "hi" [] OTHER ->
+    /// "lo"]`.
+    ///
+    /// `project_update` folded the outer form and `project_expr` had no `Case`
+    /// arm at all, so whether the shape projected depended only on where the
+    /// CASE was written. Folding it in `project_expr` alone was not enough --
+    /// that path has no target type, and an enum-typed field came out compared
+    /// against `&str`, which Verus rejects.
+    #[test]
+    fn a_case_inside_an_except_value_projects_with_the_fields_type() {
+        const CASE_VALUE: &str = r#"---- MODULE Test ----
+EXTENDS Integers
+VARIABLES mark, ctr
+TypeOK == /\ mark \in [Proc -> {"lo", "hi"}]
+          /\ ctr \in [Proc -> Nat]
+Step(p) == /\ mark' = [mark EXCEPT ![p] = CASE ctr[p] > 1 -> "hi" [] OTHER -> "lo"]
+           /\ UNCHANGED ctr
+Next == \E p \in Proc : Step(p)
+===="#;
+        let acts = actions(CASE_VALUE);
+        let step = action(&acts, "Step");
+        assert!(step.gaps.is_empty(), "must project: {:?}", step.gaps);
+        let body = step.conjuncts.join(" ");
+        assert!(
+            body.contains("if s.ctr > 1 { LMark::Hi } else { LMark::Lo }"),
+            "the branches are variants of the field's own enum, not strings: \
+             {body}"
         );
     }
 
