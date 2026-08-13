@@ -1112,6 +1112,22 @@ impl<'a> LintContext<'a> {
     /// global by construction and has no runtime meaning -- the implementation
     /// would maintain state the protocol never consults.
     fn check_c3(&self, report: &mut CleanSubsetReport) {
+        // C3 aggregates over per-node variables. With none identified it has
+        // nothing to look at, and saying nothing then reports as "executed and
+        // found nothing" -- C2 declares itself skipped in exactly this state
+        // and C3 did not. `skipped_rules` exists so a low violation count is
+        // not read as "nearly clean"; a rule that quietly did nothing is the
+        // case it was built for.
+        if report.node_set.is_some() && report.per_node_variables.is_empty() {
+            report.skipped_rules.push((
+                CleanRule::C3,
+                "no per-node variables were identified, so there is nothing an \
+                 aggregation over the node set could aggregate"
+                    .to_string(),
+            ));
+            return;
+        }
+
         let Some(node_set) = report.node_set.clone() else {
             report.skipped_rules.push((
                 CleanRule::C3,
@@ -1427,11 +1443,19 @@ impl<'a> LintContext<'a> {
             if !op.params.is_empty() {
                 continue;
             }
+            // Inlined first: a 0-ary disjunct's guard is usually one call
+            // away. `Terminating == /\ Done /\ UNCHANGED pc` with
+            // `Done == \A i \in Proc : pc[i] = 1` reads every node's `pc`, and
+            // reading only `Terminating`'s literal body found nothing at all --
+            // one level of naming hid the whole guard. This rule exists
+            // *because* C5 blesses bare-name disjuncts without inspection, so
+            // inheriting the same blind spot one call deeper defeated it.
+            let body = self.inline_nullary_calls(&op.body, 0);
             let mut touched = Vec::new();
-            self.collect_whole_array_reads(&op.body, per_node, &mut touched);
+            self.collect_whole_array_reads(&body, per_node, &mut touched);
             let mut indexed = Vec::new();
             // No parameter names a node here, so every index is foreign.
-            self.collect_foreign_reads(&op.body, "", per_node, &mut indexed);
+            self.collect_foreign_reads(&body, "", per_node, &mut indexed);
             touched.extend(
                 indexed
                     .into_iter()
@@ -1527,6 +1551,32 @@ impl<'a> LintContext<'a> {
             }
         }
         found
+    }
+
+    /// An expression with calls to 0-ary operators replaced by their bodies.
+    ///
+    /// Bounded: an operator naming itself, directly or through a chain, would
+    /// otherwise not terminate, and three levels is well past what any spec in
+    /// the corpus writes.
+    fn inline_nullary_calls(&self, expr: &TlaExpr, depth: usize) -> TlaExpr {
+        if depth > 3 {
+            return expr.clone();
+        }
+        if let TlaExpr::Ident(name) = expr {
+            if let Some(op) = self.operator(name) {
+                if op.params.is_empty() {
+                    return self.inline_nullary_calls(&op.body, depth + 1);
+                }
+            }
+        }
+        if let TlaExpr::BinOp { op, left, right } = expr {
+            return TlaExpr::BinOp {
+                op: *op,
+                left: Box::new(self.inline_nullary_calls(left, depth)),
+                right: Box::new(self.inline_nullary_calls(right, depth)),
+            };
+        }
+        expr.clone()
     }
 
     /// The parameter this operator updates its own state at: the `p` of
@@ -1943,16 +1993,24 @@ impl<'a> LintContext<'a> {
                 matches!(&**right, TlaExpr::FnConstruct { domain, .. }
                     if self.show(domain) == node_set)
             }
-            // Walk conjunctions/disjunctions and LET bodies looking for either.
-            TlaExpr::BinOp { left, right, .. } => {
-                self.states_per_node(left, var, node_set)
-                    || self.states_per_node(right, var, node_set)
+            // Anything else: the full walk, not a hand-rolled list of the
+            // shapes that happened to come up.
+            //
+            // `collect_declared_domains` answers the same question -- "is `x`
+            // declared over `S`?" -- with `walk_children`, and this covered only
+            // BinOp / LetIn / Forall / Exists. When they disagreed the node set
+            // was found and no variable was per-node, and C1 then reported
+            // "this spec models shared state rather than a distributed
+            // protocol" about a spec that is per-node: a false diagnosis of the
+            // *spec* for a gap in the *linter*. `TypeOK == IF TRUE THEN x \in
+            // [Proc -> Nat] ELSE TRUE` is enough to show it.
+            other => {
+                let mut found = false;
+                walk_children(other, &mut |child| {
+                    found |= self.states_per_node(child, var, node_set);
+                });
+                found
             }
-            TlaExpr::LetIn { body, .. } => self.states_per_node(body, var, node_set),
-            TlaExpr::Forall { body, .. } | TlaExpr::Exists { body, .. } => {
-                self.states_per_node(body, var, node_set)
-            }
-            _ => false,
         }
     }
 

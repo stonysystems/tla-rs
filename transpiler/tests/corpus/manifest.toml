@@ -196,11 +196,11 @@ source_path = "docs/jetpack_reference/jetpack_raft_composition.tla"
 source_commit = ""
 golden_kind = "bootstrapped_partial_ref"
 reference = "src/protocol/Jetpack/jetpack.rs"
-clean_distance = "15"
-expected_rules = ["C1", "C4", "C5"]
+clean_distance = "22"
+expected_rules = ["C1", "C2", "C4", "C5"]
 rules_skipped = []
 milestone_gate = "52.M4b"
-notes = "Heavy rewrite: instantaneous global reads, 3-D log, INSTANCE composition. `original.tla` is the *composition* module, the only one of the three with Init/Next/Spec; the other two are kept beside it as `original_jetpack_layer.tla` and `original_base_raft.tla`. The clean-distance of 2 is NOT comparable to the other cases: the composition module has no type invariant, so the linter cannot identify the node set and never reaches C1/C2 — the two findings are the message *array* (C4) and that failure itself (C5). Reading it as 'nearly clean' would be wrong. The Phase 51 reference spec is PARTIAL (entry actions 51.9 missing) — it is a review aid, not a golden, and golden.rs is MORE complete than it. `clean.tla` translated first try and passed verus first try, the only case in the corpus to do so; Raft is what paid for that. TLC closes the state space at both 2 and 3 servers (19.5M distinct at 3, depth 78, TypeOK + Consistency hold), which is stronger than Raft. `golden` not `green` only because V2 as defined is clean-vs-original and the slice shares no observable with the composition module — the same gap Paxos has."
+notes = "Heavy rewrite: instantaneous global reads, 3-D log, INSTANCE composition. `original.tla` is the *composition* module, the only one of the three with Init/Next/Spec; the other two are kept beside it as `original_jetpack_layer.tla` and `original_base_raft.tla`. The clean-distance of 2 is NOT comparable to the other cases: the composition module has no type invariant, so the linter cannot identify the node set and never reaches C1/C2 — the two findings are the message *array* (C4) and that failure itself (C5). Reading it as 'nearly clean' would be wrong. The Phase 51 reference spec is PARTIAL (entry actions 51.9 missing) — it is a review aid, not a golden, and golden.rs is MORE complete than it. `clean.tla` translated first try and passed verus first try, the only case in the corpus to do so; Raft is what paid for that. TLC closes the state space at both 2 and 3 servers (19.5M distinct at 3, depth 78, TypeOK + Consistency hold), which is stronger than Raft. `golden` not `green` only because V2 as defined is clean-vs-original and the slice shares no observable with the composition module — the same gap Paxos has. 15 -> 22 on 2026-08-13, the FOURTH time this number has moved (2 -> 46 -> 15 -> 22) and the second where the earlier figure was an under-count rather than an error. The seven new findings are all one shape: `UpdateTerm == /\ B!UpdateTerm /\ UNCHANGED ..` is a 0-ary operator used as `\/ UpdateTerm` in `Next`, and `B!UpdateTerm` reads `currentTerm[m.mdest]` -- the node derived from the message rather than bound. `check_parameterless_disjuncts` read only the literal body of such a disjunct and stopped at the call, so one level of naming hid the whole guard; it now inlines 0-ary calls first. The finding is real and it is this case's own subject matter: `tier4/t4_01_jetpack_full/base_raft_clean.tla`'s header records exactly this rewrite -- "every `\E m \in DOMAIN messages : .. LET i == m.mdest` becomes a handler `H(i, m)` guarded on `m.mdest = i`" -- so the rewrite had already fixed what the linter could not see."
 
 [[case]]
 id = "t4_01_jetpack_full"
@@ -211,7 +211,7 @@ source_path = "transpiler/tests/corpus/tier3/t3_01_jetpack/{original,jetpack,bas
 source_commit = ""
 golden_kind = "translator_output"
 reference = ""
-clean_distance = "15"
+clean_distance = "22"
 expected_rules = ["C1", "C4", "C5"]
 rules_skipped = []
 milestone_gate = "55.6"
