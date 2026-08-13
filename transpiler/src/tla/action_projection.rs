@@ -3588,6 +3588,24 @@ fn substitute_all(expr: &TlaExpr, subs: &BTreeMap<String, TlaExpr>) -> TlaExpr {
                 body: Box::new(substitute_all(body, &inner)),
             }
         }
+        // Temporal operators. They do not appear in an action body, so nothing
+        // has needed these -- but leaving them to the catch-all means the
+        // function is *not* total, and "total" is the only property that makes
+        // it safe to call from `inline_call` and `expand_let`.
+        TlaExpr::Always(inner) => TlaExpr::Always(Box::new(substitute_all(inner, subs))),
+        TlaExpr::Eventually(inner) => TlaExpr::Eventually(Box::new(substitute_all(inner, subs))),
+        TlaExpr::LeadsTo { left, right } => TlaExpr::LeadsTo {
+            left: Box::new(substitute_all(left, subs)),
+            right: Box::new(substitute_all(right, subs)),
+        },
+        TlaExpr::WeakFairness { vars, action } => TlaExpr::WeakFairness {
+            vars: Box::new(substitute_all(vars, subs)),
+            action: Box::new(substitute_all(action, subs)),
+        },
+        TlaExpr::StrongFairness { vars, action } => TlaExpr::StrongFairness {
+            vars: Box::new(substitute_all(vars, subs)),
+            action: Box::new(substitute_all(action, subs)),
+        },
         // Quantifiers and CHOOSE bind their own variable, so a binder that
         // shadows a parameter hides *that* parameter -- and only that one --
         // inside the body. The binding sets are outside the binder's scope,
@@ -3624,7 +3642,15 @@ fn substitute_all(expr: &TlaExpr, subs: &BTreeMap<String, TlaExpr>) -> TlaExpr {
                 })
                 .collect(),
         },
-        other => other.clone(),
+        // Leaves, named rather than left to a catch-all. The catch-all is what
+        // made this function's holes silent: a node kind nobody had thought
+        // about took this arm and came back **unchanged**, which is a wrong
+        // answer that looks like a right one. Without it the compiler refuses
+        // to build until a new `TlaExpr` variant is decided about, which is a
+        // stronger guarantee than any test.
+        TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {
+            expr.clone()
+        }
     }
 }
 
@@ -3712,7 +3738,22 @@ pub(crate) fn children(expr: &TlaExpr) -> Vec<&TlaExpr> {
         TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
             vec![vars, action]
         }
-        _ => Vec::new(),
+        // The multi-binder comprehension and `LAMBDA` both hold expressions and
+        // were reaching the catch-all, so every analysis built on this walk --
+        // `mentions_prime`, `reads_state`, the helper-parameter shape tests --
+        // looked straight past them.
+        TlaExpr::SetMapMulti { expr, bindings } => {
+            let mut out = vec![&**expr];
+            out.extend(bindings.iter().filter_map(|b| b.set.as_ref()));
+            out
+        }
+        TlaExpr::Lambda { body, .. } => vec![body],
+        // Leaves. Listed rather than left to a catch-all so that adding a
+        // variant to `TlaExpr` does not silently join them --
+        // `walkers_reach_every_sub_expression` fails instead.
+        TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {
+            Vec::new()
+        }
     }
 }
 

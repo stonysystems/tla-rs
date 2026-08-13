@@ -490,6 +490,30 @@ fn rewrite(
                 body: Box::new(rewrite(body, subst, local, &inner, prefix)),
             }
         }
-        other => other.clone(),
+        // The temporal operators. A spec's `Spec == Init /\ [][Next]_vars` is
+        // not rewritten today -- only operator bodies are -- so nothing has
+        // needed these. They are named anyway, because the catch-all they were
+        // taking is what made this function's holes silent: `Case` and `LetIn`
+        // sat in it, and every reference to the instantiated module's own
+        // definitions inside one kept its bare name while every other position
+        // was qualified. Without a catch-all the compiler refuses to build
+        // until a new variant is decided about.
+        TlaExpr::Enabled(inner) => TlaExpr::Enabled(Box::new(go(inner, shadowed))),
+        TlaExpr::Always(inner) => TlaExpr::Always(Box::new(go(inner, shadowed))),
+        TlaExpr::Eventually(inner) => TlaExpr::Eventually(Box::new(go(inner, shadowed))),
+        TlaExpr::LeadsTo { left, right } => TlaExpr::LeadsTo {
+            left: Box::new(go(left, shadowed)),
+            right: Box::new(go(right, shadowed)),
+        },
+        TlaExpr::WeakFairness { vars, action } => TlaExpr::WeakFairness {
+            vars: Box::new(go(vars, shadowed)),
+            action: Box::new(go(action, shadowed)),
+        },
+        TlaExpr::StrongFairness { vars, action } => TlaExpr::StrongFairness {
+            vars: Box::new(go(vars, shadowed)),
+            action: Box::new(go(action, shadowed)),
+        },
+        // Leaves.
+        TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => expr.clone(),
     }
 }
