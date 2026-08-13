@@ -3449,6 +3449,15 @@ fn binders_in(expr: &TlaExpr) -> std::collections::BTreeSet<String> {
     out
 }
 
+/// Substitution, exposed so a test can ask whether it reaches a given position.
+///
+/// `tests/ast_walker_guard.rs` puts a marker in each structural position and
+/// requires it to be gone: naming a variant in the walker is not the same as
+/// descending into all of its fields, and the difference was live.
+pub fn substitute_for_test(expr: &TlaExpr, param: &str, value: &TlaExpr) -> TlaExpr {
+    substitute(expr, param, value)
+}
+
 /// Substitute one identifier. A thin wrapper over the simultaneous form --
 /// see `inline_call` for why substitution must not be applied in sequence.
 fn substitute(expr: &TlaExpr, param: &str, value: &TlaExpr) -> TlaExpr {
@@ -3637,7 +3646,22 @@ fn substitute_all(expr: &TlaExpr, subs: &BTreeMap<String, TlaExpr>) -> TlaExpr {
             updates: updates
                 .iter()
                 .map(|u| crate::tla::ast::TlaExceptUpdate {
-                    path: u.path.clone(),
+                    // The *indices* are expressions too. Cloning the path left
+                    // `[x EXCEPT ![k] = ..]`'s `k` at its definition-site name,
+                    // meaning whatever that name meant where the result was
+                    // emitted -- silent, and it survived the commit written to
+                    // eliminate exactly this class, because naming the variant
+                    // is not the same as descending into all of it.
+                    path: u
+                        .path
+                        .iter()
+                        .map(|step| match step {
+                            TlaExceptPath::Index(index) => {
+                                TlaExceptPath::Index(substitute_all(index, subs))
+                            }
+                            TlaExceptPath::Field(name) => TlaExceptPath::Field(name.clone()),
+                        })
+                        .collect(),
                     value: substitute_all(&u.value, subs),
                 })
                 .collect(),

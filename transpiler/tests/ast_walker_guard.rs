@@ -216,6 +216,85 @@ fn the_variant_list_is_actually_parsed() {
     }
 }
 
+/// The textual guard above checks that a walker *names* a variant. That is not
+/// the same as descending into all of it, and the difference was live in the
+/// very commit that added the guard: `substitute_all`'s `FnExcept` arm named
+/// the variant and rewrote the value, while cloning the update *path* — so an
+/// index expression in `[x EXCEPT ![k] = ..]` kept its definition-site name and
+/// was emitted meaning whatever that name meant at the use site.
+///
+/// So this test asks the question behaviourally: put a marker where each
+/// sub-expression lives, substitute it, and require it to be gone. A walker
+/// that skips a field fails here even with the variant named.
+#[test]
+fn substitution_reaches_every_sub_expression_position() {
+    use verus_transpiler::tla::parse_module;
+
+    // Each entry is a spec whose action mentions `MARKER` in one structural
+    // position. `MARKER` is a 0-ary operator, so inlining the action's call
+    // must replace it -- and if the walker skips that position, it survives.
+    const CASES: &[(&str, &str)] = &[
+        ("EXCEPT index", "x' = [x EXCEPT ![MARKER] = 1]"),
+        ("EXCEPT value", "x' = [x EXCEPT ![p] = MARKER]"),
+        ("nested EXCEPT index", "y' = [y EXCEPT ![p][MARKER] = 1]"),
+        (
+            "set filter",
+            "x' = [x EXCEPT ![p] = Cardinality({q \\in Proc : q = MARKER})]",
+        ),
+        ("tuple", "z' = [z EXCEPT ![p] = <<MARKER>>]"),
+        (
+            "function construct",
+            "y' = [y EXCEPT ![p] = [q \\in Proc |-> MARKER]]",
+        ),
+        (
+            "if condition",
+            "x' = [x EXCEPT ![p] = IF MARKER = 0 THEN 1 ELSE 2]",
+        ),
+        (
+            "case arm",
+            "x' = [x EXCEPT ![p] = CASE MARKER = 0 -> 1 [] OTHER -> 2]",
+        ),
+    ];
+
+    let mut survived = Vec::new();
+    for (what, conjunct) in CASES {
+        let source = format!(
+            "---- MODULE Test ----\n\
+             EXTENDS Integers, FiniteSets, Sequences\n\
+             VARIABLES x, y, z\n\
+             MARKER == 0\n\
+             TypeOK == x \\in [Proc -> Nat] /\\ y \\in [Proc -> [Proc -> Nat]] /\\ z \\in [Proc -> Seq(Nat)]\n\
+             Step(p) == {conjunct}\n\
+             Next == \\E p \\in Proc : Step(p)\n\
+             ===="
+        );
+        let module = parse_module(&source)
+            .unwrap_or_else(|e| panic!("{what}: the probe spec must parse: {e:?}"));
+        let step = module
+            .operators
+            .iter()
+            .find(|o| o.name == "Step")
+            .expect("Step must be defined");
+        // Substituting `MARKER` must reach it wherever it sits.
+        let after = verus_transpiler::tla::substitute_for_test(
+            &step.body,
+            "MARKER",
+            &verus_transpiler::tla::ast::TlaExpr::Number(
+                verus_transpiler::tla::ast::TlaNumber::Decimal("7".to_string()),
+            ),
+        );
+        if format!("{after:?}").contains("MARKER") {
+            survived.push(*what);
+        }
+    }
+
+    assert!(
+        survived.is_empty(),
+        "substitution did not reach these positions, so a name there survives \
+         and is emitted meaning whatever it means at the use site: {survived:?}"
+    );
+}
+
 /// Each named walker is found, and its body was really extracted -- otherwise
 /// `variants_named` returns an empty set and everything looks missing (or, if
 /// the extraction over-reaches, everything looks present).

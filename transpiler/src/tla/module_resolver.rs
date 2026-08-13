@@ -443,7 +443,22 @@ fn rewrite(
             updates: updates
                 .iter()
                 .map(|u| crate::tla::ast::TlaExceptUpdate {
-                    path: u.path.clone(),
+                    // The indices are expressions of the instantiated module
+                    // too: cloning the path left them unqualified and
+                    // unsubstituted, so `[x EXCEPT ![Key] = ..]` kept a bare
+                    // `Key` where every other position became `V!Key`.
+                    path: u
+                        .path
+                        .iter()
+                        .map(|step| match step {
+                            crate::tla::ast::TlaExceptPath::Index(index) => {
+                                crate::tla::ast::TlaExceptPath::Index(go(index, shadowed))
+                            }
+                            crate::tla::ast::TlaExceptPath::Field(name) => {
+                                crate::tla::ast::TlaExceptPath::Field(name.clone())
+                            }
+                        })
+                        .collect(),
                     value: go(&u.value, shadowed),
                 })
                 .collect(),
