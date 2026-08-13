@@ -142,11 +142,11 @@ source_path = "specifications/transaction_commit/TwoPhase.tla"
 source_commit = ""
 golden_kind = "bootstrapped_reviewed"
 reference = "src/protocol/TwoPhase/twophase.rs"
-clean_distance = "2"
-expected_rules = ["C1"]
+clean_distance = "3"
+expected_rules = ["C1", "C5"]
 rules_skipped = []
 milestone_gate = "52.M2"
-notes = "Real two-phase commit. NOTE `specifications/TwoPhase/TwoPhase.tla` upstream is a two-phase *handshake* (producer/consumer), an entirely different protocol — 2PC lives under `transaction_commit/`. The linter designates `msgs` and finds `rmState` per-node; the two violations are `tmState` and `tmPrepared`, the transaction manager's own state. That is the case's real question: 2PC has two roles, and the rewrite must decide whether the TM is a node."
+notes = "Real two-phase commit. NOTE `specifications/TwoPhase/TwoPhase.tla` upstream is a two-phase *handshake* (producer/consumer), an entirely different protocol — 2PC lives under `transaction_commit/`. The linter designates `msgs` and finds `rmState` per-node; the two violations are `tmState` and `tmPrepared`, the transaction manager's own state. That is the case's real question: 2PC has two roles, and the rewrite must decide whether the TM is a node. Then 2 -> 3 on 2026-08-13, a C5, and it is a real property of this module rather than a new opinion: `original.tla` does `TC == INSTANCE TCommit` and states `THEOREM TPSpec => TC!TCSpec`, so once the resolver flattens it the module contains TWO next-state relations -- `TPSpec` names `TPNext` and `TC!TCSpec` names `TC!TCNext`. The linter examined one of them and said nothing about the choice; which one depended on DECLARATION ORDER, so moving two lines changed what was checked. It now prefers an operator literally named `Next`, then `Spec`, and reports that several exist. The refinement structure is the case's own subject matter -- 2PC implementing TCommit -- so this is exactly the module where silence was worst."
 
 # ============================================================
 # Tier 2 — complex, already message-passing (53.4)

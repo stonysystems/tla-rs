@@ -361,6 +361,42 @@ Next == \E i, j \in Server : \E k \in Aux : Step(i, k, j)
     }
 }
 
+/// With no operator named `Next`, the linter took the first 0-ary operator of
+/// the form `Init /\ [][A]_vars` in **declaration order**. A module with an
+/// abstract spec beside the real one therefore had its verdict decided by which
+/// two lines came first.
+#[test]
+fn which_spec_is_linted_does_not_depend_on_declaration_order() {
+    const A: &str = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+AbsNext == UNCHANGED x
+RealNext == \E p, q \in Proc : x' = [x EXCEPT ![p] = x[q]]
+AbsSpec == TypeOK /\ [][AbsNext]_x
+Spec == TypeOK /\ [][RealNext]_x
+===="#;
+    let b = A.replace(
+        "AbsSpec == TypeOK /\\ [][AbsNext]_x\nSpec == TypeOK /\\ [][RealNext]_x",
+        "Spec == TypeOK /\\ [][RealNext]_x\nAbsSpec == TypeOK /\\ [][AbsNext]_x",
+    );
+    for (what, source) in [("AbsSpec first", A), ("Spec first", b.as_str())] {
+        let module = parse_module(source).expect("fixture must parse");
+        let findings = lint_module(&module).findings;
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C2 && f.definition == "RealNext"),
+            "{what}: the real next-state relation must be the one examined: {findings:?}"
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.message.contains("next-state relations")),
+            "{what}: and the reader must be told the module defines several"
+        );
+    }
+}
+
 #[test]
 fn every_finding_says_what_the_human_has_to_decide() {
     for name in [

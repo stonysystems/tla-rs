@@ -226,10 +226,25 @@ impl<'a> LintContext<'a> {
         // The spec operator is not always called `Spec` -- TwoPhase names its
         // `TPSpec`. Any 0-ary operator of the form `Init /\ [][Action]_vars`
         // identifies the next-state relation.
-        for op in &self.module.operators {
-            if !op.params.is_empty() {
-                continue;
-            }
+        //
+        // **`Spec` first, then declaration order.** A module may define several
+        // -- an abstract `AbsSpec` beside the real one is the usual reason --
+        // and taking whichever was declared first meant reordering two lines
+        // changed which spec was analysed. Reproduced: with `AbsSpec` above
+        // `Spec` the linter examined the abstract stuttering relation and never
+        // looked at the real `Next` at all.
+        let named_spec = self
+            .module
+            .operators
+            .iter()
+            .find(|op| op.params.is_empty() && op.name == "Spec");
+        let candidates = named_spec.into_iter().chain(
+            self.module
+                .operators
+                .iter()
+                .filter(|op| op.params.is_empty()),
+        );
+        for op in candidates {
             let mut named = None;
             find_boxed_action(&op.body, &mut named);
             if let Some(name) = named {
@@ -239,6 +254,28 @@ impl<'a> LintContext<'a> {
             }
         }
         None
+    }
+
+    /// Every 0-ary operator of the form `Init /\ [][Action]_vars`, by the
+    /// action each names.
+    ///
+    /// More than one means the module defines several specs and the choice of
+    /// which to lint is not the linter's to make silently.
+    fn spec_candidates(&self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for op in &self.module.operators {
+            if !op.params.is_empty() {
+                continue;
+            }
+            let mut named = None;
+            find_boxed_action(&op.body, &mut named);
+            if let Some(name) = named {
+                if self.operator(&name).is_some() {
+                    out.push((op.name.clone(), name));
+                }
+            }
+        }
+        out
     }
 
     fn check_c5(&self, report: &mut CleanSubsetReport) {
@@ -270,6 +307,32 @@ impl<'a> LintContext<'a> {
             ));
             return;
         };
+
+        // Several specs in one module, and only one of them was linted. The
+        // linter picks `Spec` and then declaration order; either way the others
+        // went unexamined, and this spec's verdict is not about them.
+        if self.operator("Next").is_none() {
+            let candidates = self.spec_candidates();
+            if candidates.len() > 1 {
+                report.findings.push(self.finding(
+                    CleanRule::C5,
+                    Some(next),
+                    format!(
+                        "this module defines {} next-state relations -- {} -- and \
+                         only `{}` was linted. Reordering the definitions would \
+                         change which one that is. Say which spec is the one to \
+                         check, by naming its action `Next`.",
+                        candidates.len(),
+                        candidates
+                            .iter()
+                            .map(|(spec, action)| format!("`{spec}` names `{action}`"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        next.name
+                    ),
+                ));
+            }
+        }
 
         // A tie was broken by the domain's printed name, silently. Say so: the
         // rules that follow are all stated against whichever set won, so a

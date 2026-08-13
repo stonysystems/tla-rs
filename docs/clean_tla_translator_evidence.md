@@ -36,7 +36,7 @@ incomplete, for a reason the case records.
 | `t0_03_dining_philosophers` | 0 | 6 (C2) | **green** | pass | EQUAL | pass |
 | `t0_05_lamport_mutex` | 0 | 2 (C1, C4) | **green** | pass | EQUAL | pass |
 | `t1_01_paxos` | 1 | 1 (C5) | **green** | pass | EQUAL | pass |
-| `t1_02_twophase` | 1 | 2 (C1) | **green** | pass | EQUAL | pass |
+| `t1_02_twophase` | 1 | 3 (C1,C5) | **green** | pass | EQUAL | pass |
 | `t2_01_raft` | 2 | 6 (C1,C3,C4,C5) | golden | pass | bounded only | pass |
 | `t2_02_epaxos` | 2 | 6 (C1,C2,C4) | golden | pass | n/a | pass |
 | `t3_01_jetpack` | 3 | 15 (C1,C4,C5) | golden | pass | n/a | pass |
