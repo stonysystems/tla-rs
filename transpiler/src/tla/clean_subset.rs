@@ -1199,6 +1199,50 @@ impl<'a> LintContext<'a> {
             }
         }
 
+        // `Next` may take its step *inline* rather than calling an action:
+        // `Next == \E p \in Proc : x' = [x EXCEPT ![p] = x[p + 1]]`. The loop
+        // above iterates `node_parameterized_operators`, which records only
+        // *callees*, so a spec written this way had C2 -- the rule the whole
+        // subset exists for -- run on nothing at all and report `clean`. The
+        // identical read written as `Step(p)` was reported.
+        //
+        // The walk stops at a call to an operator this module defines: that
+        // body is covered by the loop above, and descending would report the
+        // same read twice under two names.
+        if let Some(next) = self.next_relation() {
+            let expanded = self.expand_action_groups(&next.body);
+            let node_set = report.node_set.clone().unwrap_or_default();
+            for disjunct in flatten_disjunction(&expanded) {
+                let TlaExpr::Exists { vars, body } = disjunct else {
+                    continue;
+                };
+                let Some(bound) = vars
+                    .iter()
+                    .find(|b| b.set.as_ref().map(|set| self.show(set)) == Some(node_set.clone()))
+                else {
+                    continue;
+                };
+                let mut reads = Vec::new();
+                self.collect_inline_foreign_reads(body, &bound.var, &per_node, &mut reads);
+                reads.sort();
+                reads.dedup();
+                for (var, index) in reads {
+                    let node_param = &bound.var;
+                    report.findings.push(self.finding(
+                        CleanRule::C2,
+                        Some(next),
+                        format!(
+                            "reads `{var}[{index}]` -- another node's state, observed \
+                             instantaneously. A node taking this step can only read \
+                             `{var}[{node_param}]`. Decide which message carries \
+                             `{var}` from that node, who sends it and when, and what \
+                             this action does with a stale copy."
+                        ),
+                    ));
+                }
+            }
+        }
+
         let owned: Vec<String> = per_node.iter().map(|v| v.to_string()).collect();
         drop(per_node);
         self.check_parameterless_disjuncts(&owned, report);
@@ -1542,6 +1586,41 @@ impl<'a> LintContext<'a> {
             TlaExpr::Prime(inner) => Some(inner),
             other => Some(other),
         }
+    }
+
+    /// `collect_foreign_reads`, but stopping at a call to an operator this
+    /// module defines -- that body is checked in its own right, and descending
+    /// would report the same read twice.
+    fn collect_inline_foreign_reads(
+        &self,
+        expr: &TlaExpr,
+        node_param: &str,
+        per_node: &BTreeSet<&str>,
+        out: &mut Vec<(String, String)>,
+    ) {
+        if let TlaExpr::OpApply { op, .. } = expr {
+            if matches!(&**op, TlaExpr::Ident(name) if self.operator(name).is_some()) {
+                return;
+            }
+        }
+        // The same test `collect_foreign_reads` makes, applied at this node
+        // only; the recursion below is what differs.
+        if let TlaExpr::FnApply { func, arg } = expr {
+            let base: &TlaExpr = match &**func {
+                TlaExpr::Prime(inner) => inner,
+                other => other,
+            };
+            if let TlaExpr::Ident(var) = base {
+                if per_node.contains(var.as_str())
+                    && !matches!(&**arg, TlaExpr::Ident(a) if a == node_param)
+                {
+                    out.push((var.clone(), self.show(arg)));
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_inline_foreign_reads(child, node_param, per_node, out)
+        });
     }
 
     fn collect_foreign_reads(

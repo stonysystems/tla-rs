@@ -38,7 +38,7 @@ incomplete, for a reason the case records.
 | `t1_01_paxos` | 1 | 1 (C5) | **green** | pass | EQUAL | pass |
 | `t1_02_twophase` | 1 | 2 (C1) | **green** | pass | EQUAL | pass |
 | `t2_01_raft` | 2 | 6 (C1,C3,C4,C5) | golden | pass | bounded only | pass |
-| `t2_02_epaxos` | 2 | 5 (C1,C4) | golden | pass | n/a | pass |
+| `t2_02_epaxos` | 2 | 6 (C1,C2,C4) | golden | pass | n/a | pass |
 | `t3_01_jetpack` | 3 | 15 (C1,C4,C5) | golden | pass | n/a | pass |
 | `t4_01_jetpack_full` | 4 | 15 (C1,C4,C5) | golden | pass | refinement, below | pass |
 | `t0_02_bakery` | 0 | 3 (C2) | reject-only | — | — | — |

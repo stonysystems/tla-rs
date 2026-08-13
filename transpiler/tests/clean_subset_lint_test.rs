@@ -250,6 +250,41 @@ Next == \E self \in Proc : Send(self) \/ \E m \in msgs : Recv(self, m)
     );
 }
 
+/// C2 iterated only over *callees*, so a `Next` that takes its step inline had
+/// the rule the whole subset exists for run on nothing at all.
+///
+/// The two fixtures below are the same cross-node read written two ways. Only
+/// the second was reported, and the first linted `clean`.
+#[test]
+fn a_cross_node_read_inlined_into_next_is_still_reported() {
+    const INLINE: &str = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Next == \E p \in Proc : x' = [x EXCEPT ![p] = x[(p + 1) % 3]]
+===="#;
+    const CALLED: &str = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Step(p) == x' = [x EXCEPT ![p] = x[(p + 1) % 3]]
+Next == \E p \in Proc : Step(p)
+===="#;
+
+    for (what, source) in [("inline", INLINE), ("called", CALLED)] {
+        let module = parse_module(source).expect("fixture must parse");
+        let found: Vec<_> = lint_module(&module)
+            .findings
+            .into_iter()
+            .filter(|f| f.rule == CleanRule::C2)
+            .collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "{what}: the same read must be reported exactly once -- not zero \
+             times, and not twice under two names: {found:?}"
+        );
+    }
+}
+
 #[test]
 fn every_finding_says_what_the_human_has_to_decide() {
     for name in [
