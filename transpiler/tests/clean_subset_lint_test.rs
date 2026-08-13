@@ -141,6 +141,57 @@ fn shared_memory_fixture_is_rejected() {
     );
 }
 
+/// A `Next` disjunct naming an operator the module does not define.
+///
+/// C5 accepts a bare name in `Next` without inspection -- that is how an
+/// environment action the framework performs is written -- so an undefined one
+/// was accepted too, and the verdict was `clean` with exit code 0.
+///
+/// For this project that is the shape a *failed composition* takes: a name
+/// `resolve_module_file` did not bring in looks exactly like an environment
+/// action, so a whole protocol layer could go missing silently. Jetpack's
+/// clean-distance was reported as 2 for exactly that family of reason before
+/// `INSTANCE` resolved at all.
+#[test]
+fn an_undefined_name_in_next_is_reported_rather_than_blessed() {
+    const UNDEFINED: &str = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Step(p) == x' = [x EXCEPT ![p] = 1]
+Next == \/ \E p \in Proc : Step(p)
+        \/ ThisOperatorDoesNotExist
+===="#;
+    let module = parse_module(UNDEFINED).expect("fixture must parse");
+    let report = lint_module(&module);
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| { f.rule == CleanRule::C5 && f.message.contains("ThisOperatorDoesNotExist") }),
+        "an undefined name in `Next` must be reported, not read as an \
+         environment action: {:?}",
+        report.findings
+    );
+
+    // And the same spec without it stays clean -- the check must not fire on
+    // a genuine parameterless environment action.
+    const DEFINED: &str = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Step(p) == x' = [x EXCEPT ![p] = 1]
+Stutter == UNCHANGED <<x>>
+Next == \/ \E p \in Proc : Step(p)
+        \/ Stutter
+===="#;
+    let module = parse_module(DEFINED).expect("fixture must parse");
+    assert!(
+        lint_module(&module).is_clean(),
+        "a defined parameterless disjunct is an environment action and must \
+         stay clean: {:?}",
+        lint_module(&module).findings
+    );
+}
+
 #[test]
 fn every_finding_says_what_the_human_has_to_decide() {
     for name in [

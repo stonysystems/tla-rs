@@ -1158,6 +1158,29 @@ impl<'a> LintContext<'a> {
                 continue;
             };
             let Some(op) = self.operator(name) else {
+                // A `Next` disjunct naming an operator the module does not
+                // define. C5 blesses a bare-name disjunct without inspection --
+                // it is how an environment action the framework performs is
+                // written -- so without this the name is simply accepted and
+                // the verdict is `clean`.
+                //
+                // For this project that is the shape a *failed composition*
+                // takes: a name `resolve_module_file` did not bring in looks
+                // exactly like an environment action. A whole protocol layer
+                // can go missing and the linter says nothing.
+                report.findings.push(self.finding(
+                    CleanRule::C5,
+                    Some(next),
+                    format!(
+                        "`Next` names `{name}`, which this module does not \
+                         define. A bare name in `Next` is read as an \
+                         environment action the framework performs, so an \
+                         undefined one is accepted rather than reported -- and \
+                         if it came from another module, the composition did \
+                         not resolve and everything behind that name is \
+                         missing from this measurement."
+                    ),
+                ));
                 continue;
             };
             if !op.params.is_empty() {
