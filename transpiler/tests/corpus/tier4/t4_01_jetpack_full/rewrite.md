@@ -236,6 +236,20 @@ as one.
 
 ## Checked against the original's own safety properties
 
+**To run it:** `./stage_originals.sh <outdir>` generates the three upstream
+modules this INSTANCEs, from `tier3/t3_01_jetpack/`, editing only the MODULE
+line and the INSTANCE targets so three files whose upstream names collide with
+the rewrite's can share a directory. They are generated rather than copied
+because a copy drifts from the thing it claims to be, and this check is
+worthless the moment it is checking a stale one. `--fix-vacuous-min`
+additionally applies the one-line correction below; it is a flag and not a
+default because editing upstream to make your own check look stronger is
+exactly what this construction exists to avoid.
+
+*(The script was missing at first. `jetpack_refinement.tla` was committed
+without the modules it INSTANCEs, so the result below could not be reproduced
+from a checkout at all — found by an adversarial review of this case.)*
+
 `jetpack_refinement.tla` INSTANCEs the **unmodified** upstream composition under
 an explicit mapping from the rewrite's state and checks *its* invariant
 definitions -- `O!NoLogDivergence`, not a retyped copy. Retyping is the failure

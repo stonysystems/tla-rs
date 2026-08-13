@@ -66,6 +66,38 @@ fn collect_gaps(projected: &ProjectedModule) -> Vec<String> {
                 .map(|g| format!("action `{}`: {g}", action.source_name)),
         );
     }
+    // A receive handler that cannot be reached from the dispatch is a protocol
+    // step the node can no longer take, and it used to leave no trace: the
+    // dispatch builder simply `continue`d past it, so the emitted spec was a
+    // smaller protocol than the source and `clean-tla` exited 0.
+    //
+    // This is the amplifier rather than the cause -- a tag that could not be
+    // read, or a variant that was never built, happens upstream in the
+    // projection. But it is the one place that turns every such failure from
+    // silent into reported, which is worth more than fixing them one at a time.
+    for action in &projected.actions {
+        if action.kind != ActionKind::Receive {
+            continue;
+        }
+        let Some(tags) = &action.handles_tag else {
+            gaps.push(format!(
+                "action `{}` receives a message but its tag could not be read, \
+                 so nothing dispatches to it and the step is unreachable",
+                action.source_name
+            ));
+            continue;
+        };
+        for tag in tags.split(',') {
+            if !projected.spec.messages.iter().any(|m| m.tag == tag) {
+                gaps.push(format!(
+                    "action `{}` handles message tag `{tag}`, which is not among \
+                     the declared message kinds, so nothing dispatches to it and \
+                     the step is unreachable",
+                    action.source_name
+                ));
+            }
+        }
+    }
     gaps
 }
 
