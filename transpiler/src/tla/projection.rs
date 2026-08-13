@@ -572,12 +572,40 @@ impl ProjectionContext<'_> {
         for fields in &record_sets {
             for (name, value) in fields.iter() {
                 if TAG_FIELDS.contains(&name.as_str()) {
-                    if let TlaExpr::SetEnum(items) = value {
-                        for item in items {
-                            if !tag_literals.contains(item) {
-                                tag_literals.push(item.clone());
+                    // The tag set may be *named*: `Message == [type: Tags, ..]`
+                    // with `Tags == {"a", "b"}`. Reading only a literal
+                    // `SetEnum` here dropped every variant behind such a name
+                    // -- silently. With one declaration of several written that
+                    // way, the emitted spec loses that message kind, its
+                    // receive handler becomes unreachable from the dispatch,
+                    // `clean-tla` exits 0 with no gap, and Verus reports
+                    // `0 verified, 0 errors`. A protocol message disappears and
+                    // every check still passes.
+                    let resolved = match value {
+                        TlaExpr::SetEnum(_) => Some(value.clone()),
+                        TlaExpr::Ident(name) => match self.resolve(name) {
+                            Some(body @ TlaExpr::SetEnum(_)) => Some(body.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    match resolved {
+                        Some(TlaExpr::SetEnum(items)) => {
+                            for item in &items {
+                                if !tag_literals.contains(item) {
+                                    tag_literals.push(item.clone());
+                                }
                             }
                         }
+                        // Anything else is a tag set the projection cannot read,
+                        // and guessing would drop messages. Say so.
+                        _ => gaps.push(format!(
+                            "the message tag field `{name}` is declared as `{}`, \
+                             which is not a set of literals the projection can \
+                             read -- every message kind behind it would be \
+                             dropped from the spec",
+                            crate::tla::action_projection::render_source(value)
+                        )),
                     }
                 } else if !merged.iter().any(|(n, _)| n == name) {
                     merged.push((name.clone(), value.clone()));

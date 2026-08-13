@@ -3678,7 +3678,7 @@ fn substitute_all(expr: &TlaExpr, subs: &BTreeMap<String, TlaExpr>) -> TlaExpr {
     }
 }
 
-fn render_source(expr: &TlaExpr) -> String {
+pub(crate) fn render_source(expr: &TlaExpr) -> String {
     use crate::verus2tla::TlaPrinter;
     TlaPrinter::new()
         .print_expr(expr, 0)
@@ -4059,6 +4059,44 @@ Next == \E self \in Proc : \E m \in network : Recv(self, m)
             spec.enums.iter().any(|(n, _)| *n == res_ty),
             "the enum must also be declared, not just named: {res_ty} not in {:?}",
             spec.enums.iter().map(|(n, _)| n).collect::<Vec<_>>()
+        );
+    }
+
+    /// A message tag set named by an operator rather than written inline.
+    ///
+    /// The tag literals were harvested only from a literal `SetEnum`, so every
+    /// variant behind a name was dropped -- and with one declaration of several
+    /// written that way the loss is **silent end to end**: the message kind
+    /// disappears from `LMessage`, its receive handler becomes unreachable from
+    /// the dispatch, `clean-tla` exits 0 with no gap, and Verus reports
+    /// `0 verified, 0 errors`. A protocol message vanishes and every check
+    /// still passes.
+    #[test]
+    fn a_tag_set_named_by_an_operator_still_yields_its_variants() {
+        const MIXED: &str = r#"---- MODULE Test ----
+VARIABLES x, msgs
+BTags == {"b"}
+Message == [type: {"a"}, src: Proc, dst: Proc]
+  \cup [type: BTags, src: Proc, dst: Proc]
+TypeOK == x \in [Proc -> Nat]
+Init == x = [p \in Proc |-> 0] /\ msgs = {}
+Send(self) == /\ msgs' = msgs \cup {[type |-> "a", src |-> self, dst |-> self]}
+              /\ x' = [x EXCEPT ![self] = 1]
+RecvA(self, m) == /\ m.dst = self /\ m.type = "a"
+                  /\ x' = [x EXCEPT ![self] = 2]
+                  /\ msgs' = msgs \ {m}
+RecvB(self, m) == /\ m.dst = self /\ m.type = "b"
+                  /\ x' = [x EXCEPT ![self] = 3]
+                  /\ msgs' = msgs \ {m}
+Next == \E self \in Proc : Send(self) \/ \E m \in msgs : RecvA(self, m) \/ RecvB(self, m)
+===="#;
+        let module = parse_module(MIXED).expect("fixture must parse");
+        let spec = project_module(&module).expect("fixture must be clean");
+        let tags: Vec<&str> = spec.messages.iter().map(|m| m.tag.as_str()).collect();
+        assert!(
+            tags.contains(&"a") && tags.contains(&"b"),
+            "a tag set behind a name must still produce its variants, or the \
+             message kind disappears from the spec: {tags:?}"
         );
     }
 
