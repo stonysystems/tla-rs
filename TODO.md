@@ -18876,31 +18876,98 @@ The two proof obligations are real ones, not placeholders:
 lemma_quorum_intersection` rather than re-deriving inclusion-exclusion, adding
 only the arithmetic that discharges `|a|+|b| > |u|` from `N >= 2F+1`.
 
+### 56.3.z The single-host projection — decided before writing any action
+
+The reference is a **global** spec: `HandlePreAcceptOK(p, id)` scans `msgs` for
+a quorum's worth of replies and reads their payloads in one atomic step. A
+tla-rs `LNext` is **single-process**: the framework hands a replica one message
+at a time, and `sent_packets` is an output. So every quorum-reading action has
+to be split.
+
+**Decision: accumulate replies in per-instance state, one action to record and
+another to act.** This is the repo's established idiom — `t2_02_epaxos/clean.tla`
+already says it (*"A replica cannot read the network that way, so `agreed` stays
+TRUE only while every reply matches"*), and Raft's `votes_granted` is the same
+move. The alternative — passing the whole reply set as an existential action
+parameter — puts an unbounded, unconstrained set in every guard, which is
+exactly the defect class found in `src/protocol/EPaxos/` (`pa_sender: int` free
+and unbounded, so a leader fabricates a quorum from nothing).
+
+**What the accumulators must carry**, driven by what each quorum rule actually
+reads — not by what is convenient:
+
+| reference reads | accumulator | why not just a sender set |
+|---|---|---|
+| `{m : m.Dq = initDep}` and `\|quorum\|` | `preaccept_rcvd`, `preaccept_agreed` | **two** thresholds, `N-F` on the first and `N-E` on the second |
+| `UNION {m.Dq}` | `preaccept_dep_union` | the slow path's `Dfinal` |
+| `{k : k.b = bal}` AcceptOK | `accept_rcvd` | stale-ballot replies must not count |
+| `bmax == max{abalq}`, `U`, `Rmax` | `recover_replies: Map<int, LRecoverInfo>` | needs each reply's `(abal, cmd, dep, init_dep, phase)`, not just its sender |
+| `UNION {m.Iq}`, `{n.from} = Q` | `validate_rcvd`, `ivar` | both the union and the exact responder set |
+
+**Ballot-scoped accumulators must be cleared when the ballot moves**, because
+the reference re-filters `msgs` on `bal[p][id]` every time. `ApplyAccept` and
+`ApplyRecover` therefore clear `accept_rcvd`, `recover_replies` and
+`validate_rcvd`. Getting this wrong is a silent unsoundness — a quorum assembled
+across two ballots — so it is a named check in 56.4.g.
+
+**Cost, stated rather than hidden.** The split turns 12 reference actions into
+17, and it introduces interleavings the reference does not have: another action
+can run between recording the quorum's last reply and acting on it. That is the
+standard tla-rs projection and every protocol in this repo pays it, but it is a
+real difference and it is the first thing Phase 57's refinement argument has to
+discharge. Recorded here so the proof does not discover it.
+
+**Action inventory (17).** Reference name → ours:
+
+| # | ours | reference | kind |
+|---|---|---|---|
+| 1 | `LSubmit` | `Submit` (:238) | local |
+| 2 | `LHandlePreAccept` | `HandlePreAccept` (:252) | receive |
+| 3 | `LRecordPreAcceptOK` | *(split from :263)* | receive |
+| 4 | `LCommitFast` | `HandlePreAcceptOK` fast branch (:277) | quorum |
+| 5 | `LStartAccept` | `HandlePreAcceptOK` slow branch (:281) | quorum |
+| 6 | `LHandleAccept` | `HandleAccept` (:292) | receive |
+| 7 | `LRecordAcceptOK` | *(split from :301)* | receive |
+| 8 | `LCommitSlow` | `HandleAcceptOK` (:301) | quorum |
+| 9 | `LHandleCommit` | `HandleCommit` (:319) | receive |
+| 10 | `LStartRecover` | `StartRecover` (:328) | local |
+| 11 | `LHandleRecover` | `HandleRecover` (:345) | receive |
+| 12 | `LRecordRecoverOK` | *(split from :359)* | receive |
+| 13 | `LHandleRecoverOK` | `HandleRecoverOK` (:359) | quorum, 5 branches |
+| 14 | `LHandleValidate` | `HandleValidate` (:437) | receive |
+| 15 | `LRecordValidateOK` | *(split from :455)* | receive |
+| 16 | `LHandleValidateOK` | `HandleValidateOK` (:455) | quorum, 3 branches |
+| 17 | `LHandlePostWaiting` | `HandlePostWaiting` (:495) | local, 4 branches |
+
+- [x] **56.3.z.1** — Extend `LInstanceState` with the five accumulators above
+      and `LRecoverInfo`. This revises 56.3's output; say so in the file rather
+      than letting the header claim a fidelity it no longer has.
+
 ### 56.4 Commit path — `epaxos_star.rs`, part 1
 
 Land and check this before touching recovery. It is self-contained and it is
 where the old spec's guard defects live.
 
-- [ ] **56.4.a** — `LSubmit` ← `Submit` (`.tla:238-247`): guard on the id being
+- [x] **56.4.a** — `LSubmit` ← `Submit` (`.tla:238-247`): guard on the id being
       unused, compute `D0 == ConflictingIds(s, c)` **from state**, broadcast
       PreAccept, self-deliver PreAcceptOK.
-- [ ] **56.4.b** — `LHandlePreAccept` ← `HandlePreAccept` (`.tla:252-258`):
+- [x] **56.4.b** — `LHandlePreAccept` ← `HandlePreAccept` (`.tla:252-258`):
       guard `bal = 0 && phase = Initial`, compute
       `Dfinal == m.D \cup ConflictingIds(s, m.c)`, **write** `cmd`, `init_cmd`,
       `init_dep`, `dep`, `phase := PreAccepted`, reply with `Dfinal`.
       Contrast `EPaxos/epaxos.rs:73-91`, which is a pure frame with no guard and
       takes `local_conflict: bool` as a free existential parameter — conflict
       detection stops being an oracle here.
-- [ ] **56.4.c** — `LHandlePreAcceptOK` ← `HandlePreAcceptOK` (`.tla:263-287`).
+- [x] **56.4.c** — `LHandlePreAcceptOK` ← `HandlePreAcceptOK` (`.tla:263-287`).
       **Two different quorum thresholds in one action**: collect `>= n-f`
       replies, then commit fast iff the sub-multiset agreeing with
       `init_dep` is `>= n-e`, and only at `bal = 0`. Otherwise slow-path with
       `Dfinal == UNION {m.Dq}` (`.tla:282`) and an Accept round.
-- [ ] **56.4.d** — `LHandleAccept` / `LHandleAcceptOK` / `LHandleCommit`
+- [x] **56.4.d** — `LHandleAccept` / `LHandleAcceptOK` / `LHandleCommit`
       (`.tla:292-323`). `HandleAcceptOK` filters replies on
       `k.body.b = bal[p][id]` — stale-ballot replies do not count, which
       `EPaxos/epaxos.rs:190-212` has no analogue of.
-- [ ] **56.4.e** — The three Apply rules as shared helpers, transcribed exactly.
+- [x] **56.4.e** — The three Apply rules as shared helpers, transcribed exactly.
       This table is the Sutra fix and nothing may deviate from it:
 
       | helper | guard | writes `bal` | writes `abal` |
@@ -18909,20 +18976,29 @@ where the old spec's guard defects live.
       | `ApplyCommit` (`.tla:197-202`) | `bal = b` | — | `:= b` |
       | `ApplyRecover` (`.tla:207-209`) | `bal < b` | `:= b` | — |
 
-- [ ] **56.4.f** — Gate: `verus` passes on the module with the commit path only.
+- [x] **56.4.f** — Gate: `verus` passes on the module with the commit path only.
+- [x] **56.4.g** — **Named check: no quorum may be assembled across two
+      ballots.** `ApplyAccept` and `ApplyRecover` clear every ballot-scoped
+      accumulator (`accept_rcvd`, `recover_replies`, `validate_rcvd`), and every
+      `LRecord*` action guards the reply's ballot against the instance's current
+      one. The reference gets this free by re-filtering `msgs`; the accumulator
+      projection does not, and the failure is silent.
+- [x] **56.4.h** — `LSubmit` allocates from the replica's own `next_num` and the
+      identifier carries `owner = my_id`, so 56.1.b's replacement for the global
+      `submitted`/`initCoord` is exercised rather than merely designed.
 
 ### 56.5 Recovery — `epaxos_star.rs`, part 2
 
 The hard half. `HandleRecoverOK` alone is 74 lines of nested case analysis.
 
-- [ ] **56.5.a** — `LStartRecover` (`.tla:328-340`): guard `id \in SeenIds(s)`;
+- [x] **56.5.a** — `LStartRecover` (`.tla:328-340`): guard `id \in SeenIds(s)`;
       ballot `b == IF bal = 0 THEN p ELSE bal + n`, so ballots are `k*n + p` and
       **globally unique per process**. `EPaxos/epaxos.rs:260-280` takes
       `new_ballot` as a free parameter bounded only by `> s.ballot`, which lets
       two replicas collide on a ballot.
-- [ ] **56.5.b** — `LHandleRecover` (`.tla:345-354`): `ApplyRecover` (promise
+- [x] **56.5.b** — `LHandleRecover` (`.tla:345-354`): `ApplyRecover` (promise
       only), then reply carrying `abal`, `cmd`, `dep`, `init_dep`, `phase`.
-- [ ] **56.5.c** — `LHandleRecoverOK` (`.tla:359-432`). Collect a quorum,
+- [x] **56.5.c** — `LHandleRecoverOK` (`.tla:359-432`). Collect a quorum,
       `bmax == max {abalq}`, `U == {k : k.abalq = bmax}`, then five **ordered**
       branches — the order is part of the algorithm:
 
@@ -18938,32 +19014,80 @@ The hard half. `HandleRecoverOK` alone is 74 lines of nested case analysis.
       is the branch the paper's contribution lives in. **Selecting `U` by
       `max abalq` is precisely what a single ballot variable makes wrong** — this
       sub-item is the reason the whole phase exists.
-- [ ] **56.5.d** — `ComputeI` (`.tla:220-227`) and `LHandleValidate`
+- [x] **56.5.d** — `ComputeI` (`.tla:220-227`) and `LHandleValidate`
       (`.tla:437-450`): `I` is the set of `(id2, phase)` that could invalidate
       committing `(c, D)` — commands outside `D`, conflicting with `c`, that do
       not list `id` among their own dependencies.
-- [ ] **56.5.e** — `LHandleValidateOK` (`.tla:455-490`): `I = {}` ⇒ accept
+- [x] **56.5.e** — `LHandleValidateOK` (`.tla:455-490`): `I = {}` ⇒ accept
       `(c, D)`; a committed member of `I`, or
       `|Rmax| = |Q| - e /\ exists x. x.owner \notin Q` ⇒ accept `Nop`;
       otherwise broadcast `Waiting` and move to `PostWaiting`.
-- [ ] **56.5.f** — `LHandlePostWaiting` (`.tla:495-548`): four disjuncts,
+- [x] **56.5.f** — `LHandlePostWaiting` (`.tla:495-548`): four disjuncts,
       including the liveness escape — a `Waiting` message with `k > n-f-e` ⇒ take
       `Nop`. This is EPaxos\*'s fix for the original deadlocking "even during
       executions with finitely many submitted commands".
-- [ ] **56.5.g** — Gate: `verus` passes on the full module.
+- [x] **56.5.g** — Gate: `verus` passes on the full module.
 
 ### 56.6 Invariants
 
-- [ ] **56.6.a** — `Agreement` (`.tla:554-560`) — if `id` is committed at two
+- [x] **56.6.a** — `Agreement` (`.tla:554-560`) — if `id` is committed at two
       replicas, the `(cmd, dep)` agree. The analogue of Raft's
       `StateMachineSafety`.
-- [ ] **56.6.b** — `Visibility` (`.tla:562-571`) — two committed conflicting
+- [x] **56.6.b** — `Visibility` (`.tla:562-571`) — two committed conflicting
       non-`Nop` commands each appear in the other's dependency set, in at least
       one direction. **No Raft counterpart**; this is the property that makes
       dependency-based ordering work at all.
-- [ ] **56.6.c** — `TypeInv` (`.tla:573-592`) as the well-formedness predicate.
-- [ ] **56.6.d** — State them; do **not** attempt to prove them in this phase.
+- [x] **56.6.c** — `TypeInv` (`.tla:573-592`) as the well-formedness predicate.
+- [x] **56.6.d** — State them; do **not** attempt to prove them in this phase.
       Proof is Phase 57 and needs the distributed layer first.
+
+**56.4 / 56.5 / 56.6 / 56.8 landed 2026-08-17 — the spec is complete.**
+`src/protocol/EPaxosStar/{types,epaxos_star,distributed_system,invariants}.rs`.
+Whole crate **`1050 verified, 0 errors`**, trigger notes **0** against a ceiling
+of 0, exceptions list still says 0, `cargo test --all-features` **2725 passed /
+0 failed**, `fmt` and `clippy -D warnings` clean.
+
+**What `1050 verified` does and does not mean.** It is unchanged from before
+this work, and that is correct: every function added here is a `spec fn`, which
+carries no proof obligation. The number says the crate still elaborates and
+every *existing* proof still discharges. It does **not** say the new spec is
+proved of anything — nothing is proved until Phase 57. Saying "1050 verified"
+about a spec-only addition would be true and misleading in the same breath.
+
+Four things the writing turned up, three of them corrections to this plan:
+
+- **25 actions, not the 17 predicted in 56.3.z**, and the prediction was wrong
+  twice in the same direction. (a) `HandleRecoverOK`'s five-way `IF/ELSE` and
+  `HandleValidateOK`'s three-way become one action per branch once the guards
+  have to be mutually exclusive explicitly rather than by fall-through. (b)
+  **`HandlePostWaiting`'s disjuncts 3 and 4 read `msgs` for a message that is
+  not part of any accumulated quorum** — a peer's `Waiting`, a late `RecoverOK`
+  from outside `Q` — and a single-process spec cannot search the network, so
+  both take the packet as a parameter and become actions of their own. The
+  record-then-act accumulator design handles quorums; it does **not** handle
+  "look for one specific message elsewhere in the network", and that gap was not
+  anticipated.
+- **The distributed network is monotone; receipt does not consume.** The
+  reference deletes the handled message. Monotone admits *more* behaviours, so
+  an invariant proved here holds under exactly-once delivery too, and
+  re-delivery is either idempotent or blocked by the handlers' own guards. Raft
+  makes the same choice. It is not free for liveness, which is out of scope.
+- **`LNext` cannot be what the distributed layer composes.** It hides each
+  action's received packet in an existential, which would let a replica
+  "receive" a packet nobody sent. `distributed_system.rs` therefore exposes
+  `ReplicaAction(s, s_, c, received: Option<LPacket>, sent)` so the receive
+  guard can pin `received` to `network`. This is exactly what closes the defect
+  class in `src/protocol/EPaxos/`, where `pa_sender: int` is a free integer.
+- **`Set::new_assuming_finite` got reached for again**, in `TypeInv`, and
+  emitted 4 deprecation warnings against a tree that is at zero. Same lesson as
+  56.3's `procs.finite()`, one session apart: state membership as a predicate
+  instead of building a set to test against. Fixed; and the nested-`let` trigger
+  it needed is `#![trigger ...]` on the quantifier, not `#[trigger]` inside it.
+
+Stating the invariants early paid once, concretely: `Visibility` is why
+`ComputeI` reads `init_cmd`/`init_dep` for non-committed instances and
+`cmd`/`dep` for committed ones. A version reading only the current fields is
+simpler, and would not preserve it.
 
 ### 56.7 Model checking
 
@@ -18980,13 +19104,13 @@ The hard half. `HandleRecoverOK` alone is 74 lines of nested case analysis.
 
 ### 56.8 Distributed layer — the bridge to Phase 57
 
-- [ ] **56.8.a** — `EPaxosStar/distributed_system.rs`:
+- [x] **56.8.a** — `EPaxosStar/distributed_system.rs`:
       `EPaxosStarDistributedState { replica_states, replica_constants, network: Set<LPacket>, num_replicas }`,
       a well-formedness predicate pinning quorum sizes to `n`/`f`/`e`, receive
       guards (`network.contains(pkt)`), and network monotonicity with new packets
       sourced from the stepping replica. Only RSL and Raft have such a layer
       today.
-- [ ] **56.8.b** — This subsumes two defects the old module cannot fix without
+- [x] **56.8.b** — This subsumes two defects the old module cannot fix without
       it: `pa_sender: int` / `ao_sender: int` are free integers
       (`EPaxos/epaxos.rs:306,310`) never bounded to `0 <= s < num_replicas`, so a
       leader can fabricate a quorum from nothing; and `LSendPreAcceptOk` /
@@ -19035,4 +19159,140 @@ path present, and `Agreement`/`Visibility`/`TypeInv` **stated**. `rewrite.md`
 saying exactly what is still not modelled — execution above all — and saying
 plainly that alignment with EPaxos\* removes a known unsafety without
 constituting a proof.
+
+---
+
+## Phase 57: EPaxos* refinement proof — plan only, not opened
+
+**Written 2026-08-17 alongside Phase 56, so the spec is shaped by what the proof
+will need rather than retrofitted.** Do not open until Phase 56 is at its
+acceptance bar. If EPaxos gets a machine-checked safety proof it will be the
+first one in any system — `docs/consensus_verification_survey.md` records that
+Coq/Rocq, Isabelle, Lean, Ivy, Dafny, F* and TLAPS all have none, twelve years
+after SOSP'13. That is the opportunity and it is also the warning.
+
+### 57.0 An assessment that changed, and why
+
+Earlier in Phase 56's research the estimate was "EPaxos will hit the same wall as
+Raft's `LeaderCompleteness`, and harder, because it must carry a triple
+`(cmd, deps, seq)` across ballots where Raft carries one log prefix". **Reading
+the corrected spec changes that, and the change is worth stating because it
+moves the plan.** EPaxos\*:
+
+- has **no `seq`** — the triple is a pair, and one of the two is a set;
+- carries **two ballots**, so "the value accepted at the highest ballot" is
+  well-defined, which is exactly the shape of the classic Paxos argument;
+- keeps recovery's decision inside **one action** with an ordered five-way case
+  analysis, rather than spreading it over `PrepareFinalize` + a `try-pre-accept`
+  sub-protocol whose correctness argument nobody had written down.
+
+Raft's wall was never the quorum reasoning; it was the strong induction on
+*terms* that log-matching forces (Ongaro §3.6.1), and EPaxos\* has no log to
+match. So the revised expectation splits in two:
+
+| obligation | shape | expectation |
+|---|---|---|
+| **Agreement** | Paxos-shaped: highest-`abal` value wins, quorum intersection | **plausibly mechanizable.** The repo already proved single-decree Paxos and already has `lemma_quorum_intersection`. |
+| **Visibility** | dependency-set reachability across *different* instances | **the research risk.** No Paxos or Raft analogue anywhere in this repo, and the paper's own argument for it (Lemmas 9-11, the validation phase) is the part that took the literature twelve years. |
+
+Plan accordingly: **do not treat these as one milestone.** Agreement first, and
+land it as a result on its own.
+
+### 57.1 Distributed layer (prerequisite, sketched in 56.8)
+
+- [ ] **57.1.a** — `EPaxosStar/distributed_system.rs`: `replica_states`,
+      `replica_constants`, `network: Set<LPacket>`, `num_replicas`; receive
+      guards; network monotonicity; new packets sourced from the stepping
+      replica; well-formedness pinning `procs`/`f`/`e` across replicas.
+- [ ] **57.1.b** — **Discharge the accumulator split** (56.3.z). The single-host
+      spec turns one atomic quorum read into record-then-act, so the distributed
+      layer must show a recorded accumulator is always backed by packets that
+      really are in `network`. Without this, every quorum guard in the proof is
+      about a set the replica asserted rather than one it received. This is
+      Phase 57's first real obligation and it does not exist for Raft, whose
+      quorum accumulator carries only sender identities.
+
+### 57.2 The abstract state machine — the design question
+
+Raft's is `Seq<int>` with append-only extension. **EPaxos\* has no total order at
+commit time**, so that shape is unavailable. Proposal:
+
+```
+AbstractState { committed: Map<LInstanceId, (LCmd, Set<LInstanceId>)> }
+Next == stutter | write one instance not already written   (write-once, never overwrite)
+```
+
+- [ ] **57.2.a** — Confirm this gives `Agreement` directly: write-once ⇒ two
+      commits of the same id agree. That is the whole content of the property.
+- [ ] **57.2.b** — **`Visibility` is not a step property.** It relates *two*
+      committed entries, so it is an invariant of the abstract state that
+      refinement must show is preserved by every write, not something the
+      abstract `Next` can express. Decide whether it lives on the abstract
+      machine or stays a distributed-level invariant, and record the reason.
+      This is the first genuine design fork of the phase.
+- [ ] **57.2.c** — `refinement.rs` + `induction.rs`, copied structurally from
+      Raft's (154 + 69 lines). These are the cheapest part and should be written
+      early, so the top-level theorem exists before the invariants that feed it.
+
+### 57.3 Invariant inventory
+
+Mapping Raft's 38 conjuncts onto EPaxos\*, which is a different protocol and so
+a different list, not a translation:
+
+| purpose | EPaxos\* invariant |
+|---|---|
+| ballot discipline | `abal <= bal`; `abal` moves only with an accept or a commit; `bal` never decreases |
+| ballot uniqueness | ballots are `k*n + p`, so distinct replicas never share one — the `LStartRecover` shape carries this and it must be stated |
+| message provenance | every `RecoverOK` in the network reflects its sender's state at its ballot; likewise `PreAcceptOK`/`AcceptOK`/`ValidateOK` |
+| accumulator soundness | 57.1.b, above |
+| the Paxos core | **`ChosenAtBallot`**: if `(c,D)` is accepted by a quorum at ballot `b`, every accept at `b' > b` is also `(c,D)` |
+| commit stability | committed instances never change `(cmd, dep)` |
+| dependency well-formedness | `dep ⊆ Id`, `init_dep ⊆ dep` where the protocol maintains it |
+
+- [ ] **57.3.a–g** — one item per row; `ChosenAtBallot` is the load-bearing one
+      and everything else is either its hypothesis or its consequence.
+
+### 57.4 The load-bearing lemma
+
+- [ ] **57.4.a** — **`RecoveryPreservesCommit`**: if `id` is committed anywhere
+      with `(c, D)`, then `LHandleRecoverOK` at any higher ballot decides
+      `(c, D)`. This is where `abal` earns its existence, and where the
+      single-ballot protocol is unsound — so a correct proof must *fail* if
+      `abal` is replaced by `bal`, and that is worth checking deliberately
+      rather than assuming.
+- [ ] **57.4.b** — Branch-by-branch: branches 1 and 2 are direct (a committed or
+      accepted witness at `bmax`); branch 3 (`id.owner \in Q`) and branch 5 take
+      `Nop`, which is only safe if nothing was committed — that is the real
+      obligation; branch 4 hands off to validation.
+- [ ] **57.4.c** — Validation (`ComputeI`, `HandleValidateOK`,
+      `HandlePostWaiting`) is where `Visibility` is established, and it is the
+      part with no analogue anywhere in this repo. Budget it as research, not as
+      proof engineering, and **do not block Agreement on it**.
+
+### 57.5 Where it will stall, predicted now
+
+1. **`ComputeI` is quantifier-heavy** — it ranges over all ids and reads five
+   per-instance fields. Raft's Z3 blow-ups came from far less; expect the
+   isolation pattern (one heavy invariant family per lemma) from day one rather
+   than after the first timeout.
+2. **`Visibility` quantifies over two instances and two replicas** — a four-way
+   quantifier over per-instance maps. Raft has nothing this shape.
+3. **`Nop` makes the abstract machine non-injective**: several distinct
+   distributed histories refine to the same abstract write. Fine for safety,
+   but it means the refinement map is not invertible and any argument that
+   reaches for a unique pre-image is wrong.
+
+### Acceptance
+
+Two separable results, and **the first is worth shipping alone**:
+
+- **A.** `Agreement` proved from `ChosenAtBallot` + quorum intersection, with the
+  accumulator obligation (57.1.b) discharged, and no `assume` on that path.
+- **B.** `Visibility` proved. If it stalls, say so the way Phase 34 says it —
+  a named wall, the analysis, and the count of what remains — rather than
+  leaving assumes unlabelled.
+
+Report honestly which of A and B holds. "EPaxos\* Agreement is machine-checked,
+Visibility is not" is a real and publishable result; "EPaxos\* is verified" when
+B is open is not.
 
