@@ -12,6 +12,19 @@
 #       [--aux <url>]... [--cfg <url>] [--reference src/protocol/Paxos/paxos.rs] \
 #       [--append-manifest] [--force]
 #
+# Local source (Phase 56.2.a) — for an upstream that is not a git checkout:
+#   intake_case.sh --tier 2 --id t2_03_epaxos_star \
+#       --local docs/epaxos_reference/EPaxosCommitWithRecovery.tla \
+#       [--aux-local <path>]... [--cfg-local <path>] \
+#       [--source-repo arxiv:2511.02743v2] [--source-commit <md5-or-sha>]
+#
+# `--local` takes a repo-relative path and copies rather than downloads. It
+# exists because reproducibility does not always come from a git sha: an arXiv
+# ancillary bundle is pinned by id+version+checksum, and `source_repo = "local"`
+# is already what tier-3/tier-4 cases record. Use --source-repo/--source-commit
+# to say what the real pin is, so the manifest is not silently less
+# reproducible than the URL path.
+#
 # Exit codes: 0 ok, 1 usage error, 2 download failure.
 set -euo pipefail
 
@@ -20,7 +33,8 @@ REPO_ROOT="$(cd "$CORPUS_DIR/../../.." && pwd)"
 MANIFEST="$CORPUS_DIR/manifest.toml"
 
 TIER=""; ID=""; URL=""; CFG_URL=""; REFERENCE=""; APPEND=0; FORCE=0
-AUX_URLS=()
+LOCAL=""; CFG_LOCAL=""; SOURCE_REPO_OVERRIDE=""; SOURCE_COMMIT_OVERRIDE=""
+AUX_URLS=(); AUX_LOCALS=()
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -31,18 +45,26 @@ while [ $# -gt 0 ]; do
     --url)              URL="$2"; shift 2 ;;
     --aux)              AUX_URLS+=("$2"); shift 2 ;;
     --cfg)              CFG_URL="$2"; shift 2 ;;
+    --local)            LOCAL="$2"; shift 2 ;;
+    --aux-local)        AUX_LOCALS+=("$2"); shift 2 ;;
+    --cfg-local)        CFG_LOCAL="$2"; shift 2 ;;
+    --source-repo)      SOURCE_REPO_OVERRIDE="$2"; shift 2 ;;
+    --source-commit)    SOURCE_COMMIT_OVERRIDE="$2"; shift 2 ;;
     --reference)        REFERENCE="$2"; shift 2 ;;
     --append-manifest)  APPEND=1; shift ;;
     --force)            FORCE=1; shift ;;
-    -h|--help)          sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help)          sed -n '2,30p' "$0"; exit 0 ;;
     *)                  die "unknown argument: $1" ;;
   esac
 done
 
 [ -n "$TIER" ] || die "--tier is required"
 [ -n "$ID" ]   || die "--id is required"
-[ -n "$URL" ]  || die "--url is required"
-case "$TIER" in 0|1|2|3) ;; *) die "--tier must be 0..3" ;; esac
+if [ -n "$URL" ] && [ -n "$LOCAL" ]; then
+  die "--url and --local are mutually exclusive"
+fi
+[ -n "$URL" ] || [ -n "$LOCAL" ] || die "one of --url or --local is required"
+case "$TIER" in 0|1|2|3|4) ;; *) die "--tier must be 0..4" ;; esac
 
 CASE_DIR="$CORPUS_DIR/tier$TIER/$ID"
 if [ -d "$CASE_DIR" ] && [ "$FORCE" -eq 0 ]; then
@@ -93,21 +115,49 @@ fetch() {  # fetch <url> <dest>
   fi
 }
 
-pin_url "$URL" 1
-fetch "$PINNED_URL" "$CASE_DIR/original.tla"
-echo "intake: original.tla  <- $PINNED_URL"
+copy_local() {  # copy_local <repo-relative-path> <dest>
+  local src="$REPO_ROOT/$1" dest="$2"
+  [ -f "$src" ] || { echo "error: no such file: $1" >&2; exit 2; }
+  cp "$src" "$dest"
+}
 
-for aux in ${AUX_URLS+"${AUX_URLS[@]}"}; do
-  pin_url "$aux"
-  fetch "$PINNED_URL" "$CASE_DIR/$(basename "${aux%%\?*}")"
-  echo "intake: $(basename "${aux%%\?*}")  <- $PINNED_URL"
-done
+if [ -n "$LOCAL" ]; then
+  SOURCE_REPO="local"; SOURCE_PATH="$LOCAL"; SOURCE_COMMIT=""
+  copy_local "$LOCAL" "$CASE_DIR/original.tla"
+  echo "intake: original.tla  <- $LOCAL (local)"
 
-if [ -n "$CFG_URL" ]; then
-  pin_url "$CFG_URL"
-  fetch "$PINNED_URL" "$CASE_DIR/original.cfg"
-  echo "intake: original.cfg  <- $PINNED_URL"
+  for aux in ${AUX_LOCALS+"${AUX_LOCALS[@]}"}; do
+    copy_local "$aux" "$CASE_DIR/$(basename "$aux")"
+    echo "intake: $(basename "$aux")  <- $aux (local)"
+  done
+
+  if [ -n "$CFG_LOCAL" ]; then
+    copy_local "$CFG_LOCAL" "$CASE_DIR/original.cfg"
+    echo "intake: original.cfg  <- $CFG_LOCAL (local)"
+  fi
+else
+  pin_url "$URL" 1
+  fetch "$PINNED_URL" "$CASE_DIR/original.tla"
+  echo "intake: original.tla  <- $PINNED_URL"
+
+  for aux in ${AUX_URLS+"${AUX_URLS[@]}"}; do
+    pin_url "$aux"
+    fetch "$PINNED_URL" "$CASE_DIR/$(basename "${aux%%\?*}")"
+    echo "intake: $(basename "${aux%%\?*}")  <- $PINNED_URL"
+  done
+
+  if [ -n "$CFG_URL" ]; then
+    pin_url "$CFG_URL"
+    fetch "$PINNED_URL" "$CASE_DIR/original.cfg"
+    echo "intake: original.cfg  <- $CFG_URL"
+  fi
 fi
+
+# Provenance that is not a git sha -- an arXiv version, a checksum -- is still
+# provenance, and saying so beats leaving the field empty.
+[ -n "$SOURCE_REPO_OVERRIDE" ]   && SOURCE_REPO="$SOURCE_REPO_OVERRIDE"
+[ -n "$SOURCE_COMMIT_OVERRIDE" ] && SOURCE_COMMIT="$SOURCE_COMMIT_OVERRIDE"
+true
 
 if [ -n "$REFERENCE" ]; then
   if [ -f "$REPO_ROOT/$REFERENCE" ]; then
