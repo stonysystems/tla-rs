@@ -28,7 +28,16 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 | Verus | ⚠️ built from source | The **prebuilt** 0.2026.08.02 release links glibc 2.39; this box has **2.35**, so it cannot run. Built from source at commit `b677dd5` under `~/verus-src` with **z3 4.14.1** (the newest z3 with a glibc-2.35 build; Verus pins 4.16.0). Building z3 4.16.0 from source also fails here — it needs C++20 `<format>`, which libstdc++ only ships from GCC 13 and this box has GCC 12. So the version check must be bypassed at **both** layers: `vargo --no-solver-version-check build --release` when building, and `-V no-solver-version-check` on every `verus` invocation. Solver-version skew can change proof stability — treat proof-level results from this box as advisory and re-check on a glibc-2.39 machine or in CI. |
 | .NET | ❌ absent | No `dotnet` — C# runtime, cluster runs, and throughput benches cannot be reproduced here. |
 
-## Current Status (last updated 2026-08-05)
+## Current Status (last updated 2026-08-17)
+
+**🆕 Phase 56 is OPEN (2026-08-17): EPaxos\* — a correct EPaxos spec.** The research step
+is done and it changed the target: **the upstream spec this repo pins for EPaxos is
+unsafe**, refuted by Sutra (IPL 2020). "Correct" therefore means *aligned with EPaxos\**
+(OPODIS 2025), not aligned with upstream. Decided by the user: new module
+`src/protocol/EPaxosStar/` and new corpus case `tier2/t2_03_epaxos_star`, leaving
+`src/protocol/EPaxos/` and `t2_02_epaxos` in place. Reference spec vendored at
+`docs/epaxos_reference/`; gap list at `reports/epaxos_spec_gap.md`. See
+[Phase 56](#phase-56-epaxos--a-correct-epaxos-spec-and-its-corpus-case).
 
 **🔝 42.8.c is COMPLETE (2026-08-05). All seven RSL modules are reconciled.**
 `1046 verified, 0 errors`; trigger notes **534 → 74**; `assume(false)` **0**.
@@ -18587,3 +18596,443 @@ refinement against the unmodified originals; and `rewrite.md` stating exactly
 what is still not faithful. **If the fast path turns out to be projectable and
 the slice was simply never attempted, say so** — that is the most useful
 outcome, and it is the one currently expected.
+
+---
+
+## Phase 56: EPaxos* — a correct EPaxos spec, and its corpus case
+
+**Opened 2026-08-17.** Decisions taken by the user the same day: **a new module
+`src/protocol/EPaxosStar/` and a new corpus case `tier2/t2_03_epaxos_star`.**
+Neither `src/protocol/EPaxos/` nor `t2_02_epaxos` is edited, so
+`epaxos.automan`, `epaxos_transpile.toml`, `src/generated/EPaxos/`,
+`src/implementation/EPaxos/host.rs` and `scripts/bench_epaxos.sh` keep working
+throughout.
+
+### Why this exists
+
+The goal was stated as "make the EPaxos spec completely correct". The research
+step (56.0) established that this **cannot** mean "make it faithful to
+upstream", because upstream is unsafe:
+
+- Pierre Sutra, *On the correctness of Egalitarian Paxos* (IPL 156:105901, 2020;
+  arXiv `1906.10917`) exhibits an admissible execution in which replicas
+  disagree on a command's dependencies. Artifact, with a TLA+ counterexample
+  module extending `EgalitarianPaxos`: <https://github.com/otrack/on-epaxos-correctness>.
+- `transpiler/tests/corpus/tier2/t2_02_epaxos` pins
+  `efficient/epaxos@ab4dbeae58a7eabcb514865e9ccf1ab0386abfc3` — **that** spec.
+- The defect is legible in the pinned file. `ReplyPrepare`
+  (`original.tla:418-424`) writes the *promise* ballot over the record's single
+  `ballot` field, so the ballot at which `(cmd, deps, seq)` was *accepted* is
+  lost; a later `prepare-reply` then reports a promise as `prev_ballot`, and
+  `PrepareFinalize` (`original.tla:475-477`) selects the accepted record by
+  maximum `prev_ballot[1]`.
+
+So the target is **EPaxos\*** (Ryabinin, Gotsman, Sutra, OPODIS 2025,
+DOI `10.4230/LIPIcs.OPODIS.2025.22`; extended version arXiv `2511.02743`), which
+is the repaired protocol. Its TLA+ model is vendored at
+`docs/epaxos_reference/` and the item-by-item gap list is
+`reports/epaxos_spec_gap.md`.
+
+**What this phase does not claim.** EPaxos\*'s own correctness argument is a
+hand proof (paper Appendix D); its TLA+ model is TLC-checked in bounded
+configurations only. Aligning to it removes a known unsafety — it is not itself
+a proof. Per `docs/consensus_verification_survey.md` (entries `w285`, `w116`),
+**no mechanized safety proof of EPaxos exists in any system**, which is what
+makes the follow-on refinement proof worth doing and also what makes it hard.
+
+### 56.0 Research — COMPLETE 2026-08-17
+
+- [x] **56.0.a** — Vendored the EPaxos\* TLA+ model to `docs/epaxos_reference/`:
+      `EPaxosCommitWithRecovery.tla` (616 lines), `.cfg` (30), and
+      `ExtraConfiguration.tla` (10, the conflict relation as a model constant).
+      Fetched from the arXiv e-print bundle; the per-file endpoint
+      `arxiv.org/src/2511.02743/anc/<name>` serves the `.tla` files but returns
+      HTTP 406 for the `.cfg`. MD5s pinned in that directory's README.
+- [x] **56.0.b** — Confirmed Sutra's defect is present in the pinned
+      `original.tla` by reading it, not by citation.
+- [x] **56.0.c** — SANY 2.1 parses and semantically processes the vendored
+      reference cleanly (`tla2sany.SANY EPaxosCommitWithRecovery.tla`), so the
+      file is usable as-is.
+- [x] **56.0.d** — Gap list written: `reports/epaxos_spec_gap.md`, 16 numbered
+      differences in 7 groups, each with line references on both sides.
+- [ ] **56.0.e — TLC baseline on the vendored reference. ATTEMPTED 2026-08-17
+      AND IT DOES NOT CLOSE.** Run under the reference's own `.cfg`
+      (`Proc={1,2,3}`, `F=E=1`, `Cmd=Id={1,2,3}`, `NumberOfRecoveryAttempts=1`,
+      `CHECK_DEADLOCK FALSE`, invariants `Agreement`/`Visibility`/`TypeInv`),
+      TLC 2.16, 8 workers, 7.2 GB heap:
+
+      | | |
+      |---|---|
+      | states generated | 38,059,515 |
+      | distinct states | 13,251,622 |
+      | depth reached | 13 |
+      | queue when it died | 10,116,132 **and growing** |
+      | outcome | **crashed** — `No space left on device` (StatePoolWriter) |
+
+      Growth was steady at ~2.6M distinct/min for five straight minutes with no
+      taper, and the queue was growing faster than it drained. The immediate
+      cause was that `/tmp` on this box is a **48 GB tmpfs** — i.e. TLC's disk
+      state queue was eating RAM — but the size is the real finding: **no
+      invariant violation was found, and the space is far larger than anything
+      else in the corpus.** For scale: `t2_02_epaxos/clean.tla` closes at 3.2M
+      distinct, tier4 Jetpack at 17.6M, and this had passed 13M at depth *13*.
+
+      Root cause is in the reference's own configuration: it has **no state
+      constraint and no view**. Every other case in this corpus needs one
+      (`SmallState == Cardinality(msgs) <= 4` in `t2_02_epaxos`). So:
+
+      - [ ] **56.0.e.1** — Re-run with the state queue on real disk, not tmpfs
+            (`/home/users` has ~1.5 TB, though it is NFS and will be slow).
+            **Ask before spending tens of GB of the user's home directory.**
+      - [ ] **56.0.e.2** — And/or add a `CONSTRAINT` in a *separate* `.cfg` of
+            ours — never by editing the vendored file — plus a `VIEW` if the
+            recovery scratch variables (`Qvar`/`Cvar`/`Dvar`/`Ivar`/
+            `CardinalityRmax`/`recoveryAttemptBal`) turn out to be inflating the
+            fingerprint without changing behaviour. That hypothesis is worth
+            testing first; it is cheap and it would explain the size.
+      - [ ] **56.0.e.3** — Failing both, shrink to `Cmd = Id = {1,2}` and record
+            that the baseline is at a reduced configuration.
+
+      **Consequence for the phase: 56.0.e is no longer a prerequisite for
+      writing our spec.** It was planned as "get the number every later
+      comparison is against"; that number is not cheaply available. Proceed with
+      56.2/56.3 and treat the baseline as a parallel track. What the attempt
+      *did* establish — the file parses, elaborates, and runs 38M states without
+      an invariant violation — is enough to start from.
+
+      Do not record this as "the paper's result reproduces". It has not been
+      reproduced, and the paper does not state a state count to compare against.
+
+### 56.1 Two findings from the reference that change the rewrite
+
+Both verified against `docs/epaxos_reference/EPaxosCommitWithRecovery.tla`, not
+assumed from the paper text.
+
+- [x] **56.1.a — EPaxos\* has no `seq`.** Ordering is on `(cmd, dep)` alone. All
+      12 `seq`-looking tokens in the file are substrings of `phaseq` / `abalq` /
+      `Sequences`. **Consequence: our `seq` and `max_resp_seq` are not to be
+      fixed, they are to be deleted** — and `t2_02_epaxos/clean.tla`'s
+      hard-won `NextSeq == 1 + Max({rec.seq : rec \in log})` (which TLC caught
+      as `1 + Cardinality(log)` in its first draft) is faithful to *upstream*
+      and simply absent from EPaxos\*.
+
+- [x] **56.1.b — the reference has exactly two global variables, and both
+      dissolve.** `initCoord` and `submitted` are the only state not of the form
+      `[Proc -> [Id -> _]]`, i.e. the only C1 findings the linter can have on
+      this spec. Checked every occurrence:
+      - `submitted` is written only in `Submit` (`:240`) and read only as the
+        guard `id \notin submitted` (`:239`);
+      - `initCoord` is written only in `Submit` (`:241`) and read at `:394`
+        (`initCoord[id] \in Q`), `:478` (`initCoord[x[1]] \notin Q`) and `:531`
+        (`m2.from = initCoord[id]`) — every read is "who owns this id".
+
+      **So make the identifier carry its owner**: `Id == [owner: Proc, num: 1..MaxNum]`,
+      exactly as upstream writes an instance (`<<cleader, crtInst[cleader]>>`)
+      and as `t2_02_epaxos/clean.tla` already does. Then `initCoord[id]` is
+      `id.owner` — a pure function of the id, no state — and `submitted` becomes
+      a per-node counter (upstream's `crtInst[cleader]`). **The case is
+      C1-clean by construction**, which is why it belongs in tier 2 rather than
+      tier 3 despite being the largest spec in the corpus.
+
+### 56.2 Corpus case `tier2/t2_03_epaxos_star`
+
+- [x] **56.2.a** — Intake. `intake_case.sh` assumes a URL-fetchable upstream;
+      here the upstream is an arXiv ancillary bundle already vendored under
+      `docs/epaxos_reference/`. Either extend the script with a `--local` source
+      or scaffold by hand — **decide and record which**, and either way pin
+      reproducibility by arXiv id + version + MD5 rather than by a git commit.
+      `original.tla` = the unmodified vendored `EPaxosCommitWithRecovery.tla`;
+      the corpus rule "never edit `original.tla`" applies unchanged.
+- [x] **56.2.b** — Lint `original.tla` and **measure** the clean-distance.
+      Do not predict it. This number has been mismeasured on four occasions in
+      this repo (Jetpack 2→46→15→22, EPaxos 1→3→5→6), always in the same
+      direction: a linter that cannot identify the node set reports a small
+      number, and a small number reads as "nearly clean". Record
+      `rules_skipped` honestly; if any of C1/C2/C3 did not run, the distance is
+      a lower bound and the manifest note must say so.
+      Expected — as a prediction to be checked, not a result: C1 on `submitted`
+      and `initCoord`, nothing else. If the linter reports more, that is a
+      finding about the linter or about 56.1.b, and either way it goes in
+      `rewrite.md`.
+- [ ] **56.2.c** — Write `clean.tla`: the 56.1.b identifier rewrite, quorums by
+      counting (P4), and `NumberOfRecoveryAttempts` carried over as an explicit
+      **model bound**, guarded rather than silently capped — the discipline
+      `t2_02_epaxos/clean.tla:134-136` states for `MaxSeq` ("capping the value
+      silently would be a different protocol").
+- [ ] **56.2.d** — `rewrite.md`, stating the slice: commit + recovery in,
+      execution out. Say plainly that execution is absent **in the reference
+      too**, and that upstream's `executed` variable is never written
+      (`executed'` appears 0 times in `original.tla`) — so this is not a
+      shortcut this repo is taking.
+- [ ] **56.2.e** — Translate to `golden.rs`; it must pass `verus` before being
+      frozen (corpus README's rule). Budget for translator defects: tier4
+      Jetpack needed nine, all type-shaped, and this spec is larger and uses
+      `CHOOSE`, nested `IF/ELSE` and multi-binder set comprehensions heavily.
+- [ ] **56.2.f** — V2 fidelity: TLC on `clean.tla` against the 56.0.e baseline.
+      **Anti-vacuity is mandatory** — a deliberately divergent action must make
+      `Agreement` refute immediately, run and recorded, not asserted. Phase 55.5
+      is the precedent for why (upstream's `CommittedLogAgreement` was vacuous
+      and passed).
+- [ ] **56.2.g** — Manifest entry with `status`, `expected_rules`,
+      `clean_distance`, `rules_skipped`, `milestone_gate`, and a `notes` field
+      that records the Sutra provenance. Also **add a `notes` line to
+      `t2_02_epaxos` marking it known-unsafe** and pointing here; it keeps its
+      standalone value as the specimen whose defect a reviewer should be able to
+      find, which is worth more than deleting it.
+
+**56.2.a/b landed 2026-08-17.** `intake_case.sh` grew `--local` / `--aux-local` /
+`--cfg-local` / `--source-repo` / `--source-commit` (and `--tier 4`, which it had
+never accepted despite tier4 existing). Chosen over hand-scaffolding because the
+corpus already has two non-git upstreams and hand-scaffolding would drift from
+the script's manifest and `rewrite.md` shapes.
+
+**The measured clean-distance is 2, and it is a real 2** — the check the plan
+demanded was run before the number was believed:
+
+| linter output | |
+|---|---|
+| `rules_executed` | C1, C2, C3, C4, C5 |
+| `rules_skipped` | **`[]`** |
+| `node_set` / `network_variable` | `Proc` / `msgs` |
+| per-node variables | 15 |
+| global variables | `submitted`, `initCoord` |
+| findings | 2 × C1, both on those globals |
+
+Nothing returned early, so this is not the Jetpack/EPaxos failure mode.
+**EPaxos\* is the cleanest complex spec in this corpus**: natively
+message-passing with one message set, and 15 of 17 variables already
+`[Proc -> [Id -> _]]`. 56.1.b's prediction was exactly right, which is worth
+noting only because the four prior predictions of this number were not.
+`corpus_lint_guard` passes with the new case (3 tests). `t2_02_epaxos`'s manifest
+note now opens with a known-unsafe warning pointing here — that is 56.2.g's
+second half, done early because leaving a known-unsafe spec unmarked while
+editing the file beside it is worse than the small scope creep.
+
+### 56.3 `src/protocol/EPaxosStar/types.rs`
+
+Single-host shape, following `Raft/types.rs`: `LState` is one replica's view;
+the network lives at the distributed layer (56.8).
+
+- [x] **56.3.a** — `LPhase`: `Initial | PreAccepted | Accepted | Committed`.
+      Four, not five — `Executed` belongs to the execution layer and goes.
+- [x] **56.3.b** — `LInstanceState { phase, bal, abal, init_cmd, cmd, init_dep, dep }`.
+      **`abal` is the phase's whole point** — `bal` is the current/promised
+      ballot, `abal` the last ballot at which this replica accepted a slow-path
+      value (`.tla:99-100`).
+- [x] **56.3.c** — `LState { instances: Map<LInstanceId, LInstanceState>, next_num: int }`
+      with `LInstanceId { owner: int, num: int }` per 56.1.b. No `seq`, no
+      `dep_count`, no `max_resp_seq`, no `committed_count`/`executed_count`.
+- [x] **56.3.d** — Recovery scratch fields on `LInstanceState`: `qvar`, `cvar`,
+      `dvar`, `ivar`, `cardinality_rmax`, `recovery_attempt_bal`,
+      `recovery_phase`, `recovered`. These exist because the paper's
+      `HandleRecoverOK` is atomic while the TLA+ splits it across three actions
+      (`.tla:106`); they are spec bookkeeping, and the comment must say so.
+- [x] **56.3.e** — `LConstants { my_id, n, f, e }` plus a well-formedness
+      predicate carrying `ASSUME N >= Max(2*E+F-1, 2*F+1)` (`.tla:34`) and
+      deriving `IsQuorumSized(s) == |s| >= n - f`,
+      `IsFastQuorumSized(s) == |s| >= n - e`. **This is where the old spec's
+      worst hole is closed**: `EPaxos/epaxos.rs:43-45` constrains only
+      `num_replicas >= 3 && quorum_size > 0 && fast_quorum_size >= quorum_size`,
+      which admits `quorum_size = 1`.
+- [x] **56.3.f** — `Nop` and `Bottom` (`.tla:25-26`). `Nop` is what recovery
+      commits when the payload cannot be safely recovered; it appears in four
+      branches. Without it recovery cannot be written at all.
+- [x] **56.3.g** — 11 message variants (`.tla:37-47`): PreAccept, PreAcceptOK,
+      Accept, AcceptOK, Commit, Recover, RecoverOK, Validate, ValidateOK,
+      Waiting, PostWaiting. Note `RecoverOK` carries `abalq` — that field is the
+      fix travelling over the wire.
+- [x] **56.3.h** — Conflict relation as a constant, mirroring
+      `ExtraConfiguration.tla`: `Conflicts(c1, c2)` with `Bottom` conflicting
+      with nothing and `Nop` conflicting with everything (`.tla:147-150`), and
+      `ConflictingIds(s, c)` computed from the replica's own instances
+      (`.tla:155-158`).
+
+**56.3 landed 2026-08-17.** `src/protocol/EPaxosStar/{mod,types}.rs`, registered
+in `src/protocol/mod.rs`. **`2 verified, 0 errors`** under Verus 0.2026.08.02.
+
+Three things the writing turned up, none of them in the plan:
+
+- **Ten message variants, not eleven.** `TypePostWaiting == 11` is declared in
+  the reference and admitted by its `TypeInv`, but **never constructed** — there
+  is no `PostWaitingMsg` operator, and `HandlePostWaiting` is driven by
+  `recoveryPhase`. 56.3.g said 11; it was counting the constant declaration.
+  The dead type is not ported, and the omission is documented in the file.
+- **`LConstants` needed `procs: Set<int>`, not just `n: int`.** As first drafted
+  it carried only the cardinality, and **quorum intersection is not statable
+  without a universe for the quorums to be drawn from**. Fixed; `N(c)` is now
+  `c.procs.len()`. `Raft/types.rs` carries `servers: Set<int>` for the same
+  reason, which is what made the omission visible.
+- **`Set::new` returns `Option` in this Verus.** Finite-set vstd; the first
+  draft did not compile. `ConflictingIds` is now built by filtering the map's
+  domain (finite by construction) and `SeenIds` became the predicate
+  `IsSeenId` — the reference uses it only as `id \in SeenIds(p)`, so the set was
+  never needed. This follows the idiom Phase 54.12.c settled on rather than
+  reaching for the deprecated `new_assuming_finite`.
+
+The two proof obligations are real ones, not placeholders:
+`lemma_fast_quorum_is_quorum` (`e <= f` ⇒ a fast quorum is a quorum — the fact
+`HandlePreAcceptOK` rests on when it applies both thresholds in one action) and
+`lemma_quorums_intersect`, which **reuses** `common::collections::sets::
+lemma_quorum_intersection` rather than re-deriving inclusion-exclusion, adding
+only the arithmetic that discharges `|a|+|b| > |u|` from `N >= 2F+1`.
+
+### 56.4 Commit path — `epaxos_star.rs`, part 1
+
+Land and check this before touching recovery. It is self-contained and it is
+where the old spec's guard defects live.
+
+- [ ] **56.4.a** — `LSubmit` ← `Submit` (`.tla:238-247`): guard on the id being
+      unused, compute `D0 == ConflictingIds(s, c)` **from state**, broadcast
+      PreAccept, self-deliver PreAcceptOK.
+- [ ] **56.4.b** — `LHandlePreAccept` ← `HandlePreAccept` (`.tla:252-258`):
+      guard `bal = 0 && phase = Initial`, compute
+      `Dfinal == m.D \cup ConflictingIds(s, m.c)`, **write** `cmd`, `init_cmd`,
+      `init_dep`, `dep`, `phase := PreAccepted`, reply with `Dfinal`.
+      Contrast `EPaxos/epaxos.rs:73-91`, which is a pure frame with no guard and
+      takes `local_conflict: bool` as a free existential parameter — conflict
+      detection stops being an oracle here.
+- [ ] **56.4.c** — `LHandlePreAcceptOK` ← `HandlePreAcceptOK` (`.tla:263-287`).
+      **Two different quorum thresholds in one action**: collect `>= n-f`
+      replies, then commit fast iff the sub-multiset agreeing with
+      `init_dep` is `>= n-e`, and only at `bal = 0`. Otherwise slow-path with
+      `Dfinal == UNION {m.Dq}` (`.tla:282`) and an Accept round.
+- [ ] **56.4.d** — `LHandleAccept` / `LHandleAcceptOK` / `LHandleCommit`
+      (`.tla:292-323`). `HandleAcceptOK` filters replies on
+      `k.body.b = bal[p][id]` — stale-ballot replies do not count, which
+      `EPaxos/epaxos.rs:190-212` has no analogue of.
+- [ ] **56.4.e** — The three Apply rules as shared helpers, transcribed exactly.
+      This table is the Sutra fix and nothing may deviate from it:
+
+      | helper | guard | writes `bal` | writes `abal` |
+      |---|---|---|---|
+      | `ApplyAccept` (`.tla:185-192`) | `bal <= b`, and `bal = b => phase != Committed` | `:= b` | `:= b` |
+      | `ApplyCommit` (`.tla:197-202`) | `bal = b` | — | `:= b` |
+      | `ApplyRecover` (`.tla:207-209`) | `bal < b` | `:= b` | — |
+
+- [ ] **56.4.f** — Gate: `verus` passes on the module with the commit path only.
+
+### 56.5 Recovery — `epaxos_star.rs`, part 2
+
+The hard half. `HandleRecoverOK` alone is 74 lines of nested case analysis.
+
+- [ ] **56.5.a** — `LStartRecover` (`.tla:328-340`): guard `id \in SeenIds(s)`;
+      ballot `b == IF bal = 0 THEN p ELSE bal + n`, so ballots are `k*n + p` and
+      **globally unique per process**. `EPaxos/epaxos.rs:260-280` takes
+      `new_ballot` as a free parameter bounded only by `> s.ballot`, which lets
+      two replicas collide on a ballot.
+- [ ] **56.5.b** — `LHandleRecover` (`.tla:345-354`): `ApplyRecover` (promise
+      only), then reply carrying `abal`, `cmd`, `dep`, `init_dep`, `phase`.
+- [ ] **56.5.c** — `LHandleRecoverOK` (`.tla:359-432`). Collect a quorum,
+      `bmax == max {abalq}`, `U == {k : k.abalq = bmax}`, then five **ordered**
+      branches — the order is part of the algorithm:
+
+      | # | condition | action |
+      |---|---|---|
+      | 1 | `exists n in U : phaseq = Committed` | commit that `(c, D)` |
+      | 2 | `exists n in U : phaseq = Accepted` | accept that `(c, D)` |
+      | 3 | `initCoord[id] in Q` (i.e. `id.owner in Q`) | accept `Nop` |
+      | 4 | `\|Rmax\| >= \|Q\| - E`, `Rmax == {n : phaseq = PreAccepted /\ depq = initDepq}` | enter validation |
+      | 5 | otherwise | accept `Nop` |
+
+      Branch 4 replaces upstream's ambiguous "enough pre-accepts, go ahead", and
+      is the branch the paper's contribution lives in. **Selecting `U` by
+      `max abalq` is precisely what a single ballot variable makes wrong** — this
+      sub-item is the reason the whole phase exists.
+- [ ] **56.5.d** — `ComputeI` (`.tla:220-227`) and `LHandleValidate`
+      (`.tla:437-450`): `I` is the set of `(id2, phase)` that could invalidate
+      committing `(c, D)` — commands outside `D`, conflicting with `c`, that do
+      not list `id` among their own dependencies.
+- [ ] **56.5.e** — `LHandleValidateOK` (`.tla:455-490`): `I = {}` ⇒ accept
+      `(c, D)`; a committed member of `I`, or
+      `|Rmax| = |Q| - e /\ exists x. x.owner \notin Q` ⇒ accept `Nop`;
+      otherwise broadcast `Waiting` and move to `PostWaiting`.
+- [ ] **56.5.f** — `LHandlePostWaiting` (`.tla:495-548`): four disjuncts,
+      including the liveness escape — a `Waiting` message with `k > n-f-e` ⇒ take
+      `Nop`. This is EPaxos\*'s fix for the original deadlocking "even during
+      executions with finitely many submitted commands".
+- [ ] **56.5.g** — Gate: `verus` passes on the full module.
+
+### 56.6 Invariants
+
+- [ ] **56.6.a** — `Agreement` (`.tla:554-560`) — if `id` is committed at two
+      replicas, the `(cmd, dep)` agree. The analogue of Raft's
+      `StateMachineSafety`.
+- [ ] **56.6.b** — `Visibility` (`.tla:562-571`) — two committed conflicting
+      non-`Nop` commands each appear in the other's dependency set, in at least
+      one direction. **No Raft counterpart**; this is the property that makes
+      dependency-based ordering work at all.
+- [ ] **56.6.c** — `TypeInv` (`.tla:573-592`) as the well-formedness predicate.
+- [ ] **56.6.d** — State them; do **not** attempt to prove them in this phase.
+      Proof is Phase 57 and needs the distributed layer first.
+
+### 56.7 Model checking
+
+- [ ] **56.7.a** — TLC on `clean.tla` at the reference's own configuration, then
+      widened. Compare against 56.0.e.
+- [ ] **56.7.b** — Source-first / DPOR runs, and **record the blocker honestly
+      if it does not run**. `EPaxos` currently bottoms out at
+      `epaxos_state_expansion_limit.model.toml` ("candidate expansion overflow:
+      struct `LConstants` exceeds `search.max_states` (200)") and
+      `19_epaxos_small` is at its ceiling with 11 states. EPaxos\* is a *larger*
+      spec, so expect blockers, and file them the way
+      `docs/model_checker_status.md` files the others rather than quietly
+      omitting the row.
+
+### 56.8 Distributed layer — the bridge to Phase 57
+
+- [ ] **56.8.a** — `EPaxosStar/distributed_system.rs`:
+      `EPaxosStarDistributedState { replica_states, replica_constants, network: Set<LPacket>, num_replicas }`,
+      a well-formedness predicate pinning quorum sizes to `n`/`f`/`e`, receive
+      guards (`network.contains(pkt)`), and network monotonicity with new packets
+      sourced from the stepping replica. Only RSL and Raft have such a layer
+      today.
+- [ ] **56.8.b** — This subsumes two defects the old module cannot fix without
+      it: `pa_sender: int` / `ao_sender: int` are free integers
+      (`EPaxos/epaxos.rs:306,310`) never bounded to `0 <= s < num_replicas`, so a
+      leader can fabricate a quorum from nothing; and `LSendPreAcceptOk` /
+      `LSendAcceptOk` have no guards. Both become unstatable once quorums are
+      filtered out of `network`.
+
+### 56.9 Explicitly out of scope
+
+- **Execution / dependency-graph ordering.** Absent from EPaxos\*'s model and
+  from upstream's. Anything here would be our own design, not a port.
+- **The refinement proof.** Phase 57. The abstract state machine for EPaxos is
+  *not* Raft's `Seq<int>` committed log — see `reports/epaxos_spec_gap.md` and
+  the analysis of what a `Map<Id, (cmd, dep)>` abstract machine buys versus a
+  totally-ordered execution sequence.
+- **Retiring `src/protocol/EPaxos/`.** It keeps the benchmark and host glue
+  alive. Revisit only once `EPaxosStar` has generated code and a host.
+- **Liveness.** EPaxos\* proves it by hand under a finitely-many-commands
+  assumption; nothing here checks it.
+
+### Risks, recorded up front
+
+1. **`HandleRecoverOK` is a translator stress test.** `CHOOSE`, five-way nested
+   `IF/ELSE`, set comprehensions over multiple binders, `UNION` over a set of
+   record fields. Jetpack tier4 needed nine translator fixes for less. Expect
+   this to be the schedule.
+2. **State-space size.** The reference bounds recovery attempts to 1 per
+   `(process, command)` purely to keep TLC finite. Our `clean.tla` will need the
+   same bound, and it must be visible as a bound, not baked in.
+3. **`ComputeI` is quantifier-heavy** — it ranges over all ids and reads five
+   per-instance fields. It will be the Z3 hotspot in Phase 57 and may already be
+   a TLC hotspot here.
+4. **Two specs named EPaxos in one tree.** `EPaxos` (unsafe, benchmarked) and
+   `EPaxosStar` (correct, unbenchmarked) coexisting is a standing
+   foot-gun. Every file in `EPaxosStar/` gets a header saying which is which,
+   and `EPaxos/epaxos.rs`'s header — which currently claims to model "the key
+   EPaxos innovations" — gets corrected to say what it actually is and to point
+   here.
+
+### Acceptance
+
+`t2_03_epaxos_star` at `golden`: `clean.tla` written and linted with a
+**measured** distance, translated to a `golden.rs` that passes `verus`, TLC
+closed against the 56.0.e baseline with anti-vacuity run. `src/protocol/EPaxosStar/`
+verifying with `bal`/`abal` and the three Apply rules intact, the full recovery
+path present, and `Agreement`/`Visibility`/`TypeInv` **stated**. `rewrite.md`
+saying exactly what is still not modelled — execution above all — and saying
+plainly that alignment with EPaxos\* removes a known unsafety without
+constituting a proof.
+
