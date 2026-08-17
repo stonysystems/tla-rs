@@ -115,6 +115,19 @@ pub struct LCmdPair {
     pub b: int,
 }
 
+/// What one `RecoverOK` reply told us about its sender's view of the instance.
+///
+/// `HandleRecoverOK` selects by **maximum `abal`** across the quorum and then
+/// reads that reply's phase, payload and dependencies, so the accumulator has
+/// to keep the whole reply rather than just who sent it.
+pub struct LRecoverInfo {
+    pub abal: int,
+    pub cmd: LCmd,
+    pub dep: Set<LInstanceId>,
+    pub init_dep: Set<LInstanceId>,
+    pub phase: LPhase,
+}
+
 /// One replica's knowledge of one instance.
 ///
 /// The first seven fields are the protocol state (`.tla:98-104`); the rest is
@@ -134,6 +147,31 @@ pub struct LInstanceState {
     pub init_dep: Set<LInstanceId>,
     /// Current dependency set.
     pub dep: Set<LInstanceId>,
+
+    // ---- reply accumulators (the single-host projection; TODO.md 56.3.z) ----
+    // The reference reads `msgs` for a whole quorum in one atomic step. A
+    // single-process spec is handed one message at a time, so each quorum rule
+    // becomes record-then-act and the accumulator has to carry everything the
+    // rule reads. Which fields exist here is dictated by that, not by taste.
+    //
+    // The ballot-scoped ones (`accept_rcvd`, `recover_replies`,
+    // `validate_rcvd`) are cleared whenever the ballot moves, because the
+    // reference re-filters `msgs` on `bal` every time. A quorum assembled
+    // across two ballots would be silently unsound.
+    /// Replicas that answered PreAccept (ballot 0 only, as the fast path is).
+    pub preaccept_rcvd: Set<int>,
+    /// Those whose reported `Dq` equalled the coordinator's `init_dep` — the
+    /// reference's `largestFastQuorum`. Counted against `N-E`, while
+    /// `preaccept_rcvd` is counted against `N-F`: two thresholds, one action.
+    pub preaccept_agreed: Set<int>,
+    /// Union of every reported `Dq` — the slow path's `Dfinal`.
+    pub preaccept_dep_union: Set<LInstanceId>,
+    /// Replicas that answered Accept **at the current ballot**.
+    pub accept_rcvd: Set<int>,
+    /// RecoverOK replies at the current ballot, by sender.
+    pub recover_replies: Map<int, LRecoverInfo>,
+    /// Replicas that answered Validate at the current ballot.
+    pub validate_rcvd: Set<int>,
 
     // ---- recovery bookkeeping (see LRecoveryPhase) ----
     /// How many recovery attempts this replica has made. Bounded in models to
@@ -218,6 +256,12 @@ pub struct LConstants {
     pub e: int,
     /// Model bound on instance numbers per replica.
     pub max_num: int,
+    /// The reference's `NumberOfRecoveryAttempts` (`.tla:28`) — a bound on how
+    /// many times one replica may re-drive recovery for one instance. It exists
+    /// *"to avoid state-space explosion"*, i.e. it is a **model bound, not
+    /// protocol**. Kept explicit and guarded rather than silently capped, the
+    /// way `t2_02_epaxos/clean.tla` keeps `MaxSeq`.
+    pub max_recovery_attempts: int,
     /// The conflict relation, as a configuration constant.
     pub conflict_pairs: Set<LCmdPair>,
 }
