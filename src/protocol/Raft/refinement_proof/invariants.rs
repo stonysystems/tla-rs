@@ -12288,131 +12288,7 @@ verus! {
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j])
-            &&& (forall |index: int| #![trigger ds.configuration_commit_certificates.dom().contains(index)] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
-                ds.configuration_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& ds_.configuration_commit_certificates.dom().contains(index)
-                    &&& ds_.configuration_commit_certificates[index].log_index
-                        == ds.configuration_commit_certificates[index].log_index
-                    &&& ds_.configuration_commit_certificates[index].entry
-                        == ds.configuration_commit_certificates[index].entry
-                    &&& ds_.configuration_commit_certificates[index].committer
-                        == ds.configuration_commit_certificates[index].committer
-                    &&& ds_.configuration_commit_certificates[index].governing_phase
-                        == ds.configuration_commit_certificates[index].governing_phase
-                    &&& ds_.configuration_commit_certificates[index].quorum
-                        == ds.configuration_commit_certificates[index].quorum
-                })
-            &&& (forall |index: int| #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
-                0 <= index < ds_.server_states[server_id].commit_index
-                && index < ds_.server_states[server_id].log.len()
-                && ds_.server_states[server_id].log[index].payload is Configuration
-                ==> {
-                    &&& ds_.configuration_commit_certificates.dom().contains(index)
-                    &&& ds_.configuration_commit_certificates[index].log_index
-                        == index
-                    &&& ds_.configuration_commit_certificates[index].entry
-                        == ds_.server_states[server_id].log[index]
-                })
-            &&& (forall |index: int| #![trigger ds_.configuration_commit_certificates.dom().contains(index)] #![trigger ds.configuration_commit_certificates.dom().contains(index)]
-                ds_.configuration_commit_certificates.dom().contains(index)
-                && !ds.configuration_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& recv_from is None
-                    &&& ds_.server_states[server_id].commit_index
-                        > ds.server_states[server_id].commit_index
-                    &&& index
-                        == ds_.server_states[server_id].commit_index - 1
-                    &&& 0 <= index
-                        < ds_.server_states[server_id].log.len()
-                    &&& ds_.server_states[server_id].log[index].payload
-                        is Configuration
-                    &&& ds_.configuration_commit_certificates[index].log_index
-                        == index
-                    &&& ds_.configuration_commit_certificates[index].entry
-                        == ds_.server_states[server_id].log[index]
-                    &&& ds_.configuration_commit_certificates[index].committer
-                        == server_id
-                    &&& ds_.configuration_commit_certificates[index].governing_phase
-                        == active_membership_phase_for_state(
-                            ds.server_states[server_id],
-                            ds.server_constants[server_id],
-                        )
-                    &&& ds_.configuration_commit_certificates[index].quorum
-                        == replicator_set(
-                            ds.server_states[server_id],
-                            ds.server_constants[server_id],
-                            ds_.server_states[server_id].commit_index,
-                        )
-                })
-            &&& (forall |index: int| #![trigger ds.log_commit_certificates.dom().contains(index)] #![trigger ds_.log_commit_certificates.dom().contains(index)]
-                ds.log_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& ds_.log_commit_certificates.dom().contains(index)
-                    &&& ds_.log_commit_certificates[index].log_index
-                        == ds.log_commit_certificates[index].log_index
-                    &&& ds_.log_commit_certificates[index].entry
-                        == ds.log_commit_certificates[index].entry
-                    &&& ds_.log_commit_certificates[index].committer
-                        == ds.log_commit_certificates[index].committer
-                    &&& ds_.log_commit_certificates[index].governing_phase
-                        == ds.log_commit_certificates[index].governing_phase
-                    &&& ds_.log_commit_certificates[index].quorum
-                        == ds.log_commit_certificates[index].quorum
-                })
-            &&& (forall |index: int| #![trigger ds_.log_commit_certificates.dom().contains(index)] #![trigger ds.log_commit_certificates.dom().contains(index)]
-                ds_.log_commit_certificates.dom().contains(index)
-                && !ds.log_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& recv_from is None
-                    &&& ds_.server_states[server_id].commit_index
-                        > ds.server_states[server_id].commit_index
-                    &&& ds.server_states[server_id].commit_index
-                        <= index < ds_.server_states[server_id].commit_index
-                    &&& index < ds_.server_states[server_id].log.len()
-                    &&& ds_.log_commit_certificates[index].log_index == index
-                    &&& ds_.log_commit_certificates[index].entry
-                        == ds_.server_states[server_id].log[index]
-                    &&& ds_.log_commit_certificates[index].committer == server_id
-                    &&& ds_.log_commit_certificates[index].governing_phase
-                        == active_membership_phase_from_raft_log(
-                            ds.server_states[server_id].log,
-                            index,
-                            MembershipPhase::Stable {
-                                config: ds.server_constants[server_id].servers,
-                            },
-                        )
-                    &&& ds_.log_commit_certificates[index].quorum
-                        == replicator_set(
-                            ds.server_states[server_id],
-                            ds.server_constants[server_id],
-                            ds_.server_states[server_id].commit_index,
-                        )
-                })
-            &&& (forall |index: int| #![trigger ds_.log_commit_certificates.dom().contains(index)]
-                0 <= index < ds_.server_states[server_id].commit_index
-                && index < ds_.server_states[server_id].log.len()
-                ==> {
-                    &&& ds_.log_commit_certificates.dom().contains(index)
-                    &&& ds_.log_commit_certificates[index].log_index == index
-                    &&& ds_.log_commit_certificates[index].entry
-                        == ds_.server_states[server_id].log[index]
-                })
-            &&& RaftActionProduces(ds, server_id,
-                    ds.server_states[server_id], ds_.server_states[server_id],
-                    ds.server_constants[server_id], sent_pkts, recv_from)
-            &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
-                ==> ds_.network.contains(pkt))
-            &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
-                ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
-                    &&& pkt.src == server_id
-                    &&& 0 <= pkt.dst < ds.num_servers
-                    &&& (exists |i: int| 0 <= i < sent_pkts.len() && pkt.msg == sent_pkts[i])
-                    &&& (match recv_from {
-                        Some(src) => pkt.dst == src,
-                        None => true,
-                    })
-                })
+            &&& RaftServerStepWitness(ds, ds_, server_id, sent_pkts, recv_from)
         })
     {
         // Extract server_id from RaftDistributedNext directly (not via legacy)
@@ -12426,27 +12302,9 @@ verus! {
                     ds_.server_states[j] == ds.server_states[j])
                 &&& RaftServerStepWithNetwork(ds, ds_, sid)
             };
-        let s = ds.server_states[server_id];
-        let s_ = ds_.server_states[server_id];
-        let c = ds.server_constants[server_id];
-
         let (sent_pkts, recv_from) = choose |sp: Seq<LRaftMessage>, rf: Option<int>|
-            #![trigger RaftActionProduces(ds, server_id, s, s_, c, sp, rf)]
-            {
-                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
-                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
-                    ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
-                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
-                        &&& pkt.src == server_id
-                        &&& 0 <= pkt.dst < ds.num_servers
-                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
-                        &&& (match rf {
-                            Some(src) => pkt.dst == src,
-                            None => true,
-                        })
-                    })
-            };
+            #![trigger RaftServerStepWitness(ds, ds_, server_id, sp, rf)]
+            RaftServerStepWitness(ds, ds_, server_id, sp, rf);
 
         // Also establish LNext (needed by callers)
         lemma_distributed_next_implies_legacy(ds, ds_);

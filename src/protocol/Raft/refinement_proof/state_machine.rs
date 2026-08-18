@@ -114,14 +114,19 @@ verus! {
     /// to those sent_packets wrapped with src == server_id.
     /// For message-handling actions, response packets are routed back to the
     /// sender of the received packet (received_from).
-    pub open spec fn RaftServerStepWithNetwork(
+    /// The full obligations of one server step for a concrete witness
+    /// (sent_packets, received_from): action, network routing, and ghost
+    /// bookkeeping. RaftServerStepWithNetwork is exactly the existential
+    /// closure of this predicate; naming the body lets proofs bind a
+    /// witness by choosing on the predicate application itself instead of
+    /// re-deriving each conjunct for a separately chosen witness.
+    pub open spec fn RaftServerStepWitness(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+        sent_packets: Seq<LRaftMessage>, received_from: Option<int>,
     ) -> bool {
         let s = ds.server_states[server_id];
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
-        exists |sent_packets: Seq<LRaftMessage>, received_from: Option<int>|
-            #![trigger RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from)]
         {
             // Action: which branch was taken
             &&& RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from)
@@ -210,7 +215,7 @@ verus! {
                 })
             // A new certificate can only be created when a local leader commit
             // ends exactly at a Configuration entry.
-            &&& (forall |index: int| #![trigger s_.log[index]]
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.configuration_commit_certificates.dom().contains(index)] #![trigger ds.configuration_commit_certificates.dom().contains(index)]
                 ds_.configuration_commit_certificates.dom().contains(index)
                 && !ds.configuration_commit_certificates.dom().contains(index)
                 ==> {
@@ -255,7 +260,7 @@ verus! {
             // post-state prefix is tied to the same global history
             // certificate. Followers therefore reuse an existing leader-created
             // certificate rather than inventing a new one.
-            &&& (forall |index: int| #![trigger s_.log[index]]
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
                 0 <= index < s_.commit_index
                 && index < s_.log.len()
                 && s_.log[index].payload is Configuration
@@ -285,7 +290,7 @@ verus! {
                 })
             // New all-entry certificates can only describe entries in one
             // local leader's newly committed physical-log interval.
-            &&& (forall |index: int| #![trigger s_.log[index]]
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.log_commit_certificates.dom().contains(index)] #![trigger ds.log_commit_certificates.dom().contains(index)]
                 ds_.log_commit_certificates.dom().contains(index)
                 && !ds.log_commit_certificates.dom().contains(index)
                 ==> {
@@ -327,7 +332,7 @@ verus! {
                     })
             // Every committed post-state entry, including follower-learned
             // entries, is tied to the unique global certificate at its index.
-            &&& (forall |index: int| #![trigger s_.log[index]]
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.log_commit_certificates.dom().contains(index)]
                 0 <= index < s_.commit_index
                 && index < s_.log.len()
                 ==> {
@@ -336,6 +341,14 @@ verus! {
                     &&& ds_.log_commit_certificates[index].entry == s_.log[index]
                 })
         }
+    }
+
+    pub open spec fn RaftServerStepWithNetwork(
+        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    ) -> bool {
+        exists |sent_packets: Seq<LRaftMessage>, received_from: Option<int>|
+            #![trigger RaftServerStepWitness(ds, ds_, server_id, sent_packets, received_from)]
+            RaftServerStepWitness(ds, ds_, server_id, sent_packets, received_from)
     }
 
     /// Distributed system step: one server takes a step, with network routing.
