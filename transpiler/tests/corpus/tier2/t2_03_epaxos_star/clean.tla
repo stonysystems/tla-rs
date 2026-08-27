@@ -29,8 +29,12 @@ N == Cardinality(Proc)
 Max2(a, b) == IF a > b THEN a ELSE b
 ASSUME N >= Max2(2*E + F - 1, 2*F + 1)
 ASSUME E <= F
-\* Ballots are k*N + p, so a process identity has to be arithmetic.
-ASSUME Proc \subseteq Nat
+\* Ballots are k*N + p, so a process identity has to be arithmetic -- and it
+\* must be non-zero, because `StartRecover`'s first ballot for p IS p and
+\* `ApplyRecover` requires `bal < b`. With 0 \in Proc, replica 0 could never
+\* start recovery. The reference has Proc = {1,2,3} and relies on this
+\* silently; stating it is the point.
+ASSUME Proc \subseteq Nat \ {0}
 
 (***************************************************************************)
 (* An instance identifier carries its owner.                                *)

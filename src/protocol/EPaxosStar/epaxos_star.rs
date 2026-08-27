@@ -592,8 +592,18 @@ pub open spec fn LStartRecover(
     sent: Set<LPacket>,
 ) -> bool {
     let inst = InstAt(s, id);
+    // Ballots owned by `p` are `k*N + p + 1`, so ownership is `(b - 1) % N` and
+    // **ballot 0 belongs to nobody** — it is the initial ballot.
+    //
+    // The reference writes `IF bal = 0 THEN p ELSE bal + N` with `Proc =
+    // {1,2,3}`, i.e. 1-indexed, so its first recovery ballot is `p >= 1 > 0`
+    // and `ApplyRecover`'s `bal < b` holds. Our `procs` is
+    // `Set::range(0, num_replicas)`, 0-indexed, under which replica 0 would get
+    // `b = 0`, `ApplyRecoverEnabled(inst, 0)` would demand `bal < 0`, and
+    // **replica 0 could never start recovery at all**. The `+ 1` restores the
+    // reference's structure under 0-indexing.
     let b = if inst.bal == 0 {
-        c.my_id
+        c.my_id + 1
     } else {
         inst.bal + N(c)
     };

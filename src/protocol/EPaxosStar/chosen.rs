@@ -473,4 +473,207 @@ pub proof fn lemma_chosen_stable_at_init(ds: EPaxosStarDistributedState)
     }
 }
 
+// =========================================================================
+// 57.4.a.3 — supporting network invariants
+// =========================================================================
+
+/// Every broadcast actually puts a packet on the network.
+///
+/// `Broadcast` addresses `procs \ {my_id}`, which is empty at `N == 1` — the
+/// reason `WellFormedConstants` now demands `N >= 2`. Everything that reasons
+/// "this action sent an `Accept`, so one is in the network" goes through here.
+pub proof fn lemma_broadcast_nonempty(c: LConstants, msg: LEPaxosStarMessage)
+    requires
+        WellFormedConstants(c),
+    ensures
+        exists|pkt: LPacket|
+            (#[trigger] Broadcast(c, msg).contains(pkt)) && pkt.msg == msg && pkt.src == c.my_id,
+{
+    broadcast use vstd::set_lib::group_set_lib_default;
+    let others = c.procs.remove(c.my_id);
+    assert(others.len() == c.procs.len() - 1);
+    assert(others.len() > 0);
+    let q = others.choose();
+    assert(others.contains(q)) by {
+        vstd::set_lib::lemma_set_empty_equivalency_len::<int>(others);
+    }
+    let pkt = LPacket { src: c.my_id, dst: q, msg };
+    assert(Broadcast(c, msg).contains(pkt)) by {
+        assert(others.contains(q) && pkt == (|x: int| LPacket { src: c.my_id, dst: x, msg })(q));
+    }
+}
+
+/// Some `Accept` for `(id, b)` exists, whatever payload it carried.
+pub open spec fn SomeAcceptSent(
+    ds: EPaxosStarDistributedState,
+    id: LInstanceId,
+    b: int,
+) -> bool {
+    exists|c: LCmd, d: Set<LInstanceId>| #[trigger] AcceptSent(ds, id, b, c, d)
+}
+
+/// **`AcceptOKImpliesAccept`** — nobody answers an `Accept` that was never sent.
+///
+/// The reference gets this for free by construction: `HandleAcceptOK` reads a
+/// quorum straight out of `msgs`, and `msgs` only holds what was sent. Our
+/// accumulators hold senders, so the link back to a real `Accept` has to be an
+/// invariant. This is the first half of the obligation 57.1.c names.
+pub open spec fn AcceptOKImpliesAccept(ds: EPaxosStarDistributedState) -> bool {
+    forall|id: LInstanceId, b: int, p: int|
+        #[trigger] AcceptOKFrom(ds, id, b, p) ==> SomeAcceptSent(ds, id, b)
+}
+
+/// `SomeAcceptSent` survives network growth — the same monotonicity argument as
+/// `lemma_chosen_monotone`, needed separately because this predicate hides its
+/// payload behind an existential.
+pub proof fn lemma_some_accept_monotone(
+    ds: EPaxosStarDistributedState,
+    ds_: EPaxosStarDistributedState,
+    id: LInstanceId,
+    b: int,
+)
+    requires
+        ds.network.subset_of(ds_.network),
+        SomeAcceptSent(ds, id, b),
+    ensures
+        SomeAcceptSent(ds_, id, b),
+{
+    let (c, d): (LCmd, Set<LInstanceId>) = choose|c: LCmd, d: Set<LInstanceId>|
+        #[trigger] AcceptSent(ds, id, b, c, d);
+    let w = choose|pkt: LPacket|
+        (#[trigger] ds.network.contains(pkt)) && pkt.msg == LEPaxosStarMessage::Accept {
+            id,
+            b,
+            c,
+            d,
+        };
+    assert(ds_.network.contains(w));
+    assert(AcceptSent(ds_, id, b, c, d));
+}
+
+pub proof fn lemma_acceptok_implies_accept_at_init(ds: EPaxosStarDistributedState)
+    requires
+        EPaxosStarDistributedInit(ds),
+    ensures
+        AcceptOKImpliesAccept(ds),
+{
+    assert forall|id: LInstanceId, b: int, p: int| !(#[trigger] AcceptOKFrom(ds, id, b, p)) by {
+        assert(ds.network =~= Set::<LPacket>::empty());
+        if AcceptOKFrom(ds, id, b, p) {
+            let w = choose|pkt: LPacket|
+                (#[trigger] ds.network.contains(pkt)) && pkt.src == p && pkt.msg
+                    == LEPaxosStarMessage::AcceptOK { id, b };
+            assert(ds.network.contains(w));
+            assert(false);
+        }
+    }
+}
+
+// =========================================================================
+// Packet-shape helpers
+//
+// Every action states `sent =~= <some combination of Broadcast / BroadcastTo /
+// ReplyTo / SelfPacket>`. To rule an action out of a network invariant one has
+// to get from "pkt is in that set" to "pkt's message is one of these two
+// constructors", and these are what make that step mechanical. Without them
+// each of the 25 cases would have to re-derive `Set::map` membership.
+// =========================================================================
+
+pub proof fn lemma_broadcast_shape(c: LConstants, msg: LEPaxosStarMessage, pkt: LPacket)
+    requires
+        Broadcast(c, msg).contains(pkt),
+    ensures
+        pkt.msg == msg,
+        pkt.src == c.my_id,
+{
+    broadcast use vstd::set_lib::group_set_lib_default;
+    assert(exists|q: int|
+        c.procs.remove(c.my_id).contains(q) && pkt == (|x: int|
+            LPacket { src: c.my_id, dst: x, msg })(q));
+}
+
+pub proof fn lemma_broadcast_to_shape(
+    c: LConstants,
+    targets: Set<int>,
+    msg: LEPaxosStarMessage,
+    pkt: LPacket,
+)
+    requires
+        BroadcastTo(c, targets, msg).contains(pkt),
+    ensures
+        pkt.msg == msg,
+        pkt.src == c.my_id,
+{
+    broadcast use vstd::set_lib::group_set_lib_default;
+    assert(exists|q: int|
+        targets.remove(c.my_id).contains(q) && pkt == (|x: int|
+            LPacket { src: c.my_id, dst: x, msg })(q));
+}
+
+pub proof fn lemma_reply_shape(
+    c: LConstants,
+    orig: LPacket,
+    msg: LEPaxosStarMessage,
+    pkt: LPacket,
+)
+    requires
+        ReplyTo(c, orig, msg).contains(pkt),
+    ensures
+        pkt.msg == msg,
+        pkt.src == c.my_id,
+{
+}
+
+/// A packet whose message is `AcceptOK` cannot have come out of a broadcast of
+/// anything else. Stated once, in the form the case analysis needs.
+pub proof fn lemma_not_acceptok_from_broadcast(
+    c: LConstants,
+    msg: LEPaxosStarMessage,
+    pkt: LPacket,
+    id: LInstanceId,
+    b: int,
+)
+    requires
+        Broadcast(c, msg).contains(pkt),
+        pkt.msg == (LEPaxosStarMessage::AcceptOK { id, b }),
+    ensures
+        msg == (LEPaxosStarMessage::AcceptOK { id, b }),
+{
+    lemma_broadcast_shape(c, msg, pkt);
+}
+
+/// Some `Accept` for `(id, b)` sits in this packet set.
+pub open spec fn HasAcceptFor(pkts: Set<LPacket>, id: LInstanceId, b: int) -> bool {
+    exists|pkt: LPacket|
+        (#[trigger] pkts.contains(pkt)) && pkt.msg is Accept && pkt.msg->Accept_id == id
+            && pkt.msg->Accept_b == b
+}
+
+/// Every action that emits an `Accept` broadcast puts a real packet in `sent`.
+/// The bridge from `lemma_broadcast_nonempty` to the form the invariant wants.
+pub proof fn lemma_accept_broadcast_gives_has_accept(
+    c: LConstants,
+    id: LInstanceId,
+    b: int,
+    cc: LCmd,
+    dd: Set<LInstanceId>,
+    extra: LPacket,
+)
+    requires
+        WellFormedConstants(c),
+    ensures
+        HasAcceptFor(
+            Broadcast(c, LEPaxosStarMessage::Accept { id, b, c: cc, d: dd }).insert(extra),
+            id,
+            b,
+        ),
+{
+    let msg = LEPaxosStarMessage::Accept { id, b, c: cc, d: dd };
+    lemma_broadcast_nonempty(c, msg);
+    let w = choose|pkt: LPacket|
+        (#[trigger] Broadcast(c, msg).contains(pkt)) && pkt.msg == msg && pkt.src == c.my_id;
+    assert(Broadcast(c, msg).insert(extra).contains(w));
+    assert(w.msg is Accept && w.msg->Accept_id == id && w.msg->Accept_b == b);
+}
+
 } // verus!

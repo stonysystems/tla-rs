@@ -286,6 +286,15 @@ pub open spec fn N(c: LConstants) -> int {
 /// `Set::new` returns `Option` and why `ConflictingIds` filters a domain.
 pub open spec fn WellFormedConstants(c: LConstants) -> bool {
     &&& c.procs.contains(c.my_id)
+    // At least two replicas. Not in the reference, and **found by the proof**:
+    // every send here is `Broadcast`, which addresses `procs \ {my_id}`, so at
+    // `N == 1` a replica decides without any `Accept` packet ever existing.
+    // `ChosenAtBallot` is stated over the network (see `chosen.rs`), so it
+    // cannot see such a decision and `CommittedImpliesChosen` is false there.
+    // The reference admits `N == 1` too (`N >= 2F+1` with `F == 0`); its own
+    // model uses three. A one-replica run of a fault-tolerance protocol is
+    // degenerate, so this is a bound on the configuration, not a weakening.
+    &&& N(c) >= 2
     &&& c.f >= 0
     &&& c.e >= 0
     &&& c.e <= c.f
