@@ -676,4 +676,242 @@ pub proof fn lemma_accept_broadcast_gives_has_accept(
     assert(w.msg is Accept && w.msg->Accept_id == id && w.msg->Accept_b == b);
 }
 
+/// Every packet in this set carries one of (at most) two messages.
+///
+/// Sixteen of the twenty-five actions emit no `AcceptOK` at all, and the only
+/// thing the case analysis needs from them is exactly this. Proving it once per
+/// *shape* rather than once per action is what keeps the case analysis to one
+/// line each.
+pub open spec fn OnlyMsgs(
+    sent: Set<LPacket>,
+    m1: LEPaxosStarMessage,
+    m2: LEPaxosStarMessage,
+) -> bool {
+    forall|p: LPacket| (#[trigger] sent.contains(p)) ==> p.msg == m1 || p.msg == m2
+}
+
+pub proof fn lemma_only_broadcast(c: LConstants, m: LEPaxosStarMessage)
+    ensures
+        OnlyMsgs(Broadcast(c, m), m, m),
+{
+    assert forall|p: LPacket| (#[trigger] Broadcast(c, m).contains(p)) implies p.msg == m by {
+        lemma_broadcast_shape(c, m, p);
+    }
+}
+
+pub proof fn lemma_only_broadcast_insert(
+    c: LConstants,
+    m: LEPaxosStarMessage,
+    extra: LPacket,
+)
+    ensures
+        OnlyMsgs(Broadcast(c, m).insert(extra), m, extra.msg),
+{
+    assert forall|p: LPacket| (#[trigger] Broadcast(c, m).insert(extra).contains(p))
+        implies p.msg == m || p.msg == extra.msg by {
+        if p != extra {
+            lemma_broadcast_shape(c, m, p);
+        }
+    }
+}
+
+pub proof fn lemma_only_broadcast_to_insert(
+    c: LConstants,
+    t: Set<int>,
+    m: LEPaxosStarMessage,
+    extra: LPacket,
+)
+    ensures
+        OnlyMsgs(BroadcastTo(c, t, m).insert(extra), m, extra.msg),
+{
+    assert forall|p: LPacket| (#[trigger] BroadcastTo(c, t, m).insert(extra).contains(p))
+        implies p.msg == m || p.msg == extra.msg by {
+        if p != extra {
+            lemma_broadcast_to_shape(c, t, m, p);
+        }
+    }
+}
+
+pub proof fn lemma_only_reply(c: LConstants, o: LPacket, m: LEPaxosStarMessage)
+    ensures
+        OnlyMsgs(ReplyTo(c, o, m), m, m),
+{
+}
+
+pub proof fn lemma_only_empty(m: LEPaxosStarMessage)
+    ensures
+        OnlyMsgs(Set::<LPacket>::empty(), m, m),
+{
+}
+
+/// The Shape-A conclusion, packaged: nine actions emit an `Accept` broadcast
+/// together with a self-addressed `AcceptOK` in the same `sent`, so the
+/// justification is right there.
+pub proof fn lemma_shape_a_justifies(
+    c: LConstants,
+    id: LInstanceId,
+    b: int,
+    cc: LCmd,
+    dd: Set<LInstanceId>,
+    extra: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        sent =~= Broadcast(c, LEPaxosStarMessage::Accept { id, b, c: cc, d: dd }).insert(extra),
+    ensures
+        HasAcceptFor(sent, id, b),
+{
+    lemma_accept_broadcast_gives_has_accept(c, id, b, cc, dd, extra);
+    assert(sent =~= Broadcast(c, LEPaxosStarMessage::Accept { id, b, c: cc, d: dd }).insert(
+        extra,
+    ));
+}
+
+// =========================================================================
+// The frame lemma every invariant needs
+// =========================================================================
+
+/// The step left every instance other than `idX` exactly as it was.
+pub open spec fn TouchesOnly(s: LState, s_: LState, idX: LInstanceId) -> bool {
+    forall|j: LInstanceId| j != idX ==> #[trigger] InstAt(s_, j) == InstAt(s, j)
+}
+
+/// All twenty-five actions update state the same way — `instances.insert(idX,
+/// ...)` for a single `idX` — so this is proved once and the case analysis only
+/// has to name `idX`.
+pub proof fn lemma_insert_touches_one(s: LState, s_: LState, idX: LInstanceId)
+    requires
+        s_.instances == s.instances.insert(idX, s_.instances[idX]),
+    ensures
+        TouchesOnly(s, s_, idX),
+{
+    assert forall|j: LInstanceId| j != idX implies #[trigger] InstAt(s_, j) == InstAt(s, j) by {
+        assert(s_.instances.dom().contains(j) <==> s.instances.dom().contains(j));
+    }
+}
+
+/// **Every action touches at most one instance.**
+///
+/// Twenty-five branches, two lines each, because the shape is uniform. This is
+/// the frame reasoning that every later invariant leans on: for an instance the
+/// step did not touch, the invariant carries over unchanged and only the touched
+/// one needs an argument.
+pub proof fn lemma_action_touches_one(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+)
+    requires
+        ReplicaAction(s, s_, c, received, sent),
+    ensures
+        exists|idX: LInstanceId| #[trigger] TouchesOnly(s, s_, idX),
+{
+    match received {
+        Option::None => {
+        if exists|v: int| LSubmit(s, s_, c, v, sent) {
+        let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+        lemma_insert_touches_one(s, s_, LInstanceId { owner: c.my_id, num: s.next_num });
+        assert(TouchesOnly(s, s_, LInstanceId { owner: c.my_id, num: s.next_num }));
+        } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+        let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else {
+            assert(false);
+        }
+        },
+        Option::Some(rp) => {
+        if LHandlePreAccept(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->PreAccept_id);
+        assert(TouchesOnly(s, s_, rp.msg->PreAccept_id));
+        } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->PreAcceptOK_id);
+        assert(TouchesOnly(s, s_, rp.msg->PreAcceptOK_id));
+        } else if LHandleAccept(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->Accept_id);
+        assert(TouchesOnly(s, s_, rp.msg->Accept_id));
+        } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->AcceptOK_id);
+        assert(TouchesOnly(s, s_, rp.msg->AcceptOK_id));
+        } else if LHandleCommit(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->Commit_id);
+        assert(TouchesOnly(s, s_, rp.msg->Commit_id));
+        } else if LHandleRecover(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->Recover_id);
+        assert(TouchesOnly(s, s_, rp.msg->Recover_id));
+        } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->RecoverOK_id);
+        assert(TouchesOnly(s, s_, rp.msg->RecoverOK_id));
+        } else if LHandleValidate(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->Validate_id);
+        assert(TouchesOnly(s, s_, rp.msg->Validate_id));
+        } else if LRecordValidateOK(s, s_, c, rp, sent) {
+        lemma_insert_touches_one(s, s_, rp.msg->ValidateOK_id);
+        assert(TouchesOnly(s, s_, rp.msg->ValidateOK_id));
+        } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+        let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+        let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+        lemma_insert_touches_one(s, s_, w);
+        assert(TouchesOnly(s, s_, w));
+        } else {
+            assert(false);
+        }
+        },
+    }
+}
+
 } // verus!
