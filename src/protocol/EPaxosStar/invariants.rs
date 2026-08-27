@@ -133,4 +133,40 @@ pub open spec fn EPaxosStarSafety(ds: EPaxosStarDistributedState) -> bool {
     &&& Visibility(ds)
 }
 
+// =========================================================================
+// What is proved so far (Phase 57)
+// =========================================================================
+
+/// The safety invariant holds at initialisation.
+///
+/// Every conjunct is discharged for the same reason: `LInit` leaves every
+/// replica's instance map empty, so `InstAt` answers `InitialInstance()` for
+/// every identifier, whose phase is `Initial`. `Agreement` and `Visibility` are
+/// then vacuous — both are implications from *two* instances being `Committed`
+/// — and `TypeInv`'s bounds hold at zero.
+///
+/// It is worth noting which well-formedness conjunct this needed:
+/// `TypeInvScalars` asserts `0 <= recovered <= max_recovery_attempts`, and
+/// `WellFormedConstants` did not bound `max_recovery_attempts` at all, so a
+/// negative bound made the invariant false at `Init`. Found by trying to prove
+/// this and fixed in `types.rs` rather than by weakening the invariant.
+pub proof fn lemma_init_establishes_invariant(ds: EPaxosStarDistributedState)
+    requires
+        EPaxosStarDistributedInit(ds),
+    ensures
+        EPaxosStarSafety(ds),
+{
+    assert forall|i: int, id: LInstanceId| 0 <= i < ds.num_replicas implies #[trigger] InstAt(
+        ds.replica_states[i],
+        id,
+    ) == InitialInstance() by {
+        assert(LInit(ds.replica_states[i], ds.replica_constants[i]));
+        assert(!ds.replica_states[i].instances.dom().contains(id));
+    }
+    assert(TypeInvScalars(ds));
+    assert(TypeInvDeps(ds));
+    assert(Agreement(ds));
+    assert(Visibility(ds));
+}
+
 } // verus!

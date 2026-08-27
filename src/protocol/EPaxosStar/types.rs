@@ -289,6 +289,7 @@ pub open spec fn WellFormedConstants(c: LConstants) -> bool {
     &&& c.f >= 0
     &&& c.e >= 0
     &&& c.e <= c.f
+    &&& c.max_recovery_attempts >= 0
     &&& N(c) >= 2 * c.e + c.f - 1
     &&& N(c) >= 2 * c.f + 1
     &&& c.max_num >= 1

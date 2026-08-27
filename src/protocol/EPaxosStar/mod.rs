@@ -5,4 +5,5 @@
 pub mod distributed_system;
 pub mod epaxos_star;
 pub mod invariants;
+pub mod refinement;
 pub mod types;

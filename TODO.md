@@ -19212,6 +19212,51 @@ match. So the revised expectation splits in two:
 Plan accordingly: **do not treat these as one milestone.** Agreement first, and
 land it as a result on its own.
 
+**PHASE 57 IS OPEN (2026-08-17)**, ahead of Phase 56's acceptance bar and
+deliberately: that bar is the corpus half, which is blocked on a translator
+restructure and **has no dependency relationship to the proof**. Phase 57 reads
+only `src/protocol/EPaxosStar/`. The gate was self-imposed; it is lifted, and
+the risk it was standing in for is handled by review instead (see below).
+
+**Landed so far: `refinement.rs`, and the Init side proved.** Whole crate
+**`1054 verified, 0 errors`** (was 1050 — four new obligations, all real):
+
+- `lemma_init_abstracts_to_empty` + `lemma_known_ids_empty_at_init` — the
+  refinement map sends the initial distributed state to the empty abstract
+  state, by recursion over the replica sequence.
+- `lemma_init_establishes_invariant` — `EPaxosStarSafety` holds at `Init`.
+  `Agreement` and `Visibility` are vacuous there (both are implications from
+  *two* instances being `Committed`) and `TypeInv`'s bounds hold at zero.
+
+**Proving that last one found a real gap**: `TypeInvScalars` asserts
+`0 <= recovered <= max_recovery_attempts` and `WellFormedConstants` bounded
+`max_recovery_attempts` not at all, so a negative bound made the invariant false
+at `Init`. Fixed in `types.rs` by adding the bound, not by weakening the
+invariant.
+
+**The validation risk, handled by review (option D).** The spec cannot be run by
+any tool in this repo — the corpus path needs an ~800-line restructure and
+`verus2-tla` fails on `#[trigger]` and, before that, on closures that even
+`raft.rs` trips. So a systematic hand-review against the reference was done
+instead. **No translation errors found** across the high-risk sites: `Submit`'s
+dependency computation, the fast/slow two-threshold split, branch exclusivity in
+`HandleRecoverOK` (`LRecoverNop`'s guard is exactly the union of reference
+branches 3 and 5), `ComputeI` evaluated on the pre-state in both callers,
+`LPostWaitingOnRecoverOK`'s else-branch owner guard, `PostWaitingReady`'s ballot
+check, and `LValidateWait` preserving `ivar`. Two things it did surface:
+
+- [ ] **57.1.c — the quorum tests count different things.** The reference sizes
+      `IsQuorumSized(quorumOfMessages)` over a set of **messages**; our
+      accumulators hold **senders**. They agree only because a replica answers
+      at most once per instance, which the `LRecord*` guards
+      (`!contains(pkt.src)`) enforce. That is a modelling equivalence resting on
+      a property, not an identity, and it belongs with 57.1.b.
+- `clean.tla` and the Verus spec disagree on the self-addressed `RecoverOK`:
+      the former inserts it into `recoverReplies` directly, the latter sends a
+      `SelfPacket` that returns through `LRecordRecoverOK`. The reference puts
+      it in `msgs`, so the Verus one is closer. Recorded, not changed —
+      `clean.tla` currently feeds nothing.
+
 ### 57.1 Distributed layer (prerequisite, sketched in 56.8)
 
 - [x] **57.1.a — ALREADY DONE as 56.8.a (2026-08-17).** `EPaxosStar/distributed_system.rs`: `replica_states`,
