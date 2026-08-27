@@ -19328,6 +19328,56 @@ a different list, not a translation:
       gain. Prove this instead — it is a real obligation, it is exactly the kind
       of thing 57.1.b needs, and it is cheap compared to the rest of the list.
 
+**57.4 STARTED 2026-08-17 — `chosen.rs`, and `Agreement` is now reduced.**
+Whole crate **`1062 verified, 0 errors`** (was 1054), trigger notes 0.
+
+Two definitional decisions, both load-bearing:
+
+- **Chosen-ness is stated over the network, not over replica state.** A
+  replica's `(cmd, dep)` is overwritten by any accept at a higher ballot, so a
+  current-state predicate is not stable and cannot carry an induction. The
+  monotone network in `distributed_system.rs` — chosen deliberately, recorded
+  in 56.8 — is what makes this available.
+- **`ChosenAtBallot` has TWO disjuncts, and that is not incidental.**
+  `SlowChosen` is classic Paxos (a quorum `>= N-F` answered `AcceptOK` at `b`,
+  and the `Accept` at `b` carried `(c,D)`). `FastChosen` is ballot 0 only and
+  involves **no `Accept` at all** — `LCommitFast` goes straight from
+  `PreAccepted` to `Committed`. A definition written only over `Accept` would be
+  silently false for every fast-path commit. This is why the reference's
+  `ASSUME` has two terms: `2F+1` makes two slow quorums intersect, `2E+F-1`
+  makes a fast decision recoverable.
+
+**Proved:**
+
+- [x] **`lemma_agreement_from_chosen`** — **`Agreement` follows from
+      `ChosenStable` + `CommittedImpliesChosen`.** This is the reduction: it
+      turns "prove `Agreement` inductive over 25 actions" into two named
+      obligations and says exactly what is left.
+- [x] **`lemma_chosen_monotone` / `lemma_chosen_grows_over_step`** — once
+      chosen, always chosen, because every clause is a positive statement about
+      a grow-only network. **This makes the inductive obligation one-sided**: a
+      step can only break `ChosenStable` by making something *newly* chosen that
+      disagrees, never by an old choice evaporating. That is the case that makes
+      current-state formulations of Paxos invariants painful, and it is gone.
+- [x] **`lemma_nothing_chosen_at_init` / `lemma_chosen_stable_at_init`** — both
+      obligations hold at `Init`, vacuously (empty network, no commits).
+
+**What remains on the A line**, and it is the whole of it:
+
+- [ ] **57.4.a.1** — `CommittedImpliesChosen` inductive. Six commit sites must
+      each justify it: `LCommitFast` via `FastChosen`, `LCommitSlow` via
+      `SlowChosen`, and `LHandleCommit` / `LRecoverCommitted` /
+      `LPostWaitingOnRecoverOK` by inheriting from whoever they copied.
+- [ ] **57.4.a.2** — `ChosenStable` inductive. The Paxos half (slow vs slow at
+      different ballots) should go through on `lemma_quorums_intersect` plus
+      ballot ownership (`b = k*N + p` makes the driver of a ballot unique).
+      **The fast-vs-slow half is the real content** and is what the validation
+      sub-protocol exists for.
+- [ ] **57.4.a.3** — supporting network invariants the above will need, each
+      provable on its own: `AcceptOKImpliesAccept`, `AcceptUniqueAtBallot`,
+      `BallotOwnership`, and `PreAcceptOKAddressedToOwner` (already filed in
+      57.3 from the D-pass).
+
 ### 57.4 The load-bearing lemma
 
 - [ ] **57.4.a** — **`RecoveryPreservesCommit`**: if `id` is committed anywhere
