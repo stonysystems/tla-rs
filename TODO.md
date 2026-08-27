@@ -18754,7 +18754,7 @@ assumed from the paper text.
       and `initCoord`, nothing else. If the linter reports more, that is a
       finding about the linter or about 56.1.b, and either way it goes in
       `rewrite.md`.
-- [ ] **56.2.c** — Write `clean.tla`: the 56.1.b identifier rewrite, quorums by
+- [x] **56.2.c — DONE 2026-08-17** (`clean: true`, 0 violations, no rules skipped). Write `clean.tla`: the 56.1.b identifier rewrite, quorums by
       counting (P4), and `NumberOfRecoveryAttempts` carried over as an explicit
       **model bound**, guarded rather than silently capped — the discipline
       `t2_02_epaxos/clean.tla:134-136` states for `MaxSeq` ("capping the value
@@ -18768,6 +18768,20 @@ assumed from the paper text.
       frozen (corpus README's rule). Budget for translator defects: tier4
       Jetpack needed nine, all type-shaped, and this spec is larger and uses
       `CHOOSE`, nested `IF/ELSE` and multi-binder set comprehensions heavily.
+
+      **ATTEMPTED 2026-08-17 — 53 parts did not project.** Three causes, and the
+      big one is ours rather than the translator's: **31 are the
+      two-dimensional per-node state `[Proc -> [Id -> T]]`**, which the
+      projection pass has no model for; 12 are `Broadcast` written as
+      `[m EXCEPT !.mdest = q]`; 10 are helper-operator sets read as node sets.
+      `t2_02_epaxos/clean.tla` avoids both of the first two — `cmdLog \in
+      [Replicas -> SUBSET Record]` is one level with the instance dimension
+      inside a set, and its messages have explicit constructors. So the fix is
+      to **restructure `clean.tla`** (collapse 21 parallel arrays into one
+      `instances \in [Proc -> SUBSET InstanceRecord]`, give every message a
+      constructor), which also moves it *closer* to the hand-written Verus spec,
+      whose `LState` is already one record per instance. Not a Phase 52 change.
+      See `t2_03_epaxos_star/rewrite.md`.
 - [ ] **56.2.f** — V2 fidelity: TLC on `clean.tla` against the 56.0.e baseline.
       **Anti-vacuity is mandatory** — a deliberately divergent action must make
       `Agreement` refute immediately, run and recorded, not asserted. Phase 55.5
@@ -19200,7 +19214,7 @@ land it as a result on its own.
 
 ### 57.1 Distributed layer (prerequisite, sketched in 56.8)
 
-- [ ] **57.1.a** — `EPaxosStar/distributed_system.rs`: `replica_states`,
+- [x] **57.1.a — ALREADY DONE as 56.8.a (2026-08-17).** `EPaxosStar/distributed_system.rs`: `replica_states`,
       `replica_constants`, `network: Set<LPacket>`, `num_replicas`; receive
       guards; network monotonicity; new packets sourced from the stepping
       replica; well-formedness pinning `procs`/`f`/`e` across replicas.
@@ -19248,9 +19262,26 @@ a different list, not a translation:
 | the Paxos core | **`ChosenAtBallot`**: if `(c,D)` is accepted by a quorum at ballot `b`, every accept at `b' > b` is also `(c,D)` |
 | commit stability | committed instances never change `(cmd, dep)` |
 | dependency well-formedness | `dep ⊆ Id`, `init_dep ⊆ dep` where the protocol maintains it |
+| **coordinator exclusivity** | `PreAcceptOKAddressedToOwner`: every `PreAcceptOK` for `id` in the network has `dst == id.owner`, hence only the initial coordinator ever accumulates a pre-accept quorum and only it can take `LCommitFast` / `LStartAccept` |
 
 - [ ] **57.3.a–g** — one item per row; `ChosenAtBallot` is the load-bearing one
       and everything else is either its hypothesis or its consequence.
+
+      **On `PreAcceptOKAddressedToOwner`, and a retraction.** During the 56.4
+      review this was written up twice as a *missing guard* — that
+      `LCommitFast` / `LStartAccept` / `LRecordPreAcceptOK` lack
+      `id.owner == c.my_id` and lean on the network to enforce it. **That was
+      overstated.** Checked mechanically afterwards: `PreAcceptOK` has exactly
+      two construction sites, `LSubmit`'s `SelfPacket` and `LHandlePreAccept`'s
+      `ReplyTo`, and both address it to the replica that sent the `PreAccept`,
+      which `LSubmit` makes `id.owner` by construction. So a non-owner never
+      receives one, its `preaccept_rcvd` stays empty, and `IsQuorumSized` never
+      holds. The property is **derivable, not missing**, and the reference has
+      the same emergent shape rather than a syntactic guard.
+
+      So do **not** add the guard: it would strengthen past the reference for no
+      gain. Prove this instead — it is a real obligation, it is exactly the kind
+      of thing 57.1.b needs, and it is cheap compared to the rest of the list.
 
 ### 57.4 The load-bearing lemma
 

@@ -98,14 +98,6 @@ pub open spec fn InstAt(s: LState, id: LInstanceId) -> LInstanceState {
     }
 }
 
-/// Frame: the step touched `id` and nothing else.
-pub open spec fn OnlyInstanceChanged(s: LState, s_: LState, id: LInstanceId) -> bool {
-    &&& s_.instances.dom() =~= s.instances.dom().insert(id)
-    &&& forall|j: LInstanceId|
-        j != id && s.instances.dom().contains(j) ==> (#[trigger] s_.instances[j])
-            == s.instances[j]
-}
-
 // =========================================================================
 // Packets
 // =========================================================================

@@ -107,3 +107,53 @@ observables compared, result.
 
 TODO — what was diffed against `reference.rs` (if any) and what differences were
 accepted, with reasons.
+
+
+## `clean.tla` is written and lints clean (56.2.c, 2026-08-17)
+
+848 lines. SANY parses it; the linter reports **`clean: true`, 0 violations**,
+with all five rules executed and none skipped. Both of `original.tla`'s C1
+findings are gone by the mechanism 56.1.b predicted: `Id == [owner: Proc, num:
+1..MaxNum]` turns `initCoord[id]` into `id.owner` and `submitted` into the
+per-node counter `crtInst[i]`.
+
+Structure mirrors `src/protocol/EPaxosStar/epaxos_star.rs`: **25 actions**, not
+the reference's 12, because the clean subset does not let an action scan the
+network for a quorum (C4 whitelists send/receive, not search). Each quorum rule
+is record-then-act against an accumulator, exactly as `t2_02_epaxos/clean.tla`
+does and for the same stated reason.
+
+## Translation does NOT go through yet (56.2.e blocked)
+
+`verus-transpile clean-tla` exits 1 with **53 parts that did not project**.
+Categorised rather than listed:
+
+| # | cause |
+|---:|---|
+| **31** | **two-dimensional per-node state `[Proc -> [Id -> T]]`** (23 direct + 8 residual `[Id]` indexings downstream of it) |
+| **12** | `Broadcast` built as `[m EXCEPT !.mdest = q]` |
+| **10** | helper-operator sets read as node sets — `\E r \in USet(i, d)` |
+
+**The dominant cause is a rewrite decision, not a translator bug, and this
+corpus already contains the precedent.** `t2_02_epaxos/clean.tla` keeps
+per-instance state as `cmdLog \in [Replicas -> SUBSET Record]` — **one** level,
+with the instance dimension inside a *set of records* rather than a second
+function. This rewrite instead declared 21 parallel `[Proc -> [Id -> T]]`
+arrays, and the projection pass has no model for the inner dimension.
+
+The same case also shows the fix for the 12 broadcast failures: explicit
+per-message constructor operators (`PreAcceptReq(s, d, i, c, dp, sq)` plus
+`BroadcastPreAccept(...)`) rather than `EXCEPT`-ing a destination field.
+
+So the next step is a restructure of this file, not a change to the translator:
+collapse the 21 arrays into one `instances \in [Proc -> SUBSET InstanceRecord]`
+and give every message a constructor. That would also bring `clean.tla` *closer*
+to the hand-written Verus spec, whose `LState` is already
+`Map<LInstanceId, LInstanceState>` — one record per instance, not 21 parallel
+maps. The 10 node-set misreadings need checking separately; they may or may not
+survive the restructure.
+
+**Not yet done and not yet attempted**: `golden.rs` (56.2.e), V2 fidelity
+(56.2.f), and any TLC run of this file (56.7.a). The `Agreement` and
+`Visibility` operators at the end of `clean.tla` have therefore **never been
+evaluated against anything**.
