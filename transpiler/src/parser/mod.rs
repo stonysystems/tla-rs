@@ -55,12 +55,20 @@ impl VerusParser {
 
         // Simple pattern matching for verus! { ... }
         // This is a simplified approach; a full implementation would use proper parsing
+        //
+        // `i` indexes `chars`, so every read of the input must go through
+        // `chars` too. Slicing `source` (which is byte-indexed) with a char
+        // index happens to agree for pure-ASCII input and panics on the first
+        // multi-byte character -- an em-dash in a doc comment is enough. Every
+        // spec in the tree was ASCII until `EPaxosStar`, which is why this
+        // stood.
+        const MARKER: [char; 6] = ['v', 'e', 'r', 'u', 's', '!'];
         let mut i = 0;
         let chars: Vec<char> = source.chars().collect();
 
         while i < chars.len() {
             // Look for "verus!" pattern
-            if i + 6 <= chars.len() && &source[i..i + 6] == "verus!" {
+            if i + 6 <= chars.len() && chars[i..i + 6] == MARKER {
                 i += 6;
                 // Skip whitespace
                 while i < chars.len() && chars[i].is_whitespace() {
@@ -105,7 +113,7 @@ impl VerusParser {
                     }
 
                     if depth == 0 {
-                        let block_content = source[start..i - 1].to_string();
+                        let block_content: String = chars[start..i - 1].iter().collect();
                         blocks.push(block_content);
                     }
                 }
