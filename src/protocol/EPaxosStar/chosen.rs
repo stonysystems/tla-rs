@@ -914,4 +914,864 @@ pub proof fn lemma_action_touches_one(
     }
 }
 
+// =========================================================================
+// AcceptedStateHasAccept — and why it is stated on `abal`, not `bal`
+// =========================================================================
+
+/// A replica in phase `Accepted` holds a value that really was proposed in an
+/// `Accept` — **at `abal`, not at `bal`**.
+///
+/// The first attempt at this said `bal`, and it is false: `LHandleRecover`
+/// applies `RecoveredInstance`, which moves `bal` to the recovering replica's
+/// ballot while leaving `phase`, `abal`, `cmd` and `dep` alone. A replica
+/// sitting in `Accepted` can therefore have a `bal` at which no `Accept` was
+/// ever sent.
+///
+/// `abal` is moved only by `AcceptedInstance` and `CommittedInstance` — never by
+/// `RecoveredInstance` — so it is the ballot at which the held value was
+/// actually accepted. **That is precisely what the field exists for, and the
+/// single-ballot protocol is unsound for exactly the reason this formulation
+/// would be wrong without it.** The invariant is the fix, restated.
+pub open spec fn AcceptedStateHasAccept(ds: EPaxosStarDistributedState) -> bool {
+    forall|i: int, id: LInstanceId|
+        0 <= i < ds.num_replicas && (#[trigger] InstAt(ds.replica_states[i], id)).phase
+            is Accepted ==> AcceptSent(
+            ds,
+            id,
+            InstAt(ds.replica_states[i], id).abal,
+            InstAt(ds.replica_states[i], id).cmd,
+            InstAt(ds.replica_states[i], id).dep,
+        )
+}
+
+/// `abal` moves only when a value is accepted or committed, and both of those
+/// set `phase` accordingly. So a non-zero `abal` means the replica has decided
+/// something.
+///
+/// Needed to show `LRecoverValidate` cannot fire while the acting replica is in
+/// phase `Accepted`: branch 4 requires that nobody at the maximum `abal` is
+/// `Accepted` or `Committed`, and this is what turns that into a statement about
+/// phases. Without it `ApplyValidate` — which rewrites `cmd` while leaving
+/// `abal` and `phase` untouched — would break `AcceptedStateHasAccept`.
+pub open spec fn AbalPositiveImpliesDecided(ds: EPaxosStarDistributedState) -> bool {
+    forall|i: int, id: LInstanceId|
+        0 <= i < ds.num_replicas && (#[trigger] InstAt(ds.replica_states[i], id)).abal > 0 ==> {
+            ||| InstAt(ds.replica_states[i], id).phase is Accepted
+            ||| InstAt(ds.replica_states[i], id).phase is Committed
+        }
+}
+
+pub proof fn lemma_accepted_has_accept_at_init(ds: EPaxosStarDistributedState)
+    requires
+        EPaxosStarDistributedInit(ds),
+    ensures
+        AcceptedStateHasAccept(ds),
+        AbalPositiveImpliesDecided(ds),
+{
+    assert forall|i: int, id: LInstanceId| 0 <= i < ds.num_replicas implies #[trigger] InstAt(
+        ds.replica_states[i],
+        id,
+    ) == InitialInstance() by {
+        assert(LInit(ds.replica_states[i], ds.replica_constants[i]));
+        assert(!ds.replica_states[i].instances.dom().contains(id));
+    }
+}
+
+/// The invariant survives a step that leaves this replica's instance alone —
+/// the frame half, which `lemma_action_touches_one` makes available for every
+/// action at once.
+pub proof fn lemma_accepted_has_accept_frame(
+    ds: EPaxosStarDistributedState,
+    ds_: EPaxosStarDistributedState,
+    i: int,
+    id: LInstanceId,
+)
+    requires
+        ds.network.subset_of(ds_.network),
+        0 <= i < ds.num_replicas,
+        InstAt(ds_.replica_states[i], id) == InstAt(ds.replica_states[i], id),
+        AcceptedStateHasAccept(ds),
+        InstAt(ds_.replica_states[i], id).phase is Accepted,
+    ensures
+        AcceptSent(
+            ds_,
+            id,
+            InstAt(ds_.replica_states[i], id).abal,
+            InstAt(ds_.replica_states[i], id).cmd,
+            InstAt(ds_.replica_states[i], id).dep,
+        ),
+{
+    let inst = InstAt(ds.replica_states[i], id);
+    assert(AcceptSent(ds, id, inst.abal, inst.cmd, inst.dep));
+    let w = choose|pkt: LPacket|
+        (#[trigger] ds.network.contains(pkt)) && pkt.msg == LEPaxosStarMessage::Accept {
+            id,
+            b: inst.abal,
+            c: inst.cmd,
+            d: inst.dep,
+        };
+    assert(ds_.network.contains(w));
+}
+
+/// **`abal` is zero until something is decided.**
+///
+/// `abal` is written only by `AcceptedInstance` and `CommittedInstance`, and
+/// both set `phase` to match. Everything else — `RecoveredInstance`,
+/// `ValidatedInstance`, all the accumulator updates — leaves it alone, and
+/// `PreAcceptedInstance` is guarded on `phase is Initial`, where it is already
+/// zero.
+///
+/// This is what turns `HandleRecoverOK`'s branch conditions, which are about
+/// *phases* reported by a quorum, into statements about `abal` — the ordering
+/// the whole recovery decision is made on.
+pub open spec fn AbalZeroLocal(s: LState) -> bool {
+    forall|id: LInstanceId|
+        #![trigger InstAt(s, id)]
+        InstAt(s, id).phase is Accepted || InstAt(s, id).phase is Committed || InstAt(s, id).abal
+            == 0
+}
+
+proof fn lemma_abal_zero_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LSubmit(s, s_, c, v, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = LInstanceId { owner: c.my_id, num: s.next_num };
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LCommitFast(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LStartAccept(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LCommitSlow(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LStartRecover(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecoverCommitted(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecoverAccepted(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecoverNop(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecoverValidate(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LValidateAccept(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LValidateNop(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LValidateWait(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LPostWaitingNop(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LPostWaitingAccept(s, s_, c, w, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LHandlePreAccept(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->PreAccept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->PreAcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LHandleAccept(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->Accept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->AcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LHandleCommit(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->Commit_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LHandleRecover(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->Recover_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->RecoverOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LHandleValidate(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->Validate_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LRecordValidateOK(s, s_, c, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = rp.msg->ValidateOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_abal_zero_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Accepted || InstAt(s_, id).phase is Committed || InstAt(
+            s_,
+            id,
+        ).abal == 0 by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+pub proof fn lemma_abal_zero_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalZeroLocal(s),
+        ReplicaAction(s, s_, c, received, sent),
+    ensures
+        AbalZeroLocal(s_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_abal_zero_lsubmit(s, s_, c, v, sent);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_abal_zero_lcommitfast(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_abal_zero_lstartaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_abal_zero_lcommitslow(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_abal_zero_lstartrecover(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_abal_zero_lrecovercommitted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_abal_zero_lrecoveraccepted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_abal_zero_lrecovernop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_abal_zero_lrecovervalidate(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_abal_zero_lvalidateaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_abal_zero_lvalidatenop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_abal_zero_lvalidatewait(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_abal_zero_lpostwaitingnop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_abal_zero_lpostwaitingaccept(s, s_, c, w, sent);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_abal_zero_lhandlepreaccept(s, s_, c, rp, sent);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_abal_zero_lrecordpreacceptok(s, s_, c, rp, sent);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_abal_zero_lhandleaccept(s, s_, c, rp, sent);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_abal_zero_lrecordacceptok(s, s_, c, rp, sent);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_abal_zero_lhandlecommit(s, s_, c, rp, sent);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_abal_zero_lhandlerecover(s, s_, c, rp, sent);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_abal_zero_lrecordrecoverok(s, s_, c, rp, sent);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_abal_zero_lhandlevalidate(s, s_, c, rp, sent);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_abal_zero_lrecordvalidateok(s, s_, c, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_abal_zero_lpostwaitingonwaiting(s, s_, c, w, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_abal_zero_lpostwaitingonrecoverok(s, s_, c, w, rp, sent);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
 } // verus!
