@@ -1774,4 +1774,1839 @@ pub proof fn lemma_abal_zero_step(
     }
 }
 
+/// **`abal <= bal` always.** `AcceptedInstance` sets both to the same ballot;
+/// `CommittedInstance` sets `abal := b` under a guard that already forces
+/// `bal == b`; `RecoveredInstance` raises `bal` alone, under a guard that it
+/// strictly increases. Nothing can push `abal` past `bal`, which is what makes
+/// 'the highest ballot at which anyone accepted' comparable with 'the highest
+/// ballot anyone has promised'.
+pub open spec fn AbalLeBal(s: LState) -> bool {
+    forall|id: LInstanceId|
+        #![trigger InstAt(s, id)]
+        InstAt(s, id).abal <= InstAt(s, id).bal
+}
+
+proof fn lemma_aballebal_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LSubmit(s, s_, c, v, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = LInstanceId { owner: c.my_id, num: s.next_num };
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LCommitFast(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LStartAccept(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LCommitSlow(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LStartRecover(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecoverCommitted(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecoverAccepted(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecoverNop(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecoverValidate(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LValidateAccept(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LValidateNop(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LValidateWait(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LPostWaitingNop(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LPostWaitingAccept(s, s_, c, w, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LHandlePreAccept(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->PreAccept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->PreAcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LHandleAccept(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->Accept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->AcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LHandleCommit(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->Commit_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LHandleRecover(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->Recover_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->RecoverOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LHandleValidate(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->Validate_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LRecordValidateOK(s, s_, c, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = rp.msg->ValidateOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_aballebal_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).abal <= InstAt(s_, id).bal by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+pub proof fn lemma_aballebal_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+)
+    requires
+        AbalLeBal(s),
+        ReplicaAction(s, s_, c, received, sent),
+    ensures
+        AbalLeBal(s_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_aballebal_lsubmit(s, s_, c, v, sent);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_aballebal_lcommitfast(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_aballebal_lstartaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_aballebal_lcommitslow(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_aballebal_lstartrecover(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_aballebal_lrecovercommitted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_aballebal_lrecoveraccepted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_aballebal_lrecovernop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_aballebal_lrecovervalidate(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_aballebal_lvalidateaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_aballebal_lvalidatenop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_aballebal_lvalidatewait(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_aballebal_lpostwaitingnop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_aballebal_lpostwaitingaccept(s, s_, c, w, sent);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_aballebal_lhandlepreaccept(s, s_, c, rp, sent);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_aballebal_lrecordpreacceptok(s, s_, c, rp, sent);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_aballebal_lhandleaccept(s, s_, c, rp, sent);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_aballebal_lrecordacceptok(s, s_, c, rp, sent);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_aballebal_lhandlecommit(s, s_, c, rp, sent);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_aballebal_lhandlerecover(s, s_, c, rp, sent);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_aballebal_lrecordrecoverok(s, s_, c, rp, sent);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_aballebal_lhandlevalidate(s, s_, c, rp, sent);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_aballebal_lrecordvalidateok(s, s_, c, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_aballebal_lpostwaitingonwaiting(s, s_, c, w, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_aballebal_lpostwaitingonrecoverok(s, s_, c, w, rp, sent);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
+/// **Accumulator soundness (`TODO.md` 57.1.b), for the accept round.** A replica
+/// that has `p` in `accept_rcvd` really did receive an `AcceptOK` from `p` at
+/// its current ballot.
+///
+/// The reference needs no such invariant: `HandleAcceptOK` reads the quorum
+/// straight out of `msgs`, so it is true by construction. Our single-process
+/// projection turns that read into an accumulator, and this is the debt that
+/// creates. Everything that could break it also clears the accumulator --
+/// `AcceptedInstance` and `RecoveredInstance` both do, which is the same
+/// ballot-scoping discipline `TODO.md` 56.4.g named.
+pub open spec fn AcceptRcvdSound(s: LState, network: Set<LPacket>) -> bool {
+    forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s, id).accept_rcvd.contains(p)]
+        InstAt(s, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal })
+}
+
+proof fn lemma_acceptrcvdsound_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LSubmit(s, s_, c, v, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = LInstanceId { owner: c.my_id, num: s.next_num };
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LCommitFast(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LStartAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LCommitSlow(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LStartRecover(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecoverCommitted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecoverAccepted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecoverNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecoverValidate(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LValidateAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LValidateNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LValidateWait(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LPostWaitingNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LPostWaitingAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LHandlePreAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->PreAccept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->PreAcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LHandleAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->Accept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->AcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            if p == rp.src {
+                assert(network_.contains(rp));
+            } else {
+                assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+                assert(network_.contains(pk));
+            }
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LHandleCommit(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->Commit_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LHandleRecover(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->Recover_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->RecoverOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LHandleValidate(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->Validate_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LRecordValidateOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = rp.msg->ValidateOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_acceptrcvdsound_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s_, id).accept_rcvd.contains(p)]
+        InstAt(s_, id).accept_rcvd.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s_, id).bal }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).accept_rcvd.contains(p) {
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, id).bal });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).accept_rcvd.contains(p) {
+            assert(InstAt(s, idX).accept_rcvd.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::AcceptOK { id, b: InstAt(s, idX).bal });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+pub proof fn lemma_acceptrcvdsound_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        AcceptRcvdSound(s, network),
+        ReplicaAction(s, s_, c, received, sent),
+        received matches Option::Some(rp) ==> network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        AcceptRcvdSound(s_, network_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_acceptrcvdsound_lsubmit(s, s_, c, v, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lcommitfast(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lstartaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lcommitslow(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lstartrecover(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lrecovercommitted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lrecoveraccepted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lrecovernop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lrecovervalidate(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lvalidateaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lvalidatenop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lvalidatewait(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lpostwaitingnop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_acceptrcvdsound_lpostwaitingaccept(s, s_, c, w, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lhandlepreaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lrecordpreacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lhandleaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lrecordacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lhandlecommit(s, s_, c, rp, sent, network, network_);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lhandlerecover(s, s_, c, rp, sent, network, network_);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lrecordrecoverok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lhandlevalidate(s, s_, c, rp, sent, network, network_);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_acceptrcvdsound_lrecordvalidateok(s, s_, c, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_acceptrcvdsound_lpostwaitingonwaiting(s, s_, c, w, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_acceptrcvdsound_lpostwaitingonrecoverok(s, s_, c, w, rp, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
 } // verus!
