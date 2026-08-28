@@ -3609,4 +3609,1475 @@ pub proof fn lemma_acceptrcvdsound_step(
     }
 }
 
+/// **Ballots are non-negative, and a replica mid-recovery is at a positive one.**
+/// The two halves have to travel together: `LStartRecover` sets `bal` to
+/// `bal + N` on a re-attempt, and that is only positive because the old `bal`
+/// was already non-negative. Splitting them leaves each unprovable.
+///
+/// `bal` stays non-negative because every assignment either preserves it, or
+/// comes from a guard that already bounds it below by the old value —
+/// `ApplyAcceptEnabled` requires `bal <= b`, `ApplyRecoverEnabled` requires
+/// `bal < b`. Positivity during recovery matters because `ApplyValidate`, which
+/// rewrites `cmd` without touching `abal` or `phase`, can only run there: any
+/// invariant about ballot-0 state is out of its reach.
+pub open spec fn BalWellFormed(s: LState) -> bool {
+    forall|id: LInstanceId|
+        #![trigger InstAt(s, id)]
+        InstAt(s, id).bal >= 0 && (!(InstAt(s, id).recovery_phase is Start) ==> InstAt(s, id).bal > 0)
+}
+
+proof fn lemma_balwellformed_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LSubmit(s, s_, c, v, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = LInstanceId { owner: c.my_id, num: s.next_num };
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LCommitFast(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LStartAccept(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LCommitSlow(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LStartRecover(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecoverCommitted(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecoverAccepted(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecoverNop(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecoverValidate(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LValidateAccept(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LValidateNop(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LValidateWait(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LPostWaitingNop(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LPostWaitingAccept(s, s_, c, w, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LHandlePreAccept(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->PreAccept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->PreAcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LHandleAccept(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->Accept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->AcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LHandleCommit(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->Commit_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LHandleRecover(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->Recover_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->RecoverOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LHandleValidate(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->Validate_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LRecordValidateOK(s, s_, c, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = rp.msg->ValidateOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_balwellformed_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).bal >= 0 && (!(InstAt(s_, id).recovery_phase is Start) ==> InstAt(s_, id).bal > 0) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+pub proof fn lemma_balwellformed_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ReplicaAction(s, s_, c, received, sent),
+    ensures
+        BalWellFormed(s_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_balwellformed_lsubmit(s, s_, c, v, sent);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_balwellformed_lcommitfast(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_balwellformed_lstartaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_balwellformed_lcommitslow(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_balwellformed_lstartrecover(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_balwellformed_lrecovercommitted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_balwellformed_lrecoveraccepted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_balwellformed_lrecovernop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_balwellformed_lrecovervalidate(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_balwellformed_lvalidateaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_balwellformed_lvalidatenop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_balwellformed_lvalidatewait(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_balwellformed_lpostwaitingnop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_balwellformed_lpostwaitingaccept(s, s_, c, w, sent);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_balwellformed_lhandlepreaccept(s, s_, c, rp, sent);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_balwellformed_lrecordpreacceptok(s, s_, c, rp, sent);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_balwellformed_lhandleaccept(s, s_, c, rp, sent);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_balwellformed_lrecordacceptok(s, s_, c, rp, sent);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_balwellformed_lhandlecommit(s, s_, c, rp, sent);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_balwellformed_lhandlerecover(s, s_, c, rp, sent);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_balwellformed_lrecordrecoverok(s, s_, c, rp, sent);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_balwellformed_lhandlevalidate(s, s_, c, rp, sent);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_balwellformed_lrecordvalidateok(s, s_, c, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_balwellformed_lpostwaitingonwaiting(s, s_, c, w, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_balwellformed_lpostwaitingonrecoverok(s, s_, c, w, rp, sent);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
+/// **An instance nobody has pre-accepted has collected no replies.**
+/// `LRecordPreAcceptOK` and `LRecordAcceptOK` both require a phase past
+/// `Initial`, and no action ever puts an instance back into `Initial`.
+///
+/// This is what protects the fast-path accumulators from `PreAcceptedInstance`,
+/// which rewrites `init_dep` while carrying `preaccept_agreed` across: it is
+/// guarded on `phase is Initial`, where by this invariant there is nothing to
+/// carry.
+pub open spec fn InitialImpliesNoReplies(s: LState) -> bool {
+    forall|id: LInstanceId|
+        #![trigger InstAt(s, id)]
+        InstAt(s, id).phase is Initial ==> (InstAt(s, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s, id).accept_rcvd =~= Set::<int>::empty())
+}
+
+proof fn lemma_initialimpliesnoreplies_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LSubmit(s, s_, c, v, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = LInstanceId { owner: c.my_id, num: s.next_num };
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LCommitFast(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LStartAccept(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LCommitSlow(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LStartRecover(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecoverCommitted(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecoverAccepted(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecoverNop(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecoverValidate(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LValidateAccept(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LValidateNop(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LValidateWait(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LPostWaitingNop(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LPostWaitingAccept(s, s_, c, w, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LHandlePreAccept(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->PreAccept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->PreAcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LHandleAccept(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->Accept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->AcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LHandleCommit(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->Commit_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LHandleRecover(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->Recover_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->RecoverOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LHandleValidate(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->Validate_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LRecordValidateOK(s, s_, c, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = rp.msg->ValidateOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+proof fn lemma_initialimpliesnoreplies_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id)]
+        InstAt(s_, id).phase is Initial ==> (InstAt(s_, id).preaccept_rcvd =~= Set::<int>::empty()
+            && InstAt(s_, id).preaccept_agreed =~= Set::<int>::empty()
+            && InstAt(s_, id).accept_rcvd =~= Set::<int>::empty()) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+        }
+    }
+}
+
+pub proof fn lemma_initialimpliesnoreplies_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        InitialImpliesNoReplies(s),
+        ReplicaAction(s, s_, c, received, sent),
+    ensures
+        InitialImpliesNoReplies(s_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_initialimpliesnoreplies_lsubmit(s, s_, c, v, sent);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lcommitfast(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lstartaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lcommitslow(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lstartrecover(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lrecovercommitted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lrecoveraccepted(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lrecovernop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lrecovervalidate(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lvalidateaccept(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lvalidatenop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lvalidatewait(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lpostwaitingnop(s, s_, c, w, sent);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_initialimpliesnoreplies_lpostwaitingaccept(s, s_, c, w, sent);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lhandlepreaccept(s, s_, c, rp, sent);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lrecordpreacceptok(s, s_, c, rp, sent);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lhandleaccept(s, s_, c, rp, sent);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lrecordacceptok(s, s_, c, rp, sent);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lhandlecommit(s, s_, c, rp, sent);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lhandlerecover(s, s_, c, rp, sent);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lrecordrecoverok(s, s_, c, rp, sent);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lhandlevalidate(s, s_, c, rp, sent);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_initialimpliesnoreplies_lrecordvalidateok(s, s_, c, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_initialimpliesnoreplies_lpostwaitingonwaiting(s, s_, c, w, rp, sent);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_initialimpliesnoreplies_lpostwaitingonrecoverok(s, s_, c, w, rp, sent);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
 } // verus!

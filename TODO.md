@@ -19362,6 +19362,43 @@ Two definitional decisions, both load-bearing:
 - [x] **`lemma_nothing_chosen_at_init` / `lemma_chosen_stable_at_init`** — both
       obligations hold at `Init`, vacuously (empty network, no commits).
 
+**FIVE INVARIANTS ARE NOW PROVED INDUCTIVE across all 25 actions** (2026-08-28).
+Whole crate `1210 verified, 0 errors`; `chosen.rs` ~4400 lines, 156 obligations,
+no assumes.
+
+| invariant | content |
+|---|---|
+| `BalWellFormed` | `bal >= 0`, and `bal > 0` whenever a recovery is in flight |
+| `AbalZeroLocal` | `abal` is zero until a value is accepted or committed |
+| `AbalLeBal` | `abal <= bal` always |
+| `InitialImpliesNoReplies` | an instance still in `Initial` has collected no replies |
+| **`AcceptRcvdSound`** | **57.1.b for the accept round** — a sender in `accept_rcvd` really did send an `AcceptOK` at this ballot |
+
+**The unit of work is now the generator, not the lemma.** `emit` (local) and
+`emit_net` (network-aware) each produce twenty-five isolated per-action lemmas
+plus a dispatcher. That shape is not a convenience: written as one lemma with a
+twenty-five-way case split, the first attempt **exceeded Z3's rlimit** — the
+failure `reports/raft_refinement_proof.md` §7 documents — and the same content
+split per action verifies without strain. Later invariants should use the
+generator rather than rediscovering that wall.
+
+Three things the generator taught, recorded so the next invariant does not
+relearn them:
+
+- A trigger must cover **every** bound variable: a two-binder invariant needs
+  `InstAt(s, id).accept_rcvd.contains(p)`, not the instance term alone, and the
+  inner existential over a witness packet needs its own `#[trigger]` or sixty-four
+  notes appear against a ceiling of zero.
+- The per-action bodies looked like they wanted three shapes (clear the
+  accumulator / record into it / leave it) and **two suffice**: "if it is still
+  there it was there before" holds for the clearing actions too, where the guard
+  is simply false. The three-way version broke on `LPostWaitingOnRecoverOK`,
+  whose `Committed` branch keeps the accumulator while its other two clear it.
+- Invariants that need each other must be **stated together**. `bal >= 0` and
+  "recovering implies `bal > 0`" are each unprovable alone — `LStartRecover`'s
+  re-attempt sets `bal + N`, positive only because the old `bal` was already
+  non-negative — and go through immediately as one conjunction.
+
 **What remains on the A line**, and it is the whole of it:
 
 - [ ] **57.4.a.1** — `CommittedImpliesChosen` inductive. Six commit sites must
@@ -19377,6 +19414,25 @@ Two definitional decisions, both load-bearing:
       provable on its own: `AcceptOKImpliesAccept`, `AcceptUniqueAtBallot`,
       `BallotOwnership`, and `PreAcceptOKAddressedToOwner` (already filed in
       57.3 from the D-pass).
+
+      **Partly landed.** `AcceptRcvdSound` is done and is the load-bearing half
+      of 57.1.b. Still open, with what each one is blocked on now understood:
+
+      - [ ] `PreAcceptAgreedSound` — the fast-path analogue. Blocked on a network
+            invariant that every `Validate` message carries a ballot `> 0`,
+            because `ApplyValidate` rewrites `init_dep` and the fast path
+            compares replies against it. `BalWellFormed` supplies the sender's
+            half of that argument; the receiver's half needs `emit_net`.
+      - [ ] `AcceptedStateHasAccept` — **restate over `abal`, not `bal`**.
+            `LHandleRecover` moves `bal` while leaving `phase`, `abal`, `cmd`
+            and `dep` alone, so a replica in `Accepted` can sit at a ballot where
+            no `Accept` was ever sent. Over `abal` the shape is right. It then
+            needs an argument that `HandleRecoverOK`'s branch 4 cannot fire while
+            the acting replica is itself in `Accepted`; `AbalZeroLocal` is the
+            first half and the rest is quorum intersection.
+      - [ ] `AcceptUniqueAtBallot` / `BallotOwnership` — ballots are now
+            `k*N + p + 1`, so ownership is `(b-1) % N` and ballot 0 belongs to
+            nobody. Not yet stated.
 
 ### 57.4 The load-bearing lemma
 

@@ -286,6 +286,11 @@ pub open spec fn N(c: LConstants) -> int {
 /// `Set::new` returns `Option` and why `ConflictingIds` filters a domain.
 pub open spec fn WellFormedConstants(c: LConstants) -> bool {
     &&& c.procs.contains(c.my_id)
+    // Replica ids are non-negative. Implied at the distributed layer, where
+    // `procs` is pinned to `Set::range(0, num_replicas)`, but a single-replica
+    // lemma cannot see that -- and `LStartRecover`'s first ballot is
+    // `my_id + 1`, which has to be positive for `ApplyRecoverEnabled`.
+    &&& c.my_id >= 0
     // At least two replicas. Not in the reference, and **found by the proof**:
     // every send here is `Broadcast`, which addresses `procs \ {my_id}`, so at
     // `N == 1` a replica decides without any `Accept` packet ever existing.
