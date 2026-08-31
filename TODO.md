@@ -19401,7 +19401,9 @@ relearn them:
 
 **What remains on the A line**, and it is the whole of it:
 
-- [ ] **57.4.a.1** — `CommittedImpliesChosen` inductive. Six commit sites must
+- [ ] **57.4.a.1** — `CommittedImpliesChosen` inductive. **`LCommitFast` is
+      DONE** (`lemma_commit_fast_gives_fast_chosen`, 2026-08-31), and
+      `LCommitSlow` is blocked on the `ApplyValidate` question above. Six commit sites must
       each justify it: `LCommitFast` via `FastChosen`, `LCommitSlow` via
       `SlowChosen`, and `LHandleCommit` / `LRecoverCommitted` /
       `LPostWaitingOnRecoverOK` by inheriting from whoever they copied.
@@ -19423,7 +19425,16 @@ relearn them:
             ballot `> 0`), is proved too. **57.1.b is now discharged on both
             sides**: `AcceptRcvdSound` for the accept round and this for the
             fast path.
-      - [ ] `AcceptedStateHasAccept` — **restate over `abal`, not `bal`**.
+      - [ ] `AcceptedStateHasAccept` — **BLOCKED, and the blocker is a question
+            about the protocol, not about the proof.** Over `abal` it is still
+            false: `ApplyValidate` rewrites `cmd` while leaving `phase`, `abal`
+            and `dep` untouched, and a validation quorum member that processes
+            the recovery's `Accept` before its `Validate` ends up reporting a
+            `(cmd, dep)` pair that was never accepted at that ballot. Written
+            up with the full scenario in
+            `reports/epaxos_star_validate_question.md`. Settle it before
+            proceeding; do not paper over it with an `assume`.
+            *(Superseded note follows.)* — restate over `abal`, not `bal`.
             `LHandleRecover` moves `bal` while leaving `phase`, `abal`, `cmd`
             and `dep` alone, so a replica in `Accepted` can sit at a ballot where
             no `Accept` was ever sent. Over `abal` the shape is right. It then

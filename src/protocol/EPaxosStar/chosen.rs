@@ -7137,4 +7137,2311 @@ pub proof fn lemma_preacceptagreedsound_step(
     }
 }
 
+/// **A replica pre-accepted at ballot 0 holds a payload somebody really
+/// proposed.** The two actions that produce `PreAccepted` both put the
+/// matching `PreAccept` within reach: `LSubmit` broadcasts it in the same
+/// step, and `LHandlePreAccept` is responding to one that is already on the
+/// network.
+///
+/// This is what `LCommitFast` needs for the `PreAcceptSent` half of
+/// `FastChosen` — the fast path commits `(cmd, init_dep)` without ever
+/// sending an `Accept`, so its chosen-ness has to be traced back to the
+/// coordinator's proposal instead.
+///
+/// Conditioned on `bal == 0` for the same reason `PreAcceptAgreedSound` is:
+/// `ApplyValidate` rewrites `cmd` and `init_dep` while leaving `phase` alone,
+/// and it cannot reach ballot 0.
+pub open spec fn PreAcceptedHasPreAccept(s: LState, network: Set<LPacket>) -> bool {
+    forall|id: LInstanceId|
+        #![trigger InstAt(s, id).phase]
+        InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    })
+}
+
+proof fn lemma_preacceptedhaspreaccept_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LSubmit(s, s_, c, v, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = LInstanceId { owner: c.my_id, num: s.next_num };
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else {
+            let cmdv = LCmd::Payload { value: v };
+            let d0 = ConflictingIds(c, s, cmdv);
+            let m = LEPaxosStarMessage::PreAccept { id: idX, c: cmdv, d: d0 };
+            lemma_broadcast_nonempty(c, m);
+            let w = choose|pk: LPacket|
+                (#[trigger] Broadcast(c, m).contains(pk)) && pk.msg == m && pk.src == c.my_id;
+            assert(network_.contains(w));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LCommitFast(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LStartAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LCommitSlow(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LStartRecover(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecoverCommitted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecoverAccepted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecoverNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecoverValidate(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LValidateAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LValidateNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LValidateWait(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LPostWaitingNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LPostWaitingAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LHandlePreAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->PreAccept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else {
+            assert(network_.contains(rp));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->PreAcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LHandleAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->Accept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->AcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LHandleCommit(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->Commit_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LHandleRecover(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->Recover_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->RecoverOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LHandleValidate(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->Validate_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LRecordValidateOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = rp.msg->ValidateOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptedhaspreaccept_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId| #![trigger InstAt(s_, id).phase]
+        InstAt(s_, id).phase is PreAccepted && InstAt(s_, id).bal == 0 ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s_, id).cmd,
+                        d: InstAt(s_, id).init_dep,
+                    }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).phase is PreAccepted && InstAt(s, id).bal == 0 {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+                        id,
+                        c: InstAt(s, id).cmd,
+                        d: InstAt(s, id).init_dep,
+                    });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).phase is PreAccepted && InstAt(s_, idX).bal == 0 {
+            assert(InstAt(s, idX).phase is PreAccepted && InstAt(s, idX).bal == 0);
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.msg
+                    == (LEPaxosStarMessage::PreAccept {
+                    id,
+                    c: InstAt(s, idX).cmd,
+                    d: InstAt(s, idX).init_dep,
+                });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+pub proof fn lemma_preacceptedhaspreaccept_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        PreAcceptedHasPreAccept(s, network),
+        ReplicaAction(s, s_, c, received, sent),
+        received matches Option::Some(rp) ==> network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptedHasPreAccept(s_, network_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_preacceptedhaspreaccept_lsubmit(s, s_, c, v, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lcommitfast(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lstartaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lcommitslow(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lstartrecover(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lrecovercommitted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lrecoveraccepted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lrecovernop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lrecovervalidate(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lvalidateaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lvalidatenop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lvalidatewait(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lpostwaitingnop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_preacceptedhaspreaccept_lpostwaitingaccept(s, s_, c, w, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lhandlepreaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lrecordpreacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lhandleaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lrecordacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lhandlecommit(s, s_, c, rp, sent, network, network_);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lhandlerecover(s, s_, c, rp, sent, network, network_);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lrecordrecoverok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lhandlevalidate(s, s_, c, rp, sent, network, network_);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_preacceptedhaspreaccept_lrecordvalidateok(s, s_, c, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_preacceptedhaspreaccept_lpostwaitingonwaiting(s, s_, c, w, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_preacceptedhaspreaccept_lpostwaitingonrecoverok(s, s_, c, w, rp, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
+/// **Every packet on the network was sent by a real replica.**
+/// Immediate per action — `Broadcast`, `BroadcastTo` and `ReplyTo` all stamp
+/// `src` with the sender's own id, and `WellFormedConstants` puts that id in
+/// `procs` — but it has to be an invariant because a *received* packet's
+/// provenance is otherwise unconstrained.
+///
+/// Needed to turn an accumulator's cardinality into a quorum: `AcceptOKSenders`
+/// and `PreAcceptOKSendersMatching` are filters over `ProcIds`, so a sender
+/// outside the replica set would be counted by the accumulator and not by
+/// them.
+pub open spec fn NetworkSrcInProcs(network: Set<LPacket>, procs: Set<int>) -> bool {
+    forall|pk: LPacket|
+        #![trigger network.contains(pk)]
+        network.contains(pk) ==> procs.contains(pk.src)
+}
+
+proof fn lemma_networksrcinprocs_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LSubmit(s, s_, c, v, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LCommitFast(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LStartAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LCommitSlow(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LStartRecover(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecoverCommitted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecoverAccepted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecoverNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecoverValidate(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LValidateAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LValidateNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LValidateWait(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LPostWaitingNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LPostWaitingAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LHandlePreAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LHandleAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LHandleCommit(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LHandleRecover(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LHandleValidate(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LRecordValidateOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+proof fn lemma_networksrcinprocs_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) ==> c.procs.contains(pk.src) by {
+        if network.contains(pk) {
+            assert(c.procs.contains(pk.src));
+        }
+    }
+}
+
+pub proof fn lemma_networksrcinprocs_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        WellFormedConstants(c),
+        NetworkSrcInProcs(network, c.procs),
+        ReplicaAction(s, s_, c, received, sent),
+        received matches Option::Some(rp) ==> network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        NetworkSrcInProcs(network_, c.procs),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_networksrcinprocs_lsubmit(s, s_, c, v, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lcommitfast(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lstartaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lcommitslow(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lstartrecover(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lrecovercommitted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lrecoveraccepted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lrecovernop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lrecovervalidate(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lvalidateaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lvalidatenop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lvalidatewait(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lpostwaitingnop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_networksrcinprocs_lpostwaitingaccept(s, s_, c, w, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lhandlepreaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lrecordpreacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lhandleaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lrecordacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lhandlecommit(s, s_, c, rp, sent, network, network_);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lhandlerecover(s, s_, c, rp, sent, network, network_);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lrecordrecoverok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lhandlevalidate(s, s_, c, rp, sent, network, network_);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_networksrcinprocs_lrecordvalidateok(s, s_, c, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_networksrcinprocs_lpostwaitingonwaiting(s, s_, c, w, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_networksrcinprocs_lpostwaitingonrecoverok(s, s_, c, w, rp, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
+// =========================================================================
+// CommittedImpliesChosen — the fast-path site
+// =========================================================================
+
+/// **`LCommitFast` really does commit something chosen.**
+///
+/// The fast path never sends an `Accept`, so its justification has to be traced
+/// back through the coordinator's own proposal and the replies that matched it:
+/// `PreAcceptedHasPreAccept` supplies the proposal, `PreAcceptAgreedSound`
+/// turns the accumulator into real `PreAcceptOK` packets, and
+/// `NetworkSrcInProcs` is what lets their senders be counted against `ProcIds`
+/// — an accumulator holding a sender outside the replica set would satisfy the
+/// action's guard and not the quorum.
+///
+/// This is the first of the six commit sites `CommittedImpliesChosen` has to
+/// discharge, and the only one that goes through `FastChosen`.
+pub proof fn lemma_commit_fast_gives_fast_chosen(
+    ds: EPaxosStarDistributedState,
+    ds_: EPaxosStarDistributedState,
+    i: int,
+    id: LInstanceId,
+    sent: Set<LPacket>,
+)
+    requires
+        WellFormedDistributed(ds),
+        0 <= i < ds.num_replicas,
+        LCommitFast(ds.replica_states[i], ds_.replica_states[i], ds.replica_constants[i], id, sent),
+        PreAcceptedHasPreAccept(ds.replica_states[i], ds.network),
+        PreAcceptAgreedSound(ds.replica_states[i], ds.network),
+        NetworkSrcInProcs(ds.network, ds.replica_constants[i].procs),
+        ds_.network =~= ds.network.union(sent),
+        ds_.num_replicas == ds.num_replicas,
+        ds_.replica_constants == ds.replica_constants,
+    ensures
+        FastChosen(
+            ds_,
+            id,
+            InstAt(ds.replica_states[i], id).cmd,
+            InstAt(ds.replica_states[i], id).init_dep,
+        ),
+{
+    let s = ds.replica_states[i];
+    let c = ds.replica_constants[i];
+    let inst = InstAt(s, id);
+    let d = inst.init_dep;
+
+    // 1. The coordinator's proposal is on the network, and stays there.
+    assert(inst.phase is PreAccepted && inst.bal == 0);
+    let prop = choose|pk: LPacket|
+        (#[trigger] ds.network.contains(pk)) && pk.msg == (LEPaxosStarMessage::PreAccept {
+            id,
+            c: inst.cmd,
+            d: inst.init_dep,
+        });
+    assert(ds_.network.contains(prop));
+    assert(PreAcceptSent(ds_, id, inst.cmd, d));
+
+    // 2. Everyone the accumulator counted really replied, and is a replica.
+    assert(inst.preaccept_agreed.subset_of(PreAcceptOKSendersMatching(ds_, id, d))) by {
+        assert forall|p: int| #![trigger inst.preaccept_agreed.contains(p)]
+            inst.preaccept_agreed.contains(p)
+            implies PreAcceptOKSendersMatching(ds_, id, d).contains(p) by {
+            let pk = choose|pk: LPacket|
+                (#[trigger] ds.network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: d });
+            assert(ds_.network.contains(pk));
+            assert(PreAcceptOKFrom(ds_, id, d, p));
+            assert(c.procs.contains(p));
+            assert(c.procs =~= Set::<int>::range(0, ds.num_replicas));
+            assert(ProcIds(ds_).contains(p));
+        }
+    }
+    vstd::set_lib::lemma_len_subset(
+        inst.preaccept_agreed,
+        PreAcceptOKSendersMatching(ds_, id, d),
+    );
+    assert(N(c) == ds.num_replicas);
+    assert(c.e == ds.replica_constants[0].e);
+    assert(IsFastQuorumN(ds_, PreAcceptOKSendersMatching(ds_, id, d)));
+}
+
 } // verus!
