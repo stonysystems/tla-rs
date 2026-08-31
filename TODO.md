@@ -19418,11 +19418,11 @@ relearn them:
       **Partly landed.** `AcceptRcvdSound` is done and is the load-bearing half
       of 57.1.b. Still open, with what each one is blocked on now understood:
 
-      - [ ] `PreAcceptAgreedSound` — the fast-path analogue. Blocked on a network
-            invariant that every `Validate` message carries a ballot `> 0`,
-            because `ApplyValidate` rewrites `init_dep` and the fast path
-            compares replies against it. `BalWellFormed` supplies the sender's
-            half of that argument; the receiver's half needs `emit_net`.
+      - [x] **`PreAcceptAgreedSound` — DONE 2026-08-31.** The blocker,
+            `ValidateMsgPositive` (every `Validate` on the network carries a
+            ballot `> 0`), is proved too. **57.1.b is now discharged on both
+            sides**: `AcceptRcvdSound` for the accept round and this for the
+            fast path.
       - [ ] `AcceptedStateHasAccept` — **restate over `abal`, not `bal`**.
             `LHandleRecover` moves `bal` while leaving `phase`, `abal`, `cmd`
             and `dep` alone, so a replica in `Accepted` can sit at a ballot where

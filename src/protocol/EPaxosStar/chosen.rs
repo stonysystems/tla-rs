@@ -579,6 +579,68 @@ pub proof fn lemma_acceptok_implies_accept_at_init(ds: EPaxosStarDistributedStat
 // each of the 25 cases would have to re-derive `Set::map` membership.
 // =========================================================================
 
+/// The shape lemmas again, as **broadcast lemmas**.
+///
+/// Stated this way Verus applies them automatically wherever a
+/// `Broadcast(..).contains(p)` term appears, which is the difference between
+/// writing out all twenty-five actions' message constructors by hand and not
+/// having to. Every network invariant below leans on this.
+pub broadcast proof fn lemma_bc_msg(c: LConstants, m: LEPaxosStarMessage, p: LPacket)
+    ensures
+        #[trigger] Broadcast(c, m).contains(p) ==> p.msg == m && p.src == c.my_id,
+{
+    if Broadcast(c, m).contains(p) {
+        lemma_broadcast_shape(c, m, p);
+    }
+}
+
+pub broadcast proof fn lemma_bc_ins_msg(
+    c: LConstants,
+    m: LEPaxosStarMessage,
+    e: LPacket,
+    p: LPacket,
+)
+    ensures
+        #[trigger] Broadcast(c, m).insert(e).contains(p) ==> p.msg == m || p == e,
+{
+    if Broadcast(c, m).insert(e).contains(p) && p != e {
+        lemma_broadcast_shape(c, m, p);
+    }
+}
+
+pub broadcast proof fn lemma_bcto_ins_msg(
+    c: LConstants,
+    t: Set<int>,
+    m: LEPaxosStarMessage,
+    e: LPacket,
+    p: LPacket,
+)
+    ensures
+        #[trigger] BroadcastTo(c, t, m).insert(e).contains(p) ==> p.msg == m || p == e,
+{
+    if BroadcastTo(c, t, m).insert(e).contains(p) && p != e {
+        lemma_broadcast_to_shape(c, t, m, p);
+    }
+}
+
+pub broadcast proof fn lemma_reply_msg(
+    c: LConstants,
+    o: LPacket,
+    m: LEPaxosStarMessage,
+    p: LPacket,
+)
+    ensures
+        #[trigger] ReplyTo(c, o, m).contains(p) ==> p.msg == m && p.src == c.my_id,
+{
+}
+
+pub broadcast group group_packet_shapes {
+    lemma_bc_msg,
+    lemma_bc_ins_msg,
+    lemma_bcto_ins_msg,
+    lemma_reply_msg,
+}
+
 pub proof fn lemma_broadcast_shape(c: LConstants, msg: LEPaxosStarMessage, pkt: LPacket)
     requires
         Broadcast(c, msg).contains(pkt),
@@ -5073,6 +5135,2001 @@ pub proof fn lemma_initialimpliesnoreplies_step(
             } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
                 let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
                 lemma_initialimpliesnoreplies_lpostwaitingonrecoverok(s, s_, c, w, rp, sent);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
+/// **Every `Validate` on the network carries a positive ballot.**
+/// `LRecoverValidate` is the only action that sends one, and it sends at
+/// `inst.bal` with `recovery_phase is RecoverOK` — which `BalWellFormed` says
+/// is positive.
+///
+/// This is what keeps `ApplyValidate` away from ballot-0 state.
+/// `LHandleValidate` fires only when `inst.bal == m.b`, so with every
+/// `Validate` carrying `b > 0` it cannot rewrite `init_dep` underneath a
+/// fast-path accumulator, which lives entirely at ballot 0.
+pub open spec fn ValidateMsgPositive(network: Set<LPacket>) -> bool {
+    forall|pk: LPacket|
+        #![trigger network.contains(pk)]
+        network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0
+}
+
+proof fn lemma_validatemsgpositive_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LSubmit(s, s_, c, v, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LCommitFast(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LStartAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LCommitSlow(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LStartRecover(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecoverCommitted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecoverAccepted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecoverNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecoverValidate(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert(InstAt(s, w).bal > 0);
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LValidateAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LValidateNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LValidateWait(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LPostWaitingNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LPostWaitingAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LHandlePreAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LHandleAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LHandleCommit(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LHandleRecover(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LHandleValidate(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LRecordValidateOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+proof fn lemma_validatemsgpositive_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    broadcast use group_packet_shapes;
+    assert forall|pk: LPacket| #![trigger network_.contains(pk)]
+        network_.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0 by {
+        if network.contains(pk) {
+            assert(network.contains(pk) && pk.msg is Validate ==> pk.msg->Validate_b > 0);
+        }
+    }
+}
+
+pub proof fn lemma_validatemsgpositive_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        ValidateMsgPositive(network),
+        ReplicaAction(s, s_, c, received, sent),
+        received matches Option::Some(rp) ==> network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        ValidateMsgPositive(network_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_validatemsgpositive_lsubmit(s, s_, c, v, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lcommitfast(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lstartaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lcommitslow(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lstartrecover(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lrecovercommitted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lrecoveraccepted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lrecovernop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lrecovervalidate(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lvalidateaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lvalidatenop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lvalidatewait(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lpostwaitingnop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_validatemsgpositive_lpostwaitingaccept(s, s_, c, w, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lhandlepreaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lrecordpreacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lhandleaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lrecordacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lhandlecommit(s, s_, c, rp, sent, network, network_);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lhandlerecover(s, s_, c, rp, sent, network, network_);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lrecordrecoverok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lhandlevalidate(s, s_, c, rp, sent, network, network_);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_validatemsgpositive_lrecordvalidateok(s, s_, c, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_validatemsgpositive_lpostwaitingonwaiting(s, s_, c, w, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_validatemsgpositive_lpostwaitingonrecoverok(s, s_, c, w, rp, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+    }
+}
+
+/// **Accumulator soundness for the fast path (`TODO.md` 57.1.b, second half).**
+/// At ballot 0, every replica counted in `preaccept_agreed` really did report
+/// dependencies equal to what the coordinator proposed.
+///
+/// Conditioned on `bal == 0`, and that is not decoration: `ApplyValidate`
+/// rewrites `init_dep` while carrying `preaccept_agreed` across, so without the
+/// ballot guard the invariant is false. It holds because validation cannot
+/// reach ballot 0 — `LRecoverValidate` runs at a positive ballot by
+/// `BalWellFormed`, and `LHandleValidate` fires only when `inst.bal == m.b`
+/// with every `Validate` carrying `b > 0` by `ValidateMsgPositive`.
+/// `PreAcceptedInstance` also rewrites `init_dep`, and is harmless for the
+/// other reason: it is guarded on `phase is Initial`, where
+/// `InitialImpliesNoReplies` says there is nothing accumulated to invalidate.
+pub open spec fn PreAcceptAgreedSound(s: LState, network: Set<LPacket>) -> bool {
+    forall|id: LInstanceId, p: int|
+        #![trigger InstAt(s, id).preaccept_agreed.contains(p)]
+        InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep })
+}
+
+proof fn lemma_preacceptagreedsound_lsubmit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    v: int,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LSubmit(s, s_, c, v, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = LInstanceId { owner: c.my_id, num: s.next_num };
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lcommitfast(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LCommitFast(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lstartaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LStartAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lcommitslow(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LCommitSlow(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lstartrecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LStartRecover(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecovercommitted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecoverCommitted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecoveraccepted(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecoverAccepted(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecovernop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecoverNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecovervalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecoverValidate(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lvalidateaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LValidateAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lvalidatenop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LValidateNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lvalidatewait(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LValidateWait(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lpostwaitingnop(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LPostWaitingNop(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lpostwaitingaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LPostWaitingAccept(s, s_, c, w, sent),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lhandlepreaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LHandlePreAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->PreAccept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecordpreacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecordPreAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->PreAcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            if InstAt(s, idX).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+                assert(network_.contains(pk));
+            } else {
+                // Newly counted, so the guard that admitted it fired: this reply
+                // reported exactly the coordinator's dependencies. The set
+                // equality has to be spelled out -- `=~=` is what the action
+                // states, and the packet equality needs `==`.
+                assert(p == rp.src);
+                assert(rp.msg->PreAcceptOK_dq =~= InstAt(s, idX).init_dep);
+                assert(rp.msg == (LEPaxosStarMessage::PreAcceptOK {
+                    id,
+                    dq: InstAt(s_, idX).init_dep,
+                }));
+                assert(network_.contains(rp));
+            }
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lhandleaccept(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LHandleAccept(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->Accept_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecordacceptok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecordAcceptOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->AcceptOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lhandlecommit(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LHandleCommit(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->Commit_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lhandlerecover(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LHandleRecover(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->Recover_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecordrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecordRecoverOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->RecoverOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lhandlevalidate(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LHandleValidate(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->Validate_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lrecordvalidateok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LRecordValidateOK(s, s_, c, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = rp.msg->ValidateOK_id;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lpostwaitingonwaiting(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LPostWaitingOnWaiting(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+proof fn lemma_preacceptagreedsound_lpostwaitingonrecoverok(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    w: LInstanceId, rp: LPacket,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent),
+        network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    let idX = w;
+    lemma_insert_touches_one(s, s_, idX);
+    assert forall|id: LInstanceId, p: int| #![trigger InstAt(s_, id).preaccept_agreed.contains(p)]
+        InstAt(s_, id).bal == 0 && InstAt(s_, id).preaccept_agreed.contains(p) ==> exists|pk: LPacket|
+            (#[trigger] network_.contains(pk)) && pk.src == p && pk.msg
+                == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s_, id).init_dep }) by {
+        if id != idX {
+            assert(InstAt(s_, id) == InstAt(s, id));
+            if InstAt(s, id).bal == 0 && InstAt(s, id).preaccept_agreed.contains(p) {
+                let pk = choose|pk: LPacket|
+                    (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                        == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, id).init_dep });
+                assert(network_.contains(pk));
+            }
+        } else if InstAt(s_, idX).bal == 0 && InstAt(s_, idX).preaccept_agreed.contains(p) {
+            assert(InstAt(s, idX).bal == 0 && InstAt(s, idX).preaccept_agreed.contains(p));
+            let pk = choose|pk: LPacket|
+                (#[trigger] network.contains(pk)) && pk.src == p && pk.msg
+                    == (LEPaxosStarMessage::PreAcceptOK { id, dq: InstAt(s, idX).init_dep });
+            assert(network_.contains(pk));
+        }
+    }
+}
+
+pub proof fn lemma_preacceptagreedsound_step(
+    s: LState,
+    s_: LState,
+    c: LConstants,
+    received: Option<LPacket>,
+    sent: Set<LPacket>,
+    network: Set<LPacket>,
+    network_: Set<LPacket>,
+)
+    requires
+        BalWellFormed(s),
+        InitialImpliesNoReplies(s),
+        ValidateMsgPositive(network),
+        PreAcceptAgreedSound(s, network),
+        ReplicaAction(s, s_, c, received, sent),
+        received matches Option::Some(rp) ==> network.contains(rp),
+        network_ =~= network.union(sent),
+    ensures
+        PreAcceptAgreedSound(s_, network_),
+{
+    match received {
+        Option::None => {
+            if exists|v: int| LSubmit(s, s_, c, v, sent) {
+                let v = choose|v: int| LSubmit(s, s_, c, v, sent);
+                lemma_preacceptagreedsound_lsubmit(s, s_, c, v, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitFast(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitFast(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lcommitfast(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartAccept(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lstartaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LCommitSlow(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LCommitSlow(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lcommitslow(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LStartRecover(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LStartRecover(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lstartrecover(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverCommitted(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lrecovercommitted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverAccepted(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lrecoveraccepted(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverNop(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lrecovernop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LRecoverValidate(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lrecovervalidate(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateAccept(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lvalidateaccept(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateNop(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lvalidatenop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LValidateWait(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LValidateWait(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lvalidatewait(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingNop(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lpostwaitingnop(s, s_, c, w, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingAccept(s, s_, c, w, sent);
+                lemma_preacceptagreedsound_lpostwaitingaccept(s, s_, c, w, sent, network, network_);
+            } else {
+                assert(false);
+            }
+        },
+        Option::Some(rp) => {
+            if LHandlePreAccept(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lhandlepreaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordPreAcceptOK(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lrecordpreacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleAccept(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lhandleaccept(s, s_, c, rp, sent, network, network_);
+            } else if LRecordAcceptOK(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lrecordacceptok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleCommit(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lhandlecommit(s, s_, c, rp, sent, network, network_);
+            } else if LHandleRecover(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lhandlerecover(s, s_, c, rp, sent, network, network_);
+            } else if LRecordRecoverOK(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lrecordrecoverok(s, s_, c, rp, sent, network, network_);
+            } else if LHandleValidate(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lhandlevalidate(s, s_, c, rp, sent, network, network_);
+            } else if LRecordValidateOK(s, s_, c, rp, sent) {
+                lemma_preacceptagreedsound_lrecordvalidateok(s, s_, c, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnWaiting(s, s_, c, w, rp, sent);
+                lemma_preacceptagreedsound_lpostwaitingonwaiting(s, s_, c, w, rp, sent, network, network_);
+            } else if exists|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent) {
+                let w = choose|w: LInstanceId| LPostWaitingOnRecoverOK(s, s_, c, w, rp, sent);
+                lemma_preacceptagreedsound_lpostwaitingonrecoverok(s, s_, c, w, rp, sent, network, network_);
             } else {
                 assert(false);
             }
