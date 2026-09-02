@@ -2284,7 +2284,7 @@ pub fn vm_eval_with_locals(
                 let pairs: Vec<_> = stack.drain(stack.len() - 2 * n..).collect();
                 #[allow(clippy::mutable_key_type)]
                 let mut entries = std::collections::BTreeMap::new();
-                for pair in pairs.chunks_exact(2) {
+                for pair in pairs.as_chunks::<2>().0 {
                     entries.insert(pair[0].clone(), pair[1].clone());
                 }
                 stack.push(RuntimeValue::map_bounded(entries, &ctx.bounds)?);

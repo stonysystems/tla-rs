@@ -13336,7 +13336,7 @@ impl Translator {
                     }),
                     invariants: vec![
                         format!("__i <= {}", length_str),
-                        format!("__v@.len() == __i as int"),
+                        "__v@.len() == __i as int".to_string(),
                     ],
                     decreases: Some(format!("{} - __i", length_str)),
                     body: Box::new(ExecExpr::Block(vec![
