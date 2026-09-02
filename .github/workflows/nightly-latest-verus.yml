@@ -88,6 +88,28 @@ jobs:
       - name: Ensure Verus is executable
         run: chmod +x ~/verus/verus
 
+      # The Cargo-based release flow introduced upstream in verus#2881 shipped
+      # its first rolling release (0.2026.09.02) without the bundled z3 the
+      # zip always carried before. Whether or not upstream restores bundling,
+      # fetch z3 ourselves with the same script Verus developers use, pinned
+      # to the resolved commit so the z3 version always matches what that
+      # Verus expects.
+      - name: Provide z3 if the release does not bundle it
+        run: |
+          set -o pipefail
+          if [ -x ~/verus/z3 ]; then
+            echo "release bundles z3; nothing to do"
+            exit 0
+          fi
+          SHA="${{ steps.verus.outputs.version }}"
+          SHA="${SHA##*.}"
+          curl -sfL \
+            "https://raw.githubusercontent.com/verus-lang/verus/${SHA}/source/tools/get-z3.sh" \
+            -o /tmp/get-z3.sh
+          (cd ~/verus && bash /tmp/get-z3.sh)
+          chmod +x ~/verus/z3
+          ~/verus/z3 --version
+
       - name: Install Rust toolchain for Verus
         uses: dtolnay/rust-toolchain@master
         with:
