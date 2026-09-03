@@ -143,7 +143,7 @@ scons --skip-verus
 ```
 
 The Verus invocation covers all ten protocol modules in the crate. The current full-crate
-gate reports `1290 verified, 0 errors`, with no warnings or automatically chosen trigger
+gate reports `1304 verified, 0 errors`, with no warnings or automatically chosen trigger
 notes, and runs on every push. Verification remains relative to the declared trusted and
 externally implemented boundaries; Appendix F of the book records those boundaries and
 the remaining proof escapes.

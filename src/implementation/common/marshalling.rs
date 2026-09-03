@@ -1706,6 +1706,47 @@ macro_rules! derive_marshalable_for_enum {
           }
         )+
         }
+        pub mod deser {
+        #[allow(unused_imports)]
+        use super::super::*;
+        $(
+          // A fixed budget rather than the caller's $rlimitattr: macro_rules
+          // cannot transcribe the once-captured attr inside the per-variant
+          // repetition. 100 is the established per-function budget of every
+          // current caller.
+          #[verifier::rlimit(100)]
+          #[verifier::spinoff_prover]
+          pub exec fn $variant(data: &Vec<u8>, start: usize) -> (res: Option<($newenum, usize)>)
+            requires
+              start < data.len(),
+              data@[start as int] == ($tag as u8),
+            ensures match res {
+              Some((x, end)) => {
+                &&& x.is_marshalable()
+                &&& start <= end <= data.len()
+                &&& data@.subrange(start as int, end as int) == x.ghost_serialize()
+              }
+              None => true,
+            },
+          {
+            let mid = start + 1;
+            $( $(
+              let ($member, mid) = match $memberty::deserialize(data, mid) { None => {
+                return None;
+              }, Some(x) => x, };
+            )* )?
+            let x = $newenum::$variant $( { $($member),* } )?;
+            let end = mid;
+            proof {
+              assert(data@.subrange(start as int, end as int) == x.ghost_serialize()) by {
+                  assert(data@.subrange(start as int, end as int).len() == x.ghost_serialize().len());
+                  assert(data@.subrange(start as int, end as int) =~= x.ghost_serialize());
+              }
+            }
+            Some((x, end))
+          }
+        )+
+        }
       }
       impl $(< $($poly : Marshalable),+ >)? Marshalable for $newenum $(< $($poly),+ >)? {
         open spec fn view_equal(&self, other: &Self) -> bool {
@@ -1815,26 +1856,16 @@ macro_rules! derive_marshalable_for_enum {
             return None;
           }
           let tag = data[start];
-          let (x, end) = $(
+          // One helper per variant, one solver budget per variant; a single
+          // chain deserializing every variant inline is a path-explosion
+          // query that sat right at the resource limit. This body only
+          // dispatches on the tag.
+          $(
             if tag == $tag {
-              let mid = start + 1;
-              $( $(
-                let ($member, mid) = match $memberty::deserialize(data, mid) { None => {
-                  return None;
-                }, Some(x) => x, };
-              )* )?
-              ($newenum::$variant $( { $($member),* } )?, mid)
-            } else
-          )* {
-            return None;
-          };
-          proof {
-            assert(data@.subrange(start as int, end as int) == x.ghost_serialize()) by {
-                assert(data@.subrange(start as int, end as int).len() == x.ghost_serialize().len());
-                assert(data@.subrange(start as int, end as int) =~= x.ghost_serialize());
+              return $splitmod::deser::$variant(data, start);
             }
-          }
-          Some((x, end))
+          )*
+          None
         }
         $( #[$rlimitattr] )?
         #[verifier(spinoff_prover)]
