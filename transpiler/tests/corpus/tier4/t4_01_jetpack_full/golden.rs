@@ -8,7 +8,7 @@
 //! - it is a genuine **multi-module composition**: two library modules with no
 //!   `Init`/`Next` of their own, INSTANCEd by a third, exactly as upstream has
 //!   it. The `LB`/`LJ` name prefixes are those INSTANCE qualifiers;
-//! - `IsFastQuorum` is the closed form derived in TODO.md 55.3.a, which is what
+//! - `IsFastQuorum` is the closed form derived in TODO.md 58.3.a, which is what
 //!   made the fast path projectable at all.
 //!
 //! Two shapes here appear in no other golden, and both are worth reading:

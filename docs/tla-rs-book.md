@@ -6,8 +6,7 @@ specifications, and derive executable Rust functions together with the contracts
 them back to the specification. It is primarily a Verus reimplementation of the ideas in
 [IronFleet](https://doi.org/10.1145/2815400.2815428) and
 [AutoMan](https://doi.org/10.1145/3731569.3764822), extended with more protocols,
-TLA+/Verus translation, source-first model checking, DPOR, and a deployable networking
-runtime.
+TLA+/Verus translation, source-first model checking, and a deployable networking runtime.
 
 Part I is a user guide: it takes a specification through generation, checking,
 verification, compilation, and execution. Part II is a developer guide for changing the
@@ -17,6 +16,11 @@ transpiler, proofs, model checker, protocol integrations, runtime, and build sys
 > development phase. When prose disagrees with source, tests, configuration, or CI, the
 > executable artifact wins. Exact verification totals and performance measurements are
 > snapshots; reproduce them before citing them.
+
+> **DPOR status — under development and not usable.** The `--search dpor` path is very
+> incomplete. Do not use DPOR output as verification, bug-finding evidence, or a release gate.
+> The source-first BFS/DFS workflow remains documented below; every DPOR reference is an
+> implementation note for contributors, not a supported user workflow.
 
 ## What is in the project
 
@@ -29,7 +33,7 @@ The project has four related, but distinct, tool paths:
 
 | Goal | Start with | Primary tool path | Result |
 |---|---|---|---|
-| Write and run a verified transition | Verus relational spec | `.automan` + `_transpile.toml` → transpiler → Verus | Executable Rust with refinement contracts |
+| Write and run a verified transition | Verus relational spec | inline `// @automan` modes + `_transpile.toml` → transpiler → Verus | Executable Rust with refinement contracts |
 | Find finite-state bugs | Verus `LInit`/`LNext` spec | `model-check` + `model.toml` | Counterexample or bounded search evidence |
 | Bring in an existing TLA+ model | TLA+ module | `translate-tla`, or human cleanup → `tla-lint` → `clean-tla` | Verus protocol-layer specification |
 | Compare with TLC | TLA+ or Verus model | wrapper/parity export tools | Normalized states and transitions for comparison |
@@ -67,9 +71,9 @@ TLA+ source (optional)
        ├── translate-tla
        └── human message-aware rewrite → tla-lint → clean-tla
        ▼
-Verus TLA-style specification ───────────────► finite model checking
+Verus TLA-style specification ───────────────► finite model checking (BFS/DFS)
        │                                           │
-       │ .automan modes + _transpile.toml          ├── counterexample
+       │ @automan modes + _transpile.toml          ├── counterexample
        ▼                                           └── bounded evidence
 spec-to-exec transpiler
        │
@@ -88,7 +92,7 @@ The hand-written sources and derived artifacts are deliberately separate:
 | Artifact | Purpose | Ownership |
 |---|---|---|
 | `src/protocol/<P>/*.rs` | Logical state, actions, invariants, and refinement proofs | Hand-written |
-| `*.automan` | Input/output modes and helper signatures | Hand-written |
+| `// @automan` directives (in the spec) | Input/output modes and helper signatures | Hand-written; the legacy `.automan` sidecar form is still accepted |
 | `*_transpile.toml` | Naming, mappings, proof generation, and calling convention | Hand-written |
 | `src/generated/<P>/*_gen.rs` | Concrete types and executable transitions | Generated, plus the hand-written bodies regeneration preserves (Chapter 13) |
 | `src/implementation/<P>/` | Host and runtime-facing protocol integration | Hand-written unless marked otherwise |
@@ -124,12 +128,16 @@ need range, validity, or finite-domain preconditions.
 | Try the project | Chapters 1–3 and the Counter quickstart in Chapter 2 |
 | Write a Verus specification | Chapters 3–7, then Chapter 11 |
 | Start from TLA+ | Chapters 3, 9, 8, and 7 |
-| Model check a protocol | Chapters 3 and 8; contributors continue with Chapter 22 |
+| Model check a protocol | Chapters 3 and 8; do not use DPOR; contributors continue with Chapter 22 |
 | Run an included service | Chapters 2, 7, and 10 |
 | Contribute to the transpiler or proofs | Chapters 13–20 and 24–27 |
 | Change translation or model checking | Chapters 22–24 and the relevant appendices |
 
 # Part I — User Guide
+
+> **DPOR is not a user feature:** it is very incomplete, under development, and not usable.
+> Use the BFS/DFS paths described in Chapter 8; do not select `--search dpor` for protocol
+> validation or evidence.
 
 Part I follows the main user path from a small relational specification to generated,
 verified, executable code, then extends that path to model checking, TLA+ conversion, and
@@ -154,9 +162,10 @@ The project brings together two lines of work:
 Both original projects used Dafny. tla-rs re-expresses their core ideas in
 Rust with [Verus](https://github.com/verus-lang/verus), then extends the
 workflow with more protocols, TLA+/Verus translation, source-first model
-checking, DPOR search, code-generation options for Rust ownership patterns,
-and a C# networking/runtime layer. The root [README](../README.md) gives the
-short project overview and paper attribution.
+checking, code-generation options for Rust ownership patterns, and a C#
+networking/runtime layer. The root [README](../README.md) gives the short
+project overview and paper attribution. The separate DPOR search path is very
+incomplete and not usable, as Chapter 8 explains.
 
 ### What is included
 
@@ -194,7 +203,7 @@ hand-written Verus spec                    optional TLA+ source
                 ├──────── bounded model check ◄─┘
                 │          finite evidence
                 │
-         .automan input/output modes
+         @automan input/output modes
          _transpile.toml codegen policy
                 │
                 ▼
@@ -234,7 +243,8 @@ are blurred together. This book uses the following meanings consistently.
 |---|---|---|
 | A Verus-verified function | The checked body satisfies its stated contract under its preconditions and trusted dependencies | That the contract is the intended specification, or that dependencies and the environment are correct |
 | An `ensures` refinement link | The concrete result's logical view satisfies a named logical relation | An end-to-end theorem outside that relation's scope |
-| A bounded model-check result | No configured violation was found in the resolved finite model before the reported stop condition | An unbounded proof over all values and executions |
+| A bounded BFS/DFS model-check result | No configured violation was found in the resolved finite model before the reported stop condition | An unbounded proof over all values and executions |
+| DPOR output | Nothing reliable in the current implementation; treat it only as a development diagnostic | Verification, reliable bug-finding evidence, or a release gate |
 | `assume(...)` | Verus may use the proposition without a proof at that site | Evidence that the proposition is true |
 | `#[verifier(external_body)]` or an external specification | A trusted body is used through a specified interface | Verification of the hidden implementation |
 | C#/FFI and host/runtime code | The machinery that performs real I/O and invokes the protocol | Deductive Verus verification unless a particular relation is explicitly modeled and proved |
@@ -257,9 +267,10 @@ Most Verus work in this repository concerns state invariants, executable
 contracts, and refinement: statements about individual states or steps and
 their relation to a higher-level specification. The source-first model checker
 can also diagnose bounded `leads_to` obligations with fairness configuration,
-but only after fully exploring the configured finite graph. Neither facility
-silently upgrades the other: a bounded search is not an unbounded proof, and a
-function contract is not automatically a temporal theorem.
+but only after fully exploring the configured finite graph through the BFS/DFS
+path. Neither facility silently upgrades the other: a bounded search is not an
+unbounded proof, and a function contract is not automatically a temporal theorem.
+The DPOR path is not usable for this purpose.
 
 If you are new to the project, read Chapters 2–7 in order, then Chapter 8 for
 model checking and Chapter 10 for running a cluster. Existing TLA+ users can
@@ -321,19 +332,18 @@ verus! {
 `LIncrement` is a relation. It says which pair of old and new values is a
 valid step; it does not yet say how executable Rust computes the new value.
 
-The mode file
-[`counter_spec.automan`](../examples/quickstart/counter_spec.automan) supplies
-that data flow:
+The `// @automan` directive above each function supplies that data flow, in
+the spec itself:
 
-```text
-module counter_spec {
-    LInit(-);
-    LIncrement(+, -);
-}
+```rust
+// @automan predicate(value: in, value_: out)
+pub open spec fn LIncrement(value: int, value_: int) -> bool { ... }
 ```
 
-`+` means the caller supplies the argument. `-` means the generated function
-must synthesize it. The configuration
+`in` means the caller supplies the argument. `out` means the generated
+function must synthesize it. (The same modes can alternatively live in a
+separate `.automan` sidecar with positional `+`/`-` markers, passed with
+`-a`; inline is the default form.) The configuration
 [`counter_transpile.toml`](../examples/quickstart/counter_transpile.toml) maps
 logical `int` to executable `i64`, asks for proof generation, imports the
 logical source, and adds the overflow precondition required by bounded `i64`
@@ -348,7 +358,6 @@ Generate the executable functions from the repository root:
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i examples/quickstart/counter_spec.rs \
-  -a examples/quickstart/counter_spec.automan \
   -c examples/quickstart/counter_transpile.toml \
   -o examples/quickstart/counter_gen.rs
 ```
@@ -563,10 +572,10 @@ dependencies. A model checker executes a resolved finite domain and is very
 good at producing concrete counterexamples, but its non-violation result is
 bounded by domains, depth, state limits, reductions, timeout, and stop reason.
 
-A productive workflow uses both: model check small instances to catch shallow
-specification mistakes, then prove the general invariants and refinement
-relations that matter. Chapter 8 covers the model checker; Chapters 4–7 cover
-the spec-to-proof path.
+A productive workflow uses both: model check small instances with BFS or DFS to catch shallow
+specification mistakes, then prove the general invariants and refinement relations that
+matter. Chapter 8 covers the model checker; Chapters 4–7 cover the spec-to-proof path. Do not
+use the very incomplete DPOR path.
 
 ## Chapter 4 — Write a TLA-Style Specification in Verus
 
@@ -764,8 +773,8 @@ pub open spec fn LSafetyNoCommitAbortOverlap(
 
 Defining an invariant does not prove it. A complete deductive argument shows
 that initialization establishes it and every `LNext` branch preserves it. A
-`proof fn` can package reusable steps; a finite model check can search for
-counterexamples in chosen domains.
+`proof fn` can package reusable steps; a finite BFS/DFS model check can search for
+counterexamples in chosen domains. DPOR is not usable for this purpose.
 
 Keep type/representation predicates separate from semantic invariants. For
 example, “every concrete enum has a valid logical view” and “no resource
@@ -827,12 +836,31 @@ generation fails.
 
 ### Inputs and outputs
 
-A `.automan` file assigns a mode to every annotated parameter:
+Every annotated parameter carries a mode: an *input* is supplied to the
+executable function, an *output* is synthesized from the relation.
 
-- `+` is an input supplied to the executable function;
-- `-` is an output synthesized from the relation.
+Since Phase 55 the maintained protocol specs carry their modes **inline**, as
+a `// @automan` comment immediately above each `spec fn`. For the action in
+Chapter 4:
 
-For the action in Chapter 4, the maintained annotation is:
+```rust
+// @automan predicate(s: in, s_: out, c: in, rm: in, sent_packets: out)
+pub open spec fn LRMReceivePrepare(
+    s: LState, s_: LState, c: LConstants, rm: int, sent_packets: Seq<LPacket>,
+) -> bool { ... }
+```
+
+Bindings are **named**: an unknown, missing, or duplicated parameter name is
+an error with a file line, so renaming or reordering parameters cannot
+silently rebind the modes — which the older positional form permitted. The
+directive attaches to the adjacent function rather than being looked up by
+name, so equally-named functions in different protocols (nine sidecars used to
+declare an `LInit`) cannot receive each other's modes. A directive that the
+parser cannot bind — malformed, orphaned, inside a function body, or spelled
+as a doc comment — fails loudly; it is never skipped.
+
+The legacy `.automan` sidecar form remains fully supported and uses positional
+modes (`+` input, `-` output):
 
 ```text
 module TwoPhase::twophase {
@@ -841,20 +869,19 @@ module TwoPhase::twophase {
 }
 ```
 
-The five modes of `LRMReceivePrepare` correspond, in order, to `s`, `s_`, `c`,
-`rm`, and `sent_packets`. Its generated function therefore receives the old
-state implicitly as `&mut self`, receives constants and `rm`, mutates the state,
-and returns a `Vec` of concrete messages.
-
-Annotation files allow `#`, `//`, and trailing comments. Validate their syntax
-with:
+The TLA-to-Verus pipeline can still emit one (`--gen-modes`,
+`--keep-intermediate`), and `.automan` files remain in the transpiler's test
+workspaces. A function annotated in both places must agree:
+identical definitions warn, conflicting ones fail. To move a sidecar's
+annotations into the spec mechanically:
 
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
-  check --annotations src/protocol/TwoPhase/twophase.automan
+  migrate-inline --spec my_spec.rs --annotations my_spec.automan --write
 ```
 
-`check` parses the annotation file. Full spec/annotation agreement and output
+Sidecar files allow `#`, `//`, and trailing comments. Validate one with
+`check --annotations <file>`. Full spec/annotation agreement and output
 data-flow checks occur when the transpiler analyzes the actual spec during
 generation.
 
@@ -1221,7 +1248,6 @@ The transpiler infers additional information from the spec and its sibling
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i examples/quickstart/counter_spec.rs \
-  -a examples/quickstart/counter_spec.automan \
   -c examples/quickstart/counter_transpile.toml \
   --dump-config
 ```
@@ -1246,7 +1272,7 @@ For a single-module protocol such as Raft:
 |---|---|---|
 | Logical types | `src/protocol/Raft/types.rs` | Hand-written |
 | Logical actions | `src/protocol/Raft/raft.rs` | Hand-written |
-| Mode annotations | `src/protocol/Raft/raft.automan` | Hand-written |
+| Mode annotations | inline `// @automan` directives in `raft.rs` | Hand-written |
 | Configuration | `src/protocol/Raft/raft_transpile.toml` | Hand-written |
 | Concrete types | `src/generated/Raft/types_gen.rs` | Generated only |
 | Executable actions | `src/generated/Raft/raft_gen.rs` | Generated only |
@@ -1280,7 +1306,6 @@ mkdir -p /tmp/tla-rs-raft-generated
 
 "$TLA_RS_TRANSPILER" \
   -i src/protocol/Raft/raft.rs \
-  -a src/protocol/Raft/raft.automan \
   -c src/protocol/Raft/raft_transpile.toml \
   -o /tmp/tla-rs-raft-generated/raft_gen.rs
 
@@ -1426,7 +1451,7 @@ Respond at the owning layer:
 
 | Failure | Correct place to act |
 |---|---|
-| Annotation arity or mode error | `.automan` file or spec signature |
+| Annotation arity or mode error | `// @automan` directive (or legacy sidecar) or spec signature |
 | Output not fully constructible | Refactor the logical action's data flow |
 | Wrong concrete name or call | `_transpile.toml` mapping |
 | Missing general expression/pattern support | Transpiler parser/translator/code generator plus tests |
@@ -1438,17 +1463,22 @@ Never make the last row mean “edit `src/generated/` until it compiles.”
 
 ## Chapter 8 — Model Check a Specification
 
+> **DPOR warning — very incomplete, under development, and not usable.** Do not select
+> `--search dpor` for protocol validation. Do not treat DPOR output as safety or liveness
+> evidence, a reliable counterexample, or a release gate. The BFS and DFS instructions below
+> do not make DPOR usable; DPOR details are retained only for contributors developing it.
+
 Model checking is the fastest way to turn a small protocol model into either a concrete
 counterexample or carefully bounded evidence. tla-rs can explore the `LInit`/`LNext` relations
 in a Verus protocol source file directly; it does not first translate them to TLA+ or invoke
-TLC. This source-first path is useful early, when a counterexample is cheaper to understand
-than a failed proof, and later as a regression gate beside deductive verification.
+TLC. This source-first BFS/DFS path is useful early, when a counterexample is cheaper to
+understand than a failed proof, and later as a regression gate beside deductive verification.
 
-The word “check” needs a boundary. A successful run says something about the finite domains,
-collection bounds, transition semantics, search horizon, reductions, and properties selected
-for that run. It is not an unbounded Verus proof. Conversely, a counterexample is often useful
-even when the run is lossy or incomplete: it is a concrete execution to inspect, provided the
-evaluator faithfully supports the expressions involved.
+The word “check” needs a boundary. A successful BFS/DFS run says something about the finite
+domains, collection bounds, transition semantics, search horizon, reductions, and properties
+selected for that run. It is not an unbounded Verus proof. Conversely, a BFS/DFS
+counterexample is often useful even when the run is lossy or incomplete: it is a concrete
+execution to inspect, provided the evaluator faithfully supports the expressions involved.
 
 ### Build the checker and identify its three inputs
 
@@ -1566,7 +1596,7 @@ transpiler/target/debug/verus-transpile model-config \
 evaluation guardrail. It is the simplest way to catch a misspelled enum mode, an empty domain,
 a zero limit, or an invalid property combination before exploration begins.
 
-### Choose BFS, DFS, or DPOR
+### Choose BFS or DFS; do not use DPOR
 
 The search strategy is selected on the command line, not in `model.toml`.
 
@@ -1574,7 +1604,7 @@ The search strategy is selected on the command line, not in `model.toml`.
 |---|---|---|
 | `bfs` | Shortest-depth safety witnesses, ordinary regression evidence, liveness graph construction | Sequential by default; `--workers N` enables level-synchronous parallel BFS. |
 | `dfs` | Low-memory bug hunting along deep paths | Sequential; `--workers` does not make DFS parallel. |
-| `dpor` | Reducing redundant interleavings in concurrent models | Integrated sleep-set/independence explorer; `--workers N` enables its parallel frontier/work-stealing path. Treat its current reporting path as experimental, as described below. |
+| `dpor` | Contributor development only | **Not usable.** Very incomplete implementation and reporting path; do not use its results. |
 
 BFS and DFS globally deduplicate reached states. They differ in frontier order, so BFS usually
 finds the shallowest violation while DFS may reach a deep one sooner. Neither order changes the
@@ -1588,21 +1618,23 @@ backtracking then avoid exploring interleavings intended to be equivalent. With
 `--conflict-profile`, the checker reports the field pairs most often preventing an independence
 decision; this option has no meaning for BFS or DFS.
 
-There are important limitations in the current main-path DPOR adapter. It retains canonical
-state-key strings rather than the `ExploredState` values used by the ordinary report path. The
+The DPOR implementation is not usable. Among its known limitations, the current main-path
+adapter retains canonical state-key strings rather than the `ExploredState` values used by the
+ordinary report path. The
 adapter therefore emits no ordinary explored-state payload, does not propagate detailed
 invariant/deadlock witnesses, and currently maps every non-violation termination to
 `FrontierExhausted`. It also does not apply `timeout_ms`, and parity/liveness consumers do not
 receive a useful graph from it. In addition, its state store uses a 64-bit fingerprint fast
-path. For now:
+path. Accordingly:
 
-- use BFS or DFS for authoritative stop-reason reporting and detailed witnesses;
-- use BFS for bounded liveness and cross-engine state export;
-- treat DPOR as bounded safety-oriented reduction and bug finding;
-- compare DPOR with a small canonical BFS model before relying on a reduction change; and
-- do not infer that a DPOR run is exact merely because its JSON `evidence_mode` says so.
+- do not use DPOR for protocol validation, safety evidence, liveness evidence, or bug-finding
+  conclusions;
+- do not treat BFS/DFS comparison as certification of DPOR;
+- do not infer that a DPOR run is exact merely because its JSON `evidence_mode` says so; and
+- limit DPOR execution to development and testing of the checker itself.
 
-Those restrictions describe the current integration, not the intended endpoint of DPOR.
+These restrictions are categorical for the current implementation, not minor qualifications
+on an otherwise supported feature.
 
 ### Select properties and transition semantics
 
@@ -1662,13 +1694,13 @@ component. This is a useful bounded diagnostic, not a complete temporal proof pr
 Liveness is evaluated only when the ordinary explorer reports `FrontierExhausted`. There is a
 subtle but important qualification: the explorer also reports `FrontierExhausted` after it has
 stopped expanding states at `max_depth`. If `summary.depth` reaches `search.max_depth`, the
-graph may be depth-truncated even though the worklist is empty. Interpret a liveness result as
-bounded by that horizon, and increase the depth until the reached graph stabilizes. Do not use
-the current DPOR adapter for liveness evidence.
+graph may be depth-truncated even though the worklist is empty. Interpret a BFS/DFS liveness
+result as bounded by that horizon, and increase the depth until the reached graph stabilizes.
+Do not use the current DPOR adapter for liveness evidence.
 
-### Read results on four independent axes
+### Read BFS/DFS results on four independent axes
 
-No single word such as “exact” captures a run. Read every positive result on four axes:
+No single word such as “exact” captures a run. Read every positive BFS/DFS result on four axes:
 
 | Axis | Question |
 |---|---|
@@ -1701,13 +1733,15 @@ dedup settings preserve explored-state distinctions,” not “the protocol is p
 
 A practical confidence ladder is:
 
-1. A reproduced counterexample is a concrete bounded bug witness.
-2. A lossy or incomplete run with no witness is only a bug-finding attempt.
+1. A reproduced BFS/DFS counterexample is a concrete bounded bug witness.
+2. A lossy or incomplete BFS/DFS run with no witness is only a bug-finding attempt.
 3. A canonical BFS/DFS run that reaches a cap is incomplete bounded evidence.
 4. A canonical BFS/DFS run whose graph closes below the depth cutoff is exhaustive for the
    configured finite model and supported semantics.
 5. A Verus proof establishes its stated theorem under its assumptions and trusted boundary; it
    is a different kind of evidence.
+
+DPOR belongs on none of these rungs in its current state.
 
 ### Tune execution without changing the model accidentally
 
@@ -1740,7 +1774,7 @@ state key and depth. A leads-to violation contains a representative cycle edge p
 action-labeled prefix/cycle witness with coarse state diffs.
 
 Checked-in examples live under [`reports/model_check/`](../reports/model_check/README.md). To
-refresh the supported matrix:
+refresh the supported BFS/DFS matrix:
 
 ```bash
 ./scripts/run_model_check_matrix.sh
@@ -1754,8 +1788,8 @@ telemetry fields—before committing regenerated artifacts.
 
 ### Cross-check with TLC when the engines should agree
 
-Source-first checking is normally the direct path. Generate a TLC wrapper when an independent
-engine, an existing TLC workflow, or historical parity is valuable:
+Source-first BFS/DFS checking is normally the direct path. Generate a TLC wrapper when an
+independent engine, an existing TLC workflow, or historical parity is valuable:
 
 ```bash
 transpiler/target/debug/verus-transpile generate-mc-wrapper \
@@ -1804,8 +1838,8 @@ non-identifier patterns, and unresolved or recursive helper shapes remain common
 When constants resolution reports zero valuations, inspect the resolved domains and verify that
 assignments use the runtime type expected by `LConstants`. When a fairness label is unknown,
 inspect the analyzed `LNext` branch labels rather than renaming the property blindly. When a
-positive result matters, rerun with canonical BFS, no symmetry, no POR, and a larger depth before
-making a stronger claim.
+positive BFS/DFS result matters, rerun with canonical BFS, no symmetry, no POR, and a larger
+depth before making a stronger claim.
 
 The practical command reference and current limitations are maintained in
 [`model-checking-source-first.md`](model-checking-source-first.md); the full configuration and
@@ -1841,7 +1875,7 @@ The import workflow has four distinct checkpoints:
 2. `clean-tla` mechanically projects such a module into a single-process protocol-layer Verus
    spec.
 3. Verus can typecheck that generated spec, and the source-first checker can explore a chosen
-   finite model of it.
+   finite model of it through BFS or DFS.
 4. Human-written or generated proof obligations, discharged by Verus without unreviewed
    assumptions, establish deductive claims.
 
@@ -1929,7 +1963,8 @@ transpiler/target/debug/verus-transpile pipeline \
 At present this mode deliberately stops after writing the projected spec because mode
 annotations for the projected signatures are not implemented. `--exec-output` is still required
 by the CLI but is not produced. The command also writes a source-derived `.automan` beside the
-spec before it stops; its parameter modes describe the unprojected source operators and must not
+spec before it stops — the clean-subset stop is the one path that still always
+emits the sidecar pair; its parameter modes describe the unprojected source operators and must not
 be used to generate the exec layer. Use `clean-tla` when only the projection is wanted.
 
 ### State clean-subset evidence precisely
@@ -1963,8 +1998,9 @@ transpiler/target/debug/verus-transpile translate-tla \
   --gen-modes
 ```
 
-It parses the module, infers types, applies any `.tla-types` overrides, emits Verus spec code,
-and optionally writes `out/protocol_spec.automan`. `--spec-prefix` and `--state-name` control
+It parses the module, infers types, applies any `.tla-types` overrides, and emits Verus spec
+code that carries its mode annotations as inline `// @automan` directives (Phase 55);
+`--gen-modes` additionally writes the legacy `out/protocol_spec.automan` sidecar. `--spec-prefix` and `--state-name` control
 generated naming. Type hints are especially valuable for empty collections, records, operator
 parameters, and named domains that usage alone cannot determine.
 
@@ -2062,9 +2098,9 @@ deterministic implementation without mode and witness choices.
 
 The parser has AST nodes for temporal operators and fairness. The general translator renders
 marker-shaped expressions; that does not make Verus a temporal-logic prover. The source-first
-checker handles only configured bounded `leads_to` obligations and branch-label fairness, not an
-arbitrary translated temporal formula. Keep temporal checking in the engine whose semantics you
-actually invoked.
+checker handles configured bounded `leads_to` obligations and branch-label fairness through
+the ordinary BFS/DFS explorer, not an arbitrary translated temporal formula. DPOR is not
+usable for these checks. Keep temporal checking in the engine whose semantics you invoked.
 
 ### Review a round trip responsibly
 
@@ -2074,7 +2110,8 @@ A useful round-trip review is staged:
 2. Translate and typecheck the generated target.
 3. Search for placeholders, markers, omitted proof metadata, and changed data encodings.
 4. Canonicalize and structurally compare the supported expression subset.
-5. Model-check matched finite configurations in both engines when behavior matters.
+5. Model-check matched finite configurations in the source-first BFS/DFS path and TLC when
+   behavior matters.
 6. Diff reachable states, initial states, and—when available—edges or action labels.
 7. Preserve the source, configs, generated artifacts, tool versions, and stop reasons.
 
@@ -2308,7 +2345,7 @@ an external database API.
 |---|---|
 | Logical types | [`src/protocol/TwoPhase/types.rs`](../src/protocol/TwoPhase/types.rs) |
 | Logical actions and safety predicates | [`twophase.rs`](../src/protocol/TwoPhase/twophase.rs) |
-| Input/output modes | [`twophase.automan`](../src/protocol/TwoPhase/twophase.automan) |
+| Input/output modes | inline `// @automan` directives in [`twophase.rs`](../src/protocol/TwoPhase/twophase.rs) |
 | Generation, messages, and scheduler config | [`twophase_transpile.toml`](../src/protocol/TwoPhase/twophase_transpile.toml) |
 | Concrete generated types/actions | [`src/generated/TwoPhase/`](../src/generated/TwoPhase/) |
 | Runtime message type and host | [`src/implementation/TwoPhase/`](../src/implementation/TwoPhase/) |
@@ -2322,8 +2359,7 @@ the generated methods.
 
 ### Bound and explore the state graph
 
-Before code generation, run the small finite model used by the transpiler
-tests:
+Before code generation, run the small finite model used by the transpiler tests:
 
 ```bash
 cargo run --quiet --release --manifest-path transpiler/Cargo.toml -- \
@@ -2336,27 +2372,23 @@ cargo run --quiet --release --manifest-path transpiler/Cargo.toml -- \
   --json-report
 ```
 
-At the current revision, this finite configuration exhausts a graph of three
-states and four transitions at depth one and reports its configured
-`LSafetyTmCommittedRequiresAllPrepared` invariant as satisfied. That is exact
-exploration of this configured finite model. It is not an unbounded induction
-proof, and changing the bounds, initial values, transition subset, or
-invariant changes the claim.
+At the current revision, this finite configuration exhausts a graph of three states and four
+transitions at depth one and reports its configured
+`LSafetyTmCommittedRequiresAllPrepared` invariant as satisfied. That is exact exploration of
+this configured finite model. It is not an unbounded induction proof, and changing the bounds,
+initial values, transition subset, or invariant changes the claim. This procedure uses BFS;
+do not substitute the unusable DPOR path.
 
 ### Validate data-flow annotations
 
-The mode file declares `LInit(-, +)` and marks each transition's old state and
-constants as inputs, its new state and sent packet sequence as outputs, and any
-selected RM identifier as an input. Check the annotation syntax first:
-
-```bash
-cargo run --quiet --manifest-path transpiler/Cargo.toml -- \
-  check --annotations src/protocol/TwoPhase/twophase.automan
-```
-
-This confirms that the annotation file parses. Generation is the stronger
-test because it resolves the annotations against Rust signatures and attempts
-to synthesize every output.
+Each transition's directive marks the old state and constants as inputs, the
+new state and sent packet sequence as outputs, and any selected RM identifier
+as an input — `// @automan predicate(s: in, s_: out, c: in, rm: in,
+sent_packets: out)` above `LRMReceivePrepare`, for example. The directives are
+validated when the spec is parsed, so generation itself is the syntax check:
+it resolves every binding against the Rust signature and attempts to
+synthesize every output. (`check --annotations <file>` still exists for
+legacy sidecar files.)
 
 The checked-in TwoPhase config currently contains both `arc_wrap_types` and
 `mut_self_types` for `CState`. The current generator warns and clears the Arc
@@ -2382,7 +2414,6 @@ mkdir -p /tmp/tla-rs-twophase-generated
 
 "$TLA_RS_TRANSPILER" \
   -i src/protocol/TwoPhase/twophase.rs \
-  -a src/protocol/TwoPhase/twophase.automan \
   -c src/protocol/TwoPhase/twophase_transpile.toml \
   -o /tmp/tla-rs-twophase-generated/twophase_gen.rs
 
@@ -2467,8 +2498,8 @@ following:
    from `src/services/mod.rs`.
 6. Add a selector branch to the native dispatch in `src/lib.rs`, update the C#
    server's documented selectors, and add certificate/run instructions.
-7. Add regeneration parity, focused verification, model-check, message
-   round-trip, scheduler, and runtime smoke tests appropriate to the claim.
+7. Add regeneration parity, focused verification, BFS/DFS model-check, message round-trip,
+   scheduler, and runtime smoke tests appropriate to the claim. Do not use DPOR as a gate.
 
 Copying module names is easy; preserving the relation among logical message,
 concrete message, host event, generated precondition, and next-state action is
@@ -2498,7 +2529,7 @@ commit/abort result. Add a protocol-specific client or deterministic host test
 before claiming end-to-end functional behavior.
 
 The completion bar for a new small protocol is therefore not merely “the
-generated module verifies.” It is: the bounded model says exactly what was
+generated module verifies.” It is: the bounded BFS/DFS model says exactly what was
 explored; generated contracts refine the intended actions without unreviewed
 assumptions; regeneration is deterministic; the hand-written host preserves
 the modeled event semantics to the extent claimed; messages round-trip; the
@@ -2550,7 +2581,6 @@ what it actually resolved:
 ```bash
 cargo run --quiet --manifest-path transpiler/Cargo.toml -- \
   -i path/to/spec.rs \
-  -a path/to/spec.automan \
   -c path/to/spec_transpile.toml \
   --dump-config
 ```
@@ -2612,9 +2642,10 @@ rg -n 'assume\s*\(|external_body|assume_specification|verifier\(external\)' \
   src/generated src/protocol src/implementation src/lib.rs
 ```
 
-For each relevant claim, record whether it rests on a Verus proof, a bounded
-model-check result, an explicit assumption/external body, a test, or an
-unverified runtime component. Raft's generated actions and its higher-level
+For each relevant claim, record whether it rests on a Verus proof, a bounded BFS/DFS
+model-check result, an explicit assumption/external body, a test, or an unverified runtime
+component. DPOR output is a developer diagnostic, not supported evidence. Raft's generated
+actions and its higher-level
 refinement proof, for example, are separate scopes; explicit assumptions in
 one cannot be erased by reporting that the other verifies.
 
@@ -2645,7 +2676,7 @@ library, or a scheduler action whose guard never becomes true.
 
 | Change | Fast loop | Required wider gate |
 |---|---|---|
-| Spec action | Annotation check → bounded model → scratch generation → focused Verus | Invariants/refinement, parity test, whole crate |
+| Spec action | Annotation check → bounded BFS/DFS model → scratch generation → focused Verus | Invariants/refinement, parity test, whole crate |
 | Annotation/config | `--dump-config` → scratch generation → `cmp` | Regeneration suite and focused/whole verification |
 | Transpiler implementation | Small regression test → affected protocol regeneration | Full transpiler tests, parity test, whole crate |
 | Runtime message/host | Unit/round-trip test → one protocol smoke test | Whole crate, C# build, protocol-specific integration test |
@@ -2655,7 +2686,7 @@ A productive spec-edit loop is:
 
 ```text
 write one relation
-  → bound and explore it
+  → bound and explore it with BFS or DFS
   → make data flow explicit
   → generate to scratch
   → inspect the contract
@@ -2677,7 +2708,8 @@ or a proof of the entire deployment stack. Plan around these boundaries:
 | The transpiler accepts a functionalizable subset of Verus spec relations | Refactor complex nondeterminism and helper data flow into supported, explicit forms |
 | `&mut self` generation cannot express every intermediate whole-state transformation | Use functional state where an action computes and reuses an intermediate state |
 | Executable integers and collections are finite representations | Supply validity and range obligations; do not equate a concrete bound with an unbounded theorem |
-| Source-first model checking operates on configured finite domains and a supported expression subset | State all bounds and distinguish exhaustive finite search from proof |
+| Source-first BFS/DFS model checking operates on configured finite domains and a supported expression subset | State all bounds and distinguish exhaustive finite search from proof |
+| DPOR model checking is very incomplete, under development, and not usable | Do not use DPOR for protocol validation, bug-finding conclusions, or release evidence |
 | TLA+ import/export supports a documented subset | Lint and round-trip representative modules; inspect semantic differences described in Chapters 8–9 |
 | Some mature protocol/refinement paths still have explicit assumptions or special generation configuration | Scope claims to the modules actually checked and audit each boundary |
 | Hosts, FFI, C# networking, clocks, files, and OS behavior are not automatically covered by action contracts | Test them and describe them as trusted unless a specific proof says otherwise |
@@ -2691,9 +2723,9 @@ A useful issue or review note includes:
 - the commit and dirty diff relevant to the failure;
 - `verus --version`, `rustc --version`, `cargo --version`, and, for integrated
   failures, `dotnet --info` and the platform;
-- the smallest spec, `.automan`, and TOML files that reproduce generation;
+- the smallest spec (with its inline directives; plus the `.automan` if using the sidecar form) and TOML that reproduce generation;
 - the exact command and complete error output;
-- a model configuration and shortest trace for a state-space failure;
+- a model configuration and shortest BFS/DFS trace for a state-space failure;
 - whether the generated result contains assumptions or unchecked bodies; and
 - for runtime failures, the service description's node count, selector, ports,
   and per-node logs with secrets removed.
@@ -2763,7 +2795,7 @@ For transpiler-emitted code, if the output is wrong, change the earliest applica
 source of truth:
 
 - change the logical specification if the intended transition is wrong;
-- change the `.automan` file if input and output modes are wrong;
+- change the `// @automan` directive (or legacy `.automan` file) if input and output modes are wrong;
 - change `_transpile.toml` if a mapping or supported code-generation choice is wrong;
 - change `transpiler/src/` if the behavior should be generic;
 - change a hand-written proof or implementation helper only when that helper is the
@@ -2896,9 +2928,9 @@ result must be read with the resolved configuration and stop reason.
 
 The transpiler combines three inputs:
 
-1. a Verus specification;
-2. a `.automan` mode annotation file;
-3. a `_transpile.toml` configuration.
+1. a Verus specification carrying inline `// @automan` mode directives
+   (or paired with a legacy `.automan` sidecar);
+2. a `_transpile.toml` configuration.
 
 It generates concrete `C*` types and executable functions under
 `src/generated/<P>/`. A generated function normally has a contract that relates its
@@ -3008,8 +3040,7 @@ contains:
 
 ```text
 types.rs
-<module>.rs
-<module>.automan
+<module>.rs        (carries the inline // @automan mode directives)
 <module>_transpile.toml
 mod.rs
 ```
@@ -3065,7 +3096,7 @@ source modules are:
 
 | Module | Responsibility |
 |---|---|
-| `annotation` | `.automan` parsing |
+| `annotation` | mode annotations: inline-directive and `.automan` parsing, sidecar↔inline migration |
 | `ast` | internal Verus expression, type, and function representation |
 | `parser` | extraction and parsing of supported Verus syntax |
 | `moder` | mode annotation, assignment tracking, functionalization checks |
@@ -3221,7 +3252,8 @@ name checks.
 ### CLI and configuration entry
 
 With no subcommand, `verus-transpile` runs the spec-to-exec path using
-`--input`, `--annotations`, `--config`, and `--output` (or `--stdout`). The CLI loads
+`--input`, `--config`, and `--output` (or `--stdout`); `--annotations` supplies a
+legacy sidecar and is required only when the spec carries no inline directives. The CLI loads
 the TOML file, combines it with inferred information and command-line modes, resolves
 known interactions such as `mut_self_types` versus Arc wrapping, and can print the
 resolved configuration with `--dump-config`.
@@ -3238,7 +3270,8 @@ The AST preserves constructs the later passes need: types, calls, equality and
 relations, conjunctions/disjunctions, `if`/`match`, quantifiers, collection literals,
 field and arrow access, Views, closures, and struct construction/update.
 
-The annotation parser loads one or more modules from `.automan`. Each function is
+The annotation layer collects inline directives during spec parsing and can load
+module blocks from a legacy `.automan` sidecar. Each function is
 classified as a predicate or helper, and each parameter receives an input or output
 mode. Helpers return a value directly; predicates describe outputs relationally.
 
@@ -3340,8 +3373,23 @@ annotations describe data flow; TOML describes representation and code generatio
 
 ### Annotation model
 
-A `.automan` file contains module blocks. Ordinary entries are predicates; entries
-prefixed with `helper` are value-returning functions:
+Annotations come in two equivalent forms. The primary form is an inline
+directive immediately above the `spec fn` (Phase 55); entries are predicates
+or `helper` value-returning functions:
+
+```rust
+// @automan predicate(value: out, limit: in)
+pub open spec fn LInit(value: int, limit: int) -> bool { ... }
+
+// @automan helper(value: in) -> int
+pub open spec fn NextValue(value: int) -> int { ... }
+```
+
+Bindings are named against the declaration; unknown, missing, or duplicate
+names are errors with a file line, and a directive the parser cannot attach to
+a following `spec fn` fails rather than being skipped. A directive may span
+several adjacent `//` lines. The legacy sidecar form is a `.automan` file with
+module blocks and positional modes:
 
 ```text
 module Example::Counter {
@@ -3352,20 +3400,26 @@ module Example::Counter {
 ```
 
 `+` means the caller supplies the parameter. `-` means the generated function computes
-it. Modes follow the specification's parameter order. A helper's explicit return type
-is optional in the current parser; when omitted, translation falls back to the parsed
-specification return type. Supplying it is often clearer and gives better diagnostics.
+it. Modes follow the specification's parameter order. In both forms a helper's
+explicit return type is optional; when omitted, translation falls back to the
+parsed specification return type. Supplying it is often clearer and gives
+better diagnostics. RSL's production annotations use it to map a logical
+return type to a concrete generated one.
 
-The parser accepts `//` comment lines. Existing annotation files also contain ordinary
-Rust-like comments around entries. Keep each declaration on one line; the current
-annotation parser is line-oriented.
+The sidecar parser accepts `//` comment lines and Rust-like comments around
+entries; keep each declaration on one line, as that parser is line-oriented.
+A function annotated in both forms must agree: identical definitions warn,
+conflicting ones fail. `migrate-inline` converts a sidecar to directives
+mechanically.
 
 ### Mode invariants
 
 Mode checking answers a concrete question: can the relation be turned into a function?
 
-- For a predicate, at least one parameter must be an output.
-- A helper is a value-producing function and should have input parameters only.
+- A predicate usually has at least one output; all-input predicates are legal
+  and act as pure validity checks (the maintained specs contain fifteen, such
+  as `IsLogTruncationPointValid`).
+- A helper is a value-producing function and must have input parameters only.
 - A structured output must be assigned as a whole or have all known fields assigned.
 - A field cannot receive two independent assignments.
 - Every branch must construct a coherent set of outputs.
@@ -3373,16 +3427,17 @@ Mode checking answers a concrete question: can the relation be turned into a fun
 - General assignments under quantifiers are rejected; supported comprehensions are
   recognized explicitly.
 
-Validate an annotation file independently with:
+Validate a legacy sidecar file independently with:
 
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
-  check --annotations src/protocol/Raft/raft.automan
+  check --annotations path/to/spec.automan
 ```
 
-The annotation checker establishes that the file parses. Full mode and
-functionalization checks happen when the annotated spec is transpiled, so a successful
-`check` command is necessary but not sufficient.
+The annotation checker establishes that the file parses. Inline directives
+need no separate checker — they are validated whenever the spec is parsed.
+Full mode and functionalization checks happen when the annotated spec is
+transpiled, so parsing alone is necessary but not sufficient.
 
 ### Configuration resolution
 
@@ -3396,7 +3451,6 @@ Before debugging translation, inspect the resolved configuration:
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- \
   --input src/protocol/Raft/raft.rs \
-  --annotations src/protocol/Raft/raft.automan \
   --config src/protocol/Raft/raft_transpile.toml \
   --dump-config
 ```
@@ -3509,7 +3563,6 @@ For a single-module protocol, generated output normally depends on:
 ```text
 src/protocol/<P>/types.rs
 src/protocol/<P>/<module>.rs
-src/protocol/<P>/<module>.automan
 src/protocol/<P>/<module>_transpile.toml
 transpiler/src/**
 ```
@@ -3538,7 +3591,6 @@ cargo run --manifest-path transpiler/Cargo.toml -- generate-types \
   -o "$scratch_dir/types_gen.rs"
 cargo run --manifest-path transpiler/Cargo.toml -- \
   -i src/protocol/Raft/raft.rs \
-  -a src/protocol/Raft/raft.automan \
   -c src/protocol/Raft/raft_transpile.toml \
   -o "$scratch_dir/raft_gen.rs"
 diff -u src/generated/Raft/raft_gen.rs "$scratch_dir/raft_gen.rs"
@@ -3987,6 +4039,11 @@ Before calling a protocol integrated:
 
 ## Chapter 22 — Source-First Model Checker Internals
 
+> **DPOR development status:** the `--search dpor` subsystem is very incomplete and not
+> usable. It must not be used for protocol evidence or bug-finding conclusions. This chapter
+> retains its internals for contributors working toward a usable implementation; the ordinary
+> BFS/DFS explorer is a separate path.
+
 The source-first checker evaluates the protocol relation written in Verus syntax. It is not a
 second implementation of the generated executable protocol, and it does not call Verus's SMT
 solver. A change to this subsystem therefore has two obligations: preserve the intended
@@ -4181,8 +4238,9 @@ witness details, does not expose max-depth/max-state termination, and has no tim
 `DporConfig`. The DPOR state store also uses fingerprints as an authoritative fast path. These
 are integration gaps, not details to paper over in documentation. A repair should introduce an
 explicit DPOR termination enum, retain or stream enough state/edge data for consumers, propagate
-witnesses, apply timeout, and update the evidence classifier before enabling DPOR for liveness
-or parity artifacts.
+witnesses, apply timeout, and update the evidence classifier. Until the full semantics and
+reporting path are validated, DPOR is not usable for safety, liveness, parity, or bug-finding
+claims.
 
 ### Invariants, deadlocks, and traces
 
@@ -4345,8 +4403,10 @@ typechecking, and finite TLC observable-state comparisons.
 The mode-annotation generator in
 [`translator.rs`](../transpiler/src/tla/translator.rs) analyzes source operator signatures:
 input parameters use `+`, outputs use `-`, and actions are distinguished from initializers and
-predicates. The general pipeline consumes these `.automan` annotations to choose executable
-witnesses.
+predicates. Since Phase 55 the generated spec carries these modes as inline `// @automan`
+directives, embedded by the same migrator that converted the protocol tree, so the two
+emission forms cannot drift apart; the general pipeline consumes them to choose executable
+witnesses, and the sidecar form remains available behind `--gen-modes`.
 
 Projection changes signatures by removing the acting node and replacing network state with
 message inputs/outputs. Source-shaped annotations are therefore invalid for projected output.
@@ -4645,7 +4705,9 @@ can hide overload or dropped requests.
 
 Use the same resolved model when comparing explorer implementations. `model-check`
 supports BFS, DFS, and DPOR search, optional bytecode bypass, native code generation,
-parallel workers, and conflict profiling. Change one dimension at a time:
+parallel workers, and conflict profiling. The DPOR command below is strictly for profiling
+and developing the unusable DPOR implementation; its output is not protocol evidence. Change
+one dimension at a time:
 
 ```bash
 cargo run --manifest-path transpiler/Cargo.toml -- model-check \
@@ -5134,15 +5196,18 @@ When no subcommand is supplied, the CLI transpiles annotated Verus specification
 ```bash
 verus-transpile \
   --input spec.rs \
-  --annotations spec.automan \
   --config spec_transpile.toml \
   --output generated.rs
 ```
 
+The spec's modes normally come from its inline `// @automan` directives;
+`--annotations` supplies a legacy sidecar instead of or in addition to them
+(a function annotated in both must agree — identical warns, conflict fails).
+
 | Option | Meaning |
 |---|---|
 | `-i, --input FILE` | Input Verus specification. |
-| `-a, --annotations FILE` | Mode annotations. |
+| `-a, --annotations FILE` | Legacy `.automan` sidecar; optional when the spec carries inline directives. |
 | `-c, --config FILE` | Transpiler TOML. |
 | `-o, --output FILE` | Generated Rust/Verus file. |
 | `--stdout` | Write generated text to stdout. |
@@ -5162,10 +5227,15 @@ missing function.
 |---|---|---|
 | `list-templates` | none | Current recognized quantifier/construction templates. |
 | `check` | `--annotations FILE` | Parses the `.automan` file and reports module/entry counts. Full mode checks require transpilation. |
+| `migrate-inline` | `--spec FILE --annotations FILE [--write]` | Moves a sidecar's annotations inline as named directives; `--write` rewrites the spec and deletes the sidecar, otherwise prints to stdout. |
 | `model-config` | `--model FILE`; optional `--max-depth`, `--max-states`, `--timeout-ms`, `--max-seq-len`, `--max-set-len`, `--max-map-len`, `--int-range MIN..MAX`, `--nat-max`, `--candidate-eval-guardrail` | Resolved model configuration after overrides. |
 | `report-assumes` | `--input-dir DIR [--output FILE]` | JSON inventory of generated `assume(...)` sites in files directly under the directory. |
 
 ### Model checking
+
+> **DPOR is under development and not usable.** The `--search dpor` option is listed only so
+> contributors can find its current command surface. Use BFS or DFS for source-first checking;
+> do not use DPOR output as protocol evidence.
 
 ```bash
 verus-transpile model-check \
@@ -5247,11 +5317,47 @@ Clap normally uses status 2 for malformed command-line arguments. Commands that 
 a semantic result in JSON, especially `model-check`, require inspecting the result
 field even after status 0.
 
-## Appendix B — `.automan` Grammar and Validation Rules
+## Appendix B — Mode Annotation Grammar and Validation Rules
 
 Mode annotations tell the transpiler which predicate arguments are inputs and which
-must be computed. The grammar implemented by `transpiler/src/annotation/mod.rs` is
-line-oriented and can be summarized as:
+must be computed. They exist in two equivalent forms, both implemented by
+`transpiler/src/annotation/mod.rs`: the inline directive (primary since Phase 55)
+and the `.automan` sidecar (legacy, still fully supported).
+
+### Inline directive grammar
+
+A directive is an ordinary comment placed immediately before the `spec fn` it
+annotates, inside or outside a `verus!` block:
+
+```text
+directive     := "// @automan" body
+body          := kind "(" [ binding { "," binding } ] ")" [ "->" return-type ]
+kind          := "predicate" | "helper"
+binding       := param-name ":" ("in" | "+" | "out" | "-")     named form
+              |  "+" | "-"                                     positional form
+```
+
+- Bindings are resolved **by name** against the adjacent declaration: an unknown,
+  missing, or duplicated name is an error carrying the file and line. Positional
+  `+`/`-` lists are accepted as a migration convenience and checked for arity.
+  The two forms cannot be mixed in one directive, and a bare `in`/`out` without
+  a parameter name is rejected.
+- The `-> Type` override is helper-only; a predicate directive carrying one is
+  an error.
+- A directive may continue across several adjacent `//` lines; the parser joins
+  them before parsing the body.
+- A tagged directive is never silently ignored. One that is malformed, orphaned
+  (no `spec fn` follows), duplicated on one function, spelled as a doc comment
+  (`/// @automan`), or placed inside a function body fails parsing outright.
+- Helper return types work as in the sidecar form: optional, falling back to the
+  parsed specification return type.
+- `migrate-inline` converts a sidecar to directives mechanically; a function
+  annotated in both sources must agree (identical definitions warn, conflicting
+  ones fail).
+
+### Sidecar (`.automan`) grammar
+
+The sidecar grammar is line-oriented and can be summarized as:
 
 ```text
 file          := { comment | module }
@@ -5294,13 +5400,14 @@ receives `s` and `delta` and returns or mutates the concrete representation of `
 
 ### Validation layers
 
-`check --annotations FILE` validates annotation syntax. Full transpilation additionally
-checks the annotation against parsed function signatures and applies:
+`check --annotations FILE` validates sidecar syntax; inline directives are validated
+whenever the spec is parsed. Full transpilation additionally checks the annotation
+against parsed function signatures and applies:
 
 | Rule | Rejected shape | Typical repair |
 |---|---|---|
 | Arity/signature | Mode count differs from parameter count, or function is absent. | Correct the declaration or qualification. |
-| Predicate output | A predicate has no `-` argument. | Mark the actual computed parameter, or model it as a helper. |
+| Predicate output | — (an all-input predicate is legal: it acts as a pure validity check; the maintained specs contain fifteen). | — |
 | Helper discipline | A helper declares output parameters. | Return the value or make the relation a predicate. |
 | Saturation | An output, or a known structured output field, is never assigned. | Cover every branch/field or assign the whole output. |
 | Harmony | An output member receives incompatible duplicate assignments. | Make branches exclusive or construct once. |
@@ -5522,9 +5629,9 @@ Before adopting an advanced config, run a dry generation and resolved dump, then
 the output for proof escape hatches:
 
 ```bash
-verus-transpile --input spec.rs --annotations spec.automan \
+verus-transpile --input spec.rs \
   --config spec_transpile.toml --dump-config > resolved.toml
-verus-transpile --input spec.rs --annotations spec.automan \
+verus-transpile --input spec.rs \
   --config spec_transpile.toml --dry-run --verbose
 ```
 
@@ -5686,6 +5793,10 @@ Before changing a ✓ to a broader claim, add a test at every newly claimed stag
 assertion is translation evidence; it is not typechecking, evaluation, equivalence, or proof.
 
 ## Appendix E — `model.toml`, Reports, and Evidence Schema
+
+> **DPOR caveat:** DPOR is very incomplete, under development, and not usable. Although DPOR
+> currently emits fields from this schema, they do not make its output reliable evidence. The
+> schema remains applicable to the supported BFS/DFS report path.
 
 This appendix is the operational contract for a source-first model-check run. It records the
 finite universe, search policy, selected properties, result schema, and reproducibility
@@ -5950,8 +6061,8 @@ DPOR has an additional schema caveat. The integrated adapter currently returns a
 `explored` vector, maps any non-violation completion to `FrontierExhausted`, and does not
 propagate ordinary timeout/depth/state stop detail or invariant/deadlock payloads. Graph-based
 liveness and parity fields are consequently not authoritative for `--search dpor`. Use BFS or
-DFS for report-backed traces, liveness, and cross-engine parity; use current DPOR results as
-bounded safety/reduction or bug-finding evidence.
+DFS for report-backed traces, liveness, and cross-engine parity. Do not use current DPOR
+results as safety, reduction-correctness, liveness, parity, or bug-finding evidence.
 
 ### Liveness and counterexample payloads
 

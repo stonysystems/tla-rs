@@ -1,6 +1,11 @@
 # Source-First Model Checking Guide
 
-This guide shows how to run model checking directly on tla-rs protocol specs (`LInit`/`LNext`) using `verus-transpile model-check`.
+> **DPOR status — under development and not usable.** The `--search dpor` path is very
+> incomplete. Do not rely on DPOR output as verification, bug-finding evidence, or a release
+> gate. Use the BFS/DFS paths for the supported source-first workflow described here.
+
+This guide shows how to run model checking directly on tla-rs protocol specs (`LInit`/`LNext`)
+using `verus-transpile model-check`.
 
 ## 1. What This Runs
 

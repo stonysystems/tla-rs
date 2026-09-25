@@ -3,6 +3,7 @@ use vstd::prelude::*;
 
 verus! {
     /// Initialize the protocol state
+    // @automan predicate(s: out, c: in)
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
         &&& s.tm_state is Init
         &&& s.tm_prepared == Set::<int>::empty()
@@ -12,6 +13,7 @@ verus! {
     }
 
     /// Transaction Manager broadcasts Prepare to all RMs
+    // @automan predicate(s: in, s_: out, c: in, sent_packets: out)
     pub open spec fn LTMSendPrepare(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& s.tm_state is Init
         &&& s_.tm_state == s.tm_state
@@ -23,6 +25,7 @@ verus! {
     }
 
     /// Resource Manager receives Prepare and transitions Working -> Prepared
+    // @automan predicate(s: in, s_: out, c: in, rm: in, sent_packets: out)
     pub open spec fn LRMReceivePrepare(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& c.rm.contains(rm)
         &&& !s.rm_prepared.contains(rm)
@@ -36,6 +39,7 @@ verus! {
     }
 
     /// Resource Manager unilaterally aborts (before receiving Prepare or while Working)
+    // @automan predicate(s: in, s_: out, c: in, rm: in, sent_packets: out)
     pub open spec fn LRMAbort(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& c.rm.contains(rm)
         &&& !s.rm_prepared.contains(rm)
@@ -50,6 +54,7 @@ verus! {
     }
 
     /// Transaction Manager receives Prepared from resource manager r
+    // @automan predicate(s: in, s_: out, c: in, r: in, sent_packets: out)
     pub open spec fn LTMRcvPrepared(s: LState, s_: LState, c: LConstants, r: int, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& s.tm_state is Init
         &&& s.rm_prepared.contains(r)
@@ -62,6 +67,7 @@ verus! {
     }
 
     /// Transaction Manager commits (all RMs prepared) and broadcasts Commit
+    // @automan predicate(s: in, s_: out, c: in, sent_packets: out)
     pub open spec fn LTMSendCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& s.tm_state is Init
         &&& s.tm_prepared == c.rm
@@ -74,6 +80,7 @@ verus! {
     }
 
     /// Transaction Manager aborts and broadcasts Abort
+    // @automan predicate(s: in, s_: out, c: in, sent_packets: out)
     pub open spec fn LTMSendAbort(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& s.tm_state is Init
         &&& s_.tm_state is Aborted
@@ -85,6 +92,7 @@ verus! {
     }
 
     /// Resource Manager receives Commit and transitions Prepared -> Committed
+    // @automan predicate(s: in, s_: out, c: in, rm: in, sent_packets: out)
     pub open spec fn LRMReceiveCommit(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& c.rm.contains(rm)
         &&& s.rm_prepared.contains(rm)
@@ -98,6 +106,7 @@ verus! {
     }
 
     /// Resource Manager receives Abort and transitions to Aborted
+    // @automan predicate(s: in, s_: out, c: in, rm: in, sent_packets: out)
     pub open spec fn LRMReceiveAbort(s: LState, s_: LState, c: LConstants, rm: int, sent_packets: Seq<LTPCMessage>) -> bool {
         &&& c.rm.contains(rm)
         &&& !s.rm_committed.contains(rm)

@@ -81,6 +81,7 @@ verus! {
                 #[o=o1] logTruncationPoint_2:COperationNumber,
             },
         }
+        [split mod = cmessage_marshal_arms]
         [rlimit attr = verifier::rlimit(100)]
     }
 

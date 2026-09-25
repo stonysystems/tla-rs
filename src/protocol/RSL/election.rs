@@ -20,6 +20,7 @@ verus! {
         pub requests_received_prev_epochs:Seq<Request>,
     }
 
+    // @automan helper(b: in, c: in) -> Ballot
     pub open spec fn ComputeSuccessorView(b:Ballot, c:LConstants) -> Ballot
     {
         if b.proposer_id + 1 < c.config.replica_ids.len() {
@@ -29,6 +30,7 @@ verus! {
         }
     }
 
+    // @automan helper(s: in, lengthBound: in) -> Seq<Request>
     pub open spec fn BoundRequestSequence(s:Seq<Request>, lengthBound:UpperBound) -> Seq<Request>
     {
         if lengthBound is UpperBoundFinite && 0 <= lengthBound->n < s.len() {
@@ -38,16 +40,19 @@ verus! {
         }
     }
 
+    // @automan helper(r1: in, r2: in) -> bool
     pub open spec fn RequestsMatch(r1:Request, r2:Request) -> bool
     {
         r1 is Request && r2 is Request && r1.client == r2.client && r1.seqno == r2.seqno
     }
 
+    // @automan helper(r1: in, r2: in) -> bool
     pub open spec fn RequestSatisfiedBy(r1:Request, r2:Request) -> bool
     {
         r1 is Request && r2 is Request && r1.client == r2.client && r1.seqno <= r2.seqno
     }
 
+    // @automan helper(s: in, r: in) -> Seq<CRequest>
     pub open spec fn RemoveAllSatisfiedRequestsInSequence(s:Seq<Request>, r:Request) -> Seq<Request>
         decreases s.len()
     {
@@ -60,6 +65,7 @@ verus! {
         }
     }
 
+    // @automan predicate(es: out, c: in)
     pub open spec fn ElectionStateInit(
         es:ElectionState,
         c:LReplicaConstants
@@ -76,6 +82,7 @@ verus! {
         &&& es.requests_received_prev_epochs == Seq::<Request>::empty()
     }
 
+    // @automan predicate(es: in, es_: out, p: in, clock: in)
     pub open spec fn ElectionStateProcessHeartbeat(
         es:ElectionState,
         es_:ElectionState,
@@ -116,6 +123,7 @@ verus! {
         }
     }
 
+    // @automan predicate(es: in, es_: out, clock: in)
     pub open spec fn ElectionStateCheckForViewTimeout(
         es:ElectionState,
         es_:ElectionState,
@@ -148,6 +156,7 @@ verus! {
         }
     }
 
+    // @automan predicate(es: in, es_: out, clock: in)
     pub open spec fn ElectionStateCheckForQuorumOfViewSuspicions(
         es:ElectionState,
         es_:ElectionState,
@@ -172,6 +181,7 @@ verus! {
         }
     }
 
+    // @automan predicate(es: in, es_: out, req: in)
     pub open spec fn ElectionStateReflectReceivedRequest(
         es:ElectionState,
         es_:ElectionState,
@@ -195,6 +205,7 @@ verus! {
         }
     }
 
+    // @automan helper(reqs: in, batch: in) -> Seq<CRequest>
     pub open spec fn RemoveExecutedRequestBatch(reqs:Seq<Request>, batch:RequestBatch) -> Seq<Request>
         decreases batch.len()
     {
@@ -205,6 +216,7 @@ verus! {
         }
     }
 
+    // @automan predicate(es: in, es_: out, batch: in)
     pub open spec fn ElectionStateReflectExecutedRequestBatch(
         es:ElectionState,
         es_:ElectionState,

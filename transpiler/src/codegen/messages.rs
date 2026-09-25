@@ -22,8 +22,12 @@ pub fn generate_message_code(config: &MessageConfig) -> String {
         out.push('\n');
     }
 
-    // Import
-    out.push_str(&format!("use {};\n\n", config.import_path));
+    // Imports
+    out.push_str(&format!("use {};\n", config.import_path));
+    for extra in &config.extra_imports {
+        out.push_str(&format!("use {};\n", extra));
+    }
+    out.push('\n');
 
     // Enum definition
     generate_enum_def(&mut out, config);
@@ -148,9 +152,21 @@ fn generate_serialize(out: &mut String, config: &MessageConfig) {
                         "                buf.extend_from_slice(&{}_val.to_le_bytes());\n",
                         name
                     ));
-                } else {
+                } else if ty == "u64" {
                     out.push_str(&format!(
                         "                buf.extend_from_slice(&{}.to_le_bytes());\n",
+                        name
+                    ));
+                } else {
+                    // Custom type: wire as u64 through `impl From<&T> for u64`,
+                    // which the implementation crate provides by hand. The
+                    // fixed 8-byte-per-field layout is preserved.
+                    out.push_str(&format!(
+                        "                let {}_wire: u64 = u64::from({});\n",
+                        name, name
+                    ));
+                    out.push_str(&format!(
+                        "                buf.extend_from_slice(&{}_wire.to_le_bytes());\n",
                         name
                     ));
                 }
@@ -202,10 +218,17 @@ fn generate_deserialize(out: &mut String, config: &MessageConfig) {
                     "                let {} = read_u64(data, {}) != 0;\n",
                     name, offset
                 ));
-            } else {
+            } else if ty == "u64" {
                 out.push_str(&format!(
                     "                let {} = read_u64(data, {});\n",
                     name, offset
+                ));
+            } else {
+                // Custom type: rebuild from the u64 wire value through
+                // `impl From<u64> for T`, hand-provided alongside the type.
+                out.push_str(&format!(
+                    "                let {} = <{}>::from(read_u64(data, {}));\n",
+                    name, ty, offset
                 ));
             }
             field_inits.push(name.clone());
@@ -298,6 +321,7 @@ mod tests {
                     doc: String::new(),
                 },
             ],
+            extra_imports: vec![],
         };
 
         let code = generate_message_code(&config);
@@ -330,6 +354,7 @@ mod tests {
                 fields: vec![],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
 
         let code = generate_message_code(&config);
@@ -375,6 +400,7 @@ mod tests {
                     doc: "Phase 2b".to_string(),
                 },
             ],
+            extra_imports: vec![],
         };
 
         let code = generate_message_code(&config);
@@ -452,6 +478,7 @@ mod tests {
                     doc: String::new(),
                 },
             ],
+            extra_imports: vec![],
         };
 
         let code = generate_message_code(&config);
@@ -491,6 +518,7 @@ mod tests {
                 fields: vec![vec!["id".to_string(), "u64".to_string()]],
                 doc: "A ping message".to_string(),
             }],
+            extra_imports: vec![],
         };
 
         let code = generate_message_code(&config);
@@ -533,6 +561,7 @@ mod tests {
                 fields: vec![vec!["x".to_string(), "u64".to_string()]],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         assert!(code.contains("pub enum SingleMsg"));
@@ -554,6 +583,7 @@ mod tests {
                 fields,
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         // Total: tag(8) + 6*8 = 56
@@ -584,6 +614,7 @@ mod tests {
                 ],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         assert!(code.contains("let a_val: u64 = if *a { 1 } else { 0 };"));
@@ -610,6 +641,7 @@ mod tests {
                 ],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         // a: u64 at offset 8, b: bool at offset 16, c: u64 at offset 24, d: bool at offset 32
@@ -646,6 +678,7 @@ mod tests {
                 fields: vec![],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         assert!(
@@ -665,6 +698,7 @@ mod tests {
                 fields: vec![],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         assert!(code.contains("//! Line one.\n//! Line two.\n//! Line three."));
@@ -684,6 +718,7 @@ mod tests {
             import_path: "crate::common::framework::protocol_trait::ProtocolMessage".to_string(),
             doc_comment: String::new(),
             variants,
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         for i in 1..=5 {
@@ -702,6 +737,7 @@ mod tests {
                 fields: vec![],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         assert!(code.contains("use my_crate::custom::ProtocolMessage;"));
@@ -725,6 +761,7 @@ mod tests {
                     doc: String::new(),
                 },
             ],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         assert!(
@@ -745,6 +782,7 @@ mod tests {
                 fields: vec![vec!["id".to_string(), "u64".to_string()]],
                 doc: String::new(),
             }],
+            extra_imports: vec![],
         };
         let code = generate_message_code(&config);
         assert!(code.contains("fn read_u64"));

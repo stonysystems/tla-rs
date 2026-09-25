@@ -162,4 +162,3 @@ impl View for CCRMessage {
 }
 
 } // verus!
-

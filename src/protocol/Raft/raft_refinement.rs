@@ -8,6 +8,13 @@
 //
 // Cases (a) and (c) are standard in TLA+ refinement (stuttering simulation).
 
+use crate::protocol::Raft::membership::{
+    active_membership_phase_for_state,
+    commit_interval_stops_at_first_configuration,
+    has_active_commit_quorum,
+    has_active_election_quorum,
+    has_active_election_quorum_after_vote,
+};
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
 use vstd::prelude::*;
@@ -27,13 +34,22 @@ pub open spec fn LNextAtomic(s: LState, s_: LState, c: LConstants) -> bool {
             LReceiveVoteGranted(s, s_, c, vt, vg, v, sent_packets)
     ||| exists |sent_packets: Seq<LRaftMessage>|
             LBecomeLeader(s, s_, c, sent_packets)
+    ||| exists |sent_packets: Seq<LRaftMessage>|
+            LBecomeLeaderWithMembership(s, s_, c, sent_packets)
     ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
             LClientRequest(s, s_, c, value, sent_packets)
-    ||| exists |f: int, ev: int, pli: int, plt: int, he: bool, sent_packets: Seq<LRaftMessage>|
-            LSendAppendEntries(s, s_, c, f, ev, pli, plt, he, sent_packets)
-    ||| exists |at: int, al: int, api: int, apt: int, av: int, ahe: bool, alc: int,
+    ||| exists |phase: LMembershipPhase, sent_packets: Seq<LRaftMessage>|
+            LAppendConfigurationEntry(
+                s, s_, c, phase, sent_packets)
+    ||| exists |f: int, ev: int, ep: LLogValue, pli: int, plt: int,
+               he: bool, sent_packets: Seq<LRaftMessage>|
+            LSendAppendEntries(s, s_, c, f, ev, ep, pli, plt, he, sent_packets)
+    ||| exists |at: int, al: int, api: int, apt: int, av: int,
+               ap: LLogValue, ahe: bool, alc: int,
                sent_packets: Seq<LRaftMessage>|
-            LFollowerAppendEntries(s, s_, c, at, al, api, apt, av, ahe, alc, sent_packets)
+            LFollowerAppendEntries(
+                s, s_, c, at, al, api, apt, av, ap, ahe, alc, sent_packets,
+            )
     ||| exists |rt: int, rs: bool, rmi: int, rf: int, f: u64, nmi: u64,
                sent_packets: Seq<LRaftMessage>|
             LHandleAppendResponse(s, s_, c, rt, rs, rmi, rf, f, nmi, sent_packets)
@@ -121,13 +137,14 @@ ensures
 proof fn lemma_handle_append_entries_refines(
     s: LState, s_: LState, c: LConstants,
     ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
-    ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+    ae_value: int, ae_payload: LLogValue,
+    ae_has_entry: bool, ae_leader_commit: int,
     sent_packets: Seq<LRaftMessage>,
 )
 requires
     LHandleAppendEntriesMsg(s, s_, c, ae_term, ae_leader, ae_prev_index,
-                            ae_prev_term, ae_value, ae_has_entry,
-                            ae_leader_commit, sent_packets),
+        ae_prev_term, ae_value, ae_payload, ae_has_entry,
+        ae_leader_commit, sent_packets),
 ensures
     refines_atomic(s, s_, c),
 {
@@ -173,8 +190,9 @@ ensures
         // The atomic LFollowerAppendEntries handles step-down internally,
         // so LFollowerAppendEntries(s, s_, ...) produces the same result.
         assert(LFollowerAppendEntries(s, s_, c, ae_term, ae_leader, ae_prev_index,
-                                      ae_prev_term, ae_value, ae_has_entry,
-                                      ae_leader_commit, sent_packets));
+                                      ae_prev_term, ae_value, ae_payload,
+                                      ae_has_entry, ae_leader_commit,
+                                      sent_packets));
         assert(LNextAtomic(s, s_, c));
     }
 }
@@ -211,11 +229,21 @@ ensures
                 votes_granted: s_mid.votes_granted.insert(voter),
                 ..s_mid
             };
-            if s_voted.votes_granted.len() >= c.quorum_size {
-                // Quorum reached: ReceiveVoteGranted + BecomeLeader (two steps)
+            if has_active_election_quorum_after_vote(s_mid, c, voter) {
+                // Dynamic quorum reached: receive the vote, then become leader.
                 assert(LReceiveVoteGranted(s, s_voted, c, term, granted, voter, empty));
                 assert(LNextAtomic(s, s_voted, c));
-                assert(LBecomeLeader(s_voted, s_, c, empty));
+                assert(
+                    active_membership_phase_for_state(s_voted, c)
+                    == active_membership_phase_for_state(s_mid, c)
+                );
+                assert(has_active_election_quorum(s_voted, c));
+                assert(LBecomeLeaderWithMembership(
+                    s_voted,
+                    s_,
+                    c,
+                    empty,
+                ));
                 assert(LNextAtomic(s_voted, s_, c));
                 assert(LNextAtomic(s, s_voted, c) && LNextAtomic(s_voted, s_, c));
             } else {
@@ -292,7 +320,15 @@ requires
 ensures
     refines_atomic(s, s_, c),
 {
-    if !(s.role is Leader) || new_commit_index <= s.commit_index {
+    if !(s.role is Leader)
+        || new_commit_index <= s.commit_index
+        || !has_active_commit_quorum(s, c, new_commit_index)
+        || !commit_interval_stops_at_first_configuration(
+            s.log,
+            s.commit_index,
+            new_commit_index,
+        )
+    {
         // Guard failure: stutter (s_ == s)
         assert(s_ == s);
     } else {
@@ -330,11 +366,15 @@ ensures
     } else if exists |value: int, sent_packets: Seq<LRaftMessage>|
                   LClientRequest(s, s_, c, value, sent_packets) {
         // Direct match to LNextAtomic
-    } else if exists |follower: int, entry_value: int, prev_log_index: int,
-                      prev_log_term: int, has_entry: bool,
+    } else if exists |phase: LMembershipPhase, sent_packets: Seq<LRaftMessage>|
+                  LAppendConfigurationEntry(s, s_, c, phase, sent_packets) {
+        // Direct match to LNextAtomic
+    } else if exists |follower: int, entry_value: int, entry_payload: LLogValue,
+                      prev_log_index: int, prev_log_term: int, has_entry: bool,
                       sent_packets: Seq<LRaftMessage>|
-                  LSendAppendEntries(s, s_, c, follower, entry_value, prev_log_index,
-                                     prev_log_term, has_entry, sent_packets) {
+              LSendAppendEntries(s, s_, c, follower, entry_value, entry_payload,
+                                 prev_log_index, prev_log_term, has_entry,
+                                 sent_packets) {
         // Direct match to LNextAtomic
     } else if exists |msg: LRaftMessage, sent_packets: Seq<LRaftMessage>|
                   LHandleMessage(s, s_, c, msg, sent_packets) {
@@ -353,10 +393,12 @@ ensures
                     s, s_, c, term, granted, voter, sent_packets);
             }
             LRaftMessage::AppendEntries { term, leader, prev_index, prev_term,
-                                          value, has_entry, leader_commit } => {
+                                          value, payload, has_entry,
+                                          leader_commit } => {
                 lemma_handle_append_entries_refines(
                     s, s_, c, term, leader, prev_index, prev_term,
-                    value, has_entry, leader_commit, sent_packets);
+                    value, payload, has_entry, leader_commit,
+                    sent_packets);
             }
             LRaftMessage::AppendResponse { term, success, match_index, follower } => {
                 lemma_handle_append_response_refines(

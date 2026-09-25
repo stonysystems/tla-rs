@@ -111,6 +111,30 @@ pub trait ProtocolHost: Sized {
     .to_string()
 }
 
+/// If `line` ends with a Verus named-return `-> (name: Type)`, return the
+/// line rewritten to `-> Type`; otherwise None. Distinguishes named returns
+/// from real tuple types by the `ident:` prefix.
+fn rewrite_named_return(line: &str) -> Option<String> {
+    let trimmed = line.trim_end();
+    let pos = trimmed.find("-> (")?;
+    let inner = &trimmed[pos + 4..];
+    if !inner.ends_with(')') {
+        return None;
+    }
+    let inner = &inner[..inner.len() - 1];
+    let colon = inner.find(':')?;
+    let ident = inner[..colon].trim();
+    if ident.is_empty() || !ident.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let ty = inner[colon + 1..].trim();
+    Some(format!(
+        "{}-> {}",
+        &line[..line.len() - trimmed.len() + pos],
+        ty
+    ))
+}
+
 /// Strip Verus-specific syntax from types_gen.rs content.
 ///
 /// Removes: verus!{} wrapper, impl View, spec fn valid, #[verifier] Clone impls,
@@ -164,6 +188,28 @@ pub fn strip_verus_types(code: &str) -> String {
         // Skip `impl View for ...` blocks
         if trimmed.starts_with("impl View for ") {
             i = skip_brace_block(&lines, i);
+            continue;
+        }
+
+        // Rewrite Verus named-return signatures and drop the ensures/requires
+        // clauses that follow them:
+        //     fn f(...) -> (res: Type)
+        //         ensures ...
+        //     { ... }
+        // becomes plain `fn f(...) -> Type { ... }`. Real tuple returns
+        // (`-> (u64, bool)`) carry no `ident:` prefix and are left alone.
+        if let Some(named) = rewrite_named_return(line) {
+            result.push_str(&named);
+            result.push('\n');
+            i += 1;
+            while i < len && !lines[i].trim_start().starts_with('{') {
+                i += 1;
+            }
+            if i < len {
+                result.push_str(lines[i]);
+                result.push('\n');
+                i += 1;
+            }
             continue;
         }
 

@@ -1,3 +1,14 @@
+use crate::protocol::Raft::membership::{
+    active_membership_phase_from_raft_log,
+    active_membership_phase_for_state,
+    election_membership_phase_for_state,
+    commit_interval_stops_at_first_configuration,
+    has_active_commit_quorum,
+    has_active_election_quorum,
+    has_active_election_quorum_after_vote,
+    is_legal_phase_progression,
+    uncommitted_suffix_has_no_configuration,
+};
 use crate::protocol::Raft::types::*;
 use vstd::prelude::*;
 
@@ -9,6 +20,7 @@ verus! {
 
     /// Initialize the Raft protocol state
     /// Server starts as Follower with empty log, no votes, term 0
+    // @automan predicate(s: out, c: in)
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
         &&& s.current_term == 0int
         &&& s.role is Follower
@@ -17,12 +29,14 @@ verus! {
         &&& s.log == Seq::<LLogEntry>::empty()
         &&& s.commit_index == 0int
         &&& s.votes_granted == Set::<int>::empty()
+        &&& s.election_membership_phase is None
         &&& s.match_index == Map::<u64, u64>::empty()
         &&& s.next_index == Map::<u64, u64>::empty()
     }
 
     /// Timeout: a Follower or Candidate starts a new election
     /// Increments term, becomes Candidate, votes for self, sends RequestVote
+    // @automan predicate(s: in, s_: out, c: in, sent_packets: out)
     pub open spec fn LTimeout(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LRaftMessage>) -> bool {
         &&& s.role is Follower || s.role is Candidate
         &&& s_.current_term == s.current_term + 1
@@ -32,6 +46,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == Set::<int>::empty().insert(c.my_id)
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::RequestVote {
@@ -48,6 +63,7 @@ verus! {
     }
 
     /// Grant a vote to a candidate and send VoteResponse
+    // @automan predicate(s: in, s_: out, c: in, candidate_term: in, candidate_last_log_term: in, candidate_last_log_index: in, candidate_id: in, sent_packets: out)
     pub open spec fn LGrantVote(
         s: LState, s_: LState, c: LConstants,
         candidate_term: int, candidate_last_log_term: int, candidate_last_log_index: int,
@@ -63,6 +79,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::VoteResponse {
@@ -75,6 +92,7 @@ verus! {
     }
 
     /// Receive a vote granted response
+    // @automan predicate(s: in, s_: out, c: in, vote_term: in, vote_granted: in, voter: in, sent_packets: out)
     pub open spec fn LReceiveVoteGranted(
         s: LState, s_: LState, c: LConstants,
         vote_term: int, vote_granted: bool, voter: int, sent_packets: Seq<LRaftMessage>,
@@ -89,6 +107,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted.insert(voter)
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -96,6 +115,7 @@ verus! {
 
     /// Become leader after receiving a quorum of votes
     /// Initializes match_index and next_index. Uses Set::len() for quorum check.
+    // @automan predicate(s: in, s_: out, c: in, sent_packets: out)
     pub open spec fn LBecomeLeader(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LRaftMessage>) -> bool {
         &&& s.role is Candidate
         &&& s.votes_granted.len() >= c.quorum_size
@@ -106,12 +126,95 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == Some(
+            election_membership_phase_for_state(s, c),
+        )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
+    /// Become leader using the quorum required by the membership phase
+    /// derived from the latest Configuration entry in the candidate's log.
+    pub open spec fn LBecomeLeaderWithMembership(
+        s: LState, s_: LState, c: LConstants, sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        &&& s.role is Candidate
+        &&& has_active_election_quorum(s, c)
+        &&& s_.current_term == s.current_term
+        &&& s_.role is Leader
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log
+        &&& s_.commit_index == s.commit_index
+        &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == Some(
+            election_membership_phase_for_state(s, c),
+        )
+        &&& s_.match_index == Map::<u64, u64>::empty()
+        &&& s_.next_index == Map::<u64, u64>::empty()
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
+    /// A leader appends a legal membership configuration entry.
+    ///
+    /// The entry is initially uncommitted, so it does not immediately
+    /// change either active membership or application-visible output.
+    /// A second configuration cannot be appended until this one commits.
+    pub open spec fn LAppendConfigurationEntry(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        phase: LMembershipPhase,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        let current_phase = active_membership_phase_from_raft_log(
+            s.log,
+            s.commit_index,
+            initial_phase,
+        );
+
+        let requested_phase = membership_phase_view(phase);
+
+        &&& s.role is Leader
+        &&& 0 <= s.commit_index
+        &&& s.commit_index <= s.log.len()
+        &&& uncommitted_suffix_has_no_configuration(
+            s.log,
+            s.commit_index,
+        )
+        &&& is_legal_phase_progression(
+            current_phase,
+            requested_phase,
+        )
+        &&& s_.current_term == s.current_term
+        &&& s_.role == s.role
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log.push(
+            LLogEntry {
+                term: s.current_term,
+                value: 0int,
+                payload: LLogValue::Configuration {
+                    phase,
+                },
+            },
+        )
+        &&& s_.commit_index == s.commit_index
+        &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase
+            == s.election_membership_phase
+        &&& s_.match_index == s.match_index
+        &&& s_.next_index == s.next_index
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
     /// Client request: leader appends a new entry to its log
+    // @automan predicate(s: in, s_: out, c: in, value: in, sent_packets: out)
     pub open spec fn LClientRequest(
         s: LState, s_: LState, c: LConstants, value: int, sent_packets: Seq<LRaftMessage>,
     ) -> bool {
@@ -120,9 +223,16 @@ verus! {
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
         &&& s_.voted_for == s.voted_for
-        &&& s_.log == s.log.push(LLogEntry { term: s.current_term, value: value })
+        &&& s_.log == s.log.push(LLogEntry {
+            term: s.current_term,
+            value,
+            payload: LLogValue::Data {
+		value,
+	    },
+        })
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -130,9 +240,11 @@ verus! {
 
     /// Leader sends AppendEntries to a follower
     /// Sends entries starting from the next_index for that follower
+    // @automan predicate(s: in, s_: out, c: in, follower: in, entry_value: in, entry_payload: in, prev_log_index: in, prev_log_term: in, has_entry: in, sent_packets: out)
     pub open spec fn LSendAppendEntries(
         s: LState, s_: LState, c: LConstants,
-        follower: int, entry_value: int, prev_log_index: int, prev_log_term: int,
+        follower: int, entry_value: int, entry_payload: LLogValue,
+        prev_log_index: int, prev_log_term: int,
         has_entry: bool, sent_packets: Seq<LRaftMessage>,
     ) -> bool {
         &&& s.role is Leader
@@ -142,6 +254,7 @@ verus! {
         &&& s.log.len() >= prev_log_index + ae_entry_count(has_entry)
         &&& (prev_log_index > 0 ==> s.log[prev_log_index - 1].term == prev_log_term)
         &&& (has_entry ==> s.log[prev_log_index].value == entry_value)
+        &&& (has_entry ==> s.log[prev_log_index].payload == entry_payload)
         // Entry term must match leader's current term. This ensures
         // replicated entries have the correct term (ae_term == entry's original term),
         // which is needed for LogMatching. In the simplified spec (no log truncation),
@@ -155,6 +268,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::AppendEntries {
@@ -163,6 +277,7 @@ verus! {
             prev_index: prev_log_index,
             prev_term: prev_log_term,
             value: entry_value,
+            payload: entry_payload,
             has_entry: has_entry,
             leader_commit: s.commit_index,
         }]
@@ -170,10 +285,12 @@ verus! {
 
     /// Follower handles AppendEntries: accepts entries if term >= current_term
     /// Simplified: appends single entry if has_entry, updates commit_index
+    // @automan predicate(s: in, s_: out, c: in, ae_term: in, ae_leader: in, ae_prev_index: in, ae_prev_term: in, ae_value: in, ae_payload: in, ae_has_entry: in, ae_leader_commit: in, sent_packets: out)
     pub open spec fn LFollowerAppendEntries(
         s: LState, s_: LState, c: LConstants,
         ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
-        ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+        ae_value: int, ae_payload: LLogValue,
+        ae_has_entry: bool, ae_leader_commit: int,
         sent_packets: Seq<LRaftMessage>,
     ) -> bool {
         &&& ae_term >= s.current_term
@@ -183,7 +300,11 @@ verus! {
         &&& s_.has_voted == step_down_if_needed(s, ae_term).has_voted
         &&& s_.voted_for == step_down_if_needed(s, ae_term).voted_for
         &&& s_.log == (if ae_has_entry {
-            s.log.push(LLogEntry { term: ae_term, value: ae_value })
+            s.log.push(LLogEntry {
+                term: ae_term,
+                value: ae_value,
+                payload: ae_payload,
+            })
         } else { s.log })
         &&& s_.commit_index == (if ae_leader_commit > s.commit_index {
             if ae_has_entry {
@@ -193,6 +314,7 @@ verus! {
             }
         } else { s.commit_index })
         &&& s_.votes_granted == step_down_if_needed(s, ae_term).votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::AppendResponse {
@@ -207,6 +329,7 @@ verus! {
 
     /// Handle a successful AppendEntries response from a follower
     /// Updates match_index and next_index for the responding server
+    // @automan predicate(s: in, s_: out, c: in, resp_term: in, resp_success: in, resp_match_index: in, resp_follower: in, follower: in, new_match_index: in, sent_packets: out)
     pub open spec fn LHandleAppendResponse(
         s: LState, s_: LState, c: LConstants,
         resp_term: int, resp_success: bool, resp_match_index: int, resp_follower: int,
@@ -224,12 +347,14 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index =~= s.match_index.insert(follower, new_match_index)
         &&& s_.next_index =~= s.next_index.insert(follower, u64_inc(new_match_index))
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
     /// Handle a failed AppendEntries response: backtrack next_index
+    // @automan predicate(s: in, s_: out, c: in, resp_term: in, resp_success: in, resp_match_index: in, resp_follower: in, follower: in, sent_packets: out)
     pub open spec fn LHandleAppendReject(
         s: LState, s_: LState, c: LConstants,
         resp_term: int, resp_success: bool, resp_match_index: int, resp_follower: int,
@@ -252,6 +377,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
@@ -260,6 +386,7 @@ verus! {
     /// Requires a quorum of servers to have replicated log up to new_commit_index:
     /// the leader itself counts (it has the entry), and followers are tracked
     /// via match_index.
+    // @automan predicate(s: in, s_: out, c: in, new_commit_index: in, sent_packets: out)
     pub open spec fn LAdvanceCommitIndex(
         s: LState, s_: LState, c: LConstants,
         new_commit_index: int, sent_packets: Seq<LRaftMessage>,
@@ -268,8 +395,12 @@ verus! {
         &&& new_commit_index > s.commit_index
         &&& new_commit_index <= s.log.len()
         &&& s.log[new_commit_index - 1].term == s.current_term
-        // Quorum replication guard: at least quorum_size servers have the entry
-        &&& replicator_count(s, c, new_commit_index) >= c.quorum_size
+        &&& has_active_commit_quorum(s, c, new_commit_index)
+        &&& commit_interval_stops_at_first_configuration(
+            s.log,
+            s.commit_index,
+            new_commit_index,
+        )
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
@@ -277,12 +408,43 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == new_commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
+        &&& s_.match_index == s.match_index
+        &&& s_.next_index == s.next_index
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
+    /// Advance commit index using the replication quorum required by
+    /// the membership phase derived from the leader's committed log.
+    pub open spec fn LAdvanceCommitIndexWithMembership(
+        s: LState, s_: LState, c: LConstants,
+        new_commit_index: int, sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        &&& s.role is Leader
+        &&& new_commit_index > s.commit_index
+        &&& new_commit_index <= s.log.len()
+        &&& s.log[new_commit_index - 1].term == s.current_term
+        &&& has_active_commit_quorum(s, c, new_commit_index)
+        &&& commit_interval_stops_at_first_configuration(
+            s.log,
+            s.commit_index,
+            new_commit_index,
+        )
+        &&& s_.current_term == s.current_term
+        &&& s_.role == s.role
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log
+        &&& s_.commit_index == new_commit_index
+        &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
     /// Step down: a server discovers a higher term and becomes Follower
+    // @automan predicate(s: in, s_: out, c: in, new_term: in, sent_packets: out)
     pub open spec fn LStepDown(
         s: LState, s_: LState, c: LConstants, new_term: int, sent_packets: Seq<LRaftMessage>,
     ) -> bool {
@@ -294,6 +456,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == Set::<int>::empty()
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -327,6 +490,7 @@ verus! {
     /// Spec helper: compute step-down intermediate state.
     /// If new_term > current_term, become Follower and reset voting state.
     /// Otherwise, return s unchanged.
+    // @automan helper(s: in, new_term: in) -> LState
     pub open spec fn step_down_if_needed(s: LState, new_term: int) -> LState {
         if new_term > s.current_term {
             LState {
@@ -343,6 +507,7 @@ verus! {
     }
 
     /// Spec helper: check if candidate's log is at least as up-to-date as ours.
+    // @automan helper(s: in, candidate_last_log_term: in, candidate_last_log_index: in) -> bool
     pub open spec fn log_up_to_date(
         s: LState, candidate_last_log_term: int, candidate_last_log_index: int,
     ) -> bool {
@@ -357,6 +522,7 @@ verus! {
     }
 
     /// Handle RequestVote: step down if higher term, check guards, grant vote or no-op.
+    // @automan predicate(s: in, s_: out, c: in, term: in, candidate_id: in, last_log_index: in, last_log_term: in, sent_packets: out)
     pub open spec fn LHandleRequestVoteMsg(
         s: LState, s_: LState, c: LConstants,
         term: int, candidate_id: int, last_log_index: int, last_log_term: int,
@@ -383,10 +549,12 @@ verus! {
     }
 
     /// Handle AppendEntries: step down if higher term, check guards, append or reject.
+    // @automan predicate(s: in, s_: out, c: in, ae_term: in, ae_leader: in, ae_prev_index: in, ae_prev_term: in, ae_value: in, ae_payload: in, ae_has_entry: in, ae_leader_commit: in, sent_packets: out)
     pub open spec fn LHandleAppendEntriesMsg(
         s: LState, s_: LState, c: LConstants,
         ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
-        ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+        ae_value: int, ae_payload: LLogValue,
+        ae_has_entry: bool, ae_leader_commit: int,
         sent_packets: Seq<LRaftMessage>,
     ) -> bool {
         let s_mid = step_down_if_needed(s, ae_term);
@@ -428,13 +596,14 @@ verus! {
         } else {
             // Accept: delegate to atomic follower append entries
             LFollowerAppendEntries(s_mid, s_, c, ae_term, ae_leader, ae_prev_index,
-                                   ae_prev_term, ae_value, ae_has_entry,
-                                   ae_leader_commit, sent_packets)
+                                   ae_prev_term, ae_value, ae_payload,
+                                   ae_has_entry, ae_leader_commit, sent_packets)
         }
     }
 
     /// Receive vote and become leader: add vote, then transition to leader role.
     /// Combines LReceiveVoteGranted + LBecomeLeader into a single atomic action.
+    // @automan predicate(s: in, s_: out, c: in, vote_term: in, vote_granted: in, voter: in, sent_packets: out)
     pub open spec fn LReceiveVoteAndBecomeLeader(
         s: LState, s_: LState, c: LConstants,
         vote_term: int, vote_granted: bool, voter: int,
@@ -450,12 +619,16 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted.insert(voter)
+        &&& s_.election_membership_phase == Some(
+            election_membership_phase_for_state(s, c),
+        )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
     /// Handle VoteResponse: step down if higher term, add vote, check quorum, become leader.
+    // @automan predicate(s: in, s_: out, c: in, term: in, granted: in, voter: in, sent_packets: out)
     pub open spec fn LHandleVoteResponseMsg(
         s: LState, s_: LState, c: LConstants,
         term: int, granted: bool, voter: int,
@@ -479,7 +652,11 @@ verus! {
             // Unknown voter: no-op
             &&& s_ == s_mid
             &&& sent_packets == Seq::<LRaftMessage>::empty()
-        } else if s_mid.votes_granted.insert(voter).len() >= c.quorum_size {
+        } else if has_active_election_quorum_after_vote(
+            s_mid,
+            c,
+            voter,
+        ) {
             // Quorum reached: add vote and become leader
             LReceiveVoteAndBecomeLeader(s_mid, s_, c, term, granted, voter, sent_packets)
         } else {
@@ -488,7 +665,55 @@ verus! {
         }
     }
 
+    /// Handle VoteResponse using the election quorum required by the
+    /// latest Configuration entry in the candidate's log.
+    pub open spec fn LHandleVoteResponseMsgWithMembership(
+        s: LState, s_: LState, c: LConstants,
+        term: int, granted: bool, voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let s_mid = step_down_if_needed(s, term);
+        if !(s_mid.role is Candidate) {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if term < s_mid.current_term {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !granted {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !c.servers.contains(voter) {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if has_active_election_quorum_after_vote(
+            s_mid,
+            c,
+            voter,
+        ) {
+            LReceiveVoteAndBecomeLeader(
+                s_mid,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            )
+        } else {
+            LReceiveVoteGranted(
+                s_mid,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            )
+        }
+    }
+
     /// Handle AppendResponse: step down if higher term, update match/next_index or backtrack.
+    // @automan predicate(s: in, s_: out, c: in, term: in, success: in, match_index: in, follower_id: in, sent_packets: out)
     pub open spec fn LHandleAppendResponseMsg(
         s: LState, s_: LState, c: LConstants,
         term: int, success: bool, match_index: int, follower_id: int,
@@ -547,18 +772,56 @@ verus! {
     /// If not leader or new_commit_index is not an advancement, stutter.
     /// LAdvanceCommitIndex requires quorum replication; the exec code
     /// computes the concrete quorum via the match_index scan loop.
+    // @automan predicate(s: in, s_: out, c: in, new_commit_index: in, sent_packets: out)
     pub open spec fn LTryAdvanceCommitIndex(
         s: LState, s_: LState, c: LConstants,
         new_commit_index: int,
         sent_packets: Seq<LRaftMessage>,
     ) -> bool {
-        if !(s.role is Leader) || new_commit_index <= s.commit_index {
+        if !(s.role is Leader)
+            || new_commit_index <= s.commit_index
+            || !has_active_commit_quorum(s, c, new_commit_index)
+            || !commit_interval_stops_at_first_configuration(
+                s.log,
+                s.commit_index,
+                new_commit_index,
+            )
+        {
             // Not leader or no advancement: stutter
             &&& s_ == s
             &&& sent_packets == Seq::<LRaftMessage>::empty()
         } else {
             // Valid advancement: delegate to LAdvanceCommitIndex
             LAdvanceCommitIndex(s, s_, c, new_commit_index, sent_packets)
+        }
+    }
+
+    /// Advance commit index using the quorum required by the membership
+    /// phase derived from the leader's committed log.
+    pub open spec fn LTryAdvanceCommitIndexWithMembership(
+        s: LState, s_: LState, c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        if !(s.role is Leader)
+            || new_commit_index <= s.commit_index
+            || !has_active_commit_quorum(s, c, new_commit_index)
+            || !commit_interval_stops_at_first_configuration(
+                s.log,
+                s.commit_index,
+                new_commit_index,
+            )
+        {
+            &&& s_ == s
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else {
+            LAdvanceCommitIndexWithMembership(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            )
         }
     }
 
@@ -570,6 +833,7 @@ verus! {
     // ---------------------------------------------------------------
 
     /// Dispatch an incoming message to the appropriate composite handler.
+    // @automan predicate(s: in, s_: out, c: in, msg: in, sent_packets: out)
     pub open spec fn LHandleMessage(
         s: LState, s_: LState, c: LConstants,
         msg: LRaftMessage,
@@ -582,9 +846,10 @@ verus! {
             LRaftMessage::VoteResponse { term, granted, voter, .. } =>
                 LHandleVoteResponseMsg(s, s_, c, term, granted, voter, sent_packets),
             LRaftMessage::AppendEntries { term, leader, prev_index, prev_term,
-                                          value, has_entry, leader_commit } =>
+                                          value, payload, has_entry, leader_commit } =>
                 LHandleAppendEntriesMsg(s, s_, c, term, leader, prev_index, prev_term,
-                                        value, has_entry, leader_commit, sent_packets),
+                                        value, payload, has_entry, leader_commit,
+                                        sent_packets),
             LRaftMessage::AppendResponse { term, success, match_index, follower } =>
                 LHandleAppendResponseMsg(s, s_, c, term, success, match_index,
                                          follower, sent_packets),
@@ -598,17 +863,42 @@ verus! {
     // of individual atomic actions. Timer-driven actions are unchanged.
     // ---------------------------------------------------------------
 
-    /// Next-state relation: disjunction of all possible transitions.
+    /// Environment reboot: persistent term, vote and log survive unchanged.
+    /// No runtime handler is generated for this specification-only action.
+    pub open spec fn LReboot(s: LState, s_: LState) -> bool {
+        &&& s_.current_term == s.current_term
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log
+        &&& s_.role is Follower
+        &&& s_.commit_index == 0
+        &&& s_.votes_granted == Set::<int>::empty()
+        &&& s_.election_membership_phase is None
+        &&& s_.match_index == Map::<u64, u64>::empty()
+        &&& s_.next_index == Map::<u64, u64>::empty()
+    }
+
+    /// Local model relation, including the environment's reboot action.
+    pub open spec fn LNextWithReboot(s: LState, s_: LState, c: LConstants) -> bool {
+        LNext(s, s_, c) || LReboot(s, s_)
+    }
+
+    /// Normal protocol transitions, excluding environment reboots.
     /// Uses composite message dispatch + commit advancement (Phases 27.2-27.4).
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
         // Timer-driven actions (unchanged)
         ||| exists |sent_packets: Seq<LRaftMessage>| LTimeout(s, s_, c, sent_packets)
         ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
                 LClientRequest(s, s_, c, value, sent_packets)
-        ||| exists |follower: int, entry_value: int, prev_log_index: int, prev_log_term: int,
+        ||| exists |phase: LMembershipPhase, sent_packets: Seq<LRaftMessage>|
+                LAppendConfigurationEntry(
+                    s, s_, c, phase, sent_packets)
+        ||| exists |follower: int, entry_value: int, entry_payload: LLogValue,
+                    prev_log_index: int, prev_log_term: int,
                     has_entry: bool, sent_packets: Seq<LRaftMessage>|
-                LSendAppendEntries(s, s_, c, follower, entry_value, prev_log_index,
-                                   prev_log_term, has_entry, sent_packets)
+                LSendAppendEntries(s, s_, c, follower, entry_value, entry_payload,
+                                   prev_log_index, prev_log_term, has_entry,
+                                   sent_packets)
         // Composite message dispatch (replaces individual message handlers)
         ||| exists |msg: LRaftMessage, sent_packets: Seq<LRaftMessage>|
                 LHandleMessage(s, s_, c, msg, sent_packets)

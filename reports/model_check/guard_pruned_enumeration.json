@@ -81,7 +81,7 @@
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 2,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 5,
+      "source_ingestion_parsing_ms": 6,
       "successor_solving_ms": 0
     },
     "transitions": 0

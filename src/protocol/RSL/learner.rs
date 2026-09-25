@@ -33,6 +33,7 @@ verus! {
         pub unexecuted_learner_state:LearnerState
     }
 
+    // @automan predicate(l: out, c: in)
     pub open spec fn LLearnerInit(l:LLearner, c:LReplicaConstants) -> bool
     {
       &&& l.constants == c
@@ -40,6 +41,7 @@ verus! {
       &&& l.unexecuted_learner_state == Map::<OperationNumber, LearnerTuple>::empty()
     }
 
+    // @automan predicate(s: in, s_: out, packet: in)
     pub open spec fn LLearnerProcess2b(
         s:LLearner,
         s_:LLearner,
@@ -185,6 +187,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, opn: in)
     pub open spec fn LLearnerForgetDecision(
         s:LLearner,
         s_:LLearner,
@@ -202,6 +205,7 @@ verus! {
         }
     }
 
+    // @automan predicate(s: in, s_: out, ops_complete: in)
     pub open spec fn LLearnerForgetOperationsBefore(
         s:LLearner,
         s_:LLearner,

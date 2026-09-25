@@ -8,7 +8,7 @@
 (* Unlike `tier3/t3_01_jetpack`, this keeps **the fast path** -- Preaccept, *)
 (* the client-side quorum counting, and the resubmit that closes recovery.  *)
 (* That slice dropped it, and the reason it gave ("not projectable") was    *)
-(* never tested; see 55.3.a, where `FastpathQuorum` is shown to be          *)
+(* never tested; see 58.3.a, where `FastpathQuorum` is shown to be          *)
 (* node-computable.                                                        *)
 (*                                                                         *)
 (* Rewrite decisions:                                                      *)
@@ -21,7 +21,7 @@
 (*    to a second role.                                                     *)
 (*  - **Views stay.** `Server` is a constant and never changes; what a node *)
 (*    holds is its own opinion of the membership. That is per-node state,   *)
-(*    so Q2 does not exclude it (55.0.c).                                   *)
+(*    so Q2 does not exclude it (58.0.c).                                   *)
 (*  - **`jpool` splits** into the acceptor triple plus the conflict pool,   *)
 (*    because a record-of-records projects worse than named fields and the  *)
 (*    protocol only ever touches one field at a time.                       *)
@@ -95,7 +95,7 @@ CommandOrNil == Command \cup {NilCmd}
 Epoch == 0 .. MaxEpoch
 
 (***************************************************************************)
-(* P4, and the finding that made the fast path reachable at all (55.3.a).  *)
+(* P4, and the finding that made the fast path reachable at all (58.3.a).  *)
 (*                                                                         *)
 (* The original defines                                                    *)
 (*                                                                         *)

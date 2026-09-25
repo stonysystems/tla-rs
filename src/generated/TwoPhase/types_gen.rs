@@ -183,4 +183,3 @@ impl View for CRMState {
 }
 
 } // verus!
-

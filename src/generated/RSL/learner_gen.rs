@@ -573,6 +573,22 @@ ensures
     let filtered = filter_clearnerstate(&self.unexecuted_learner_state, *ops_complete);
     learnerstate_set(&mut self.unexecuted_learner_state, filtered);
     proof {
+        // learnerstate_set carries only view equality, and both learner-state
+        // validity predicates are functions of the view: transfer them from
+        // `filtered` instantiation by instantiation rather than leaving the
+        // solver to re-derive the transfer inside one large obligation.
+        assert(self.unexecuted_learner_state@ == filtered@);
+        assert forall |i| #![auto] self.unexecuted_learner_state@.contains_key(i) implies
+            COperationNumberIsAbstractable(i)
+            && self.unexecuted_learner_state@[i].abstractable()
+            && COperationNumberIsValid(i)
+            && self.unexecuted_learner_state@[i].valid() by {
+            assert(filtered@.contains_key(i));
+            assert(COperationNumberIsValid(i) && filtered@[i].valid());
+            assert(COperationNumberIsAbstractable(i) && filtered@[i].abstractable());
+        };
+        assert(clearnerstate_is_abstractable(&self.unexecuted_learner_state));
+        assert(clearnerstate_is_valid(&self.unexecuted_learner_state));
         assert(self.valid());
 
         let abs_filtered = abstractify_clearnerstate(&self.unexecuted_learner_state);

@@ -1,5 +1,9 @@
 # tla-rs Model Checker Status (Source-First)
 
+> **DPOR status: very incomplete, under development, and not usable.** Do not treat a DPOR
+> report as verification, reliable bug-finding evidence, or a release gate. The implementation
+> details below are retained for contributors working toward a usable DPOR path.
+
 Last reviewed: 2026-03-11 (UTC)
 
 This is the canonical status page for `verus-transpile model-check`. Keep this synchronized with `TODO.md` Phase 33 whenever capabilities, blockers, coverage, or performance claims change.

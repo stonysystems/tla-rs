@@ -5,6 +5,7 @@ use crate::protocol::PrimaryBackup::types::*;
 verus! {
 
 /// Initial state: primary with empty log, backup synced, view 0
+// @automan predicate(s: out, c: in)
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     &&& s.role is Primary
     &&& s.log_length == 0
@@ -19,6 +20,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 }
 
 /// Primary receives a client write request
+// @automan predicate(s: in, s_: out, c: in, val: in, sent_packets: out)
 pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.acked == true
@@ -41,6 +43,7 @@ pub open spec fn LPrimaryWrite(s: LState, s_: LState, c: LConstants, val: int, s
 }
 
 /// Primary sends replicate message to backup with pending value
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.has_pending == true
@@ -61,6 +64,7 @@ pub open spec fn LPrimarySendReplicate(s: LState, s_: LState, c: LConstants, sen
 }
 
 /// Backup receives replicate and appends to its log
+// @automan predicate(s: in, s_: out, c: in, val: in, sent_packets: out)
 pub open spec fn LBackupReceiveReplicate(s: LState, s_: LState, c: LConstants, val: int, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary      // Global state perspective: backup is alive
     // Backup appends the replicated value (val comes from the received message)
@@ -80,6 +84,7 @@ pub open spec fn LBackupReceiveReplicate(s: LState, s_: LState, c: LConstants, v
 }
 
 /// Backup sends acknowledgment to primary
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.backup_synced == true
@@ -99,6 +104,7 @@ pub open spec fn LBackupSendAck(s: LState, s_: LState, c: LConstants, sent_packe
 }
 
 /// Primary receives ack from backup
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LPrimaryReceiveAck(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.has_pending == true
@@ -120,6 +126,7 @@ pub open spec fn LPrimaryReceiveAck(s: LState, s_: LState, c: LConstants, sent_p
 
 /// Primary commits the pending write to the log after receiving ack
 /// and sends a ClientReply back to the requesting client.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.acked == true
@@ -141,6 +148,7 @@ pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants, sent_packe
 }
 
 /// Primary fails: becomes inactive, pending writes are lost
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LPrimaryFail(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     // Primary becomes inactive
@@ -161,6 +169,7 @@ pub open spec fn LPrimaryFail(s: LState, s_: LState, c: LConstants, sent_packets
 }
 
 /// Backup detects failure and promotes itself to primary
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LBackupPromote(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Inactive
     // Backup becomes new primary, uses backup's log state

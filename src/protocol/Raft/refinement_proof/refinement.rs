@@ -23,63 +23,11 @@ verus! {
         }
     }
 
-    // =========================================================================
-    // Helper: MaxCommitIndex is 0 when all commit indices are 0
-    // =========================================================================
-
-    proof fn lemma_max_commit_index_zero_when_all_zero(ds: RaftDistributedState)
-        requires
-            ds.server_states.len() == ds.num_servers,
-            ds.server_constants.len() == ds.num_servers,
-            ds.num_servers >= 0,
-            forall |i: int| #![trigger ds.server_states[i]] 0 <= i < ds.num_servers ==>
-                ds.server_states[i].commit_index == 0,
-        ensures
-            MaxCommitIndex(ds) == 0
-        decreases ds.num_servers
-    {
-        if ds.num_servers > 0 {
-            let sub_ds = RaftDistributedState {
-                server_states: ds.server_states.subrange(0, ds.num_servers - 1),
-                server_constants: ds.server_constants.subrange(0, ds.num_servers - 1),
-                network: ds.network,
-                num_servers: ds.num_servers - 1,
-                vote_log_len: ds.vote_log_len,
-            };
-
-            assert forall |i: int| #![trigger sub_ds.server_states[i]] 0 <= i < sub_ds.num_servers
-            implies sub_ds.server_states[i].commit_index == 0
-            by {
-                // sub_ds.server_states[i] == ds.server_states[i] for i < n-1
-                // and ds.server_states[i].commit_index == 0 by hypothesis
-            }
-
-            lemma_max_commit_index_zero_when_all_zero(sub_ds);
-            // MaxCommitIndex(sub_ds) == 0
-            // ds.server_states[n-1].commit_index == 0
-            // MaxCommitIndex(ds) = max(0, 0) = 0
-        }
-    }
-
-    // =========================================================================
-    // Init: committed log is empty at initialization
-    // =========================================================================
-
     proof fn lemma_init_committed_log_empty(ds: RaftDistributedState)
         requires RaftDistributedInit(ds)
         ensures GetCommittedLog(ds) == Seq::<int>::empty()
     {
-        // All servers at init satisfy LInit, which sets commit_index == 0
-        assert forall |i: int| #![trigger ds.server_states[i]] 0 <= i < ds.num_servers
-        implies ds.server_states[i].commit_index == 0
-        by {
-            // RaftDistributedInit ensures LInit for each server
-            // LInit specifies s.commit_index == 0
-        }
-
-        lemma_max_commit_index_zero_when_all_zero(ds);
-        // MaxCommitIndex(ds) == 0
-        // GetCommittedLog checks max_commit <= 0, returns Seq::empty()
+        assert(GetCommittedLog(ds) =~= Seq::<int>::empty());
     }
 
     // =========================================================================

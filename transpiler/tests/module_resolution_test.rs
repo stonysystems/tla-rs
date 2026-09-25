@@ -1,4 +1,4 @@
-//! Phase 55.1.b — `EXTENDS` and `INSTANCE` resolve to one module.
+//! Phase 58.1.b — `EXTENDS` and `INSTANCE` resolve to one module.
 //!
 //! Until this landed, a composed spec was linted as the *file* rather than the
 //! module it denotes. With `B!RequestVote` unresolvable the node set could not

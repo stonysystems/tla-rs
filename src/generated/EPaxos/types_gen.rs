@@ -206,4 +206,3 @@ impl View for CEPaxosMessage {
 }
 
 } // verus!
-

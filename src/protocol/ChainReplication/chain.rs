@@ -4,6 +4,7 @@ use vstd::prelude::*;
 verus! {
     /// Initialize chain replication node state
     /// Node starts with empty history, no pending updates, no committed ops
+    // @automan predicate(s: out, c: in)
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
         &&& s.history == Seq::<int>::empty()
         &&& s.pending_sent == Set::<int>::empty()
@@ -21,6 +22,7 @@ verus! {
 
     /// Head receives a client write request and applies it locally
     /// The value is appended to the head's history and marked as pending
+    // @automan predicate(s: in, s_: out, c: in, value: in, sent_packets: out)
     pub open spec fn LHeadReceiveWrite(
         s: LState, s_: LState, c: LConstants, value: int,
         sent_packets: Seq<LCRMessage>,
@@ -45,6 +47,7 @@ verus! {
 
     /// Head or middle node forwards a pending value to its successor
     /// Sends a Forward message
+    // @automan predicate(s: in, s_: out, c: in, value: in, sent_packets: out)
     pub open spec fn LForwardToSuccessor(
         s: LState, s_: LState, c: LConstants, value: int,
         sent_packets: Seq<LCRMessage>,
@@ -70,6 +73,7 @@ verus! {
 
     /// A middle or tail node receives an update from its predecessor
     /// The value is appended to this node's history
+    // @automan predicate(s: in, s_: out, c: in, value: in, sent_packets: out)
     pub open spec fn LReceiveUpdate(
         s: LState, s_: LState, c: LConstants, value: int,
         sent_packets: Seq<LCRMessage>,
@@ -98,6 +102,7 @@ verus! {
     }
 
     /// The tail commits a value: updates committed count and object value
+    // @automan predicate(s: in, s_: out, c: in, value: in, sent_packets: out)
     pub open spec fn LTailCommit(
         s: LState, s_: LState, c: LConstants, value: int,
         sent_packets: Seq<LCRMessage>,
@@ -122,6 +127,7 @@ verus! {
 
     /// A node receives an acknowledgment from its successor
     /// Removes the value from the pending_sent set
+    // @automan predicate(s: in, s_: out, c: in, value: in, sent_packets: out)
     pub open spec fn LReceiveAck(
         s: LState, s_: LState, c: LConstants, value: int,
         sent_packets: Seq<LCRMessage>,
@@ -145,6 +151,7 @@ verus! {
     }
 
     /// Client reads the current committed value (tail only, no state change)
+    // @automan predicate(s: in, s_: out, c: in, sent_packets: out)
     pub open spec fn LClientRead(
         s: LState, s_: LState, c: LConstants,
         sent_packets: Seq<LCRMessage>,
@@ -166,6 +173,7 @@ verus! {
     }
 
     /// A node fails (crashes)
+    // @automan predicate(s: in, s_: out, c: in, sent_packets: out)
     pub open spec fn LNodeFail(
         s: LState, s_: LState, c: LConstants,
         sent_packets: Seq<LCRMessage>,
@@ -189,6 +197,7 @@ verus! {
 
     /// Reconfigure the chain after a node failure
     /// Adjusts predecessor/successor links to skip the failed node
+    // @automan predicate(s: in, s_: out, c: in, new_has_predecessor: in, new_predecessor: in, new_has_successor: in, new_successor: in, sent_packets: out)
     pub open spec fn LReconfigure(
         s: LState, s_: LState, c: LConstants,
         new_has_predecessor: bool, new_predecessor: int,

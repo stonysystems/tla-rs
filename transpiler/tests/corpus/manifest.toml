@@ -214,7 +214,7 @@ reference = ""
 clean_distance = "22"
 expected_rules = ["C1", "C4", "C5"]
 rules_skipped = []
-milestone_gate = "55.6"
+milestone_gate = "58.6"
 notes = "The WHOLE Jetpack, where t3_01 is a slice: the fast path is here (t3_01 has `grep -ci preaccept` = 0 against 15 in the original), and so are the base protocol, views, reconfiguration and the client layer. Three files rather than one, matching upstream's structure: two library modules with no Init/Next, INSTANCEd by a composition. Linting a library alone correctly reports \"no next-state relation\"; the composition is what is measured, and it is clean with 34 per-node variables. clean_distance is inherited from t3_01 -- it is the same upstream and the same measurement. Model-checked closed at 17,570,820 states, depth 73, 34 of 34 actions covered. Separately checked against the ORIGINAL's own safety invariants under an explicit mapping (jetpack_refinement.tla): 34,718,400 states, closed, no violation -- and that check found upstream's `CommittedLogAgreement` to be vacuous, `Min({ci,ci2} \\cup {0})` being always 0. `golden` not `green` because V2 as defined is clean-vs-original and there is no single original module to compare against; the refinement check is the stronger thing that replaces it here. Reconfiguration is requested and never applied -- upstream's AppendPendingReconfigToLog was dropped -- which makes O!MaxOneReconfigurationAtATime vacuous against this rewrite. Recorded in rewrite.md."
 
 [[case]]

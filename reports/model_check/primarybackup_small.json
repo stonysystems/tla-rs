@@ -187,7 +187,7 @@
     "direct_assignment_branch_solves": 8,
     "distinct_states": 2,
     "duplicate_states": 1,
-    "elapsed_ms": 8,
+    "elapsed_ms": 7,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "explored_states": 2,
@@ -202,12 +202,12 @@
     "symmetry_collapses": 0,
     "timing": {
       "candidate_generation_evaluation_ms": 1,
-      "dedup_hashing_normalization_ms": 6,
+      "dedup_hashing_normalization_ms": 5,
       "initial_state_construction_ms": 1,
       "invariant_evaluation_ms": 0,
-      "model_config_resolution_ms": 3,
+      "model_config_resolution_ms": 2,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 16,
+      "source_ingestion_parsing_ms": 15,
       "successor_solving_ms": 0
     },
     "transitions": 2

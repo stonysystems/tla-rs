@@ -187,9 +187,9 @@
       "dedup_hashing_normalization_ms": 2,
       "initial_state_construction_ms": 0,
       "invariant_evaluation_ms": 0,
-      "model_config_resolution_ms": 2,
+      "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 6,
+      "source_ingestion_parsing_ms": 5,
       "successor_solving_ms": 0
     },
     "transitions": 5

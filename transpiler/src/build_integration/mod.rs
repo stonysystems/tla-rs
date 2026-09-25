@@ -104,21 +104,36 @@ pub fn run_build(config: &BuildConfig) -> TranspileResult<BuildResult> {
         errors: Vec::new(),
     };
 
-    // Find all annotation files
+    // Discover work in both forms (Phase 55.3): sidecar-first (an .automan
+    // with a sibling spec), then spec files whose annotations live inline —
+    // recognized by a `// @automan` directive and no sidecar. A spec with
+    // both is handled once, through the sidecar entry, and the transpiler
+    // itself enforces that overlapping annotations agree.
     let annotation_files = find_files(&config.input_dir, &config.annotation_extension)?;
+    let mut jobs: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
 
     for annotation_path in annotation_files {
-        // Find corresponding spec file
         let spec_path = annotation_path.with_extension(&config.spec_extension);
-
-        if !spec_path.exists() {
-            continue;
+        if spec_path.exists() {
+            jobs.push((spec_path, Some(annotation_path)));
         }
+    }
 
+    for spec_path in find_files(&config.input_dir, &config.spec_extension)? {
+        let sidecar = spec_path.with_extension(&config.annotation_extension);
+        if sidecar.exists() {
+            continue; // already queued via the sidecar
+        }
+        if source_has_inline_directive(&spec_path) {
+            jobs.push((spec_path, None));
+        }
+    }
+
+    for (spec_path, annotation_path) in jobs {
         // Calculate output path
-        let relative = annotation_path
+        let relative = spec_path
             .strip_prefix(&config.input_dir)
-            .unwrap_or(&annotation_path);
+            .unwrap_or(&spec_path);
         let output_path = config.output_dir.join(relative).with_extension("gen.rs");
 
         // Create output directory if needed
@@ -127,7 +142,7 @@ pub fn run_build(config: &BuildConfig) -> TranspileResult<BuildResult> {
         }
 
         // Transpile
-        match transpiler.transpile_file(&spec_path, &annotation_path) {
+        match transpiler.transpile_file_auto(&spec_path, annotation_path.as_deref()) {
             Ok(generated) => {
                 std::fs::write(&output_path, &generated)?;
                 result.success_count += 1;
@@ -145,6 +160,19 @@ pub fn run_build(config: &BuildConfig) -> TranspileResult<BuildResult> {
     }
 
     Ok(result)
+}
+
+/// Cheap textual check for an inline `// @automan` directive, used only for
+/// build discovery — the parser does the real validation during transpile.
+fn source_has_inline_directive(path: &Path) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|source| {
+        source.lines().any(|line| {
+            line.trim_start()
+                .strip_prefix("//")
+                .map(|rest| rest.trim_start().starts_with("@automan"))
+                .unwrap_or(false)
+        })
+    })
 }
 
 /// Print cargo instructions for rerun-if-changed

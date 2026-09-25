@@ -3,6 +3,7 @@ use vstd::prelude::*;
 
 verus! {
     /// Initialize the Paxos protocol state
+    // @automan predicate(s: out, c: in)
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
         // Acceptor state
         &&& s.promised_bal == 0
@@ -22,6 +23,7 @@ verus! {
 
     /// Phase 1a: Proposer starts a new round with ballot b
     /// Generates a unique ballot and enters Phase 1
+    // @automan predicate(s: in, s_: out, c: in, b: in)
     pub open spec fn LSend1a(s: LState, s_: LState, c: LConstants, b: int) -> bool {
         &&& s.phase is Idle
         &&& b > s.proposer_bal
@@ -43,6 +45,7 @@ verus! {
 
     /// Phase 1b: Acceptor receives Prepare(b), promises not to accept lower ballots
     /// Sends back a promise with its last accepted ballot and value
+    // @automan predicate(s: in, s_: out, c: in, b: in)
     pub open spec fn LSend1b(s: LState, s_: LState, c: LConstants, b: int) -> bool {
         &&& b >= s.promised_bal
         // Update acceptor: promise this ballot
@@ -64,6 +67,7 @@ verus! {
 
     /// Proposer receives a promise from acceptor a for its ballot
     /// Tracks the promise and updates highest accepted value if needed
+    // @automan predicate(s: in, s_: out, c: in, a: in, a_accepted_bal: in, a_accepted_val: in)
     pub open spec fn LRecvPromise(s: LState, s_: LState, c: LConstants, a: int, a_accepted_bal: int, a_accepted_val: int) -> bool {
         &&& s.phase is Phase1
         &&& c.acceptors.contains(a)
@@ -88,6 +92,7 @@ verus! {
 
     /// Phase 2a: Proposer has quorum of promises, sends Accept with value
     /// If any acceptor had an accepted value, use the highest one; otherwise use own value
+    // @automan predicate(s: in, s_: out, c: in, v: in)
     pub open spec fn LSend2a(s: LState, s_: LState, c: LConstants, v: int) -> bool {
         &&& s.phase is Phase1
         &&& s.promises_rcvd.len() >= c.quorum_size
@@ -110,6 +115,7 @@ verus! {
     }
 
     /// Phase 2b: Acceptor receives Accept(b, v), accepts if ballot >= promised
+    // @automan predicate(s: in, s_: out, c: in, b: in, v: in)
     pub open spec fn LSend2b(s: LState, s_: LState, c: LConstants, b: int, v: int) -> bool {
         &&& b >= s.promised_bal
         // Update acceptor: accept this ballot and value
@@ -129,6 +135,7 @@ verus! {
     }
 
     /// Proposer receives an Accept acknowledgment from acceptor a
+    // @automan predicate(s: in, s_: out, c: in, a: in)
     pub open spec fn LRecvAccepted(s: LState, s_: LState, c: LConstants, a: int) -> bool {
         &&& s.phase is Phase2
         &&& c.acceptors.contains(a)
@@ -149,6 +156,7 @@ verus! {
     }
 
     /// Learn: quorum of acceptors have accepted, value is decided
+    // @automan predicate(s: in, s_: out, c: in)
     pub open spec fn LLearn(s: LState, s_: LState, c: LConstants) -> bool {
         &&& s.phase is Phase2
         &&& s.accepts_rcvd.len() >= c.quorum_size

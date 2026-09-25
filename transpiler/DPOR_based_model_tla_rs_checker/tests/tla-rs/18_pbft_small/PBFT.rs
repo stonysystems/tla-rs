@@ -22,86 +22,103 @@ pub struct LConstants {
 
 
 /// PrePrepare operator
+// @automan helper(c: in)
 pub open spec fn LPrePrepare(c: LConstants) -> Seq<char> {
     "pre-prepare"@
 }
 
 /// Prepare operator
+// @automan helper(c: in)
 pub open spec fn LPrepare(c: LConstants) -> Seq<char> {
     "prepare"@
 }
 
 /// Commit operator
+// @automan helper(c: in)
 pub open spec fn LCommit(c: LConstants) -> Seq<char> {
     "commit"@
 }
 
 /// Reply operator
+// @automan helper(c: in)
 pub open spec fn LReply(c: LConstants) -> Seq<char> {
     "reply"@
 }
 
 /// QuorumSize operator
+// @automan predicate(c: in)
 pub open spec fn LQuorumSize(c: LConstants) -> int {
     ((2 * c.f) + 1)
 }
 
 /// Init operator
+// @automan predicate(s: out, c: in)
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     ((((((c.replica >= 7) && (c.f == 2)) && (s.view == 0)) && (s.phase == LPrePrepare(c))) && (s.prepareCount == 0)) && (s.commitCount == 0))
 }
 
 /// SendPrePrepare operator
+// @automan predicate(s: in, s_: out, c: in, v: in, n: in, d: in)
 pub open spec fn LSendPrePrepare(s: LState, s_: LState, c: LConstants, v: int, n: int, d: int) -> bool {
     ((((((((s.phase == LPrePrepare(c)) && (v == s.view)) && (((n == 0) || (n == 1)) || (n == 2))) && (((d == 0) || (d == 1)) || (d == 2))) && (s_.phase == LPrepare(c))) && (s_.view == s.view)) && (s_.prepareCount == s.prepareCount)) && (s_.commitCount == s.commitCount))
 }
 
 /// SendPrepare operator
+// @automan predicate(s: in, s_: out, c: in, r: in, v: in, n: in, d: in)
 pub open spec fn LSendPrepare(s: LState, s_: LState, c: LConstants, r: int, v: int, n: int, d: int) -> bool {
     (((((((((((s.phase == LPrepare(c)) && (s.prepareCount < c.replica)) && (r >= 1)) && (r <= c.replica)) && (v == s.view)) && (((n == 0) || (n == 1)) || (n == 2))) && (((d == 0) || (d == 1)) || (d == 2))) && (s_.prepareCount == (s.prepareCount + 1))) && (s_.phase == s.phase)) && (s_.view == s.view)) && (s_.commitCount == s.commitCount))
 }
 
 /// Prepared operator
+// @automan predicate(s: in, c: in)
 pub open spec fn LPrepared(s: LState, c: LConstants) -> bool {
     (s.prepareCount >= LQuorumSize(c))
 }
 
 /// EnterCommit operator
+// @automan predicate(s: in, s_: out, c: in)
 pub open spec fn LEnterCommit(s: LState, s_: LState, c: LConstants) -> bool {
     (((((LPrepared(s, c) && (s.phase == LPrepare(c))) && (s_.phase == LCommit(c))) && (s_.view == s.view)) && (s_.prepareCount == s.prepareCount)) && (s_.commitCount == s.commitCount))
 }
 
 /// SendCommit operator
+// @automan predicate(s: in, s_: out, c: in, r: in, v: in, n: in, d: in)
 pub open spec fn LSendCommit(s: LState, s_: LState, c: LConstants, r: int, v: int, n: int, d: int) -> bool {
     ((((((((((((s.phase == LCommit(c)) && LPrepared(s, c)) && (s.commitCount < c.replica)) && (r >= 1)) && (r <= c.replica)) && (v == s.view)) && (((n == 0) || (n == 1)) || (n == 2))) && (((d == 0) || (d == 1)) || (d == 2))) && (s_.commitCount == (s.commitCount + 1))) && (s_.phase == s.phase)) && (s_.view == s.view)) && (s_.prepareCount == s.prepareCount))
 }
 
 /// Committed operator
+// @automan predicate(s: in, c: in)
 pub open spec fn LCommitted(s: LState, c: LConstants) -> bool {
     (s.commitCount >= LQuorumSize(c))
 }
 
 /// ExecuteAndReply operator
+// @automan predicate(s: in, s_: out, c: in)
 pub open spec fn LExecuteAndReply(s: LState, s_: LState, c: LConstants) -> bool {
     (((((LCommitted(s, c) && (s.phase == LCommit(c))) && (s_.phase == LReply(c))) && (s_.view == s.view)) && (s_.prepareCount == s.prepareCount)) && (s_.commitCount == s.commitCount))
 }
 
 /// ViewChange operator
+// @automan predicate(s: in, s_: out, c: in)
 pub open spec fn LViewChange(s: LState, s_: LState, c: LConstants) -> bool {
     ((((s_.view == (s.view + 1)) && (s_.phase == LPrePrepare(c))) && (s_.prepareCount == 0)) && (s_.commitCount == 0))
 }
 
 /// Next operator
+// @automan predicate(s: in, s_: out, c: in)
 pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-    (((((((((((((((((((((((((LSendPrePrepare(s, s_, c, 0, 0, 0) || LSendPrePrepare(s, s_, c, 0, 1, 0)) || LSendPrePrepare(s, s_, c, 0, 2, 0)) || LSendPrePrepare(s, s_, c, 0, 0, 1)) || LSendPrePrepare(s, s_, c, 0, 1, 1)) || LSendPrePrepare(s, s_, c, 0, 2, 1)) || LSendPrePrepare(s, s_, c, 0, 0, 2)) || LSendPrePrepare(s, s_, c, 0, 1, 2)) || LSendPrePrepare(s, s_, c, 0, 2, 2)) || LSendPrepare(s, s_, c, 1, 0, 0, 0)) || LSendPrepare(s, s_, c, 2, 0, 0, 0)) || LSendPrepare(s, s_, c, 3, 0, 0, 0)) || LSendPrepare(s, s_, c, 4, 0, 0, 0)) || LSendPrepare(s, s_, c, 5, 0, 0, 0)) || LSendPrepare(s, s_, c, 6, 0, 0, 0)) || LSendPrepare(s, s_, c, 7, 0, 0, 0)) || LEnterCommit(s, s_, c)) || LSendCommit(s, s_, c, 1, 0, 0, 0)) || LSendCommit(s, s_, c, 2, 0, 0, 0)) || LSendCommit(s, s_, c, 3, 0, 0, 0)) || LSendCommit(s, s_, c, 4, 0, 0, 0)) || LSendCommit(s, s_, c, 5, 0, 0, 0)) || LSendCommit(s, s_, c, 6, 0, 0, 0)) || LSendCommit(s, s_, c, 7, 0, 0, 0)) || LExecuteAndReply(s, s_, c)) || LViewChange(s, s_, c))
+    (((((((((((((LSendPrePrepare(s, s_, c, 0, 0, 0) || LSendPrePrepare(s, s_, c, 0, 1, 0)) || LSendPrePrepare(s, s_, c, 0, 2, 0)) || ((LSendPrePrepare(s, s_, c, 0, 0, 1) || LSendPrePrepare(s, s_, c, 0, 1, 1)) || LSendPrePrepare(s, s_, c, 0, 2, 1))) || ((LSendPrePrepare(s, s_, c, 0, 0, 2) || LSendPrePrepare(s, s_, c, 0, 1, 2)) || LSendPrePrepare(s, s_, c, 0, 2, 2))) || ((LSendPrepare(s, s_, c, 1, 0, 0, 0) || LSendPrepare(s, s_, c, 2, 0, 0, 0)) || LSendPrepare(s, s_, c, 3, 0, 0, 0))) || ((LSendPrepare(s, s_, c, 4, 0, 0, 0) || LSendPrepare(s, s_, c, 5, 0, 0, 0)) || LSendPrepare(s, s_, c, 6, 0, 0, 0))) || LSendPrepare(s, s_, c, 7, 0, 0, 0)) || LEnterCommit(s, s_, c)) || ((LSendCommit(s, s_, c, 1, 0, 0, 0) || LSendCommit(s, s_, c, 2, 0, 0, 0)) || LSendCommit(s, s_, c, 3, 0, 0, 0))) || ((LSendCommit(s, s_, c, 4, 0, 0, 0) || LSendCommit(s, s_, c, 5, 0, 0, 0)) || LSendCommit(s, s_, c, 6, 0, 0, 0))) || LSendCommit(s, s_, c, 7, 0, 0, 0)) || LExecuteAndReply(s, s_, c)) || LViewChange(s, s_, c))
 }
 
 /// PBFTSafety operator
+// @automan predicate(s: in, c: in)
 pub open spec fn LPBFTSafety(s: LState, c: LConstants) -> bool {
     ((((((s.phase == LCommit(c)) || (s.phase == LReply(c))) ==> LPrepared(s, c)) && ((s.phase == LReply(c)) ==> LCommitted(s, c))) && (s.prepareCount <= c.replica)) && (s.commitCount <= c.replica))
 }
 
 /// TypeOK operator
+// @automan predicate(s: in, c: in)
 pub open spec fn LTypeOK(s: LState, c: LConstants) -> bool {
     ((((s.view >= 0) && (s.prepareCount >= 0)) && (s.commitCount >= 0)) && ((((s.phase == LPrePrepare(c)) || (s.phase == LPrepare(c))) || (s.phase == LCommit(c))) || (s.phase == LReply(c))))
 }

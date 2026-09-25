@@ -4,6 +4,7 @@ use vstd::prelude::*;
 verus! {
     /// Initialize the election protocol state
     /// All nodes start alive, no one is electing, no leader yet
+    // @automan predicate(s: out, c: in)
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
         &&& s.electing == Set::<int>::empty()
         &&& s.has_leader == false
@@ -17,6 +18,7 @@ verus! {
 
     /// A node detects leader failure and starts an election
     /// Sends an Election message and enters election state
+    // @automan predicate(s: in, s_: out, c: in, node: in, sent_packets: out)
     pub open spec fn LDetectFailure(
         s: LState, s_: LState, c: LConstants, node: int,
         sent_packets: Seq<LElectionMessage>,
@@ -41,6 +43,7 @@ verus! {
 
     /// A node starts an election (general trigger, e.g., timeout)
     /// The node enters election state and sends Election message
+    // @automan predicate(s: in, s_: out, c: in, node: in, sent_packets: out)
     pub open spec fn LStartElection(
         s: LState, s_: LState, c: LConstants, node: int,
         sent_packets: Seq<LElectionMessage>,
@@ -63,6 +66,7 @@ verus! {
 
     /// A higher-ID node responds to an election with an Answer message
     /// This suppresses the lower node's election attempt
+    // @automan predicate(s: in, s_: out, c: in, node: in, sender: in, sent_packets: out)
     pub open spec fn LSendAnswer(
         s: LState, s_: LState, c: LConstants, node: int, sender: int,
         sent_packets: Seq<LElectionMessage>,
@@ -85,6 +89,7 @@ verus! {
     }
 
     /// A node receives an Answer, stops its election attempt
+    // @automan predicate(s: in, s_: out, c: in, node: in, responder: in, sent_packets: out)
     pub open spec fn LReceiveAnswer(
         s: LState, s_: LState, c: LConstants, node: int, responder: int,
         sent_packets: Seq<LElectionMessage>,
@@ -107,6 +112,7 @@ verus! {
     }
 
     /// A node wins the election (no Answer received) and sends Coordinator message
+    // @automan predicate(s: in, s_: out, c: in, node: in, sent_packets: out)
     pub open spec fn LSendCoordinator(
         s: LState, s_: LState, c: LConstants, node: int,
         sent_packets: Seq<LElectionMessage>,
@@ -131,6 +137,7 @@ verus! {
     }
 
     /// A node receives a Coordinator message and accepts the new leader
+    // @automan predicate(s: in, s_: out, c: in, node: in, leader: in, sent_packets: out)
     pub open spec fn LReceiveCoordinator(
         s: LState, s_: LState, c: LConstants, node: int, leader: int,
         sent_packets: Seq<LElectionMessage>,
@@ -153,6 +160,7 @@ verus! {
 
     /// A node fails (crashes)
     /// If the failed node was the leader, leadership is cleared
+    // @automan predicate(s: in, s_: out, c: in, node: in, sent_packets: out)
     pub open spec fn LNodeFail(
         s: LState, s_: LState, c: LConstants, node: int,
         sent_packets: Seq<LElectionMessage>,

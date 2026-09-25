@@ -4,3 +4,5 @@ pub mod invariants;
 pub mod induction;
 pub mod committed;
 pub mod refinement;
+pub mod reconfiguration;
+pub mod recovery;

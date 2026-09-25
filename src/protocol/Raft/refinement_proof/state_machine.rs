@@ -1,5 +1,12 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
+use crate::protocol::Raft::membership::{
+    ConfigurationCommitCertificate,
+    LogCommitCertificate,
+    active_membership_phase_for_state,
+    active_membership_phase_from_raft_log,
+    replicator_set,
+};
 use crate::protocol::Raft::refinement_proof::invariants::CommitIndexBounded;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
@@ -21,6 +28,27 @@ verus! {
         // Used for stale-vote provenance in LeaderCompleteness proof (Phase 34.7).
         // Only meaningful for granted votes; populated by LGrantVote.
         pub vote_log_len: Map<(int, int), int>,
+        // Ghost state: one persistent proof certificate for each Configuration
+        // entry that a leader commits. Keyed by the entry's physical log index.
+        pub configuration_commit_certificates:
+            Map<int, ConfigurationCommitCertificate>,
+        // Ghost state: one persistent certificate for every physical log
+        // entry that becomes committed, including Data entries.
+        pub log_commit_certificates:
+            Map<int, LogCommitCertificate>,
+        // Ghost state: maps (server_id, election_term) → that server's log
+        // length at the moment it won the election for that term. Mirrors the
+        // vote_log_len pattern. Proof-only: nothing on the wire or in generated
+        // code observes it.
+        //
+        // Needed because has_recorded_election_log_provenance only says the
+        // saved membership phase comes from *some* prefix; recording the exact
+        // snapshot length is what lets a proof conclude that a log entry whose
+        // term is below the leader's own term was already present at election.
+        pub election_log_len: Map<(int, int), int>,
+        /// Ghost observation of the longest prefix ever committed. Reboot does
+        /// not erase past commitment, even when every local commit index resets.
+        pub committed_history: Seq<LLogEntry>,
     }
 
     /// Well-formedness of the distributed state
@@ -43,6 +71,37 @@ verus! {
             LInit(ds.server_states[i], ds.server_constants[i]))
         &&& ds.network == Set::<LRaftPacket>::empty()
         &&& ds.vote_log_len == Map::<(int, int), int>::empty()
+        &&& ds.configuration_commit_certificates
+            == Map::<int, ConfigurationCommitCertificate>::empty()
+        &&& ds.log_commit_certificates
+            == Map::<int, LogCommitCertificate>::empty()
+        &&& ds.election_log_len == Map::<(int, int), int>::empty()
+        &&& ds.committed_history == Seq::<LLogEntry>::empty()
+    }
+
+    /// Record a new longest committed prefix, otherwise retain the observation.
+    /// This is proof history, not a persistent field of a running server.
+    pub open spec fn RecordCommittedPrefix(
+        history: Seq<LLogEntry>, s: LState,
+    ) -> Seq<LLogEntry> {
+        if s.commit_index > history.len() {
+            s.log.subrange(0, s.commit_index)
+        } else {
+            history
+        }
+    }
+
+    /// The history is backed by the same certificates as actual committed
+    /// entries, and covers every server's current knowledge of commitment.
+    pub open spec fn CommitHistoryValid(ds: RaftDistributedState) -> bool {
+        &&& (forall |i: int| #![trigger ds.server_states[i]]
+            0 <= i < ds.num_servers ==>
+                ds.server_states[i].commit_index <= ds.committed_history.len())
+        &&& (forall |k: int| #![trigger ds.committed_history[k]]
+            0 <= k < ds.committed_history.len() ==> {
+                &&& ds.log_commit_certificates.dom().contains(k)
+                &&& ds.log_commit_certificates[k].entry == ds.committed_history[k]
+            })
     }
 
     /// Helper: which action branch was taken, producing the given sent_packets.
@@ -58,8 +117,16 @@ verus! {
             // (A) Local/sending actions — no message received from network
             ||| (received_from is None && LTimeout(s, s_, c, sent_packets))
             ||| (received_from is None && (exists |value: int| LClientRequest(s, s_, c, value, sent_packets)))
-            ||| (received_from is None && (exists |follower: int, ev: int, pli: int, plt: int, he: bool|
-                    LSendAppendEntries(s, s_, c, follower, ev, pli, plt, he, sent_packets)))
+            ||| (received_from is None && (
+                    exists |phase: LMembershipPhase|
+                    LAppendConfigurationEntry(
+                        s, s_, c, phase, sent_packets,
+                    )))
+            ||| (received_from is None && (exists |follower: int, ev: int,
+                    ep: LLogValue, pli: int, plt: int, he: bool|
+                    LSendAppendEntries(
+                        s, s_, c, follower, ev, ep, pli, plt, he, sent_packets,
+                    )))
             ||| (received_from is None && (exists |nci: int| LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets)))
             // (B) Message handling — received packet must be in network
             ||| (exists |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
@@ -76,15 +143,24 @@ verus! {
     /// to those sent_packets wrapped with src == server_id.
     /// For message-handling actions, response packets are routed back to the
     /// sender of the received packet (received_from).
-    pub open spec fn RaftServerStepWithNetwork(
+    /// The full obligations of one server step for a concrete witness
+    /// (sent_packets, received_from): action, network routing, and ghost
+    /// bookkeeping. RaftServerStepWithNetwork is exactly the existential
+    /// closure of this predicate; naming the body lets proofs bind a
+    /// witness by choosing on the predicate application itself instead of
+    /// re-deriving each conjunct for a separately chosen witness.
+    pub open spec fn RaftServerStepWitness(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+        sent_packets: Seq<LRaftMessage>, received_from: Option<int>,
     ) -> bool {
         let s = ds.server_states[server_id];
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
-        exists |sent_packets: Seq<LRaftMessage>, received_from: Option<int>|
-            #![trigger RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from)]
         {
+            // Record only an actual post-step committed prefix. This observer
+            // is deterministic and adds no guards to the protocol action.
+            &&& ds_.committed_history == RecordCommittedPrefix(
+                ds.committed_history, s_)
             // Action: which branch was taken
             &&& RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from)
             // Network monotonicity: old packets preserved
@@ -134,7 +210,178 @@ verus! {
                     && ds_.vote_log_len == ds.vote_log_len
                 )
             })
+            // Ghost state: election_log_len records the stepping server's log
+            // length at the moment it becomes leader. Existing entries are
+            // immutable, a promotion records one, and nothing else is added.
+            &&& (forall |v: int, t: int| #![trigger ds_.election_log_len[(v, t)]] #![trigger ds.election_log_len[(v, t)]] ds.election_log_len.dom().contains((v, t))
+                ==> ds_.election_log_len.dom().contains((v, t))
+                    && ds_.election_log_len[(v, t)] == ds.election_log_len[(v, t)])
+            &&& (!(s.role is Leader) && s_.role is Leader ==> {
+                &&& ds_.election_log_len.dom().contains(
+                    (server_id, s_.current_term))
+                &&& ds_.election_log_len[(server_id, s_.current_term)]
+                    == s.log.len()
+            })
+            &&& (forall |v: int, t: int|
+                #![trigger ds_.election_log_len.dom().contains((v, t))]
+                ds_.election_log_len.dom().contains((v, t))
+                && !ds.election_log_len.dom().contains((v, t))
+                ==> v == server_id
+                    && t == s_.current_term
+                    && !(s.role is Leader)
+                    && s_.role is Leader)
+            // Existing configuration-commit certificates are immutable.
+            &&& (forall |index: int| #![trigger ds.configuration_commit_certificates.dom().contains(index)] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
+                ds.configuration_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == ds.configuration_commit_certificates[index].log_index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == ds.configuration_commit_certificates[index].entry
+                    &&& ds_.configuration_commit_certificates[index].committer
+                        == ds.configuration_commit_certificates[index].committer
+                    &&& ds_.configuration_commit_certificates[index].governing_phase
+                        == ds.configuration_commit_certificates[index].governing_phase
+                    &&& ds_.configuration_commit_certificates[index].quorum
+                        == ds.configuration_commit_certificates[index].quorum
+                })
+            // A new certificate can only be created when a local leader commit
+            // ends exactly at a Configuration entry.
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.configuration_commit_certificates.dom().contains(index)] #![trigger ds.configuration_commit_certificates.dom().contains(index)]
+                ds_.configuration_commit_certificates.dom().contains(index)
+                && !ds.configuration_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& received_from is None
+                    &&& s_.commit_index > s.commit_index
+                    &&& index == s_.commit_index - 1
+                    &&& 0 <= index < s_.log.len()
+                    &&& s_.log[index].payload is Configuration
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == s_.log[index]
+                    &&& ds_.configuration_commit_certificates[index].committer
+                        == server_id
+                    &&& ds_.configuration_commit_certificates[index].governing_phase
+                        == active_membership_phase_for_state(s, c)
+                    &&& ds_.configuration_commit_certificates[index].quorum
+                        == replicator_set(s, c, s_.commit_index)
+                })
+            // A local commit ending at a Configuration entry must leave the
+            // corresponding certificate in the post-state map.
+            &&& (received_from is None
+                && s_.commit_index > s.commit_index
+                && 0 <= s_.commit_index - 1 < s_.log.len()
+                && s_.log[s_.commit_index - 1].payload is Configuration
+                ==> {
+                    let index = s_.commit_index - 1;
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == s_.log[index]
+                    &&& ds_.configuration_commit_certificates[index].committer
+                        == server_id
+                    &&& ds_.configuration_commit_certificates[index].governing_phase
+                        == active_membership_phase_for_state(s, c)
+                    &&& ds_.configuration_commit_certificates[index].quorum
+                        == replicator_set(s, c, s_.commit_index)
+                }
+            )
+            // Every Configuration entry in the stepping server's committed
+            // post-state prefix is tied to the same global history
+            // certificate. Followers therefore reuse an existing leader-created
+            // certificate rather than inventing a new one.
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
+                0 <= index < s_.commit_index
+                && index < s_.log.len()
+                && s_.log[index].payload is Configuration
+                ==> {
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == s_.log[index]
+                }
+            )
+            // Existing all-entry commit certificates are immutable.
+            &&& (forall |index: int| #![trigger ds.log_commit_certificates.dom().contains(index)] #![trigger ds_.log_commit_certificates.dom().contains(index)]
+                ds.log_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& ds_.log_commit_certificates.dom().contains(index)
+                    &&& ds_.log_commit_certificates[index].log_index
+                        == ds.log_commit_certificates[index].log_index
+                    &&& ds_.log_commit_certificates[index].entry
+                        == ds.log_commit_certificates[index].entry
+                    &&& ds_.log_commit_certificates[index].committer
+                        == ds.log_commit_certificates[index].committer
+                    &&& ds_.log_commit_certificates[index].governing_phase
+                        == ds.log_commit_certificates[index].governing_phase
+                    &&& ds_.log_commit_certificates[index].quorum
+                        == ds.log_commit_certificates[index].quorum
+                })
+            // New all-entry certificates can only describe entries in one
+            // local leader's newly committed physical-log interval.
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.log_commit_certificates.dom().contains(index)] #![trigger ds.log_commit_certificates.dom().contains(index)]
+                ds_.log_commit_certificates.dom().contains(index)
+                && !ds.log_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& received_from is None
+                    &&& s_.commit_index > s.commit_index
+                    &&& s.commit_index <= index < s_.commit_index
+                    &&& index < s_.log.len()
+                    &&& ds_.log_commit_certificates[index].log_index == index
+                    &&& ds_.log_commit_certificates[index].entry == s_.log[index]
+                    &&& ds_.log_commit_certificates[index].committer == server_id
+                    &&& ds_.log_commit_certificates[index].governing_phase
+                        == active_membership_phase_from_raft_log(
+                            s.log,
+                            index,
+                            MembershipPhase::Stable { config: c.servers },
+                        )
+                    &&& ds_.log_commit_certificates[index].quorum
+                        == replicator_set(s, c, s_.commit_index)
+                })
+            // Every entry newly committed by a local leader receives an
+            // all-entry certificate backed by the quorum for the interval.
+            &&& (received_from is None
+                && s_.commit_index > s.commit_index
+                ==> forall |index: int| #![trigger s_.log[index]]
+                    s.commit_index <= index < s_.commit_index
+                    ==> {
+                        &&& ds_.log_commit_certificates.dom().contains(index)
+                        &&& ds_.log_commit_certificates[index].log_index == index
+                        &&& ds_.log_commit_certificates[index].entry == s_.log[index]
+                        &&& ds_.log_commit_certificates[index].committer == server_id
+                        &&& ds_.log_commit_certificates[index].governing_phase
+                            == active_membership_phase_from_raft_log(
+                                s.log,
+                                index,
+                                MembershipPhase::Stable { config: c.servers },
+                            )
+                        &&& ds_.log_commit_certificates[index].quorum
+                            == replicator_set(s, c, s_.commit_index)
+                    })
+            // Every committed post-state entry, including follower-learned
+            // entries, is tied to the unique global certificate at its index.
+            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.log_commit_certificates.dom().contains(index)]
+                0 <= index < s_.commit_index
+                && index < s_.log.len()
+                ==> {
+                    &&& ds_.log_commit_certificates.dom().contains(index)
+                    &&& ds_.log_commit_certificates[index].log_index == index
+                    &&& ds_.log_commit_certificates[index].entry == s_.log[index]
+                })
         }
+    }
+
+    pub open spec fn RaftServerStepWithNetwork(
+        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    ) -> bool {
+        exists |sent_packets: Seq<LRaftMessage>, received_from: Option<int>|
+            #![trigger RaftServerStepWitness(ds, ds_, server_id, sent_packets, received_from)]
+            RaftServerStepWitness(ds, ds_, server_id, sent_packets, received_from)
     }
 
     /// Distributed system step: one server takes a step, with network routing.
@@ -148,7 +395,7 @@ verus! {
     /// In both cases, the network is monotonic (messages are never removed),
     /// new messages are tagged with src == server_id, and new message payloads
     /// correspond to what the action produced.
-    pub open spec fn RaftDistributedNext(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
+    pub open spec fn RaftDistributedNormalNext(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
         &&& WellFormedRaftDistributed(ds_)
         &&& ds_.num_servers == ds.num_servers
@@ -164,9 +411,31 @@ verus! {
         }
     }
 
-    /// RaftDistributedNext without network routing.
+    /// Reboot one server without changing its durable state or the network.
+    /// Ghost histories are observations of the execution, not volatile memory.
+    pub open spec fn RaftDistributedReboot(
+        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    ) -> bool {
+        &&& WellFormedRaftDistributed(ds)
+        &&& 0 <= server_id < ds.num_servers
+        &&& LReboot(ds.server_states[server_id], ds_.server_states[server_id])
+        &&& ds_ == (RaftDistributedState {
+            server_states: ds.server_states.update(server_id, ds_.server_states[server_id]),
+            ..ds
+        })
+    }
+
+    /// The behavior relation includes arbitrarily interleaved reboots.
+    pub open spec fn RaftDistributedNext(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+    ) -> bool {
+        ||| RaftDistributedNormalNext(ds, ds_)
+        ||| exists |server_id: int| RaftDistributedReboot(ds, ds_, server_id)
+    }
+
+    /// The normal protocol relation without network routing.
     /// Omits sent_packets and recv_from, keeping only the server step and frame.
-    /// Every step of RaftDistributedNext implies a step of RaftDistributedNextLegacy.
+    /// Every normal step implies a step of RaftDistributedNextLegacy.
     pub open spec fn RaftDistributedNextLegacy(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
         &&& WellFormedRaftDistributed(ds_)
@@ -183,18 +452,18 @@ verus! {
         }
     }
 
-    /// RaftDistributedNext implies the legacy version (without network routing).
-    /// Each action category in RaftDistributedNext (LTimeout, LClientRequest,
+    /// A normal step implies the legacy version without network routing.
+    /// Each action category in RaftDistributedNormalNext (LTimeout, LClientRequest,
     /// LSendAppendEntries, LTryAdvanceCommitIndex, LHandleMessage) directly
     /// corresponds to a branch of LNext. The same server_id witness works
     /// for both. Network update constraints and sent_packets are dropped.
-    pub proof fn lemma_distributed_next_implies_legacy(
+    pub proof fn lemma_normal_next_implies_legacy(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
-        requires RaftDistributedNext(ds, ds_)
+        requires RaftDistributedNormalNext(ds, ds_)
         ensures RaftDistributedNextLegacy(ds, ds_)
     {
-        // RaftDistributedNext provides exists |server_id, sent_packets| { action_categories && ... }
+        // The normal relation provides the same server witness.
         // Each action category implies the corresponding LNext branch by existential weakening.
         // The frame condition is identical. Network constraints are simply dropped.
     }
@@ -205,7 +474,8 @@ verus! {
 
     pub type RaftBehavior = Seq<RaftDistributedState>;
 
-    /// A valid Raft behavior: initial state followed by valid transitions
+    /// A valid behavior includes any finite interleaving of protocol actions
+    /// and reboots, including repeated or whole-cluster reboot sequences.
     pub open spec fn IsValidRaftBehavior(b: RaftBehavior) -> bool {
         &&& b.len() > 0
         &&& RaftDistributedInit(b[0])
@@ -255,28 +525,9 @@ verus! {
     // Committed Log Extraction
     // =========================================================================
 
-    /// Extract the committed log prefix from the distributed state.
-    /// The committed log at step i is the longest prefix of any server's log
-    /// such that every entry up to that point is backed by a majority of servers
-    /// having that entry in their logs.
-    ///
-    /// Formally: entry at index k is committed if there exists a majority quorum Q
-    /// such that for every server j in Q, j's log has length > k and j's log[k]
-    /// matches the entry. The committed log is the longest prefix of such entries.
-    ///
-    /// For safety, we use the strongest definition: the committed log is the
-    /// prefix up to the minimum commit_index among all servers that are leaders
-    /// in the current term, or we look at majority agreement on log entries.
-    ///
-    /// Simplified definition: extract from the leader's commit_index.
-    pub open spec fn GetCommittedLog(ds: RaftDistributedState) -> Seq<int> {
-        // The committed log is derived from the longest commit prefix
-        // backed by majority agreement. For well-behaved behaviors,
-        // this equals the leader's log[0..commit_index].
-        //
-        // We define it as the log prefix up to the maximum commit_index
-        // among all servers, projected through any server's log.
-        // Safety invariants ensure all servers agree on committed entries.
+    /// Extract the longest prefix currently known to be committed by any node.
+    /// This diagnostic view can shrink on reboot; it is not the refinement map.
+    pub open spec fn GetKnownCommittedLog(ds: RaftDistributedState) -> Seq<int> {
         let max_commit = MaxCommitIndex(ds);
         if max_commit <= 0 {
             Seq::<int>::empty()
@@ -288,6 +539,11 @@ verus! {
                 && ds.server_states[id].log.len() >= max_commit;
             ExtractLogValues(ds.server_states[server_id].log, max_commit)
         }
+    }
+
+    /// Abstract committed history survives the loss of local commit knowledge.
+    pub open spec fn GetCommittedLog(ds: RaftDistributedState) -> Seq<int> {
+        Seq::new(ds.committed_history.len(), |k: int| ds.committed_history[k].value)
     }
 
     /// Maximum commit_index across all servers
@@ -304,6 +560,11 @@ verus! {
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
                 vote_log_len: ds.vote_log_len,
+                configuration_commit_certificates:
+                    ds.configuration_commit_certificates,
+                log_commit_certificates: ds.log_commit_certificates,
+                election_log_len: ds.election_log_len,
+                committed_history: ds.committed_history,
             });
             if last_commit > rest_max { last_commit } else { rest_max }
         }
@@ -387,6 +648,11 @@ verus! {
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
                 vote_log_len: ds.vote_log_len,
+                configuration_commit_certificates:
+                    ds.configuration_commit_certificates,
+                log_commit_certificates: ds.log_commit_certificates,
+                election_log_len: ds.election_log_len,
+                committed_history: ds.committed_history,
             };
             assert(sub_ds.server_states.len() == ds.num_servers - 1);
             lemma_max_commit_index_eq_seq(sub_ds);
@@ -485,6 +751,11 @@ verus! {
             network: ds.network,
             num_servers: n - 1,
             vote_log_len: ds.vote_log_len,
+            configuration_commit_certificates:
+                ds.configuration_commit_certificates,
+            log_commit_certificates: ds.log_commit_certificates,
+            election_log_len: ds.election_log_len,
+            committed_history: ds.committed_history,
         };
         let rest_max = MaxCommitIndex(sub_ds);
         if last_commit >= MaxCommitIndex(ds) {
@@ -551,17 +822,17 @@ verus! {
         }
     }
 
-    /// GetCommittedLog length equals MaxCommitIndex when CommitIndexBounded holds
-    pub proof fn lemma_committed_log_len(ds: RaftDistributedState)
+    /// GetKnownCommittedLog length equals MaxCommitIndex when CommitIndexBounded holds
+    pub proof fn lemma_known_committed_log_len(ds: RaftDistributedState)
         requires
             WellFormedRaftDistributed(ds),
             CommitIndexBounded(ds),
         ensures
-            GetCommittedLog(ds).len() == if MaxCommitIndex(ds) <= 0 { 0 } else { MaxCommitIndex(ds) }
+            GetKnownCommittedLog(ds).len() == if MaxCommitIndex(ds) <= 0 { 0 } else { MaxCommitIndex(ds) }
     {
         let max_commit = MaxCommitIndex(ds);
         if max_commit <= 0 {
-            // GetCommittedLog returns empty
+            // GetKnownCommittedLog returns empty
         } else {
             // Find a server achieving max_commit with log.len() >= max_commit
             lemma_max_commit_index_witness(ds);

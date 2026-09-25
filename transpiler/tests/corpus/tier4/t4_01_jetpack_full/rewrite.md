@@ -205,7 +205,7 @@ was caught.
 ## Translation
 
 24 unprojectable parts at first measurement, **5** now. The features closed are
-recorded in `TODO.md` 55.2.z. Two of them exposed defects that were already
+recorded in `TODO.md` 58.2.z. Two of them exposed defects that were already
 shipped:
 
 - **The node-set constant was named by "the first constant with a set type".**
@@ -317,7 +317,7 @@ silently false-y under this mapping, and the write-up above said only that the
 rewrite lacked the action.
 
 Both recorded, neither fixed. The measured shape of the fix is in `TODO.md`
-55.7.
+58.7.
 
 **Anti-vacuity, run rather than asserted.** Adding an action that puts a
 different value at index 1 on one server and commits it makes
@@ -343,5 +343,5 @@ The two invariants that cannot be checked here at all are
 Not available, and the reason is the case rather than the tool. There is no
 "original" to compare against as one file: the upstream is three modules whose
 composition this *is*. The comparison that would mean something is a refinement
-mapping against the unmodified originals, which is `TODO.md` 55.5's remaining
+mapping against the unmodified originals, which is `TODO.md` 58.5's remaining
 scope and is not done.

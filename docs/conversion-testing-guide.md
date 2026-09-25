@@ -57,7 +57,8 @@ cargo run -- translate-tla \
     --input tests/tla_examples/SimpleCounter.tla \
     --output /tmp/counter.rs
 
-# With mode annotations (generates .automan file alongside output)
+# The generated spec always carries inline `// @automan` directives;
+# --gen-modes additionally writes the legacy .automan sidecar
 cargo run -- translate-tla \
     --input tests/tla_examples/SimpleCounter.tla \
     --output /tmp/counter.rs \
@@ -107,10 +108,10 @@ The 7 example files in `transpiler/tests/tla_examples/` are: SimpleCounter, DieH
 ```bash
 cd transpiler
 
-# Single file — requires spec file, annotations, and config
+# Single file — the spec carries inline `// @automan` mode directives
+# (pass --annotations only for a legacy sidecar file)
 cargo run -- \
     --input ../src/protocol/TwoPhase/twophase.rs \
-    --annotations ../src/protocol/TwoPhase/twophase.automan \
     --config ../src/protocol/TwoPhase/twophase_transpile.toml \
     --output /tmp/twophase_gen.rs
 
@@ -123,7 +124,6 @@ cargo run -- generate-types \
 # Dry run (show output without writing)
 cargo run -- \
     --input ../src/protocol/TwoPhase/twophase.rs \
-    --annotations ../src/protocol/TwoPhase/twophase.automan \
     --config ../src/protocol/TwoPhase/twophase_transpile.toml \
     --dry-run --stdout
 ```
@@ -132,7 +132,7 @@ cargo run -- \
 
 Verify the generated exec file:
 
-1. Every annotated function (from `.automan`) that is not in `skip_functions` (from config) produces a `pub exec fn C<Name>`
+1. Every annotated function (inline `// @automan` directive, or legacy `.automan` entry) that is not in `skip_functions` (from config) produces a `pub exec fn C<Name>`
 2. Each exec function has:
    - `requires` clause including validity predicates (e.g., `s.valid()`)
    - `ensures` clause referencing the original spec function: `ensures L<Name>(old(s)@, ...)`
@@ -306,13 +306,17 @@ scons --verus-path=/path/to/verus
 
 1. **Create spec files**: Write `src/protocol/MyProto/myproto.rs` with `spec fn L<Name>` functions inside `verus! {}`, and `src/protocol/MyProto/types.rs` for type definitions.
 
-2. **Create mode annotations**: Write `src/protocol/MyProto/myproto.automan` with function mode annotations. Format:
+2. **Add mode annotations**: Put a named `// @automan` directive directly above each `spec fn`:
+   ```rust
+   // @automan predicate(s_: out, c: in)
+   pub open spec fn LInit(s_: LState, c: LConstants) -> bool { ... }
+
+   // @automan predicate(s: in, s_: out, c: in, param: in)
+   pub open spec fn LAction(...) -> bool { ... }
    ```
-   module MyProto::myproto
-   LInit(+s_, +c)
-   LAction(+s, -s_, +c, +param)
-   ```
-   Use `+` for input parameters and `-` for output parameters.
+   `in` parameters are supplied to the generated function; `out` parameters are
+   synthesized from the relation. (A legacy `.automan` sidecar with positional
+   `+`/`-` modes is still accepted via `--annotations`.)
 
 3. **Create transpile config**: Write `src/protocol/MyProto/myproto_transpile.toml`. Use an existing config (e.g., `src/protocol/TwoPhase/twophase_transpile.toml`) as a template. See Appendix C of `docs/tla-rs-book.md` for all options.
 
@@ -320,7 +324,6 @@ scons --verus-path=/path/to/verus
    ```bash
    cd transpiler
    cargo run -- --input ../src/protocol/MyProto/myproto.rs \
-                --annotations ../src/protocol/MyProto/myproto.automan \
                 --config ../src/protocol/MyProto/myproto_transpile.toml \
                 --output ../src/generated/MyProto/myproto_gen.rs
    ```
@@ -407,8 +410,8 @@ If Verus rejects the generated code:
 
 | Example | Transpile | Verus Compile | Notes |
 |---------|-----------|---------------|-------|
-| SimpleCounter | ✅ | ✅ | Generates spec + automan |
-| DieHard | ✅ | ✅ | Generates spec + automan |
+| SimpleCounter | ✅ | ✅ | Generates self-annotated spec (inline `// @automan`) |
+| DieHard | ✅ | ✅ | Generates self-annotated spec (inline `// @automan`) |
 | EWD840 | ✅ | ✅ | Fixed: Set type inference, empty set annotation |
 | TwoPhase | ✅ | ✅ | Fixed: Set type inference, empty set annotation |
 | Raft | ✅ | ✅ | Fixed: string literal `@` suffix, Set type inference |
@@ -445,7 +448,6 @@ cargo run --release -- translate-tla \
 # Step 2: Verus Spec → Verus Exec
 cargo run --release -- \
     --input /tmp/<name>.rs \
-    --annotations /tmp/<name>.automan \
     --output /tmp/<name>_exec.rs
 ```
 

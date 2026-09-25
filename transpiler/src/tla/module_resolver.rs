@@ -1,4 +1,4 @@
-//! Module resolution (Phase 55.1.a): `EXTENDS` and `INSTANCE` become one module.
+//! Module resolution (Phase 58.1.a): `EXTENDS` and `INSTANCE` become one module.
 //!
 //! The parser has always recorded module composition — [`TlaInstance`] carries
 //! the local name, the module name and the `WITH` substitutions, and `V!Op`

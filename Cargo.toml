@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Rust implementation of the IronFleet verified distributed systems framework"
 license = "MIT"
-repository = "https://github.com/verus-lang/tla-rs"
+repository = "https://github.com/stonysystems/tla-rs"
 keywords = ["distributed-systems", "verification", "verus", "paxos", "consensus"]
 categories = ["algorithms", "science"]
 

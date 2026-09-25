@@ -27,6 +27,7 @@ use vstd::set::*;
 verus! {
 
 /// Initial state: empty instance slot, no commands
+// @automan predicate(s: out, c: in)
 pub open spec fn LInit(s: LState, c: LConstants) -> bool {
     &&& s.ballot == 0
     &&& s.phase is Empty
@@ -47,6 +48,7 @@ pub open spec fn LInit(s: LState, c: LConstants) -> bool {
 
 /// Propose: This replica proposes a new command (any replica can do this).
 /// Assigns a sequence number and enters PreAccepted. Sends PreAccept message.
+// @automan predicate(s: in, s_: out, c: in, value: in, sent_packets: out)
 pub open spec fn LPropose(
     s: LState, s_: LState, c: LConstants, value: int, sent_packets: Seq<LEPaxosMessage>,
 ) -> bool {
@@ -70,6 +72,7 @@ pub open spec fn LPropose(
 
 /// SendPreAcceptOk: Non-leader replica responds to a PreAccept message.
 /// Checks for local conflicts and reports back.
+// @automan predicate(s: in, s_: out, c: in, local_conflict: in, local_seq: in, sent_packets: out)
 pub open spec fn LSendPreAcceptOk(
     s: LState, s_: LState, c: LConstants, local_conflict: bool, local_seq: int, sent_packets: Seq<LEPaxosMessage>,
 ) -> bool {
@@ -92,6 +95,7 @@ pub open spec fn LSendPreAcceptOk(
 
 /// ReceivePreAcceptOk: Leader receives a PreAcceptOk response.
 /// Tracks sender in set, updates conflict and max seq info.
+// @automan predicate(s: in, s_: out, c: in, pa_sender: in, pa_seq: in, pa_conflict: in, sent_packets: out)
 pub open spec fn LReceivePreAcceptOk(
     s: LState, s_: LState, c: LConstants, pa_sender: int, pa_seq: int, pa_conflict: bool, sent_packets: Seq<LEPaxosMessage>,
 ) -> bool {
@@ -118,6 +122,7 @@ pub open spec fn LReceivePreAcceptOk(
 
 /// FastCommit: Commit on the fast path when the fast quorum agrees (no conflicts).
 /// This is EPaxos's 1-RTT fast path. Uses Set::len() for quorum check.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LFastCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LEPaxosMessage>) -> bool {
     &&& s.phase is PreAccepted
     &&& s.is_leader == true
@@ -142,6 +147,7 @@ pub open spec fn LFastCommit(s: LState, s_: LState, c: LConstants, sent_packets:
 
 /// StartAccept: Begin the slow path (Paxos-like accept phase) when conflicts detected.
 /// Uses Set::len() for quorum check.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LStartAccept(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LEPaxosMessage>) -> bool {
     &&& s.phase is PreAccepted
     &&& s.is_leader == true
@@ -165,6 +171,7 @@ pub open spec fn LStartAccept(s: LState, s_: LState, c: LConstants, sent_packets
 }
 
 /// SendAcceptOk: Replica responds to an Accept message.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LSendAcceptOk(
     s: LState, s_: LState, c: LConstants, sent_packets: Seq<LEPaxosMessage>,
 ) -> bool {
@@ -187,6 +194,7 @@ pub open spec fn LSendAcceptOk(
 
 /// ReceiveAcceptOk: Leader receives an AcceptOk response during the slow path.
 /// Tracks sender in set.
+// @automan predicate(s: in, s_: out, c: in, ao_sender: in, sent_packets: out)
 pub open spec fn LReceiveAcceptOk(
     s: LState, s_: LState, c: LConstants, ao_sender: int, sent_packets: Seq<LEPaxosMessage>,
 ) -> bool {
@@ -213,6 +221,7 @@ pub open spec fn LReceiveAcceptOk(
 
 /// SlowCommit: Commit on the slow path when a quorum accepts.
 /// Uses Set::len() for quorum check.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LSlowCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LEPaxosMessage>) -> bool {
     &&& s.phase is Accepted
     &&& s.is_leader == true
@@ -236,6 +245,7 @@ pub open spec fn LSlowCommit(s: LState, s_: LState, c: LConstants, sent_packets:
 
 /// Execute: Execute a committed command.
 /// If this replica is the command leader, send ClientReply to the requesting client.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LExecute(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LEPaxosMessage>) -> bool {
     &&& s.phase is Committed
     // State update: mark as executed
@@ -257,6 +267,7 @@ pub open spec fn LExecute(s: LState, s_: LState, c: LConstants, sent_packets: Se
 
 /// Recover: Another replica takes over recovery of a stalled instance.
 /// Bumps ballot number and re-enters PreAccepted to re-drive consensus.
+// @automan predicate(s: in, s_: out, c: in, new_ballot: in, sent_packets: out)
 pub open spec fn LRecover(
     s: LState, s_: LState, c: LConstants, new_ballot: int, sent_packets: Seq<LEPaxosMessage>,
 ) -> bool {
@@ -280,6 +291,7 @@ pub open spec fn LRecover(
 }
 
 /// NewInstance: After executing, reset to accept a new command.
+// @automan predicate(s: in, s_: out, c: in, sent_packets: out)
 pub open spec fn LNewInstance(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LEPaxosMessage>) -> bool {
     &&& s.phase is Executed
     // State update: reset to empty for next instance

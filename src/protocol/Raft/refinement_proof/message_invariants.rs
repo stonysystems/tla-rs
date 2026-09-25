@@ -1,5 +1,6 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
+use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
@@ -256,7 +257,8 @@ verus! {
         forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::AppendEntries { term: t, leader: l, prev_index,
-                                               prev_term, value, has_entry, .. } => {
+                                               prev_term, value, payload,
+                                               has_entry, .. } => {
                     &&& 0 <= l < ds.num_servers
                     &&& p.src == l
                     &&& prev_index >= 0
@@ -271,6 +273,9 @@ verus! {
                     // The entry value matches leader's log
                     &&& (has_entry ==>
                         ds.server_states[l].log[prev_index].value == value)
+                    // The tagged Data/Configuration payload also matches.
+                    &&& (has_entry ==>
+                        ds.server_states[l].log[prev_index].payload == payload)
                     // The entry's term in leader's log matches the message term
                     // (leader only sends entries from current term)
                     &&& (has_entry ==>
@@ -529,21 +534,55 @@ verus! {
     }
 
     // =========================================================================
-    // Message Invariant 12: AppendEntries Leader Commit Bound
+    // Message Invariant 12: AppendEntries Historical Commit Bound
     // =========================================================================
     //
-    // For AE packets in the network, ae_leader_commit <= leader's current
-    // commit_index. The leader sends `leader_commit: s.commit_index` at
-    // send time (LSendAppendEntries line 167). By commit_index monotonicity
-    // (commit_index never decreases), this bound is preserved.
+    // An advertisement is bounded by the history of actual commitment. A
+    // reboot can reset the sender's local commit_index while this old packet
+    // remains in the network, so current local knowledge is not a valid bound.
 
-    pub open spec fn AppendEntriesLeaderCommitBound(ds: RaftDistributedState) -> bool {
+    pub open spec fn AppendEntriesCommitHistoryBound(ds: RaftDistributedState) -> bool {
         forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::AppendEntries { leader_commit, leader, .. } => {
                     &&& 0 <= leader < ds.num_servers
-                    &&& leader_commit <= ds.server_states[leader].commit_index
+                    &&& leader_commit <= ds.committed_history.len()
                 }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
+    // Message Invariant 12b: Configuration Boundary Integrity
+    // =========================================================================
+    //
+    // A configuration entry sent at `prev_index` may not skip an earlier
+    // uncommitted configuration in the leader's prefix. Every earlier
+    // Configuration entry is below the leader_commit carried by the packet.
+    // Therefore, a follower accepting this boundary also advances its local
+    // commit index beyond any older boundary it already shares with the leader.
+
+    pub open spec fn AppendEntriesConfigurationBoundaryIntegrity(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)]
+            ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::AppendEntries {
+                    leader,
+                    prev_index,
+                    payload,
+                    has_entry,
+                    leader_commit,
+                    ..
+                } => (has_entry && payload is Configuration) ==> {
+                    &&& 0 <= leader < ds.num_servers
+                    &&& forall |index: int| #![trigger ds.server_states[leader].log[index]]
+                        0 <= index < prev_index
+                        && ds.server_states[leader].log[index].payload
+                            is Configuration
+                        ==> index < leader_commit
+                },
                 _ => true,
             }
     }
@@ -572,7 +611,7 @@ verus! {
     // LogAppendOnly proof
     // =========================================================================
 
-    /// Prove LogAppendOnly as a step property of RaftDistributedNext.
+    /// Prove LogAppendOnly for normal protocol steps.
     /// Every LNext branch either preserves the log (frame) or pushes one entry.
     pub proof fn lemma_log_append_only(
         ds: RaftDistributedState, ds_: RaftDistributedState
@@ -582,11 +621,11 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             LogAppendOnly(ds, ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],

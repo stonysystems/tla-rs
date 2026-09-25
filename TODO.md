@@ -135,7 +135,7 @@ A full verification pass emits 534 `automatically chose triggers` notes, all in 
 The Verus team raised this while evaluating tla-rs as a compatibility test target: an
 auto-chosen trigger can change between Verus releases, so a proof that verifies today can
 fail tomorrow as an uninformative `rlimit exceeded`. See
-[Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+[Phase 54](#phase-54-explicit-quantifier-triggers--complete-2026-08-05).
 
 Phases 52/53 were sequenced behind this and are no longer waiting: both are
 **COMPLETE (2026-08-04)** — eight `clean.tla` specs translate, all eight goldens pass
@@ -211,11 +211,16 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 **Next steps (priority order, updated 2026-08-04):**
 
-0. **🔝 Phase 54: Explicit Quantifier Triggers** — 534 auto-chosen triggers make our proofs
-   sensitive to Verus version changes. Raised by the Verus team while evaluating tla-rs as a
-   compatibility test target. **Do this first.** (Phases 52/53 were sequenced behind it;
-   they completed independently on 2026-08-04 and are no longer waiting.)
-   See [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+0. **Phase 55: Inline AutoMan Annotations — COMPLETE (2026-08-10).** All 16 maintained
+   sidecars migrated to named inline `// @automan` directives (188 declarations); byte-identical
+   output proven per protocol before migrating; sidecar form still accepted everywhere; the
+   TLA pipeline now emits self-annotating specs. Found and fixed a pre-existing
+   nondeterminism bug on the way (the transpiler picked an empty-map lemma by HashMap
+   iteration order — same command, same input, different output run to run).
+   See [Phase 55](#phase-55-inline-automan-annotations-in-verus-spec-files--complete-2026-08-10).
+
+   *Phase 54 (explicit quantifier triggers) completed on 2026-08-05 and no longer holds this
+   slot: 534 → 0 notes, 0 warnings, with a ceiling of 0 enforced in CI.*
 
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
@@ -17392,7 +17397,13 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
 
 ---
 
-## Phase 54: Explicit Quantifier Triggers — 🔝 TOP PRIORITY (current work)
+## Phase 54: Explicit Quantifier Triggers — **COMPLETE 2026-08-05**
+
+> 534 auto-chosen trigger notes → **0**, and 0 warnings, on the pinned
+> `0.2026.08.02.b677dd5` (`1048 verified, 0 errors`). `reports/triggers/ceiling.json` holds the
+> result at `max_notes: 0` with `enforce: true`, so a new unannotated quantifier fails the
+> build rather than quietly regrowing the count. The three unchecked boxes below are
+> struck-through — superseded or deliberately not chosen — not open work.
 
 ### Background (2026-08)
 
@@ -17573,47 +17584,6 @@ they are the honest remainder of the "not mechanical" warning in this phase's pr
       The timing half reuses `verus_timing.py diff --max-regression-pct 20
       --fail-on-regression`, skipped with a message until `reports/triggers/timing-baseline.json`
       exists. 21 new tests, incl. a guard that an `enforce=true` ceiling must carry a number.
-
-- [ ] **55.7 — reconfiguration is requested and never applied, and the
-      refinement mapping does not speak upstream's vocabulary (2026-08-13).**
-      Two findings, one measured fix, not yet applied.
-
-      **(a) The mapping's tags do not match upstream's.** The rewrite writes
-      `InitClusterCommand == "initCluster"`; upstream writes
-      `"InitClusterCommand"`. `O!IsConfigCommand` is evaluated inside the
-      INSTANCE, against upstream's strings, so it is false on every mapped
-      entry. Confirmed by probe: an invariant asserting no entry is a config
-      command survives 1.8M states, where `FirstEntry`'s own
-      `InitClusterCommand` would refute it in the *initial* state if the
-      spellings matched. This is a defect in the refinement module, not in the
-      rewrite, and it was reported as "the rewrite lacks the action" alone.
-      `NoLogDivergence` and `CommittedLogAgreement` are unaffected — they
-      compare entries against each other and mention no upstream constant.
-
-      **(b) `AppendPendingReconfigToLog` was dropped**, so `RequestReconfig`
-      sets `pendingReconfig` and nothing consumes it.
-
-      The fix was designed and measured end to end and has three parts. What
-      the measurement showed is why it is not one:
-
-      - the type problem **dissolves** — `Entry.command` already lists the
-        config tags and `IsConfigCommand` never reads `.value`, so the entry
-        appends with the sentinel `FirstEntry` already uses. No type change,
-        no new translator gap, composition still lints clean;
-      - adding the action *alone* leaves it **dead**: the state space closes
-        25% smaller and coverage goes 34/34 -> 34/35, because upstream's guard
-        (a leader may not reconfigure until it has committed an entry of its
-        own term) cannot be met at `MaxLogLen = 2`;
-      - **the vacuity was hiding a second fidelity gap.** Without that guard,
-        `MaxOneReconfigurationAtATime` is *violated at depth 10* — the rewrite
-        permits two uncommitted config entries. With guard + tags + upstream's
-        Init shape, the action fires at depth 3 and the probes refute
-        properly.
-
-      Not applied: the adversarial check of that plan had not returned. The
-      plan also reports two further latent translator defects it hit on the
-      way, of the same "a pass gated on a node property degrades silently just
-      outside the gate" shape as the rest of this phase.
 
 ### Acceptance — status 2026-08-05
 
@@ -17989,7 +17959,7 @@ value per hour, not by phase number:
       a strong check that the trigger semantics really are unchanged.
 
       Original 54.16 text follows.
-      
+
       Surfaced by 54.10; see the amendment on 54.4. The 5 are the injectivity axioms
       `axiom_endpoint_view` (`io_s.rs:123`), `axiom_cmessage_view`/`axiom_cpacket_view`
       (`cmessage.rs:222,294`), `axiom_cvote_view`/`axiom_clearner_tuple_view`
@@ -18238,364 +18208,282 @@ Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can be
 
 ---
 
-## Phase 55: Faithful Jetpack — three modules, refinement-checked
+## Research Appendix: Raft Dynamic Membership via Joint Consensus
 
-**Goal (as asked, 2026-08-05):** rewrite **all three** Jetpack modules —
-`jetpack.tla`, `base_raft.tla`, and the composition — into the clean subset, so
-the output is three files that each satisfy the TLA+ → tla-rs input contract,
-and establish that the rewrite is **equivalent to the original**, ideally by
-formal proof rather than by assertion.
+Branch `adi/raft-membership-change`. Adds membership changes to the Raft protocol as tagged
+log entries, with election and commit quorums derived from the active membership phase, and
+proves safety of the resulting system.
 
-New corpus tier: `transpiler/tests/corpus/tier4/t4_01_jetpack_full/`.
+### Design
 
-### Why this exists
+- **Phases**: `Stable { config }` and `Joint { old_config, new_config }`. A quorum is a
+  majority of `config`, or a majority of *both* configs during a joint phase
+  (`is_quorum_for_phase`, `src/protocol/Raft/membership.rs`).
+- **Membership lives in the log**: log payloads are tagged `Data { value }` or
+  `Configuration { phase }`. The active phase is derived by scanning a log prefix for the
+  last `Configuration` entry (`active_membership_phase_from_raft_log`).
+- **Commit quorums** use the phase from the server's *committed* prefix; **election quorums**
+  use the phase from the candidate's *entire* log, so a candidate never campaigns under a
+  configuration older than one it already carries. Confirmed as intended behaviour by Zihao.
+- **Commit boundaries**: one commit advancement may batch `Data` entries but must stop at the
+  first `Configuration` entry, so a quorum computed under an old configuration cannot skip
+  several membership changes.
+- **Ghost certificates**: `ConfigurationCommitCertificate` / `LogCommitCertificate` record,
+  per committed log index, the entry, the committer, the governing phase, and the quorum.
+  These are proof-only; they do not affect wire messages or runtime state.
 
-`t3_01_jetpack` is a **slice**, and an inherited one. Its `rewrite.md:42` says
-"Phase 51's R1, unchanged" — the scope was taken from Phase 51's partial
-hand-written spec so the two could be compared, which was a *convenient* choice
-and not an argued one. Measured against `jetpack.tla`:
+### Verification evidence
 
-- **variables 22 → 11**;
-- **fast path entirely absent** — `grep -ci preaccept clean.tla` = 0 against 15
-  in the original, and `FastpathQuorum` = 0. Jetpack's paper is *"Consensus Made
-  Generally Fast"*: the fast path is the contribution, the recovery layer is the
-  fallback. We translated the fallback;
-- `ClientSendPreaccept`, `HandlePreacceptRequest/Response`, `Resubmit`,
-  `CompleteResubmit`, `HandleFinishRecovery` all dropped;
-- and **no V2 evidence at all** — the slice shares no observable with the
-  composition module, so the fidelity comparator cannot run on it.
+- Latest Verus version: **0.2026.08.02.b677dd5**.
+- Selected ten-module regression: **192 verified, 0 errors**, with
+  `--triggers-mode silent`.
+- Full `src/protocol/Raft/refinement_proof/invariants.rs` module:
+  **212 verified, 0 errors**.
+- Full `src/protocol/Raft/refinement_proof/induction.rs` module:
+  **3 verified, 0 errors**.
+- No `assume`/`admit`/`external_body` was added by the membership proof cleanup.
+  The inherited Phase 34 assumptions remain outside the active committed-history chain.
 
-### Three blockers, all verified before planning (2026-08-05)
+### Proved unconditionally at behavior level
 
-- [ ] **55.0.a — the frontend resolves neither `INSTANCE` nor local `EXTENDS`.**
-  Verified twice: `grep TlaInstance` finds nothing in `clean_subset.rs`,
-  `projection.rs` or `action_projection.rs`; and a two-module probe where
-  `Comp.tla` does `EXTENDS Base` fails with *"cannot identify the node set"*
-  because `BaseStep` is invisible. Linting `t3_01_jetpack/original.tla` says the
-  same, and now reports **"3 of 5 implemented rules did not run"**.
-  **Consequence: "three files that each pass the linter" is not reachable
-  today.** Either the frontend learns module composition, or the three files are
-  *authored* separately and *checked* flattened. Decide before writing.
+- Quorum-overlap lemmas cover every legal `Stable -> Joint -> Stable` progression.
+- Election and commit actions use membership phases derived from the Raft log.
+- Commit advancement stops at each Configuration boundary.
+- Every committed physical log position is tied to one global
+  `LogCommitCertificate`.
+- **Committed histories never conflict**: if two reachable servers have committed the
+  same physical log index, their entries at that index are equal
+  (`lemma_dynamic_membership_committed_histories_are_safe`).
+- The active safety invariant is established at initialization, preserved by every
+  `RaftDistributedNext` case, and lifted to all reachable behavior states.
 
-- [ ] **55.0.b — "formal proof of equivalence" cannot mean TLAPS here.**
-  `tlapm` is not installed, and proving refinement from a shared-memory
-  composition to a message-passing rewrite is a research-scale obligation, not a
-  session's work. **What is reachable, and is strictly stronger than today's V2:**
-  a **refinement mapping** plus `TLC` checking `Spec => Original!Spec` under it.
-  That checks *behaviour containment*, where the current V2 only compares
-  reachable state sets — and V2's known blind spot is exactly this: deleting
-  `RMChooseToAbort` from 2PC still reports EQUAL. Refinement would catch it.
-  State plainly in the write-up that this is model-checked refinement, not proof.
+### Deliberately retired stronger claims
 
-- [x] **55.0.c — WITHDRAWN. Q2 does NOT collide with Jetpack's views**
-  (corrected 2026-08-05). This item originally read *"Q2 collides with Jetpack's
-  core … cannot be resolved by working harder; it needs a decision."* **That was
-  wrong**, asserted from the intuition "views = reconfiguration = excluded by
-  Q2" without checking the spec. Four checks, all pointing the other way:
+The active dynamic invariant no longer includes the repository's global
+`LogMatching` property for arbitrary uncommitted suffixes. With changing membership,
+a removed stale group can produce uncommitted histories that do not satisfy that
+all-server property, even though it cannot form a valid current commit quorum.
 
-  | checked | result |
-  |---|---|
-  | is `Server` a constant? | **yes** — `CONSTANTS Server, ...`, and `Server'` appears **0 times** across all three modules |
-  | what is `replica_ids`? | `SUBSET Server`, carried inside `new_view[i]` |
-  | does any action read another node's view? | **no** — every occurrence is `new_view[i]` / `old_view[i]` at the acting node |
-  | what does `WRequestReconfig` mutate? | `config[i].members` → `old_view[i]`, `new_view[i]`, `jepoch[i]` — all per-node |
+The former Configuration and all-entry Dynamic Leader Completeness theorems depended on
+that stronger property to transfer a quorum member's entire prefix into every later
+leader. Those behavior-level claims and their fixed-majority compatibility proof chain
+were removed from the active proof. Re-establishing them is follow-up work requiring a
+scoped acknowledged-prefix invariant (or a protocol rule that prevents stale leaders),
+not part of the committed-history safety theorem.
 
-  Q2 excludes the **node set itself changing over time**, which would stop
-  `Node` being a constant. Jetpack instead has each node hold *its own opinion
-  of who is currently a member*, drawn from a fixed `Server`. That is ordinary
-  per-node state — no different in kind from Raft's `votedFor` — and it
-  satisfies C1, C2 and Q2 as written. Quorums count over
-  `new_view[i].replica_ids`, which is the acting node's own data, so P4 applies
-  with the counting base being a per-node subset rather than the constant.
+### Remaining trust and implementation boundaries
 
-  **Consequence: views can be modelled faithfully, and the subset contract does
-  not need revising.** One decision fewer, and the faithful rewrite is
-  materially more reachable than 55.0.c claimed.
+- The repository's inherited Phase 34 `assume` sites remain in legacy compatibility
+  helpers, but the behavior-level committed-history theorem does not call that chain.
+- Generated structural clone helpers are now verified; no membership clone
+  `external_body` remains.
+- Native Configuration serialization is still a compatibility encoding and is not
+  production-ready.
 
-### Plan
+### Practical verification notes
 
-- [x] **55.1 — DECIDED (2026-08-05): option A, the frontend learns module
-      composition.** Chosen over "author three files, check them flattened"
-      because the repo will hit multi-module specs again (EPaxos, any
-      composition), and a flattening script would be a second thing to keep
-      correct.
-      **It is smaller than the 300–500 lines estimated in 55.0.a.** The *parsing*
-      side already exists and was never wired up: `TlaInstance { local_name,
-      module_name, substitutions, is_local }` is populated (`parser.rs:399`),
-      `V == INSTANCE Foo WITH p <- e` is recognised as a definition whose RHS is
-      not an expression (`parser.rs:201`), `V!Op` parses into `Ident("V!Op")`
-      with the qualified name kept whole (`parser.rs:833`), and `EXTENDS` names
-      land in `module.extends`. **Nothing loads the referenced file.** So the
-      work is a resolver, not a parser change.
-  - [x] **55.1.a — DONE (2026-08-05).** `src/tla/module_resolver.rs` — given a root `.tla`, load
-        `EXTENDS` and `INSTANCE` targets from the same directory and return one
-        flattened `TlaModule`. `EXTENDS Foo` merges unprefixed; `V == INSTANCE
-        Foo` merges Foo's operators as `V!name` with `WITH` substitutions
-        applied and Foo-local references rewritten to the prefix; Foo's
-        variables and constants are *shared* with the parent, which is what
-        makes the Jetpack composition work at all. Skip the standard modules
-        (`Integers`, `Sequences`, `FiniteSets`, `TLC`, `Naturals`, `Bags`), and
-        detect cycles.
-  - [x] **55.1.b — DONE (2026-08-05).** Wired into `tla-lint`; guarded by
-        `tests/module_resolution_test.rs` (7 tests).
+- Use Verus directly; ordinary `cargo check` does not understand the `verus!` model.
+- Report selected-module, full-module, and focused-function results separately.
+- Use `--triggers-mode silent` so CI does not receive automatic-trigger notes.
+- The legacy `LogMatching`, fixed-majority Leader Completeness, and related helper
+  definitions remain as historical compatibility material, but they are not conjuncts
+  of `RaftSafetyInvariant` and their obsolete induction bodies are not part of the
+  active module.
 
-  **Result: Jetpack's real clean-distance is 15, not 2.**
+### Native serialization gap
 
-  *(First measured as 46. That was inflated by a second bug found immediately
-  afterwards — see 55.1.c. 15 is the number after both fixes.)*
+Logical and generated replication carry `Configuration` payloads, but the native serializer
+still uses a compatibility encoding that writes the legacy scalar `value` instead of the full
+membership phase and server vectors. Out of scope for the proof work; required before any
+real deployment of membership changes.
+## Phase 55: Inline AutoMan Annotations in Verus Spec Files — **COMPLETE 2026-08-10**
 
-  | | before | after |
-  |---|---|---|
-  | node set | *unidentifiable* | `Server` |
-  | violations | 2 | **15** |
-  | by rule | C4 1, C5 1 | **C1 11**, C4 1, C5 3 |
-  | rules that ran | 2 of 5 | **5 of 5** |
-  | per-node variables found | 0 | 21 |
+Tracking issue: [#4](https://github.com/stonysystems/tla-rs/issues/4). Branch:
+`feature/inline-automan-annotations`.
 
-  C1, C2 and C3 went from *not running at all* to running. The count was quoted
-  in three documents before anyone could see through `INSTANCE`.
+> **Done, all five stages.** 55.1 parser + model; 55.2 byte-identical parity proven for all
+> 16 maintained sidecars (`phase_55_2_inline_migration_parity_all_protocols`); 55.3 CLI
+> (`--annotations` optional), library (`transpile_file_auto`), and build discovery; 55.4 the
+> real migration — 188 declarations moved inline, sidecars deleted, `migrate-inline`
+> subcommand does the mechanical work; 55.5 the TLA pipeline embeds inline directives into
+> generated specs (sidecar behind `--gen-modes` / `--keep-intermediate`; the clean-subset
+> stop keeps its documented spec+sidecar pair). 2732 tests green.
+>
+> **Where reality corrected the plan:**
+> - *"Predicates need at least one output" was false.* The sidecar grammar never enforced
+>   it and the maintained sidecars contain 15 all-input predicates (pure validity checks
+>   like `IsLogTruncationPointValid(+, +, +)`). The inline grammar accepts them.
+> - *The parity test caught a real nondeterminism bug.* `translator/mod.rs` picked the
+>   empty-map/push-commute helper lemma via `HashMap::keys().next()`; with two same-typed
+>   struct-vec fields (RSL election) the same command produced different — both verifying —
+>   outputs run to run. Fixed with `keys().min()`. The checked-in `election_gen.rs` carries
+>   a 2/6 mix of both lemmas from years of such runs; the next RSL regeneration through the
+>   merge will settle it on the lexicographic minimum.
+> - *55.5 was cheap, not risky.* Reusing the proven migrator on the generated sidecar text
+>   (`embed_inline_annotations`) made the two emission forms equivalent by construction.
+>
+> **Measured, 2026-08-10 (corrected the same day): the body-level merge works —
+> with the preserve list.** The first attempt ran `merge_generated.py` without
+> `--preserve` flags and concluded the merge was broken; all three observed
+> failures (a method landing outside its callers' convention, a lost lemma
+> definition, 2 trigger notes returning) were artifacts of fresh bodies
+> replacing the hand-verified in-both functions the preserve list exists to
+> protect. Rerun with `--preserve` drawn from `scripts/rsl_merge_preserve.txt`:
+> learner byte-identical, and executor/election/proposer/replica total a
+> 31-line diff — import ordering plus `result@` → `result as int` — with the
+> whole crate at `1048 verified, 0 errors, 0 warnings, 0 notes` and the dylib
+> compiling. Landed.
+>
+> Two tooling defects found and fixed on the way: `regenerate_rsl.sh`'s
+> function inventory grepped `^pub exec fn` and missed every indented impl
+> method, making both its report and one earlier "Validation PASSED" vacuous;
+> and the script never printed the merge invocation the book describes. It now
+> prints the exact `merge_generated.py` command with preserve flags, runs
+> `check_merge_body_drift.py` itself, and keeps the fresh dir alive when a
+> merge is pending. The election 2/6 lemma mix persists inside preserved
+> bodies — normalizing it still waits on codegen emitting the ~53 hand-added
+> triggers (Phase 54's prescription), which is also what would let those
+> functions return to fresh authority.
+>
+> The original plan below is kept for the record.
 
-  - [x] **55.1.c — two further bugs, both found by distrusting the new number.**
-        46 looked too large, and the error text gave it away: *"reads `jepoch[i]`
-        … a node can only read `jepoch[m]`"*, where `m` is a **message**.
+### Motivation
 
-    1. **The node parameter was seeded from every `\E` binder in `Next`**, with
-       no check that the binder ranges over the node set. So
-       `\E m \in DOMAIN messages : ServerReceive(m)` declared the *message* to
-       be the acting node, and every legitimate `jepoch[i]` in the handlers
-       below it read as a cross-node access. That accounted for **all 31 C2
-       findings, every one false**. Jetpack's composition has **no cross-node
-       reads at all** — each handler reads only its own node's state.
-    2. **`INSTANCE` implicit substitution was not honoured.** TLA+ substitutes a
-       declared name of the instantiated module with a same-named *definition*
-       in the instantiating module; a `WITH` clause is not required. `Consensus`
-       declares `VARIABLE chosen` and `Voting` substitutes it with
-       `chosen == {v \in Value : ...}`. Reading only `WITH` made `chosen` a
-       variable of Paxos, and C1 reported a global that does not exist —
-       Paxos drifted 1 → 2 until this was fixed.
+Mode annotations live in `.automan` sidecars, one per spec file. The pairing is positional and
+unchecked:
 
-    **And a correction to the record.** Commit `07efeca7` claimed EPaxos
-    re-measured 3 → 4 and that "the C2 finding it was hiding is a real
-    cross-node read of `crtInst[cleader]`". **That was wrong** — the finding was
-    a false positive from bug 1, which the same commit introduced. EPaxos is
-    back to **3, all C1**, and the manifest is re-pinned. The lesson is the one
-    this phase keeps re-learning: a number that moves in the direction you hoped
-    deserves *more* scrutiny, not less.
+```text
+src/protocol/Raft/raft.automan:6    LInit(-, +);
+src/protocol/Raft/raft.rs:12        pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+```
 
-    Also fixed here: `t0_01_simple` now correctly reports **2**, the new finding
-    being `Terminating`'s read of every node's `pc` with no node parameter —
-    which the case's own golden header already described as *"one node cannot
-    observe that, so the guard is not projectable"*. That hole was flagged in
-    the merge review and is now closed by the same fix.
+`(-, +)` binds to `(s, c)` by position alone. Nothing links the two files, so a parameter
+rename, a reorder of same-typed parameters, or an inserted parameter changes the synthesis
+interface silently. `LGrantVote(+, -, +, +, +, +, +, -)` is eight positions with no names.
 
-  - [x] **A tokenizer bug found on the way.** `base_raft.tla` defines
-        `_SendNoRestriction`, and TLA+ allows an identifier to begin with `_`.
-        52.M0.0.b had made `_` unconditionally its own token so `[Next]_vars`
-        would scan correctly — right about the subscript, wrong about
-        identifiers, and it made the whole module unparseable. `_` is now the
-        subscript operator only after `]` or `>>`. Both directions are pinned by
-        tests.
-- [x] **55.2 / 55.3 / 55.4 — the three modules are written and the composition
-      is CLEAN (2026-08-05).** `tests/corpus/tier4/t4_01_jetpack_full/`:
-      `base_raft_clean.tla` (400 lines), `jetpack_clean.tla` (~570),
-      `jetpack_raft_clean.tla` (~250). `tla-lint` on the composition:
-      **clean, node set `Node`, 34 per-node variables** — the first genuine
-      multi-module TLA+ composition to pass the subset.
-      Structure mirrors the original: the two layers are **library modules**
-      with no `Init`/`Next`, INSTANCEd by the composition. Linting a library
-      alone reports "no next-state relation", which is correct — a library is
-      not a spec, and the file headers say so.
-      **Kept, against `t3_01_jetpack` which dropped all of it**: the fast path
-      (Preaccept, client quorum counting, Resubmit), the base protocol, views
-      and reconfiguration, and the client layer.
-      Decisions: one node set `Node == Server \cup Client` with both roles'
-      state per-node and actions guarded by role (`t1_02_twophase`'s
-      transaction-manager pattern); `FastpathQuorum` replaced by the closed
-      form from 55.3.a; response tables replaced by responder sets plus online
-      aggregation. Still not faithful, each with a reason in the header: the
-      message bag is a set (no duplication), the four counters are per-node,
-      and execution tracking is absent as a history variable.
-  - [x] **A second half of 55.1.b that had been missed.** The resolver was
-        wired into `tla-lint` only, not `clean-tla`. It surfaced as *"element
-        type could not be read off a declaration"* for **every** variable — the
-        declarations were in modules the translator had never loaded. Wiring it
-        took the composition from **71 unprojectable parts to 29**, then to 22
-        after three variables missing from the type invariants were declared.
-  - [ ] **55.2.z — 24 gaps -> 5 (2026-08-07).** Four features closed, and two
-        of them turned up defects that were **already shipped**:
-    - [x] tables and broadcasts over a set that is not the node set — 12 gaps.
-          Doing it exposed that `project_node_set` named the node-set constant
-          by "the first constant with a set type", which is right only when the
-          spec has one. Paxos declares `CONSTANT Value, Acceptor, MaxBallot`,
-          so `{ Msg1a(s, d, b) : d \in Acceptor }` was frozen in a **green**
-          case's golden as `c.value.map(..)` — 1a broadcast to the set of
-          *values*. V1 typechecks (both are `Set<int>`), V2 never looks at the
-          golden, V3 froze the wrong answer as the reference.
-    - [x] anonymous record types — 4 gaps. A type invariant may state a record
-          inline rather than through a named operator; nameless records were
-          dropped, so nothing declared them.
-    - [x] `DOMAIN` — 1 gap.
-    - [x] receive handlers reached through a dispatcher — 1 gap. A composed
-          spec writes `\E m \in msgs : Receive(i, m)` and puts the real
-          handlers in `Receive`'s body; the resolver stopped at `Receive`, so
-          `m.mentries` had no type, and a field's type is what decides whether
-          indexing it loses one.
-    - [x] **operator inlining substituted parameters in sequence**, so a later
-          parameter captured an identifier an earlier substitution introduced.
-          `PreacceptReq(s, d, e, c)` called with `e := clientEpoch[c]` and a
-          fourth parameter named `c` produced `mepoch |-> clientEpoch[cmd]`
-          *and* `msource |-> cmd` — a message sent from the wrong node, which
-          would have verified. Only the first half errored, which is the sole
-          reason it was found. Substitution is now simultaneous, with binder
-          shadowing handled per name.
-    - [ ] remaining 5: `CASE` on the right of an update; a range as a
-          quantifier domain (`1 .. Len(log[i])`); nested `EXCEPT` over a
-          per-node map (`cmdPool[i]`); a `LET` whose definitions feed several
-          updates; a multi-binder set comprehension in a send.
-- [ ] **55.2-old** `base_raft_clean.tla` — the base protocol as a standalone clean
-      module. Closest existing reference is `t2_01_raft/clean.tla`.
-- [x] **55.3.a — the open question is answered: `FastpathQuorum` IS
-      node-computable, so P4 applies and the fast path is projectable**
-      (2026-08-05). The definition is second-order — it quantifies over every
-      other quorum:
+The measured hazard is not hypothetical. Annotations are matched by bare function name;
+`module_path` is parsed into `ModuleAnnotations` (`annotation/mod.rs:21`) and then never read
+outside tests. **`LInit` is declared in nine protocol sidecars** — ChainReplication, EPaxos,
+LeaderElection, PBFT, Paxos, PrimaryBackup, Raft, TwoPhase, VerticalPaxos — and `LNodeFail`
+and `LReconfigure` collide too. Nothing has broken yet only because transpilation runs one
+protocol at a time. Binding annotations to the parsed item instead of a global name lookup
+removes the class.
 
-      ```
-      FastpathQuorum(v) == {q \in JQuorum(v) :
-          /\ v.proposing_replica_ids \subseteq q
-          /\ \A q2 \in JQuorum(v) :
-               v.proposing_replica_ids \subseteq q2 => (q \cap q2) \in JQuorum(v)}
-      ```
+### Scale (measured, `git ls-files`)
 
-      but it **collapses to a first-order test**. Writing `P` for
-      `proposing_replica_ids` and `n` for `|replica_ids|`:
+| Scope | Sidecars | Declarations |
+|---|---|---|
+| `src/protocol/` | 16 | 188 (174 predicates + 14 helpers) |
+| Whole repo | 54 | 465 (385 + 80) |
 
-      | condition | fast quorums |
-      |---|---|
-      | `|P| * 2 > n` | every majority containing `P` |
-      | otherwise | **only the full replica set** |
+### Chosen form
 
-      Verified by brute force against the literal definition over **all 1,022
-      `(n, P)` combinations for `n ≤ 9`** — zero mismatches. So a replica can
-      evaluate it with a subset test plus a count, which is exactly P4's shape:
+A tagged ordinary comment immediately preceding the function, with **named** modes:
 
-      ```
-      IsFastQuorum(q) ==
-        /\ P \subseteq q
-        /\ IF Cardinality(P) * 2 > Cardinality(Replicas)
-             THEN Cardinality(q) * 2 > Cardinality(Replicas)
-             ELSE q = Replicas
-      ```
+```rust
+// @automan predicate(s: out, c: in)
+pub open spec fn LInit(s: LState, c: LConstants) -> bool { ... }
 
-      **This means the `t3_01_jetpack` slice dropped the fast path
-      unnecessarily** — not because it was unprojectable, but because it was
-      never attempted. That is the outcome the acceptance criterion named as
-      most useful, and it is now established before any rewriting.
+// @automan helper(s: in, requests: in, limit: in) -> Seq<CPacket>
+pub open spec fn packets_for_requests(...) -> Seq<RslPacket> { ... }
+```
 
-      Worth noting for the Raft composition specifically: it instantiates
-      `Proposer <- {"sole"}`, so `|P| = 1`; at 3 servers `1*2 = 2 ≤ 3`, which
-      lands in the second row — **the fast path there requires unanimity**. Any
-      TLC model must be sized so that branch is actually exercised.
+Named parameters are the point: unknown, missing, and duplicate names become errors, so a
+rename or a same-typed reorder cannot silently change meaning. `in`/`out` spell the existing
+`+`/`-`; accept `+`/`-` positionally as a migration-only compatibility form.
 
-- [ ] **55.3** `jetpack_clean.tla` — recovery **plus the fast path**
-      (`Preaccept`, the client-side counting, `IsFastQuorum` as derived above).
-- [ ] **55.4** `composition_clean.tla` — however 55.1 resolves module structure.
-- [x] **55.5 — the composition is model-checked (2026-08-07).** Java
-      reinstalled (Temurin JRE 21, to `$HOME`, no sudo on this box). TLC found
-      **six defects**, every one in the new spec rather than in the tool:
+Keep the explicit `predicate`/`helper` kind — an all-input predicate returning `bool` is
+indistinguishable from a boolean helper. Keep the optional `-> Type` override: production RSL
+annotations deliberately map a logical return type to a concrete generated one, and that
+information is not recoverable from the Rust signature.
 
-      1. two **unclosed comments** — TLA+ comments nest, and our frontend is
-         more permissive than SANY, so nothing had reported them;
-      2. `NilCmd \notin Command`, so `TypeOK` failed in the *initial* state;
-      3. `UpdateTerm` read `m.mterm` off any message — C4 gives the composition
-         ONE network, and it now carries Jetpack's messages too;
-      4. `BecomeToBeLeader` both assigned `ostate'` and listed `ostate` in
-         UNCHANGED. Unsatisfiable, so **no node could ever become leader** and
-         24 of 34 actions never fired. 2,591 states became 6.5M;
-      5. `LeaderHasRecovered` was **mis-stated and the spec was right**: a
-         leader receiving a BeginRecoveryRequest re-enters Recovery as a
-         *participant*, and upstream's handler adopts the incoming view with no
-         epoch guard. Restated as the action property the composition actually
-         guarantees;
-      6. an **empty initial log**. Upstream's Init gives every member
-         `<<firstEntry>>` and sets the leader's `nextIndex` to 2; mine started
-         empty, and `LogOk` rejects any request carrying entries at
-         `prevLogIndex = 0`, so the first entry could never be replicated and
-         `AdvanceCommitIndex` was unreachable.
+**Not a Rust attribute.** The blocker is ours, not Verus's: `try_parse_spec_fn`
+(`parser/mod.rs:185-214`) matches from `pub`/`open`/`spec`/`fn` and has no attribute handling,
+so an item starting with `#[...]` falls through to `skip_item()` and the function disappears
+from transpilation entirely. Issue #4 also records that the pinned Verus rejects unregistered
+`#[automan(...)]` and that tool-attribute registration is unstable on stable rustc.
 
-      **Result, on the current files: 17,570,820 distinct states, depth 73,
-      state space closed, no violation** of TypeOK, Consistency,
-      OneLeaderPerTerm or the action property, with **34 of 34 actions
-      covered**. A second closed model (`MaxRestarts = 0`) agrees at 717,249
-      states; a third at a larger message bound explored 33.7M states to depth
-      55 without a counter-example and was killed by the OOM killer rather than
-      finishing -- listed as bounded evidence, not as a check.
-      `clean.cfg` is the model that closed with full coverage.
+### Staging — land 55.1 first, decide on the rest afterwards
 
-      Defect 4 is now guarded permanently by
-      `tests/corpus_wellformed_guard.rs`, which walks the parsed body so that
-      `\/ grant /\ v' = .. \/ ~grant /\ UNCHANGED v` — correct, and what
-      upstream Raft writes — is not reported.
+The work splits at a natural seam. 55.1 is additive and self-contained: `.automan` stays the
+only source of truth, no protocol file changes, and the new path is exercised only by tests. If
+55.2+ never happens, nothing is left half-migrated.
 
-      **Coverage is the check that found 4 and 6, not the invariants.** Both
-      specs passed every invariant while most of the protocol was unreachable.
-      A methodological note that cost an hour: TLC prints its coverage table at
-      *every* progress report, cumulatively, so aggregating across reports lets
-      the zeros from the first one win. Read only the final table.
+Everything downstream of the parser already consumes `FunctionAnnotation` / `ParameterMode`
+(`annotation/mod.rs:30`), so the inline path only has to produce the same structs. The mode
+analyzer and every generator stay untouched.
 
-      The refinement mapping against the unmodified originals is **not done** —
-      this item's original scope. What exists is the composition checked
-      against its own invariants.
-- [x] **55.6 — the composition translates (2026-08-11).** `clean-tla` emits it
-      with **no gaps**; six were closed, and closing them exposed **eight
-      further defects that Verus rejected**, every one real and every one
-      previously hidden behind the gap. Two were live before this branch: a
-      second `match` arm for a variant is unreachable, so a spec with two
-      handlers on one tag was silently dropping one; and a receive guard naming
-      a *set* of tags had no dispatch at all. See the commit for the list.
+#### 55.1 Parser + model (do this first)
 
-      **One Verus error remains and no golden is frozen.** It is not a type
-      error: `AdvanceCommitIndex` binds `\E k \in 1 .. Len(log[i])` and indexes
-      `s.log[k - 1]`, and Verus will not infer a trigger from a term containing
-      arithmetic. CLAUDE.md's extra-binder workaround does not apply as written
-      -- a trigger must cover every bound variable, and after moving the offset
-      out `k` appears only in comparisons. The fix is to re-index the quantifier
-      onto the sequence's own 0-based domain, in the projection rather than by
-      string surgery on the emitted text.
+- `skip_whitespace_and_comments` (`parser/mod.rs:2215`) currently discards line comments via
+  `skip_until_pattern("\n")`. Record a comment matching exactly `// @automan ` into a
+  `pending_annotation: Option<(String, usize)>` field on the parser (text + line, for
+  diagnostics) instead of dropping it. Any other comment clears the field.
+- After `try_parse_spec_fn` succeeds, consume the pending marker, resolve named modes against
+  the just-parsed parameter list, and attach a `FunctionAnnotation`.
+- Reject: unknown / missing / duplicate parameter names, arity mismatch, a predicate with no
+  output, a helper with a non-input parameter, a marker with no following `spec fn`, two
+  markers on one function. Every diagnostic carries file and line. **A tagged directive must
+  never be silently ignored** — that failure mode is what the sidecar has today.
+- Unit tests only. No `.automan` file changes, no CLI changes.
 
-- [x] **55.5.b — checked against the ORIGINAL's own safety properties
-      (2026-08-11).** `tests/corpus/tier4/t4_01_jetpack_full/jetpack_refinement.tla`
-      INSTANCEs the unmodified upstream composition under an explicit mapping
-      and checks *its* invariant definitions, not retyped copies.
-      **34,718,400 distinct states, depth 73, closed, no violation.**
+#### 55.2 Equivalence proof
 
-      Two findings worth more than the pass:
+- For each of the 16 maintained sidecars, mechanically derive the inline form and assert the
+  transpiler produces **byte-identical** output from either input.
+- The safety net already exists: 18 `regen_matches_checked_in` tests across 9 protocols
+  (`transpiler/tests/`), plus 2349 `#[test]` total. This is what makes the migration provable
+  rather than reviewable, and it is the reason to attempt it at all.
+- RSL is deliberately excluded from those parity tests — its checked-in generated files carry
+  the hand-written bodies of its 36 `skip_functions` entries and are produced through
+  `scripts/regenerate_rsl.sh` + the merge preserve list, not `regenerate_all.sh`. Verify RSL
+  through the merge path and `scripts/check_merge_body_drift.py`; do not add it to the parity
+  tests. See `docs/rsl-skip-functions.md` and Ch.19 of the book.
 
-      - **Upstream's `CommittedLogAgreement` is vacuous.**
-        `limit == Min({ci, ci2} \cup {0})` is always 0, so `\A k \in 1..limit`
-        compares nothing. Confirmed by evaluation. It is the first of the five
-        properties in upstream's `Safety`. The vacuity was not hiding a bug:
-        corrected, the original still passes and so does the rewrite. Upstream
-        is left unedited.
-      - **`MaxOneReconfigurationAtATime` is vacuous against the rewrite**, and
-        that one is ours: the rewrite never appends a config log entry, because
-        `RequestReconfig` sets `pendingReconfig` and upstream's
-        `AppendPendingReconfigToLog` was dropped. Reconfiguration is requested
-        and never applied. Recorded, not fixed.
+#### 55.3 CLI and build discovery
 
-      Anti-vacuity was run, not asserted: a deliberately divergent action makes
-      `O!NoLogDivergence` refute immediately.
+- Keep `--annotations` and the existing two-path library methods working unchanged; make the
+  flag optional when inline annotations are present.
+- `build_integration/mod.rs:107-130` discovers `.automan` first and derives the sibling `.rs`.
+  Teach it and the SCons emitter to discover annotated `.rs` sources as well.
+- If a function is annotated in both sources: identical definitions warn, differences are an
+  error. Never silently prefer one.
 
-      Still **not** trace refinement -- state-wise property preservation under a
-      mapping. Full refinement needs step correspondence, which the bag/set
-      network difference and the handler decomposition put out of reach.
+#### 55.4 Migration
 
-### Acceptance
+- Write a converter that reads each `.automan` declaration and the corresponding `.rs`
+  signature and emits the named inline form. 465 declarations is too many to hand-edit, and a
+  converter is checkable against 55.2 in a way hand edits are not.
+- Migrate the 16 `src/protocol/` sidecars first; the other 38 are test workspaces and examples.
+- Update `README.md`, the book, and the regeneration scripts.
 
-Three `.tla` files; each translates to Verus that passes `verus`; TLC-checked
-refinement against the unmodified originals; and `rewrite.md` stating exactly
-what is still not faithful. **If the fast path turns out to be projectable and
-the slice was simply never attempted, say so** — that is the most useful
-outcome, and it is the one currently expected.
+#### 55.5 TLA pipeline — highest risk, schedule last
+
+TLA→Verus generation must emit inline markers, and the clean-subset pipeline computes projected
+signature modes. This is the only place that has to understand **both** representations at
+once. Keep `.automan` emission as an explicit option. Do not start this before 55.2 passes.
+
+### Risks
+
+- **R1**: An agent attempts 55.1–55.5 in one pass, stalls in 55.5, and leaves 54 files migrated
+  against a half-working pipeline. Mitigation: 55.1 and 55.2 are the deliverable; treat 55.3+
+  as a separate decision with 55.2 green as its entry condition.
+- **R2**: The converter in 55.4 mis-binds a positional mode when a signature has same-typed
+  adjacent parameters — precisely the error the named form exists to prevent, reintroduced by
+  the migration itself. Mitigation: 55.2's byte-identical assertion is what catches it; run it
+  per protocol, not once at the end.
+- **R3**: `main.rs` is 13k lines and the CLI paths are threaded through it. Mitigation: 55.1
+  touches neither `main.rs` nor `build_integration`; keep it that way.
+
+### Acceptance criteria for 55.1 (the only committed scope)
+
+- [ ] Inline predicate and helper directives parse into `FunctionAnnotation` values identical
+      to those the sidecar parser produces for the same content.
+- [ ] Malformed, orphaned, duplicate, unknown-name, missing-name, and arity-mismatched
+      directives each fail with file and line.
+- [ ] Two functions with the same bare name in different modules receive their own annotations.
+- [ ] No `.automan` file, no protocol source, and no generated file changes.
+- [ ] `cargo test` and `cargo fmt --check` clean.
 
 ---
 
@@ -18784,7 +18672,7 @@ assumed from the paper text.
       See `t2_03_epaxos_star/rewrite.md`.
 - [ ] **56.2.f** — V2 fidelity: TLC on `clean.tla` against the 56.0.e baseline.
       **Anti-vacuity is mandatory** — a deliberately divergent action must make
-      `Agreement` refute immediately, run and recorded, not asserted. Phase 55.5
+      `Agreement` refute immediately, run and recorded, not asserted. Phase 58.5
       is the precedent for why (upstream's `CommittedLogAgreement` was vacuous
       and passed).
 - [ ] **56.2.g** — Manifest entry with `status`, `expected_rules`,
@@ -19489,3 +19377,411 @@ Report honestly which of A and B holds. "EPaxos\* Agreement is machine-checked,
 Visibility is not" is a real and publishable result; "EPaxos\* is verified" when
 B is open is not.
 
+---
+
+## Phase 58: Faithful Jetpack — three modules, refinement-checked
+
+> **Renumbered 2026-09-25, when `jetpack_proof` merged `main`.** This phase was
+> *Phase 55* on the branch; `main` had meanwhile used 55 for inline AutoMan
+> annotations. Commit messages from 2026-08-06 to 2026-08-13 still say
+> `Phase 55.x` — read them as 58.x.
+
+**Goal (as asked, 2026-08-05):** rewrite **all three** Jetpack modules —
+`jetpack.tla`, `base_raft.tla`, and the composition — into the clean subset, so
+the output is three files that each satisfy the TLA+ → tla-rs input contract,
+and establish that the rewrite is **equivalent to the original**, ideally by
+formal proof rather than by assertion.
+
+New corpus tier: `transpiler/tests/corpus/tier4/t4_01_jetpack_full/`.
+
+### Why this exists
+
+`t3_01_jetpack` is a **slice**, and an inherited one. Its `rewrite.md:42` says
+"Phase 51's R1, unchanged" — the scope was taken from Phase 51's partial
+hand-written spec so the two could be compared, which was a *convenient* choice
+and not an argued one. Measured against `jetpack.tla`:
+
+- **variables 22 → 11**;
+- **fast path entirely absent** — `grep -ci preaccept clean.tla` = 0 against 15
+  in the original, and `FastpathQuorum` = 0. Jetpack's paper is *"Consensus Made
+  Generally Fast"*: the fast path is the contribution, the recovery layer is the
+  fallback. We translated the fallback;
+- `ClientSendPreaccept`, `HandlePreacceptRequest/Response`, `Resubmit`,
+  `CompleteResubmit`, `HandleFinishRecovery` all dropped;
+- and **no V2 evidence at all** — the slice shares no observable with the
+  composition module, so the fidelity comparator cannot run on it.
+
+### Three blockers, all verified before planning (2026-08-05)
+
+- [ ] **58.0.a — the frontend resolves neither `INSTANCE` nor local `EXTENDS`.**
+  Verified twice: `grep TlaInstance` finds nothing in `clean_subset.rs`,
+  `projection.rs` or `action_projection.rs`; and a two-module probe where
+  `Comp.tla` does `EXTENDS Base` fails with *"cannot identify the node set"*
+  because `BaseStep` is invisible. Linting `t3_01_jetpack/original.tla` says the
+  same, and now reports **"3 of 5 implemented rules did not run"**.
+  **Consequence: "three files that each pass the linter" is not reachable
+  today.** Either the frontend learns module composition, or the three files are
+  *authored* separately and *checked* flattened. Decide before writing.
+
+- [ ] **58.0.b — "formal proof of equivalence" cannot mean TLAPS here.**
+  `tlapm` is not installed, and proving refinement from a shared-memory
+  composition to a message-passing rewrite is a research-scale obligation, not a
+  session's work. **What is reachable, and is strictly stronger than today's V2:**
+  a **refinement mapping** plus `TLC` checking `Spec => Original!Spec` under it.
+  That checks *behaviour containment*, where the current V2 only compares
+  reachable state sets — and V2's known blind spot is exactly this: deleting
+  `RMChooseToAbort` from 2PC still reports EQUAL. Refinement would catch it.
+  State plainly in the write-up that this is model-checked refinement, not proof.
+
+- [x] **58.0.c — WITHDRAWN. Q2 does NOT collide with Jetpack's views**
+  (corrected 2026-08-05). This item originally read *"Q2 collides with Jetpack's
+  core … cannot be resolved by working harder; it needs a decision."* **That was
+  wrong**, asserted from the intuition "views = reconfiguration = excluded by
+  Q2" without checking the spec. Four checks, all pointing the other way:
+
+  | checked | result |
+  |---|---|
+  | is `Server` a constant? | **yes** — `CONSTANTS Server, ...`, and `Server'` appears **0 times** across all three modules |
+  | what is `replica_ids`? | `SUBSET Server`, carried inside `new_view[i]` |
+  | does any action read another node's view? | **no** — every occurrence is `new_view[i]` / `old_view[i]` at the acting node |
+  | what does `WRequestReconfig` mutate? | `config[i].members` → `old_view[i]`, `new_view[i]`, `jepoch[i]` — all per-node |
+
+  Q2 excludes the **node set itself changing over time**, which would stop
+  `Node` being a constant. Jetpack instead has each node hold *its own opinion
+  of who is currently a member*, drawn from a fixed `Server`. That is ordinary
+  per-node state — no different in kind from Raft's `votedFor` — and it
+  satisfies C1, C2 and Q2 as written. Quorums count over
+  `new_view[i].replica_ids`, which is the acting node's own data, so P4 applies
+  with the counting base being a per-node subset rather than the constant.
+
+  **Consequence: views can be modelled faithfully, and the subset contract does
+  not need revising.** One decision fewer, and the faithful rewrite is
+  materially more reachable than 58.0.c claimed.
+
+### Plan
+
+- [x] **58.1 — DECIDED (2026-08-05): option A, the frontend learns module
+      composition.** Chosen over "author three files, check them flattened"
+      because the repo will hit multi-module specs again (EPaxos, any
+      composition), and a flattening script would be a second thing to keep
+      correct.
+      **It is smaller than the 300–500 lines estimated in 58.0.a.** The *parsing*
+      side already exists and was never wired up: `TlaInstance { local_name,
+      module_name, substitutions, is_local }` is populated (`parser.rs:399`),
+      `V == INSTANCE Foo WITH p <- e` is recognised as a definition whose RHS is
+      not an expression (`parser.rs:201`), `V!Op` parses into `Ident("V!Op")`
+      with the qualified name kept whole (`parser.rs:833`), and `EXTENDS` names
+      land in `module.extends`. **Nothing loads the referenced file.** So the
+      work is a resolver, not a parser change.
+  - [x] **58.1.a — DONE (2026-08-05).** `src/tla/module_resolver.rs` — given a root `.tla`, load
+        `EXTENDS` and `INSTANCE` targets from the same directory and return one
+        flattened `TlaModule`. `EXTENDS Foo` merges unprefixed; `V == INSTANCE
+        Foo` merges Foo's operators as `V!name` with `WITH` substitutions
+        applied and Foo-local references rewritten to the prefix; Foo's
+        variables and constants are *shared* with the parent, which is what
+        makes the Jetpack composition work at all. Skip the standard modules
+        (`Integers`, `Sequences`, `FiniteSets`, `TLC`, `Naturals`, `Bags`), and
+        detect cycles.
+  - [x] **58.1.b — DONE (2026-08-05).** Wired into `tla-lint`; guarded by
+        `tests/module_resolution_test.rs` (7 tests).
+
+  **Result: Jetpack's real clean-distance is 15, not 2.**
+
+  *(First measured as 46. That was inflated by a second bug found immediately
+  afterwards — see 58.1.c. 15 is the number after both fixes.)*
+
+  | | before | after |
+  |---|---|---|
+  | node set | *unidentifiable* | `Server` |
+  | violations | 2 | **15** |
+  | by rule | C4 1, C5 1 | **C1 11**, C4 1, C5 3 |
+  | rules that ran | 2 of 5 | **5 of 5** |
+  | per-node variables found | 0 | 21 |
+
+  C1, C2 and C3 went from *not running at all* to running. The count was quoted
+  in three documents before anyone could see through `INSTANCE`.
+
+  - [x] **58.1.c — two further bugs, both found by distrusting the new number.**
+        46 looked too large, and the error text gave it away: *"reads `jepoch[i]`
+        … a node can only read `jepoch[m]`"*, where `m` is a **message**.
+
+    1. **The node parameter was seeded from every `\E` binder in `Next`**, with
+       no check that the binder ranges over the node set. So
+       `\E m \in DOMAIN messages : ServerReceive(m)` declared the *message* to
+       be the acting node, and every legitimate `jepoch[i]` in the handlers
+       below it read as a cross-node access. That accounted for **all 31 C2
+       findings, every one false**. Jetpack's composition has **no cross-node
+       reads at all** — each handler reads only its own node's state.
+    2. **`INSTANCE` implicit substitution was not honoured.** TLA+ substitutes a
+       declared name of the instantiated module with a same-named *definition*
+       in the instantiating module; a `WITH` clause is not required. `Consensus`
+       declares `VARIABLE chosen` and `Voting` substitutes it with
+       `chosen == {v \in Value : ...}`. Reading only `WITH` made `chosen` a
+       variable of Paxos, and C1 reported a global that does not exist —
+       Paxos drifted 1 → 2 until this was fixed.
+
+    **And a correction to the record.** Commit `07efeca7` claimed EPaxos
+    re-measured 3 → 4 and that "the C2 finding it was hiding is a real
+    cross-node read of `crtInst[cleader]`". **That was wrong** — the finding was
+    a false positive from bug 1, which the same commit introduced. EPaxos is
+    back to **3, all C1**, and the manifest is re-pinned. The lesson is the one
+    this phase keeps re-learning: a number that moves in the direction you hoped
+    deserves *more* scrutiny, not less.
+
+    Also fixed here: `t0_01_simple` now correctly reports **2**, the new finding
+    being `Terminating`'s read of every node's `pc` with no node parameter —
+    which the case's own golden header already described as *"one node cannot
+    observe that, so the guard is not projectable"*. That hole was flagged in
+    the merge review and is now closed by the same fix.
+
+  - [x] **A tokenizer bug found on the way.** `base_raft.tla` defines
+        `_SendNoRestriction`, and TLA+ allows an identifier to begin with `_`.
+        52.M0.0.b had made `_` unconditionally its own token so `[Next]_vars`
+        would scan correctly — right about the subscript, wrong about
+        identifiers, and it made the whole module unparseable. `_` is now the
+        subscript operator only after `]` or `>>`. Both directions are pinned by
+        tests.
+- [x] **58.2 / 58.3 / 58.4 — the three modules are written and the composition
+      is CLEAN (2026-08-05).** `tests/corpus/tier4/t4_01_jetpack_full/`:
+      `base_raft_clean.tla` (400 lines), `jetpack_clean.tla` (~570),
+      `jetpack_raft_clean.tla` (~250). `tla-lint` on the composition:
+      **clean, node set `Node`, 34 per-node variables** — the first genuine
+      multi-module TLA+ composition to pass the subset.
+      Structure mirrors the original: the two layers are **library modules**
+      with no `Init`/`Next`, INSTANCEd by the composition. Linting a library
+      alone reports "no next-state relation", which is correct — a library is
+      not a spec, and the file headers say so.
+      **Kept, against `t3_01_jetpack` which dropped all of it**: the fast path
+      (Preaccept, client quorum counting, Resubmit), the base protocol, views
+      and reconfiguration, and the client layer.
+      Decisions: one node set `Node == Server \cup Client` with both roles'
+      state per-node and actions guarded by role (`t1_02_twophase`'s
+      transaction-manager pattern); `FastpathQuorum` replaced by the closed
+      form from 58.3.a; response tables replaced by responder sets plus online
+      aggregation. Still not faithful, each with a reason in the header: the
+      message bag is a set (no duplication), the four counters are per-node,
+      and execution tracking is absent as a history variable.
+  - [x] **A second half of 58.1.b that had been missed.** The resolver was
+        wired into `tla-lint` only, not `clean-tla`. It surfaced as *"element
+        type could not be read off a declaration"* for **every** variable — the
+        declarations were in modules the translator had never loaded. Wiring it
+        took the composition from **71 unprojectable parts to 29**, then to 22
+        after three variables missing from the type invariants were declared.
+  - [ ] **58.2.z — 24 gaps -> 5 (2026-08-07).** Four features closed, and two
+        of them turned up defects that were **already shipped**:
+    - [x] tables and broadcasts over a set that is not the node set — 12 gaps.
+          Doing it exposed that `project_node_set` named the node-set constant
+          by "the first constant with a set type", which is right only when the
+          spec has one. Paxos declares `CONSTANT Value, Acceptor, MaxBallot`,
+          so `{ Msg1a(s, d, b) : d \in Acceptor }` was frozen in a **green**
+          case's golden as `c.value.map(..)` — 1a broadcast to the set of
+          *values*. V1 typechecks (both are `Set<int>`), V2 never looks at the
+          golden, V3 froze the wrong answer as the reference.
+    - [x] anonymous record types — 4 gaps. A type invariant may state a record
+          inline rather than through a named operator; nameless records were
+          dropped, so nothing declared them.
+    - [x] `DOMAIN` — 1 gap.
+    - [x] receive handlers reached through a dispatcher — 1 gap. A composed
+          spec writes `\E m \in msgs : Receive(i, m)` and puts the real
+          handlers in `Receive`'s body; the resolver stopped at `Receive`, so
+          `m.mentries` had no type, and a field's type is what decides whether
+          indexing it loses one.
+    - [x] **operator inlining substituted parameters in sequence**, so a later
+          parameter captured an identifier an earlier substitution introduced.
+          `PreacceptReq(s, d, e, c)` called with `e := clientEpoch[c]` and a
+          fourth parameter named `c` produced `mepoch |-> clientEpoch[cmd]`
+          *and* `msource |-> cmd` — a message sent from the wrong node, which
+          would have verified. Only the first half errored, which is the sole
+          reason it was found. Substitution is now simultaneous, with binder
+          shadowing handled per name.
+    - [ ] remaining 5: `CASE` on the right of an update; a range as a
+          quantifier domain (`1 .. Len(log[i])`); nested `EXCEPT` over a
+          per-node map (`cmdPool[i]`); a `LET` whose definitions feed several
+          updates; a multi-binder set comprehension in a send.
+- [ ] **58.2-old** `base_raft_clean.tla` — the base protocol as a standalone clean
+      module. Closest existing reference is `t2_01_raft/clean.tla`.
+- [x] **58.3.a — the open question is answered: `FastpathQuorum` IS
+      node-computable, so P4 applies and the fast path is projectable**
+      (2026-08-05). The definition is second-order — it quantifies over every
+      other quorum:
+
+      ```
+      FastpathQuorum(v) == {q \in JQuorum(v) :
+          /\ v.proposing_replica_ids \subseteq q
+          /\ \A q2 \in JQuorum(v) :
+               v.proposing_replica_ids \subseteq q2 => (q \cap q2) \in JQuorum(v)}
+      ```
+
+      but it **collapses to a first-order test**. Writing `P` for
+      `proposing_replica_ids` and `n` for `|replica_ids|`:
+
+      | condition | fast quorums |
+      |---|---|
+      | `|P| * 2 > n` | every majority containing `P` |
+      | otherwise | **only the full replica set** |
+
+      Verified by brute force against the literal definition over **all 1,022
+      `(n, P)` combinations for `n ≤ 9`** — zero mismatches. So a replica can
+      evaluate it with a subset test plus a count, which is exactly P4's shape:
+
+      ```
+      IsFastQuorum(q) ==
+        /\ P \subseteq q
+        /\ IF Cardinality(P) * 2 > Cardinality(Replicas)
+             THEN Cardinality(q) * 2 > Cardinality(Replicas)
+             ELSE q = Replicas
+      ```
+
+      **This means the `t3_01_jetpack` slice dropped the fast path
+      unnecessarily** — not because it was unprojectable, but because it was
+      never attempted. That is the outcome the acceptance criterion named as
+      most useful, and it is now established before any rewriting.
+
+      Worth noting for the Raft composition specifically: it instantiates
+      `Proposer <- {"sole"}`, so `|P| = 1`; at 3 servers `1*2 = 2 ≤ 3`, which
+      lands in the second row — **the fast path there requires unanimity**. Any
+      TLC model must be sized so that branch is actually exercised.
+
+- [ ] **58.3** `jetpack_clean.tla` — recovery **plus the fast path**
+      (`Preaccept`, the client-side counting, `IsFastQuorum` as derived above).
+- [ ] **58.4** `composition_clean.tla` — however 58.1 resolves module structure.
+- [x] **58.5 — the composition is model-checked (2026-08-07).** Java
+      reinstalled (Temurin JRE 21, to `$HOME`, no sudo on this box). TLC found
+      **six defects**, every one in the new spec rather than in the tool:
+
+      1. two **unclosed comments** — TLA+ comments nest, and our frontend is
+         more permissive than SANY, so nothing had reported them;
+      2. `NilCmd \notin Command`, so `TypeOK` failed in the *initial* state;
+      3. `UpdateTerm` read `m.mterm` off any message — C4 gives the composition
+         ONE network, and it now carries Jetpack's messages too;
+      4. `BecomeToBeLeader` both assigned `ostate'` and listed `ostate` in
+         UNCHANGED. Unsatisfiable, so **no node could ever become leader** and
+         24 of 34 actions never fired. 2,591 states became 6.5M;
+      5. `LeaderHasRecovered` was **mis-stated and the spec was right**: a
+         leader receiving a BeginRecoveryRequest re-enters Recovery as a
+         *participant*, and upstream's handler adopts the incoming view with no
+         epoch guard. Restated as the action property the composition actually
+         guarantees;
+      6. an **empty initial log**. Upstream's Init gives every member
+         `<<firstEntry>>` and sets the leader's `nextIndex` to 2; mine started
+         empty, and `LogOk` rejects any request carrying entries at
+         `prevLogIndex = 0`, so the first entry could never be replicated and
+         `AdvanceCommitIndex` was unreachable.
+
+      **Result, on the current files: 17,570,820 distinct states, depth 73,
+      state space closed, no violation** of TypeOK, Consistency,
+      OneLeaderPerTerm or the action property, with **34 of 34 actions
+      covered**. A second closed model (`MaxRestarts = 0`) agrees at 717,249
+      states; a third at a larger message bound explored 33.7M states to depth
+      55 without a counter-example and was killed by the OOM killer rather than
+      finishing -- listed as bounded evidence, not as a check.
+      `clean.cfg` is the model that closed with full coverage.
+
+      Defect 4 is now guarded permanently by
+      `tests/corpus_wellformed_guard.rs`, which walks the parsed body so that
+      `\/ grant /\ v' = .. \/ ~grant /\ UNCHANGED v` — correct, and what
+      upstream Raft writes — is not reported.
+
+      **Coverage is the check that found 4 and 6, not the invariants.** Both
+      specs passed every invariant while most of the protocol was unreachable.
+      A methodological note that cost an hour: TLC prints its coverage table at
+      *every* progress report, cumulatively, so aggregating across reports lets
+      the zeros from the first one win. Read only the final table.
+
+      The refinement mapping against the unmodified originals is **not done** —
+      this item's original scope. What exists is the composition checked
+      against its own invariants.
+- [x] **58.6 — the composition translates (2026-08-11).** `clean-tla` emits it
+      with **no gaps**; six were closed, and closing them exposed **eight
+      further defects that Verus rejected**, every one real and every one
+      previously hidden behind the gap. Two were live before this branch: a
+      second `match` arm for a variant is unreachable, so a spec with two
+      handlers on one tag was silently dropping one; and a receive guard naming
+      a *set* of tags had no dispatch at all. See the commit for the list.
+
+      **One Verus error remains and no golden is frozen.** It is not a type
+      error: `AdvanceCommitIndex` binds `\E k \in 1 .. Len(log[i])` and indexes
+      `s.log[k - 1]`, and Verus will not infer a trigger from a term containing
+      arithmetic. CLAUDE.md's extra-binder workaround does not apply as written
+      -- a trigger must cover every bound variable, and after moving the offset
+      out `k` appears only in comparisons. The fix is to re-index the quantifier
+      onto the sequence's own 0-based domain, in the projection rather than by
+      string surgery on the emitted text.
+
+- [x] **58.5.b — checked against the ORIGINAL's own safety properties
+      (2026-08-11).** `tests/corpus/tier4/t4_01_jetpack_full/jetpack_refinement.tla`
+      INSTANCEs the unmodified upstream composition under an explicit mapping
+      and checks *its* invariant definitions, not retyped copies.
+      **34,718,400 distinct states, depth 73, closed, no violation.**
+
+      Two findings worth more than the pass:
+
+      - **Upstream's `CommittedLogAgreement` is vacuous.**
+        `limit == Min({ci, ci2} \cup {0})` is always 0, so `\A k \in 1..limit`
+        compares nothing. Confirmed by evaluation. It is the first of the five
+        properties in upstream's `Safety`. The vacuity was not hiding a bug:
+        corrected, the original still passes and so does the rewrite. Upstream
+        is left unedited.
+      - **`MaxOneReconfigurationAtATime` is vacuous against the rewrite**, and
+        that one is ours: the rewrite never appends a config log entry, because
+        `RequestReconfig` sets `pendingReconfig` and upstream's
+        `AppendPendingReconfigToLog` was dropped. Reconfiguration is requested
+        and never applied. Recorded, not fixed.
+
+      Anti-vacuity was run, not asserted: a deliberately divergent action makes
+      `O!NoLogDivergence` refute immediately.
+
+      Still **not** trace refinement -- state-wise property preservation under a
+      mapping. Full refinement needs step correspondence, which the bag/set
+      network difference and the handler decomposition put out of reach.
+
+- [ ] **58.7 — reconfiguration is requested and never applied, and the
+      refinement mapping does not speak upstream's vocabulary (2026-08-13).**
+      Two findings, one measured fix, not yet applied.
+
+      **(a) The mapping's tags do not match upstream's.** The rewrite writes
+      `InitClusterCommand == "initCluster"`; upstream writes
+      `"InitClusterCommand"`. `O!IsConfigCommand` is evaluated inside the
+      INSTANCE, against upstream's strings, so it is false on every mapped
+      entry. Confirmed by probe: an invariant asserting no entry is a config
+      command survives 1.8M states, where `FirstEntry`'s own
+      `InitClusterCommand` would refute it in the *initial* state if the
+      spellings matched. This is a defect in the refinement module, not in the
+      rewrite, and it was reported as "the rewrite lacks the action" alone.
+      `NoLogDivergence` and `CommittedLogAgreement` are unaffected — they
+      compare entries against each other and mention no upstream constant.
+
+      **(b) `AppendPendingReconfigToLog` was dropped**, so `RequestReconfig`
+      sets `pendingReconfig` and nothing consumes it.
+
+      The fix was designed and measured end to end and has three parts. What
+      the measurement showed is why it is not one:
+
+      - the type problem **dissolves** — `Entry.command` already lists the
+        config tags and `IsConfigCommand` never reads `.value`, so the entry
+        appends with the sentinel `FirstEntry` already uses. No type change,
+        no new translator gap, composition still lints clean;
+      - adding the action *alone* leaves it **dead**: the state space closes
+        25% smaller and coverage goes 34/34 -> 34/35, because upstream's guard
+        (a leader may not reconfigure until it has committed an entry of its
+        own term) cannot be met at `MaxLogLen = 2`;
+      - **the vacuity was hiding a second fidelity gap.** Without that guard,
+        `MaxOneReconfigurationAtATime` is *violated at depth 10* — the rewrite
+        permits two uncommitted config entries. With guard + tags + upstream's
+        Init shape, the action fires at depth 3 and the probes refute
+        properly.
+
+      Not applied: the adversarial check of that plan had not returned. The
+      plan also reports two further latent translator defects it hit on the
+      way, of the same "a pass gated on a node property degrades silently just
+      outside the gate" shape as the rest of this phase.
+
+### Acceptance
+
+Three `.tla` files; each translates to Verus that passes `verus`; TLC-checked
+refinement against the unmodified originals; and `rewrite.md` stating exactly
+what is still not faithful. **If the fast path turns out to be projectable and
+the slice was simply never attempted, say so** — that is the most useful
+outcome, and it is the one currently expected.
+
+---

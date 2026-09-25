@@ -7,7 +7,7 @@
 (* `Init`/`Next` of its own. Linting either alone reports "no next-state   *)
 (* relation", which is correct -- a library is not a spec. This module is  *)
 (* what the linter and the translator consume, and the frontend resolves   *)
-(* the `INSTANCE`s into it (Phase 55.1).                                   *)
+(* the `INSTANCE`s into it (Phase 58.1).                                   *)
 (*                                                                         *)
 (* The structure mirrors the original three modules exactly: the same two  *)
 (* layers, instantiated the same way, composed in the same `Next`.         *)
