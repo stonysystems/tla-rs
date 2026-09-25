@@ -478,6 +478,7 @@ verus! {
             DynamicLeaderCompleteness(ds),
     {
         assert forall |index: int, leader_id: int|
+            #![trigger ds.log_commit_certificates[index], ds.server_states[leader_id].role]
             ds.log_commit_certificates.dom().contains(index)
             && 0 <= leader_id < ds.num_servers
             && ds.server_states[leader_id].role is Leader
@@ -2303,7 +2304,7 @@ verus! {
     )
         requires
             ElectionLogLenBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             ElectionLogLenBounded(ds_),
     {
@@ -2342,12 +2343,12 @@ verus! {
         requires
             ElectionLogLenEntryTermBound(ds),
             ElectionLogLenBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             ElectionLogLenEntryTermBound(ds_),
     {
         lemma_log_append_only(ds, ds_);
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
 
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
@@ -2402,12 +2403,12 @@ verus! {
         requires
             LeaderElectionSnapshotRecorded(ds),
             ElectionLogLenBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             LeaderElectionSnapshotRecorded(ds_),
     {
         lemma_log_append_only(ds, ds_);
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
 
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
@@ -6071,6 +6072,7 @@ verus! {
     /// election quorums and immutable commit certificates.
     pub open spec fn RaftSafetyInvariant(ds: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
+        &&& CommitHistoryValid(ds)
         &&& StateMachineSafety(ds)
         &&& CommittedMembershipPrefixAgreement(ds)
         &&& LeaderHasRecordedElectionQuorum(ds)
@@ -6102,8 +6104,8 @@ verus! {
         &&& VoteLogLenBounded(ds)
         &&& VoteLogLenEntryTermBound(ds)
         &&& VoteGrantedLogUpToDateAtVoteTime(ds)
-        // Follower commit updates cannot outrun the leader information they received.
-        &&& AppendEntriesLeaderCommitBound(ds)
+        // Advertisements refer to a prefix of historical commitment.
+        &&& AppendEntriesCommitHistoryBound(ds)
         // Election-snapshot ghost state
         &&& ElectionLogLenBounded(ds)
         &&& ElectionLogLenEntryTermBound(ds)
@@ -6160,7 +6162,7 @@ verus! {
         // - AppendResponseLogAgreement: no packets, vacuously true
         // - MatchIndexImpliesLogAgreement: no Leaders, vacuously true
         // - MatchIndexBounded: no Leaders (match_index empty at init), vacuously true
-        // - AppendEntriesLeaderCommitBound: no packets, vacuously true
+        // - AppendEntriesCommitHistoryBound: no packets, vacuously true
         // Log structure invariants: empty logs + current_term = 0, vacuously/trivially true
         // - CurrentTermGeLogTerms, LogTermsMonotonic, TermsNonNegative
     }
@@ -9104,7 +9106,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             0 <= stepping < n,
             0 <= other < n,
             stepping != other,
@@ -9129,7 +9131,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             VotersVotedForCandidate(ds_),
             VoteResponseIntegrity(ds_),
             0 <= stepping < n,
@@ -9151,7 +9153,7 @@ verus! {
     proof fn lemma_network_is_monotonic(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
-        requires RaftDistributedNext(ds, ds_),
+        requires RaftDistributedNormalNext(ds, ds_),
         ensures forall |p: LRaftPacket|
             ds.network.contains(p) ==> ds_.network.contains(p),
     {
@@ -9182,7 +9184,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             VotersVotedForCandidate(ds_),
             VoteResponseIntegrity(ds_),
             0 <= stepping < n,
@@ -9233,7 +9235,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             VotersVotedForCandidate(ds_),
             VotesGrantedAreServers(ds_),
             VoteResponseIntegrity(ds_),
@@ -9272,7 +9274,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             VotersVotedForCandidate(ds_),
             VotesGrantedAreServers(ds_),
             VoteResponseIntegrity(ds_),
@@ -9353,11 +9355,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             VotesGrantedAreServers(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VotesGrantedAreServers(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -9430,11 +9432,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             CandidateOrLeaderVotedForSelf(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             CandidateOrLeaderVotedForSelf(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -9493,11 +9495,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             CandidateOrLeaderVotedForSelfId(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             CandidateOrLeaderVotedForSelfId(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -9543,11 +9545,11 @@ verus! {
     )
         requires
             VotersVotedForCandidate(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VotersVotedForCandidate(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
         {
@@ -9602,11 +9604,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             LeaderHasRecordedElectionQuorum(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             LeaderHasRecordedElectionQuorum(ds_),
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(
@@ -9651,11 +9653,11 @@ verus! {
             CommitIndexNonnegative(ds),
             CommitIndexBounded(ds),
             LeaderHasRecordedElectionLogProvenance(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             LeaderHasRecordedElectionLogProvenance(ds_),
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(
@@ -10142,11 +10144,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             CommitIndexNonnegative(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             CommitIndexNonnegative(ds_),
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(
@@ -10219,11 +10221,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             CommitIndexBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             CommitIndexBounded(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -10743,13 +10745,13 @@ verus! {
     }
 
     /// Extract step parameters and establish LNext for LeaderLogLongEnough.
-    /// Isolated to keep RaftDistributedNext axioms out of the assert-forall.
+    /// Isolated to keep RaftDistributedNormalNext axioms out of the assert-forall.
     proof fn lemma_lllong_extract_step(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     ) -> (result: (int, LState, LState, LConstants))
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures ({
             let (server_id, s, s_, c) = result;
             &&& 0 <= server_id < ds.num_servers
@@ -10778,7 +10780,7 @@ verus! {
             &&& RaftServerStepWithNetwork(ds, ds_, sid)
         };
 
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         assert(LNext(ds.server_states[server_id], ds_.server_states[server_id],
                       ds.server_constants[server_id]));
 
@@ -10963,7 +10965,7 @@ verus! {
     /// Every entry in every log has a "witness" server with the same entry
     /// at the same index. Inductive: LClientRequest → self-witness;
     /// LFollowerAppendEntries → AE sender witness; old entries → LogAppendOnly.
-    proof fn lemma_entry_term_old_entry_witness(
+    pub proof fn lemma_entry_term_old_entry_witness(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         i: int, k: int,
     )
@@ -11100,14 +11102,14 @@ verus! {
     }
 
     /// Extract the stepping server and the transition facts needed by the
-    /// EntryTermLeaderWitness proof. Keeping RaftDistributedNext out of the
+    /// EntryTermLeaderWitness proof. Keeping RaftDistributedNormalNext out of the
     /// quantified proof below substantially reduces its solver context.
     proof fn lemma_entry_term_extract_step(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     ) -> (result: (int, LState, LState, LConstants))
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures ({
             let (server_id, s, s_, c) = result;
             entry_term_witness_step_context(
@@ -11125,7 +11127,7 @@ verus! {
             &&& RaftServerStepWithNetwork(ds, ds_, sid)
         };
 
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let s = ds.server_states[server_id];
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
@@ -11162,7 +11164,7 @@ verus! {
 
     /// Lift the per-entry witness proof to every entry in ds_. This helper has
     /// only the invariants used by the quantified body, avoiding the complete
-    /// RaftSafetyInvariant and RaftDistributedNext axiom sets.
+    /// RaftSafetyInvariant and RaftDistributedNormalNext axiom sets.
     #[verifier(spinoff_prover)]
     proof fn lemma_entry_term_witness_all_entries(
         ds: RaftDistributedState, ds_: RaftDistributedState,
@@ -11202,7 +11204,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             EntryTermLeaderWitness(ds_)
     {
@@ -12057,7 +12059,7 @@ verus! {
     )
         requires
             0 <= k,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             EntryCommittedAt(ds_, k, entry),
         ensures
             EntryCommittedAt(ds, k, entry)
@@ -12073,7 +12075,7 @@ verus! {
                     &&& entry.term >= ds.server_states[stepping].current_term
                 },
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid], ds.server_constants[sid])
@@ -12198,13 +12200,13 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             StateMachineSafety(ds_)
     {
         lemma_committed_entries_have_log_certificates_inductive(ds, ds_);
         lemma_log_certificate_coverage_implies_state_machine_safety(ds_);
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         lemma_log_append_only(ds, ds_);
 
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
@@ -12262,7 +12264,7 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             SenderIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             SenderIntegrity(ds_)
     {
@@ -12272,14 +12274,14 @@ verus! {
         // unfolding of RaftActionProduces + action definitions).
     }
 
-    /// Extract step parameters from RaftDistributedNext.
+    /// Extract step parameters from RaftDistributedNormalNext.
     /// Returns (server_id, sent_pkts, recv_from) with all relevant properties.
     proof fn lemma_extract_step_with_network(
         ds: RaftDistributedState,
         ds_: RaftDistributedState,
     ) -> (res: (int, Seq<LRaftMessage>, Option<int>))
         requires
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures ({
             let (server_id, sent_pkts, recv_from) = res;
             &&& 0 <= server_id < ds.num_servers
@@ -12291,7 +12293,7 @@ verus! {
             &&& RaftServerStepWitness(ds, ds_, server_id, sent_pkts, recv_from)
         })
     {
-        // Extract server_id from RaftDistributedNext directly (not via legacy)
+        // Extract server_id from RaftDistributedNormalNext directly (not via legacy)
         // so we get RaftServerStepWithNetwork
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
@@ -12307,7 +12309,7 @@ verus! {
             RaftServerStepWitness(ds, ds_, server_id, sp, rf);
 
         // Also establish LNext (needed by callers)
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
 
         (server_id, sent_pkts, recv_from)
     }
@@ -12320,7 +12322,7 @@ verus! {
     )
         requires
             CommittedConfigurationsHaveCertificates(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             CommittedConfigurationsHaveCertificates(ds_),
     {
@@ -12367,7 +12369,7 @@ verus! {
     )
         requires
             CommittedEntriesHaveLogCertificates(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             CommittedEntriesHaveLogCertificates(ds_),
     {
@@ -12419,7 +12421,7 @@ verus! {
             WellFormedRaftDistributed(ds),
             MatchIndexImpliesLogAgreement(ds),
             MatchIndexBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             LogCommitCertificatesValid(ds_),
     {
@@ -12656,7 +12658,7 @@ verus! {
     )
         requires
             ConfigurationCommittersRetainCertifiedPrefixes(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             ConfigurationCommittersRetainCertifiedPrefixes(ds_),
     {
@@ -12753,7 +12755,7 @@ verus! {
     )
         requires
             ConfigurationCommitCertificatesValid(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             forall |index: int|
                 #![trigger ds.configuration_commit_certificates[index]]
@@ -12908,7 +12910,7 @@ verus! {
             AllRaftMembershipLogsWellFormed(ds),
             MatchIndexImpliesLogAgreement(ds),
             MatchIndexBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.configuration_commit_certificates.dom().contains(index),
             !ds.configuration_commit_certificates.dom().contains(index),
         ensures ({
@@ -13116,7 +13118,7 @@ verus! {
             AllRaftMembershipLogsWellFormed(ds),
             MatchIndexImpliesLogAgreement(ds),
             MatchIndexBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             ConfigurationCommitCertificatesValid(ds_),
     {
@@ -13167,7 +13169,7 @@ verus! {
         requires
             VoteResponseIntegrity(ds),
             SenderIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VoteResponseIntegrity(ds_)
     {
@@ -13186,7 +13188,7 @@ verus! {
     )
         requires
             VoteResponseIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] #![trigger ds.network.contains(p)]
                 ds_.network.contains(p) && ds.network.contains(p)
@@ -13204,7 +13206,7 @@ verus! {
                 _ => true,
             }
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
@@ -13491,7 +13493,7 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             VoteResponseIntegrity(ds),
             VoteResponseSummaryStillValidAtOrAboveTerm(ds),
             ds.network.contains(p),
@@ -13549,7 +13551,7 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.network.contains(p),
             !ds.network.contains(p),
             p.msg is VoteResponse,
@@ -13690,7 +13692,7 @@ verus! {
         requires
             VoteResponseSummaryStillValidAtOrAboveTerm(ds),
             VoteResponseIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VoteResponseSummaryStillValidAtOrAboveTerm(ds_)
     {
@@ -13737,7 +13739,7 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             VoteResponseHasRequestVote(ds),
             SenderIntegrity(ds),
         ensures
@@ -13928,11 +13930,11 @@ verus! {
     )
         requires
             AppendEntriesIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             AppendEntriesIntegrity(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
@@ -14011,7 +14013,7 @@ verus! {
                         }
                     }
                 } else {
-                    // New AE packet: produced by RaftDistributedNext.
+                    // New AE packet: produced by RaftDistributedNormalNext.
                     // RaftServerStepWithNetwork ensures p.src == stepping server.
                     // Only LSendAppendEntries produces AppendEntries messages.
                     // Its constraints + WellFormedRaftDistributed + frame conditions
@@ -14028,7 +14030,7 @@ verus! {
             OneVotePerTermInNetwork(ds),
             VoteResponseIntegrity(ds),
             SenderIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             OneVotePerTermInNetwork(ds_)
     {
@@ -14246,7 +14248,7 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             RequestVoteSenderState(ds),
             ds.network.contains(p),
@@ -14283,7 +14285,7 @@ verus! {
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
 
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         lemma_lnext_term_monotone(s, s_, c);
         lemma_lnext_log_preserved_or_extended(s, s_, c);
         assert(RequestVoteSummaryStillValidAtSameTerm(ds));
@@ -14343,7 +14345,7 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.network.contains(p),
             !ds.network.contains(p),
             p.msg is RequestVote,
@@ -14460,7 +14462,7 @@ verus! {
         requires
             RequestVoteSummaryStillValidAtSameTerm(ds),
             RequestVoteSenderState(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             RequestVoteSummaryStillValidAtSameTerm(ds_)
     {
@@ -14510,7 +14512,7 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.network.contains(p),
             !ds.network.contains(p),
             p.msg is RequestVote,
@@ -14581,11 +14583,11 @@ verus! {
     )
         requires
             RequestVoteSummaryAlwaysValid(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             RequestVoteSummaryAlwaysValid(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
         {
@@ -14662,7 +14664,7 @@ verus! {
         requires
             RequestVoteLastLogTermBound(ds),
             CurrentTermGeLogTerms(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             RequestVoteLastLogTermBound(ds_)
     {
@@ -14699,7 +14701,7 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             CurrentTermGeLogTerms(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.network.contains(p),
             !ds.network.contains(p),
             p.msg is RequestVote,
@@ -14707,7 +14709,7 @@ verus! {
         ensures
             p.msg->RequestVote_last_log_term < p.msg->RequestVote_term,
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
         {
@@ -14738,7 +14740,7 @@ verus! {
         requires
             RequestVoteSenderState(ds),
             SenderIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             RequestVoteSenderState(ds_)
     {
@@ -14756,7 +14758,7 @@ verus! {
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
 
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         lemma_lnext_term_monotone(s, s_, c);
 
         assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
@@ -14846,7 +14848,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             0 <= server_id < ds.num_servers,
             RaftActionProduces(ds, server_id,
                 ds.server_states[server_id], ds_.server_states[server_id],
@@ -14928,7 +14930,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             RequestVoteLogParamsConsistent(ds_)
     {
@@ -14975,7 +14977,7 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             CandidateVoteDestinationUnique(ds),
             RequestVoteSenderState(ds),
             VoteResponseIntegrity(ds),
@@ -15154,12 +15156,12 @@ verus! {
     )
         requires
             VoteLogLenCoversNetwork(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VoteLogLenCoversNetwork(ds_)
     {
         // VoteLogLenCoversNetwork(ds) holds by IH.
-        // RaftDistributedNext gives us:
+        // RaftDistributedNormalNext gives us:
         // (1) network monotonicity: old packets preserved
         // (2) ghost-map monotonicity: old vote_log_len entries preserved
         // (3) new packets come from sent_packets of the stepping server
@@ -15252,7 +15254,7 @@ verus! {
     )
         requires
             VoteLogLenBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VoteLogLenBounded(ds_)
     {
@@ -15372,12 +15374,12 @@ verus! {
         requires
             VoteLogLenEntryTermBound(ds),
             VoteLogLenBounded(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VoteLogLenEntryTermBound(ds_)
     {
         lemma_log_append_only(ds, ds_);
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
 
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
@@ -15460,11 +15462,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             CurrentTermGeLogTerms(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             CurrentTermGeLogTerms(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
 
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
@@ -15539,11 +15541,11 @@ verus! {
             WellFormedRaftDistributed(ds),
             LogTermsMonotonic(ds),
             CurrentTermGeLogTerms(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             LogTermsMonotonic(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
 
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
@@ -15618,11 +15620,11 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             TermsNonNegative(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             TermsNonNegative(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
 
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
@@ -15755,7 +15757,7 @@ verus! {
     /// Case 2 core: given pre-extracted facts, transfer log_up_to_date to
     /// the conclusion. Takes req's log params directly (pre-equated with
     /// processed_pkt's via RequestVoteLogParamsConsistent by the caller).
-    /// Lightweight: NO RaftSafetyInvariant, NO RaftDistributedNext in requires.
+    /// Lightweight: NO RaftSafetyInvariant, NO RaftDistributedNormalNext in requires.
     proof fn lemma_vote_granted_log_utd_new_vr_old_req(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int,
@@ -15840,7 +15842,7 @@ verus! {
         // Contradiction.
     }
 
-    /// Utility: extract ghost state monotonicity from RaftDistributedNext.
+    /// Utility: extract ghost state monotonicity from RaftDistributedNormalNext.
     /// Requires RaftSafetyInvariant(ds) to help Z3 with existential extraction.
     /// RaftActionProduces stays local to this function body.
     proof fn lemma_vote_log_len_monotonic(
@@ -15848,7 +15850,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             forall |v: int, t: int| #![trigger ds_.vote_log_len[(v, t)]] #![trigger ds.vote_log_len[(v, t)]] ds.vote_log_len.dom().contains((v, t))
                 ==> ds_.vote_log_len.dom().contains((v, t))
@@ -15915,7 +15917,7 @@ verus! {
     ) -> (processed_pkt: LRaftPacket)
         requires
             SenderIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
             vote_pkt.msg is VoteResponse,
             vote_pkt.msg->VoteResponse_granted,
@@ -15955,7 +15957,7 @@ verus! {
     }
 
     /// RVLPC-specific: two RequestVotes with same term and candidate have same log params.
-    /// Isolated from RaftDistributedNext/RaftActionProduces to avoid Z3 blow-up.
+    /// Isolated from RaftDistributedNormalNext/RaftActionProduces to avoid Z3 blow-up.
     proof fn lemma_rvlpc_same_log_params(
         ds: RaftDistributedState,
         p1: LRaftPacket, p2: LRaftPacket,
@@ -15980,7 +15982,7 @@ verus! {
         vote_pkt: LRaftPacket,
     )
         requires
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
             vote_pkt.msg is VoteResponse,
             vote_pkt.msg->VoteResponse_granted,
@@ -15992,7 +15994,7 @@ verus! {
         let v = vote_pkt.src;
         let t = vote_pkt.msg->VoteResponse_term;
 
-        // Extract server_id from RaftDistributedNext
+        // Extract server_id from RaftDistributedNormalNext
         let server_id = choose |sid: int|
             #![trigger ds.server_states[sid]]
         {
@@ -16083,7 +16085,7 @@ verus! {
         requires
             SenderIntegrity(ds),
             RequestVoteLogParamsConsistent(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             // vote_pkt is new granted VoteResponse
             ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
             vote_pkt.msg is VoteResponse,
@@ -16134,7 +16136,7 @@ verus! {
         lemma_extract_ghost_vote_log_len_recording(ds, ds_, vote_pkt);
         let s_log_len: int = ds.server_states[v].log.len() as int;
 
-        // Step D: Transfer to lightweight helper (no RaftSafetyInvariant, no RaftDistributedNext).
+        // Step D: Transfer to lightweight helper (no RaftSafetyInvariant, no RaftDistributedNormalNext).
         lemma_vote_granted_log_utd_new_vr_old_req(
             ds, ds_, v,
             req.msg->RequestVote_last_log_term,
@@ -16152,7 +16154,7 @@ verus! {
         req: LRaftPacket,
     ) -> (server_id: int)
         requires
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds_.network.contains(req), !ds.network.contains(req),
             req.msg is RequestVote,
         ensures
@@ -16195,7 +16197,7 @@ verus! {
         requires
             VoteResponseHasRequestVote(ds),
             RequestVoteSenderState(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             ds.network.contains(vote_pkt), ds_.network.contains(vote_pkt),
             !ds.network.contains(req), ds_.network.contains(req),
             vote_pkt.msg is VoteResponse,
@@ -16219,7 +16221,7 @@ verus! {
         vote_pkt: LRaftPacket, req: LRaftPacket,
     )
         requires
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             !ds.network.contains(vote_pkt), ds_.network.contains(vote_pkt),
             !ds.network.contains(req), ds_.network.contains(req),
             vote_pkt.msg is VoteResponse,
@@ -16248,7 +16250,7 @@ verus! {
             RequestVoteSenderState(ds),
             VoteLogLenBounded(ds),
             LogAppendOnly(ds, ds_),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
             (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
                 ==> ds_.vote_log_len.dom().contains((v, t))
                     && #[trigger] ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)]),
@@ -16317,7 +16319,7 @@ verus! {
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             VoteGrantedLogUpToDateAtVoteTime(ds_)
     {
@@ -16451,11 +16453,11 @@ verus! {
             AppendResponseLogAgreement(ds),
             LogMatching(ds),
             AppendEntriesIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             AppendResponseLogAgreement(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         lemma_log_append_only(ds, ds_);
 
         let server_id = choose |sid: int|
@@ -16620,11 +16622,11 @@ verus! {
             MatchIndexBounded(ds),
             AppendResponseLogAgreement(ds),
             SenderIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             MatchIndexBounded(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         lemma_log_append_only(ds, ds_);
 
         let server_id = choose |sid: int|
@@ -16706,98 +16708,49 @@ verus! {
     }
 
     // =========================================================================
-    // AppendEntriesLeaderCommitBound Induction
+    // AppendEntriesCommitHistoryBound Induction
     // =========================================================================
 
-    /// AELCB: for AE packets in the network, ae_leader_commit <= leader's
-    /// current commit_index.
-    ///
-    /// Old packets: AELCB(ds) gives bound at ds. commit_index only grows
-    /// (all actions preserve or increase). So bound preserved at ds_.
-    /// New packets: LSendAppendEntries sets leader_commit = s.commit_index.
-    /// Stepping server's commit_index at ds_ >= s.commit_index.
-    proof fn lemma_append_entries_leader_commit_bound_inductive(
-        ds: RaftDistributedState, ds_: RaftDistributedState
+    /// Old advertisements refer to historical commitment, even after reboot.
+    proof fn lemma_append_entries_commit_history_bound_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires
-            AppendEntriesLeaderCommitBound(ds),
-            AppendEntriesIntegrity(ds),
-            CommitIndexBounded(ds),
-            RaftDistributedNext(ds, ds_),
-        ensures
-            AppendEntriesLeaderCommitBound(ds_)
+            AppendEntriesCommitHistoryBound(ds),
+            CommitHistoryValid(ds),
+            CommitIndexBounded(ds_),
+            RaftDistributedNormalNext(ds, ds_),
+        ensures AppendEntriesCommitHistoryBound(ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
-
-        let server_id = choose |sid: int|
-            #![trigger ds.server_states[sid]]
-        {
+        let sid = choose |sid: int| {
             &&& 0 <= sid < ds.num_servers
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != sid ==>
-                ds_.server_states[j] == ds.server_states[j])
+                    ds_.server_states[j] == ds.server_states[j])
             &&& RaftServerStepWithNetwork(ds, ds_, sid)
         };
-
-        let s = ds.server_states[server_id];
-        let s_ = ds_.server_states[server_id];
-        let c = ds.server_constants[server_id];
-        assert(LNext(s, s_, c));
-        assert(s.commit_index <= s.log.len());
-        lemma_lnext_commit_index_monotone(s, s_, c);
-        let (sent_packets, received_from) =
-            choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
-                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
-                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
-                    ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
-                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
-                        &&& pkt.src == server_id
-                        &&& 0 <= pkt.dst < ds.num_servers
-                        &&& (exists |i: int|
-                            0 <= i < sp.len() && pkt.msg == sp[i])
-                        &&& (match rf {
-                            Some(src) => pkt.dst == src,
-                            None => true,
-                        })
-                    })
-            };
-
-        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
-            match p.msg {
-                LRaftMessage::AppendEntries { leader_commit, leader, .. } => {
-                    &&& 0 <= leader < ds_.num_servers
-                    &&& leader_commit <= ds_.server_states[leader].commit_index
+        let (sp, rf) = choose |sp: Seq<LRaftMessage>, rf: Option<int>|
+            RaftServerStepWitness(ds, ds_, sid, sp, rf);
+        let s = ds.server_states[sid];
+        let s_ = ds_.server_states[sid];
+        assert(ds_.committed_history.len() >= ds.committed_history.len());
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)]
+            ds_.network.contains(p) implies
+                match p.msg {
+                    LRaftMessage::AppendEntries { leader_commit, leader, .. } => {
+                        &&& 0 <= leader < ds_.num_servers
+                        &&& leader_commit <= ds_.committed_history.len()
+                    },
+                    _ => true,
                 }
-                _ => true,
-            }
         by {
-            if p.msg is AppendEntries {
-                let l = p.msg->AppendEntries_leader;
-                let lc = p.msg->AppendEntries_leader_commit;
-                if ds.network.contains(p) {
-                    // Old packet: AELCB(ds) gives lc <= leader.commit_index at ds.
-                    // commit_index never decreases, so holds at ds_.
-                    assert(AppendEntriesLeaderCommitBound(ds));
-                    assert(lc <= ds.server_states[l].commit_index);
-                    // leader's commit_index at ds_ >= ds (either unchanged or increased)
-                    if l != server_id {
-                        assert(ds_.server_states[l] == ds.server_states[l]);
-                    }
-                    // For l == server_id: all LNext branches preserve or increase
-                    // commit_index. Z3 handles this by unfolding LNext.
-                } else {
-                    // New packet: sent by LSendAppendEntries.
-                    // leader_commit == s.commit_index (at send time).
-                    // The sender is server_id, so l == server_id.
-                    // s_.commit_index >= s.commit_index.
-                    // From AEI, 0 <= l < num_servers.
-                    assert(p.src == server_id);
-                    assert(l == server_id);
-                    assert(lc == s.commit_index);
-                }
+            if !ds.network.contains(p) && p.msg is AppendEntries {
+                let k = choose |k: int| 0 <= k < sp.len() && p.msg == sp[k];
+                assert(RaftActionProduces(ds, sid, s, s_, ds.server_constants[sid], sp, rf));
+                assert(p.msg->AppendEntries_leader == sid);
+                assert(p.msg->AppendEntries_leader_commit == s.commit_index);
             }
-        }
+        };
     }
 
     // =========================================================================
@@ -16812,7 +16765,7 @@ verus! {
             UncommittedSuffixesHaveAtMostOneConfiguration(ds),
             AppendEntriesConfigurationBoundaryIntegrity(ds),
             AppendEntriesIntegrity(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             AppendEntriesConfigurationBoundaryIntegrity(ds_),
     {
@@ -16900,7 +16853,7 @@ verus! {
             AppendEntriesConfigurationBoundaryIntegrity(ds),
             AppendEntriesIntegrity(ds),
             LogMatching(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             UncommittedSuffixesHaveAtMostOneConfiguration(ds_),
     {
@@ -16994,17 +16947,17 @@ verus! {
     // Composite induction step
     // =========================================================================
 
-    /// Top-level induction: the full safety invariant is preserved by RaftDistributedNext
+    /// Top-level induction: the full safety invariant is preserved by RaftDistributedNormalNext
     pub proof fn lemma_safety_invariant_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
             RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             RaftSafetyInvariant(ds_)
     {
-        // Well-formedness: directly from RaftDistributedNext precondition
+        // Well-formedness: directly from RaftDistributedNormalNext precondition
         assert(WellFormedRaftDistributed(ds_));
 
         // Supporting invariants
@@ -17047,8 +17000,10 @@ verus! {
         lemma_vote_log_len_entry_term_bound_inductive(ds, ds_);
         lemma_vote_granted_log_up_to_date_inductive(ds, ds_);
 
+        crate::protocol::Raft::refinement_proof::recovery::lemma_commit_history_normal_inductive(ds, ds_);
+
         // Follower commit-update bound
-        lemma_append_entries_leader_commit_bound_inductive(ds, ds_);
+        lemma_append_entries_commit_history_bound_inductive(ds, ds_);
 
         // Election-snapshot ghost state
         lemma_election_log_len_bounded_inductive(ds, ds_);

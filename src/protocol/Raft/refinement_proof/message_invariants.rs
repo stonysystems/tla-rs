@@ -534,20 +534,19 @@ verus! {
     }
 
     // =========================================================================
-    // Message Invariant 12: AppendEntries Leader Commit Bound
+    // Message Invariant 12: AppendEntries Historical Commit Bound
     // =========================================================================
     //
-    // For AE packets in the network, ae_leader_commit <= leader's current
-    // commit_index. The leader sends `leader_commit: s.commit_index` at
-    // send time (LSendAppendEntries line 167). By commit_index monotonicity
-    // (commit_index never decreases), this bound is preserved.
+    // An advertisement is bounded by the history of actual commitment. A
+    // reboot can reset the sender's local commit_index while this old packet
+    // remains in the network, so current local knowledge is not a valid bound.
 
-    pub open spec fn AppendEntriesLeaderCommitBound(ds: RaftDistributedState) -> bool {
+    pub open spec fn AppendEntriesCommitHistoryBound(ds: RaftDistributedState) -> bool {
         forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::AppendEntries { leader_commit, leader, .. } => {
                     &&& 0 <= leader < ds.num_servers
-                    &&& leader_commit <= ds.server_states[leader].commit_index
+                    &&& leader_commit <= ds.committed_history.len()
                 }
                 _ => true,
             }
@@ -612,7 +611,7 @@ verus! {
     // LogAppendOnly proof
     // =========================================================================
 
-    /// Prove LogAppendOnly as a step property of RaftDistributedNext.
+    /// Prove LogAppendOnly for normal protocol steps.
     /// Every LNext branch either preserves the log (frame) or pushes one entry.
     pub proof fn lemma_log_append_only(
         ds: RaftDistributedState, ds_: RaftDistributedState
@@ -622,11 +621,11 @@ verus! {
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
-            RaftDistributedNext(ds, ds_),
+            RaftDistributedNormalNext(ds, ds_),
         ensures
             LogAppendOnly(ds, ds_)
     {
-        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_normal_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],

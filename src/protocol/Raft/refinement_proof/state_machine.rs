@@ -46,6 +46,9 @@ verus! {
         // snapshot length is what lets a proof conclude that a log entry whose
         // term is below the leader's own term was already present at election.
         pub election_log_len: Map<(int, int), int>,
+        /// Ghost observation of the longest prefix ever committed. Reboot does
+        /// not erase past commitment, even when every local commit index resets.
+        pub committed_history: Seq<LLogEntry>,
     }
 
     /// Well-formedness of the distributed state
@@ -73,6 +76,32 @@ verus! {
         &&& ds.log_commit_certificates
             == Map::<int, LogCommitCertificate>::empty()
         &&& ds.election_log_len == Map::<(int, int), int>::empty()
+        &&& ds.committed_history == Seq::<LLogEntry>::empty()
+    }
+
+    /// Record a new longest committed prefix, otherwise retain the observation.
+    /// This is proof history, not a persistent field of a running server.
+    pub open spec fn RecordCommittedPrefix(
+        history: Seq<LLogEntry>, s: LState,
+    ) -> Seq<LLogEntry> {
+        if s.commit_index > history.len() {
+            s.log.subrange(0, s.commit_index)
+        } else {
+            history
+        }
+    }
+
+    /// The history is backed by the same certificates as actual committed
+    /// entries, and covers every server's current knowledge of commitment.
+    pub open spec fn CommitHistoryValid(ds: RaftDistributedState) -> bool {
+        &&& (forall |i: int| #![trigger ds.server_states[i]]
+            0 <= i < ds.num_servers ==>
+                ds.server_states[i].commit_index <= ds.committed_history.len())
+        &&& (forall |k: int| #![trigger ds.committed_history[k]]
+            0 <= k < ds.committed_history.len() ==> {
+                &&& ds.log_commit_certificates.dom().contains(k)
+                &&& ds.log_commit_certificates[k].entry == ds.committed_history[k]
+            })
     }
 
     /// Helper: which action branch was taken, producing the given sent_packets.
@@ -128,6 +157,10 @@ verus! {
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
         {
+            // Record only an actual post-step committed prefix. This observer
+            // is deterministic and adds no guards to the protocol action.
+            &&& ds_.committed_history == RecordCommittedPrefix(
+                ds.committed_history, s_)
             // Action: which branch was taken
             &&& RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from)
             // Network monotonicity: old packets preserved
@@ -362,7 +395,7 @@ verus! {
     /// In both cases, the network is monotonic (messages are never removed),
     /// new messages are tagged with src == server_id, and new message payloads
     /// correspond to what the action produced.
-    pub open spec fn RaftDistributedNext(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
+    pub open spec fn RaftDistributedNormalNext(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
         &&& WellFormedRaftDistributed(ds_)
         &&& ds_.num_servers == ds.num_servers
@@ -378,9 +411,31 @@ verus! {
         }
     }
 
-    /// RaftDistributedNext without network routing.
+    /// Reboot one server without changing its durable state or the network.
+    /// Ghost histories are observations of the execution, not volatile memory.
+    pub open spec fn RaftDistributedReboot(
+        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    ) -> bool {
+        &&& WellFormedRaftDistributed(ds)
+        &&& 0 <= server_id < ds.num_servers
+        &&& LReboot(ds.server_states[server_id], ds_.server_states[server_id])
+        &&& ds_ == (RaftDistributedState {
+            server_states: ds.server_states.update(server_id, ds_.server_states[server_id]),
+            ..ds
+        })
+    }
+
+    /// The behavior relation includes arbitrarily interleaved reboots.
+    pub open spec fn RaftDistributedNext(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+    ) -> bool {
+        ||| RaftDistributedNormalNext(ds, ds_)
+        ||| exists |server_id: int| RaftDistributedReboot(ds, ds_, server_id)
+    }
+
+    /// The normal protocol relation without network routing.
     /// Omits sent_packets and recv_from, keeping only the server step and frame.
-    /// Every step of RaftDistributedNext implies a step of RaftDistributedNextLegacy.
+    /// Every normal step implies a step of RaftDistributedNextLegacy.
     pub open spec fn RaftDistributedNextLegacy(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
         &&& WellFormedRaftDistributed(ds_)
@@ -397,18 +452,18 @@ verus! {
         }
     }
 
-    /// RaftDistributedNext implies the legacy version (without network routing).
-    /// Each action category in RaftDistributedNext (LTimeout, LClientRequest,
+    /// A normal step implies the legacy version without network routing.
+    /// Each action category in RaftDistributedNormalNext (LTimeout, LClientRequest,
     /// LSendAppendEntries, LTryAdvanceCommitIndex, LHandleMessage) directly
     /// corresponds to a branch of LNext. The same server_id witness works
     /// for both. Network update constraints and sent_packets are dropped.
-    pub proof fn lemma_distributed_next_implies_legacy(
+    pub proof fn lemma_normal_next_implies_legacy(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
-        requires RaftDistributedNext(ds, ds_)
+        requires RaftDistributedNormalNext(ds, ds_)
         ensures RaftDistributedNextLegacy(ds, ds_)
     {
-        // RaftDistributedNext provides exists |server_id, sent_packets| { action_categories && ... }
+        // The normal relation provides the same server witness.
         // Each action category implies the corresponding LNext branch by existential weakening.
         // The frame condition is identical. Network constraints are simply dropped.
     }
@@ -419,7 +474,8 @@ verus! {
 
     pub type RaftBehavior = Seq<RaftDistributedState>;
 
-    /// A valid Raft behavior: initial state followed by valid transitions
+    /// A valid behavior includes any finite interleaving of protocol actions
+    /// and reboots, including repeated or whole-cluster reboot sequences.
     pub open spec fn IsValidRaftBehavior(b: RaftBehavior) -> bool {
         &&& b.len() > 0
         &&& RaftDistributedInit(b[0])
@@ -469,28 +525,9 @@ verus! {
     // Committed Log Extraction
     // =========================================================================
 
-    /// Extract the committed log prefix from the distributed state.
-    /// The committed log at step i is the longest prefix of any server's log
-    /// such that every entry up to that point is backed by a majority of servers
-    /// having that entry in their logs.
-    ///
-    /// Formally: entry at index k is committed if there exists a majority quorum Q
-    /// such that for every server j in Q, j's log has length > k and j's log[k]
-    /// matches the entry. The committed log is the longest prefix of such entries.
-    ///
-    /// For safety, we use the strongest definition: the committed log is the
-    /// prefix up to the minimum commit_index among all servers that are leaders
-    /// in the current term, or we look at majority agreement on log entries.
-    ///
-    /// Simplified definition: extract from the leader's commit_index.
-    pub open spec fn GetCommittedLog(ds: RaftDistributedState) -> Seq<int> {
-        // The committed log is derived from the longest commit prefix
-        // backed by majority agreement. For well-behaved behaviors,
-        // this equals the leader's log[0..commit_index].
-        //
-        // We define it as the log prefix up to the maximum commit_index
-        // among all servers, projected through any server's log.
-        // Safety invariants ensure all servers agree on committed entries.
+    /// Extract the longest prefix currently known to be committed by any node.
+    /// This diagnostic view can shrink on reboot; it is not the refinement map.
+    pub open spec fn GetKnownCommittedLog(ds: RaftDistributedState) -> Seq<int> {
         let max_commit = MaxCommitIndex(ds);
         if max_commit <= 0 {
             Seq::<int>::empty()
@@ -502,6 +539,11 @@ verus! {
                 && ds.server_states[id].log.len() >= max_commit;
             ExtractLogValues(ds.server_states[server_id].log, max_commit)
         }
+    }
+
+    /// Abstract committed history survives the loss of local commit knowledge.
+    pub open spec fn GetCommittedLog(ds: RaftDistributedState) -> Seq<int> {
+        Seq::new(ds.committed_history.len(), |k: int| ds.committed_history[k].value)
     }
 
     /// Maximum commit_index across all servers
@@ -522,6 +564,7 @@ verus! {
                     ds.configuration_commit_certificates,
                 log_commit_certificates: ds.log_commit_certificates,
                 election_log_len: ds.election_log_len,
+                committed_history: ds.committed_history,
             });
             if last_commit > rest_max { last_commit } else { rest_max }
         }
@@ -609,6 +652,7 @@ verus! {
                     ds.configuration_commit_certificates,
                 log_commit_certificates: ds.log_commit_certificates,
                 election_log_len: ds.election_log_len,
+                committed_history: ds.committed_history,
             };
             assert(sub_ds.server_states.len() == ds.num_servers - 1);
             lemma_max_commit_index_eq_seq(sub_ds);
@@ -711,6 +755,7 @@ verus! {
                 ds.configuration_commit_certificates,
             log_commit_certificates: ds.log_commit_certificates,
             election_log_len: ds.election_log_len,
+            committed_history: ds.committed_history,
         };
         let rest_max = MaxCommitIndex(sub_ds);
         if last_commit >= MaxCommitIndex(ds) {
@@ -777,17 +822,17 @@ verus! {
         }
     }
 
-    /// GetCommittedLog length equals MaxCommitIndex when CommitIndexBounded holds
-    pub proof fn lemma_committed_log_len(ds: RaftDistributedState)
+    /// GetKnownCommittedLog length equals MaxCommitIndex when CommitIndexBounded holds
+    pub proof fn lemma_known_committed_log_len(ds: RaftDistributedState)
         requires
             WellFormedRaftDistributed(ds),
             CommitIndexBounded(ds),
         ensures
-            GetCommittedLog(ds).len() == if MaxCommitIndex(ds) <= 0 { 0 } else { MaxCommitIndex(ds) }
+            GetKnownCommittedLog(ds).len() == if MaxCommitIndex(ds) <= 0 { 0 } else { MaxCommitIndex(ds) }
     {
         let max_commit = MaxCommitIndex(ds);
         if max_commit <= 0 {
-            // GetCommittedLog returns empty
+            // GetKnownCommittedLog returns empty
         } else {
             // Find a server achieving max_commit with log.len() >= max_commit
             lemma_max_commit_index_witness(ds);

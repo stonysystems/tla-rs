@@ -863,7 +863,27 @@ verus! {
     // of individual atomic actions. Timer-driven actions are unchanged.
     // ---------------------------------------------------------------
 
-    /// Next-state relation: disjunction of all possible transitions.
+    /// Environment reboot: persistent term, vote and log survive unchanged.
+    /// No runtime handler is generated for this specification-only action.
+    pub open spec fn LReboot(s: LState, s_: LState) -> bool {
+        &&& s_.current_term == s.current_term
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log
+        &&& s_.role is Follower
+        &&& s_.commit_index == 0
+        &&& s_.votes_granted == Set::<int>::empty()
+        &&& s_.election_membership_phase is None
+        &&& s_.match_index == Map::<u64, u64>::empty()
+        &&& s_.next_index == Map::<u64, u64>::empty()
+    }
+
+    /// Local model relation, including the environment's reboot action.
+    pub open spec fn LNextWithReboot(s: LState, s_: LState, c: LConstants) -> bool {
+        LNext(s, s_, c) || LReboot(s, s_)
+    }
+
+    /// Normal protocol transitions, excluding environment reboots.
     /// Uses composite message dispatch + commit advancement (Phases 27.2-27.4).
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
         // Timer-driven actions (unchanged)

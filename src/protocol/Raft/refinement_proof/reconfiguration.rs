@@ -790,12 +790,10 @@ verus! {
         }
     }
 
-    /// Extract the application-visible committed log from the distributed
-    /// Raft state without changing the existing physical committed-log view.
-    ///
-    /// The physical committed prefix still includes every Raft entry, while
-    /// this parallel view filters Configuration entries from that prefix.
-    pub open spec fn GetApplicationCommittedLog(
+    /// Application commands currently known to be committed by some node.
+    /// This diagnostic view can shrink on reboot. GetApplicationCommittedLog
+    /// below uses historical commitment instead.
+    pub open spec fn GetKnownApplicationCommittedLog(
         ds: RaftDistributedState,
     ) -> Seq<int> {
         let max_commit = MaxCommitIndex(ds);
@@ -814,23 +812,40 @@ verus! {
 
     /// The parallel distributed view is exactly the tagged-payload filter
     /// applied to the selected maximum committed Raft prefix.
-    pub proof fn lemma_get_application_committed_log_selected_prefix(
+    pub proof fn lemma_get_known_application_committed_log_selected_prefix(
         ds: RaftDistributedState,
     )
         ensures
-            MaxCommitIndex(ds) <= 0 ==> GetApplicationCommittedLog(ds)
+            MaxCommitIndex(ds) <= 0 ==> GetKnownApplicationCommittedLog(ds)
                 == Seq::<int>::empty(),
             MaxCommitIndex(ds) > 0 ==> {
                 let max_commit = MaxCommitIndex(ds);
                 let server_id = choose |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
                     && ds.server_states[id].commit_index >= max_commit
                     && ds.server_states[id].log.len() >= max_commit;
-                GetApplicationCommittedLog(ds)
+                GetKnownApplicationCommittedLog(ds)
                     == application_values_from_raft_log(
                         ds.server_states[server_id].log,
                         max_commit,
                     )
             },
+    {
+    }
+
+    /// Application commands from the historical committed prefix. Reboot
+    /// preserves this view even when every server forgets its commit index.
+    pub open spec fn GetApplicationCommittedLog(ds: RaftDistributedState) -> Seq<int> {
+        application_values_from_raft_log(
+            ds.committed_history, ds.committed_history.len() as int,
+        )
+    }
+
+    pub proof fn lemma_reboot_preserves_application_committed_log(
+        ds: RaftDistributedState, ds_: RaftDistributedState, sid: int,
+    )
+        requires
+            crate::protocol::Raft::refinement_proof::state_machine::RaftDistributedReboot(ds, ds_, sid),
+        ensures GetApplicationCommittedLog(ds_) == GetApplicationCommittedLog(ds)
     {
     }
 

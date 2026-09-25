@@ -5,6 +5,9 @@
 # call atomic functions with requires preconditions that need runtime guard checks.
 skip_functions = [
     "LNext",
+    # Environment actions belong only to the model and its recovery proof.
+    "LReboot",
+    "LNextWithReboot",
 ]
 
 # MembershipPhase is the proof-only set representation. Its executable

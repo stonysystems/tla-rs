@@ -45,7 +45,12 @@ verus! {
         // which proves all conjuncts of RaftSafetyInvariant (including
         // VotesGrantedAreServers, CandidateOrLeaderVotedForSelf,
         // VotersVotedForCandidate, and the 4 core safety invariants).
-        lemma_safety_invariant_inductive(ds, ds_);
+        if RaftDistributedNormalNext(ds, ds_) {
+            lemma_safety_invariant_inductive(ds, ds_);
+        } else {
+            let sid = choose |sid: int| RaftDistributedReboot(ds, ds_, sid);
+            crate::protocol::Raft::refinement_proof::recovery::lemma_reboot_preserves_invariant(ds, ds_, sid);
+        }
     }
 
     // =========================================================================
@@ -118,4 +123,81 @@ verus! {
     // over the certificate map, so it can become a conjunct of
     // `RaftSafetyInvariant` without `invariants.rs` having to import this
     // module. It reaches here through the glob import.
+
+    /// History agrees with any node's currently committed physical prefix.
+    pub proof fn lemma_local_commit_matches_history(
+        ds: RaftDistributedState, sid: int, k: int,
+    )
+        requires
+            CommitHistoryValid(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexBounded(ds),
+            0 <= sid < ds.num_servers,
+            0 <= k < ds.server_states[sid].commit_index,
+        ensures
+            k < ds.committed_history.len(),
+            ds.committed_history[k] == ds.server_states[sid].log[k],
+    {
+        assert(ds.log_commit_certificates[k].entry == ds.committed_history[k]);
+        assert(ds.log_commit_certificates[k].entry == ds.server_states[sid].log[k]);
+    }
+
+    /// Once a node commits an entry, the same entry remains in its durable log
+    /// and in abstract history at every later state, across intervening reboots.
+    pub proof fn lemma_committed_entry_survives_reboots(
+        b: RaftBehavior, earlier: int, later: int, sid: int, k: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= earlier <= later < b.len(),
+            0 <= sid < b[earlier].num_servers,
+            0 <= k < b[earlier].server_states[sid].commit_index,
+        ensures
+            k < b[later].committed_history.len(),
+            b[later].committed_history[k] == b[earlier].server_states[sid].log[k],
+            0 <= sid < b[later].num_servers,
+            k < b[later].server_states[sid].log.len(),
+            b[later].server_states[sid].log[k] == b[earlier].server_states[sid].log[k],
+        decreases later - earlier
+    {
+        lemma_invariant_holds_throughout_behavior(b, later);
+        if earlier == later {
+            lemma_local_commit_matches_history(b[earlier], sid, k);
+        } else {
+            lemma_committed_entry_survives_reboots(b, earlier, later - 1, sid, k);
+            lemma_invariant_holds_throughout_behavior(b, later - 1);
+            crate::protocol::Raft::refinement_proof::committed::lemma_committed_history_monotone(
+                b[later - 1], b[later]);
+            if RaftDistributedNormalNext(b[later - 1], b[later]) {
+                crate::protocol::Raft::refinement_proof::message_invariants::lemma_log_append_only(
+                    b[later - 1], b[later]);
+            } else {
+                let rebooted = choose |i: int|
+                    #![trigger RaftDistributedReboot(b[later - 1], b[later], i)]
+                    RaftDistributedReboot(b[later - 1], b[later], i);
+                crate::protocol::Raft::refinement_proof::recovery::lemma_reboot_frame(
+                    b[later - 1], b[later], rebooted);
+            }
+        }
+    }
+
+    /// Safety across time, not just agreement among the current commit indices.
+    pub proof fn lemma_commits_at_different_times_agree(
+        b: RaftBehavior, earlier: int, later: int, left: int, right: int, k: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= earlier <= later < b.len(),
+            0 <= left < b[earlier].num_servers,
+            0 <= right < b[later].num_servers,
+            0 <= k < b[earlier].server_states[left].commit_index,
+            k < b[later].server_states[right].commit_index,
+        ensures
+            b[earlier].server_states[left].log[k] == b[later].server_states[right].log[k],
+    {
+        lemma_committed_entry_survives_reboots(b, earlier, later, left, k);
+        lemma_invariant_holds_throughout_behavior(b, later);
+        lemma_local_commit_matches_history(b[later], right, k);
+    }
+
 }

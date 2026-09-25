@@ -130,9 +130,9 @@ verus! {
     /// Per-server state variables from the TLA+ spec are represented as
     /// properties of a single server interacting with abstract vote/append responses.
     pub struct LState {
-        // Persistent state (on all servers)
+        // Protocol state on all servers. Term, vote and log are persistent.
         pub current_term: int,          // Latest term this server has seen
-        pub role: LServerRole,          // Current role: Follower, Candidate, or Leader
+        pub role: LServerRole,          // Volatile role: Follower, Candidate, or Leader
         pub has_voted: bool,            // Whether this server has voted in current term
         pub voted_for: int,             // CandidateId that received vote (valid if has_voted)
         pub log: Seq<LLogEntry>,        // Log entries
