@@ -18491,8 +18491,9 @@ once. Keep `.automan` emission as an explicit option. Do not start this before 5
 
 **Opened 2026-08-17.** Decisions taken by the user the same day: **a new module
 `src/protocol/EPaxosStar/` and a new corpus case `tier2/t2_03_epaxos_star`.**
-Neither `src/protocol/EPaxos/` nor `t2_02_epaxos` is edited, so
-`epaxos.automan`, `epaxos_transpile.toml`, `src/generated/EPaxos/`,
+Neither `src/protocol/EPaxos/` nor `t2_02_epaxos` is edited by this phase, so
+its inline `// @automan` modes (the `epaxos.automan` sidecar until main's
+Phase 55 migrated it, 46843aed), `epaxos_transpile.toml`, `src/generated/EPaxos/`,
 `src/implementation/EPaxos/host.rs` and `scripts/bench_epaxos.sh` keep working
 throughout.
 
@@ -19383,8 +19384,11 @@ B is open is not.
 
 > **Renumbered 2026-09-25, when `jetpack_proof` merged `main`.** This phase was
 > *Phase 55* on the branch; `main` had meanwhile used 55 for inline AutoMan
-> annotations. Commit messages from 2026-08-06 to 2026-08-13 still say
-> `Phase 55.x` — read them as 58.x.
+> annotations. The branch-side commits that say `Phase 55.x` (`git log
+> 2a04e0e5..49274ba4`, d743abec through 4b26fd83, 2026-08-06 to 2026-08-13)
+> mean this phase — read them as 58.x. main's commits from the same window
+> (5a0b5430, eb0a6ecf, fe9289eb, 46843aed) are the inline-annotations
+> Phase 55 above and keep that number.
 
 **Goal (as asked, 2026-08-05):** rewrite **all three** Jetpack modules —
 `jetpack.tla`, `base_raft.tla`, and the composition — into the clean subset, so
