@@ -1,0 +1,31 @@
+//! EPaxos* baseline model, separate from the simplified executable EPaxos model.
+//! Reference: https://arxiv.org/html/2511.02743v2, sections 3 and D.
+pub mod types;
+pub mod quorum;
+pub mod model;
+pub mod recovery;
+pub mod execution;
+pub mod behavior;
+pub mod invariants;
+pub mod identities;
+pub mod progress;
+pub mod coordinator;
+pub mod validity;
+pub mod knowledge;
+pub mod execution_proof;
+pub mod evidence;
+pub mod recovery_certificates;
+pub mod slow_agreement;
+pub mod preaccept_evidence;
+pub mod support;
+pub mod validation_evidence;
+pub mod proposal_origins;
+pub mod fast_agreement;
+pub mod decisions;
+pub mod agreement;
+pub mod dependency_certificates;
+pub mod visibility;
+pub mod graph;
+pub mod refinement;
+pub mod safety;
+pub mod scenarios;

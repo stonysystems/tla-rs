@@ -9,5 +9,6 @@ pub mod PrimaryBackup;
 pub mod RSL;
 pub mod Raft;
 pub mod TwoPhase;
+pub mod Tiga;
 pub mod VerticalPaxos;
 pub mod common;
