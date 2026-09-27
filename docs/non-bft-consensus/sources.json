@@ -466,5 +466,45 @@
     "sha256": "5fadc9369f27c6543c5427f9033fd53df9659c8faf278fba926a3f4d4a4e40ad",
     "format": "PDF",
     "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "om-2004",
+    "url": "https://www.usenix.org/legacy/events/nsdi04/tech/full_papers/yu/yu.pdf",
+    "sha256": "9c962045df9e071225d3e56e1ac40db0b62ddcb43c3e228fdcf525f53a231cbe",
+    "bytes": 272333,
+    "sections": "Sections 3 and 5, Figures 4 and 5",
+    "retrieved_on": "2026-09-27",
+    "status": "fetched",
+    "format": "PDF"
+  },
+  {
+    "id": "om-extended",
+    "url": "https://www.comp.nus.edu.sg/~yuhf/p3-yu.pdf",
+    "sha256": "1cd467b2a64e5f31bc0dd03f3b7997e4a408cc38b46e14327b08db73e9364ba8",
+    "bytes": 372241,
+    "sections": "Extended source comparison, normal operations and consensus proof",
+    "retrieved_on": "2026-09-27",
+    "status": "fetched",
+    "format": "PDF"
+  },
+  {
+    "id": "corfu-2012",
+    "url": "https://www.usenix.org/system/files/conference/nsdi12/nsdi12-final30.pdf",
+    "sha256": "46177642ac6d636b68f03fe8e33d7ce135dc4b7736f17fd46dd375676abb8d09",
+    "bytes": 531850,
+    "sections": "Sections 3.2-3.4",
+    "retrieved_on": "2026-09-27",
+    "status": "fetched",
+    "format": "PDF"
+  },
+  {
+    "id": "specpaxos-2015",
+    "url": "https://www.usenix.org/system/files/conference/nsdi15/nsdi15-paper-ports.pdf",
+    "sha256": "db6941b9631ed4852f997fc6bf4a2a8a160167cbc0fefc31413d2f88c15d3342",
+    "bytes": 1078120,
+    "sections": "Sections 4.1-4.3",
+    "retrieved_on": "2026-09-27",
+    "status": "fetched",
+    "format": "PDF"
   }
 ]

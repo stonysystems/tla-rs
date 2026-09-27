@@ -19,7 +19,7 @@ outside this scope. Full industry papers count, including SIGMOD industry
 papers published in companion proceedings. Conference edition years determine
 the main date column; publication-date differences appear in each record.
 
-Four formalization packages have been added:
+Nine formalization packages have been added:
 
 | Work | Result | Remaining boundary |
 |---|---|---|
@@ -27,6 +27,11 @@ Four formalization packages have been added:
 | [Mencius, OSDI 2008](mencius.md) | Verus proves agreement and coordinator origin for the single-instance core | Atomic prepare-quorum collection; multi-instance scheduling, skip optimizations and liveness remain open |
 | [PAC/G-PAC, VLDB 2019 and 2021 correction](gpac-recovery.md) | No Verus-proved properties yet | Historical replay evidence only; formal protocol proofs remain open |
 | [Jetpack, OSDI 2026](jetpack.md) | Verus proves recovery safety, fast/base ordering agreement, execution consistency and client linearizability for an abstract host composition | Explicit host ordering, fenced prefix recovery and execution contracts; host/implementation refinement, membership changes and liveness remain open |
+| [Om, NSDI 2004](om.md) | Conditional agreement and validity; Verus-proved non-linearizable read/write execution and missing proposal lookup | Intersecting witness quorums and defined lookups required for the positive theorem; implementation audit remains open |
+| [Gaios, NSDI 2011](gaios.md) | Slot agreement, read freshness and register-history linearizability | Fixed membership and explicit recovery-horizon/execution contracts |
+| [CORFU, NSDI 2012](corfu.md) | Per-position agreement, validity, epoch fencing, single-assignment refinement and layout agreement | Atomic full-chain migration; whole-log append and sequencer refinement remain open |
+| [Replicated Commit, VLDB 2013](replicated-commit.md) | Atomic-commit agreement, prepared-quorum validity and stable decision refinement | One transaction; classic-Paxos recovery completion; multi-transaction serializability remains open |
+| [Speculative Paxos, NSDI 2015](speculative-paxos.md) | Fast/slow agreement, recovery preservation, execution consistency and client linearizability | Fixed membership, fenced snapshots, exact prefix hashes; concrete merge and rollback refinement remain open |
 
 Existing repository evidence for EPaxos and Tiga is linked in the
 catalog. Those results have not been reverified or promoted to proofs of the
@@ -41,6 +46,7 @@ source protocol.
 - [Coverage and exclusions](coverage.md)
 - [Retrieved source URLs and SHA-256 digests](sources.json)
 - [Verification evidence](verification.json)
+- [Next five results](next-five.md) and [their verification evidence](next-five-verification.json)
 
 Run from the repository root with an installed Verus release:
 
@@ -52,6 +58,8 @@ VERUS_PATH=/path/to/verus \
   scripts/verify_consensus_mencius.sh
 VERUS_PATH=/path/to/verus \
   bash scripts/verify_consensus_jetpack.sh
+VERUS_PATH=/path/to/verus \
+  scripts/verify_consensus_next_five.sh
 ```
 
 The checked Verus release was `0.2026.08.02.b677dd5`. Tool and source digests are

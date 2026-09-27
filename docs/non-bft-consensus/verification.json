@@ -375,5 +375,12 @@
       },
       "log": "evidence/jetpack-controls.log"
     }
+  ],
+  "additional_verification_ledgers": [
+    {
+      "file": "next-five-verification.json",
+      "checked_on": "2026-09-27",
+      "scope": "Om, Gaios, CORFU, Replicated Commit and Speculative Paxos; new scoped safety results and Om counterexamples"
+    }
   ]
 }

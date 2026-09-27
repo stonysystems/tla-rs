@@ -1,0 +1,282 @@
+{
+  "checked_on": "2026-09-27",
+  "paper_level_completion": false,
+  "tools": {
+    "verus": {
+      "version": "0.2026.08.02.b677dd5",
+      "toolchain": "1.97.1-x86_64-unknown-linux-gnu",
+      "sha256": "ad2669f579d898ede53f2bf84e80a1daf4e3578739b0f5807ef209a0c9f382dd"
+    }
+  },
+  "proof_policy": {
+    "engine": "Verus",
+    "run_tlc": false,
+    "liveness_in_scope": false,
+    "no_cheating_standalone": true
+  },
+  "formalization_sources": [
+    {
+      "id": "om-2004",
+      "url": "https://www.usenix.org/legacy/events/nsdi04/tech/full_papers/yu/yu.pdf",
+      "sha256": "9c962045df9e071225d3e56e1ac40db0b62ddcb43c3e228fdcf525f53a231cbe",
+      "bytes": 272333,
+      "sections": "Sections 3 and 5, Figures 4 and 5",
+      "retrieved_on": "2026-09-27"
+    },
+    {
+      "id": "om-extended",
+      "url": "https://www.comp.nus.edu.sg/~yuhf/p3-yu.pdf",
+      "sha256": "1cd467b2a64e5f31bc0dd03f3b7997e4a408cc38b46e14327b08db73e9364ba8",
+      "bytes": 372241,
+      "sections": "Extended source comparison, normal operations and consensus proof",
+      "retrieved_on": "2026-09-27"
+    },
+    {
+      "id": "gaios-2011",
+      "url": "https://www.usenix.org/legacy/events/nsdi11/tech/full_papers/Bolosky.pdf",
+      "sha256": "147cfc856aa9b664f51a890843f1a434a8408c7e1a936584266e1d7875950cb7",
+      "bytes": 417758,
+      "sections": "Section 3.3.2",
+      "retrieved_on": "2026-09-27"
+    },
+    {
+      "id": "corfu-2012",
+      "url": "https://www.usenix.org/system/files/conference/nsdi12/nsdi12-final30.pdf",
+      "sha256": "46177642ac6d636b68f03fe8e33d7ce135dc4b7736f17fd46dd375676abb8d09",
+      "bytes": 531850,
+      "sections": "Sections 3.2-3.4",
+      "retrieved_on": "2026-09-27"
+    },
+    {
+      "id": "replicated-commit-2013",
+      "url": "https://www.vldb.org/pvldb/vol6/p661-mahmoud.pdf",
+      "sha256": "b17ad9d0ed4e3da5b15ad3a7863e5dc3f970119e1e49c13546f24c2c5ee5a4a4",
+      "bytes": 1010830,
+      "sections": "Section 3.2, Algorithm 1",
+      "retrieved_on": "2026-09-27"
+    },
+    {
+      "id": "specpaxos-2015",
+      "url": "https://www.usenix.org/system/files/conference/nsdi15/nsdi15-paper-ports.pdf",
+      "sha256": "db6941b9631ed4852f997fc6bf4a2a8a160167cbc0fefc31413d2f88c15d3342",
+      "bytes": 1078120,
+      "sections": "Sections 4.1-4.3",
+      "retrieved_on": "2026-09-27"
+    }
+  ],
+  "file_sha256": {
+    "src/protocol/ConsensusSafety/mod.rs": "664b8b1e566efb57e53311c9ed28c5808dcf151d05e0bd25a19d2e0753078126",
+    "src/protocol/ConsensusSafety/paxos.rs": "33231e0447c84937458798d0fd73d00a8d311aea83d64729cd820af00c2c5299",
+    "src/protocol/ConsensusSafety/register_history.rs": "953175365741a641305295790588c714354d20f03b1704a5c2a11e5d49600e36",
+    "src/protocol/ConsensusSafety/state_machine.rs": "af7d934b907935b5f90fbb79e52f91f87c1334c3d6ee06ed644ad7697e79ceb9",
+    "src/protocol/Om/consensus.rs": "fcd846ab296fa5e42ebac48950d76f506c3493179b9142f1dfeba0206b4c81bd",
+    "src/protocol/Om/lookup.rs": "210d181ca3f44c1fc95c1a76f416a9baa4371cdea0c6ac199205b1e28a023e78",
+    "src/protocol/Om/mod.rs": "6f2166b4bc340a3a4804a5bd02bcdf2903c513fa1c461808d15b11e5ca255b51",
+    "src/protocol/Om/read_write.rs": "9c3991cb21176ccb5d38418eadb3869308d5afdd9c700981046a85e4cc6a2f82",
+    "src/protocol/Gaios/mod.rs": "2bdf78efa29222ce5651fd7050ed4f72f75d9fdc57459621b30c30a6ea5c26b3",
+    "src/protocol/Gaios/reads.rs": "ffa355d7ed86d468656d6c9470ba0ba6dbd0cf2ceb51fd8befe630d6fc633f38",
+    "src/protocol/Corfu/chain.rs": "564bd895e23e42dbcd964875ac86cb4f3226a511bc67350ab31493d8e3a81604",
+    "src/protocol/Corfu/layout.rs": "8d96070aba731fd2411b78e0937c7de998bb71e96fb27577e77423a95d0d09b8",
+    "src/protocol/Corfu/mod.rs": "1174b8e38cfee92661083ae2ce33bfe3c84185fe1a5667c618209b880757f9a5",
+    "src/protocol/ReplicatedCommit/commit.rs": "51f78b40e929af43161851090068ee4d0c3315b24bb2b081a9a37d1a25242045",
+    "src/protocol/ReplicatedCommit/mod.rs": "f4be503b91feaf2ddd11ac296824c73d2170a2e1427c6b10f14c26c0d87ec9c9",
+    "src/protocol/SpecPaxos/execution.rs": "84e073feb18f44583ba4eaa34940787eade844fbd3fa5c7a71100364089c70dd",
+    "src/protocol/SpecPaxos/mod.rs": "c50b0e107b00b721c3ff7c1df8bda13f4acaef39ac8af117fcd707bd0e985d65",
+    "src/protocol/SpecPaxos/reconciliation.rs": "221169b0f67cfeb511aa65478c6909795e571b0bf92663e735e50da0b7089e7c",
+    "src/protocol/next_five_harness.rs": "3c0658c75d1afeb34b990316dc5aa35ef472b74f0133024343bf0a1a673bbe77",
+    "src/protocol/next_five_witnesses.rs": "41de32a41a8bbc7edf28f113b6d0828ca8b5652e476118c6af84cfc4c311403a",
+    "src/protocol/mod.rs": "127e00edd3c7cbd07fa6d5b69b7f1a0f41611512485e92866f498b9a52d79b84",
+    "scripts/verify_consensus_next_five.sh": "47b2f80629425e086aa448dfa8e3c124e6869eefc111263e51a17f8f3af1ca3f"
+  },
+  "checks": [
+    {
+      "name": "next-five-standalone",
+      "result": "pass",
+      "verified": 74,
+      "errors": 0,
+      "no_cheating": true,
+      "command": "VERUS_PATH=/path/to/verus scripts/verify_consensus_next_five.sh",
+      "log": "evidence/next-five/verification.log",
+      "scope": "All new protocol modules, shared lemmas, five positive execution witnesses and two Om counterexample witnesses",
+      "log_sha256": "e75d82c9187861b825d3b7d1481d482a91a98543462064e849caca1f1e565209"
+    },
+    {
+      "name": "next-five-crate-integration",
+      "result": "pass",
+      "verified": 74,
+      "errors": 0,
+      "command": "VERUS_PATH=/path/to/verus scripts/verify_consensus_next_five.sh --integrated",
+      "log": "evidence/next-five/integrated.log",
+      "scope": "Only the 13 selected leaf modules through src/lib.rs. Unrelated trusted crate code is not verified.",
+      "log_sha256": "62fef7b4a871f2d2742845504f64989389ee471daf7524cff94f6e6385b5910c"
+    }
+  ],
+  "results": {
+    "om-2004": {
+      "model": "src/protocol/Om/consensus.rs",
+      "report": "docs/non-bft-consensus/om.md",
+      "positive_theorems": [
+        "agreement",
+        "decision_validity"
+      ],
+      "contracts": [
+        "Returned witness quorums intersect",
+        "Every mixed-branch lookup used to advance has an observed proposal value"
+      ],
+      "counterexample_theorems": [
+        {
+          "file": "src/protocol/Om/read_write.rs",
+          "function": "reachable_new_old_inversion",
+          "claim": "Literal normal-case model has a completed non-linearizable write/read/read execution"
+        },
+        {
+          "file": "src/protocol/Om/lookup.rs",
+          "function": "mixed_lookup_can_be_missing",
+          "claim": "An intersecting-quorum execution reaches a mixed check with an absent proposal lookup"
+        }
+      ],
+      "not_proved": [
+        "Unconditional consensus safety",
+        "Witness probability bound",
+        "Implementation behavior for absent lookups or pending-write reads",
+        "Lease expiration, regeneration and concurrent reconfiguration"
+      ],
+      "liveness_proved": false,
+      "paper_level_completion": false
+    },
+    "gaios-2011": {
+      "model": "src/protocol/Gaios/reads.rs",
+      "report": "docs/non-bft-consensus/gaios.md",
+      "positive_theorems": [
+        "committed_slot_agreement",
+        "read_is_fresh",
+        "linearizable_reads_and_writes"
+      ],
+      "contracts": [
+        "Fixed membership with intersecting read/election quorums",
+        "Actual per-slot Paxos traces, with atomic Phase 1",
+        "Recovery horizon covers lower-view decisions",
+        "Accurate same-view committed metadata",
+        "Ordered prefix execution"
+      ],
+      "not_proved": [
+        "Concrete SMARTER view-change recovery and horizon maintenance",
+        "Dynamic configuration checks",
+        "General storage operations, checkpointing and client retry refinement"
+      ],
+      "liveness_proved": false,
+      "paper_level_completion": false
+    },
+    "corfu-2012": {
+      "model": "src/protocol/Corfu/chain.rs",
+      "report": "docs/non-bft-consensus/corfu.md",
+      "positive_theorems": [
+        "agreement_and_validity",
+        "old_epoch_is_fenced",
+        "single_assignment_refinement",
+        "successful_read_refines_atomic_cell"
+      ],
+      "additional_theorems": [
+        {
+          "file": "src/protocol/Corfu/layout.rs",
+          "function": "agreed_projection_migration"
+        }
+      ],
+      "contracts": [
+        "At least one old-chain survivor",
+        "Write-once cells and predecessor propagation",
+        "Seal every live old-chain node before migration",
+        "Atomic full-chain copying and publication",
+        "Layout service uses shared Paxos kernel"
+      ],
+      "not_proved": [
+        "Whole-log append-history linearizability",
+        "Minimal prefix-copy implementation",
+        "Distributed migration handshake, sequencer, multiple positions, trimming and physical flash"
+      ],
+      "liveness_proved": false,
+      "paper_level_completion": false
+    },
+    "replicated-commit-2013": {
+      "model": "src/protocol/ReplicatedCommit/commit.rs",
+      "report": "docs/non-bft-consensus/replicated-commit.md",
+      "positive_theorems": [
+        "atomic_commit_agreement",
+        "commit_requires_prepared_quorum",
+        "decision_persists",
+        "atomic_decision_refinement"
+      ],
+      "variant": "Algorithm 1 initial path with an explicitly completed classic-Paxos higher-ballot recovery procedure",
+      "contracts": [
+        "Unique initial client",
+        "Durable prepared cohorts",
+        "Commit acceptance requires every local cohort prepared",
+        "Recovery adopts maximum accepted value, aborts after empty Phase 1",
+        "Atomic prepare-quorum collection"
+      ],
+      "not_proved": [
+        "Multi-transaction one-copy serializability or data linearizability",
+        "Lock conflicts, read validation, version checks and database updates",
+        "Source implementation refinement"
+      ],
+      "liveness_proved": false,
+      "paper_level_completion": false
+    },
+    "specpaxos-2015": {
+      "model": "src/protocol/SpecPaxos/reconciliation.rs",
+      "report": "docs/non-bft-consensus/speculative-paxos.md",
+      "positive_theorems": [
+        "majority_is_retained",
+        "later_view_preserves",
+        "certificates_compatible",
+        "agreement"
+      ],
+      "additional_theorems": [
+        {
+          "file": "src/protocol/SpecPaxos/execution.rs",
+          "function": "execution_consistency"
+        },
+        {
+          "file": "src/protocol/SpecPaxos/execution.rs",
+          "function": "history_linearizable"
+        }
+      ],
+      "contracts": [
+        "Fixed 2f+1 membership",
+        "Fenced snapshots report highest earlier installed normal view",
+        "One initial log per view, with append-only normal logs",
+        "Merge selects a longest strict-majority prefix of highest-normal-view snapshots",
+        "Exact prefix hashes",
+        "Deterministic execution, unique logical operation IDs, invoked commands only"
+      ],
+      "not_proved": [
+        "Concrete message handlers and snapshot fencing refinement",
+        "COMMITTED-marker copy optimization, synchronization and merge implementation",
+        "Application rollback code, checkpointing, lost-state recovery, membership and client retry code"
+      ],
+      "liveness_proved": false,
+      "paper_level_completion": false
+    }
+  },
+  "constructive_witnesses": {
+    "file": "src/protocol/next_five_witnesses.rs",
+    "functions": [
+      "om_nonempty_decision",
+      "gaios_nonempty_read",
+      "corfu_read_survives_migration",
+      "replicated_commit_recovers_chosen_commit",
+      "speculative_fast_then_reconciliation"
+    ]
+  },
+  "trust_audit": {
+    "assume_admit_external_bodies_in_new_files": false,
+    "generated_files_changed": false,
+    "implementation_refinement_proved": false,
+    "standard_library_and_solver_trust": "Verus and vstd mathematical primitives; no additional trusted protocol lemmas"
+  },
+  "not_checked": [
+    "Whole-repository verification",
+    "Author implementation behavior",
+    "Liveness for all five protocols"
+  ]
+}

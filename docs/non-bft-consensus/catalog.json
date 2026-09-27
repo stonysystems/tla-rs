@@ -18,13 +18,23 @@
       "contribution": "Witness-based membership agreement and one-round graceful reconfiguration",
       "obligations": "Conditional quorum intersection; probabilistic safety boundary; lease graph; concurrent reconfiguration",
       "screening": "included",
-      "source_review": "abstract-and-selected-protocol-sections",
-      "model_status": "not-started",
-      "proof_status": "not-started",
-      "model_paths": [],
-      "evidence_paths": [],
+      "source_review": "full-paper-protocol-sections-with-explicit-model-mapping",
+      "model_status": "conditional-agreement-and-formal-counterexamples",
+      "proof_status": "Verus: conditional agreement/validity; non-linearizable read/write execution and missing-lookup witnesses. See om.md.",
+      "model_paths": [
+        "src/protocol/Om/consensus.rs",
+        "src/protocol/Om/lookup.rs",
+        "src/protocol/Om/mod.rs",
+        "src/protocol/Om/read_write.rs"
+      ],
+      "evidence_paths": [
+        "docs/non-bft-consensus/om.md",
+        "docs/non-bft-consensus/next-five-verification.json",
+        "src/protocol/next_five_witnesses.rs",
+        "scripts/verify_consensus_next_five.sh"
+      ],
       "publication_kind": "full-paper",
-      "safety_note": "The witness configuration deliberately permits a small probability of inconsistency. Unconditional agreement is not claimed by the authors; model the witness assumption or analyze probability of violation."
+      "safety_note": "Intersecting quorums and defined mixed lookups are required for the positive theorem. The literal normal-case read/write model admits a new/old inversion; Figure 5 can reference an absent proposal. Implementation behavior is not audited. Probabilistic bounds, regeneration and concurrent reconfiguration remain open."
     },
     {
       "id": "chain-2004",
@@ -80,13 +90,22 @@
       "contribution": "New read-only view-check protocol without logging or clock synchronization",
       "obligations": "Read freshness across elections; execution barrier; recovery; membership change",
       "screening": "included",
-      "source_review": "abstract-and-selected-protocol-sections",
-      "model_status": "not-started",
-      "proof_status": "not-started",
-      "model_paths": [],
-      "evidence_paths": [],
+      "source_review": "full-paper-protocol-sections-with-explicit-model-mapping",
+      "model_status": "abstract-fixed-membership-read-protocol",
+      "proof_status": "Verus: slot agreement, read freshness and register-history linearizability under host contracts.",
+      "model_paths": [
+        "src/protocol/Gaios/mod.rs",
+        "src/protocol/Gaios/reads.rs"
+      ],
+      "evidence_paths": [
+        "docs/non-bft-consensus/gaios.md",
+        "docs/non-bft-consensus/next-five-verification.json",
+        "src/protocol/next_five_witnesses.rs",
+        "scripts/verify_consensus_next_five.sh"
+      ],
       "publication_kind": "full-paper",
-      "scope_note": "Include the new benign-fault read protocol. The paper also detects selected hardware corruptions and converts them to stopping failures; no arbitrary-Byzantine tolerance theorem is included."
+      "scope_note": "Include the new benign-fault read protocol. The paper also detects selected hardware corruptions and converts them to stopping failures; no arbitrary-Byzantine tolerance theorem is included.",
+      "safety_note": "Recovery horizon and accurate committed metadata are explicit host contracts. Fixed membership; dynamic configuration and concrete SMARTER recovery remain open."
     },
     {
       "id": "corfu-2012",
@@ -98,12 +117,22 @@
       "contribution": "Shared-log append, hole filling and epoch sealing",
       "obligations": "Per-position agreement; sealing; concurrent reconfiguration",
       "screening": "included",
-      "source_review": "abstract-or-protocol-description",
-      "model_status": "not-started",
-      "proof_status": "not-started",
-      "model_paths": [],
-      "evidence_paths": [],
-      "publication_kind": "full-paper"
+      "source_review": "full-paper-protocol-sections-with-explicit-model-mapping",
+      "model_status": "abstract-single-position-and-layout-consensus",
+      "proof_status": "Verus: per-position agreement, validity, fencing, single-assignment refinement and layout agreement.",
+      "model_paths": [
+        "src/protocol/Corfu/chain.rs",
+        "src/protocol/Corfu/layout.rs",
+        "src/protocol/Corfu/mod.rs"
+      ],
+      "evidence_paths": [
+        "docs/non-bft-consensus/corfu.md",
+        "docs/non-bft-consensus/next-five-verification.json",
+        "src/protocol/next_five_witnesses.rs",
+        "scripts/verify_consensus_next_five.sh"
+      ],
+      "publication_kind": "full-paper",
+      "safety_note": "Atomic full-chain copying after sealing all survivors is stronger than minimal prefix migration. Whole-log append linearizability, sequencer allocation and physical refinement remain open."
     },
     {
       "id": "epaxos-2013",
@@ -138,12 +167,21 @@
       "contribution": "Commit-decision replication with reduced Paxos coordination",
       "obligations": "Phase-one elision assumptions; commit agreement; recovery",
       "screening": "included",
-      "source_review": "abstract-or-protocol-description",
-      "model_status": "not-started",
-      "proof_status": "not-started",
-      "model_paths": [],
-      "evidence_paths": [],
-      "publication_kind": "full-paper"
+      "source_review": "full-paper-protocol-sections-with-explicit-model-mapping",
+      "model_status": "single-transaction-with-explicit-recovery-completion",
+      "proof_status": "Verus: atomic-commit agreement, prepared-quorum validity and atomic-decision refinement.",
+      "model_paths": [
+        "src/protocol/ReplicatedCommit/commit.rs",
+        "src/protocol/ReplicatedCommit/mod.rs"
+      ],
+      "evidence_paths": [
+        "docs/non-bft-consensus/replicated-commit.md",
+        "docs/non-bft-consensus/next-five-verification.json",
+        "src/protocol/next_five_witnesses.rs",
+        "scripts/verify_consensus_next_five.sh"
+      ],
+      "publication_kind": "full-paper",
+      "safety_note": "Unique initial client and durable local preparation. Higher-ballot recovery is an explicitly identified classic-Paxos completion, not detailed source pseudocode. Multi-transaction serializability remains open."
     },
     {
       "id": "specpaxos-2015",
@@ -155,12 +193,22 @@
       "contribution": "Speculative agreement using mostly ordered multicast",
       "obligations": "Speculation validation; rollback; view changes; multicast disorder",
       "screening": "included",
-      "source_review": "abstract-or-protocol-description",
-      "model_status": "not-started",
-      "proof_status": "not-started",
-      "model_paths": [],
-      "evidence_paths": [],
-      "publication_kind": "full-paper"
+      "source_review": "full-paper-protocol-sections-with-explicit-model-mapping",
+      "model_status": "abstract-view-snapshots-and-client-histories",
+      "proof_status": "Verus: fast/slow agreement, recovery preservation, execution consistency and client linearizability.",
+      "model_paths": [
+        "src/protocol/SpecPaxos/execution.rs",
+        "src/protocol/SpecPaxos/mod.rs",
+        "src/protocol/SpecPaxos/reconciliation.rs"
+      ],
+      "evidence_paths": [
+        "docs/non-bft-consensus/speculative-paxos.md",
+        "docs/non-bft-consensus/next-five-verification.json",
+        "src/protocol/next_five_witnesses.rs",
+        "scripts/verify_consensus_next_five.sh"
+      ],
+      "publication_kind": "full-paper",
+      "safety_note": "Fixed membership, fenced snapshots, exact prefix hashes, deterministic execution and unique operation IDs. Concrete merge, synchronization, rollback, lost-state recovery and membership changes remain open."
     },
     {
       "id": "tapir-2015",

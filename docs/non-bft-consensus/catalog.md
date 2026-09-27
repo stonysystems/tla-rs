@@ -16,14 +16,14 @@ The 2021 PAC/G-PAC erratum is a separate correction record. The year column uses
 
 | Year | Venue | Paper | Protocol change | Local verification status |
 |---|---|---|---|---|
-| 2004 | NSDI | [Consistent and Automatic Replica Regeneration](https://www.usenix.org/legacy/events/nsdi04/tech/full_papers/yu/yu_html/index.html) | Witness-based membership agreement and one-round graceful reconfiguration | not-started |
+| 2004 | NSDI | [Consistent and Automatic Replica Regeneration](https://www.usenix.org/legacy/events/nsdi04/tech/full_papers/yu/yu_html/index.html) | Witness-based membership agreement and one-round graceful reconfiguration | Verus: conditional agreement/validity; non-linearizable read/write execution and missing-lookup witnesses. See om.md. |
 | 2004 | OSDI | [Chain Replication for Supporting High Throughput and Availability](https://www.usenix.org/conference/osdi-04/chain-replication-supporting-high-throughput-and-availability) | Ordered chain propagation and fail-stop reconfiguration; external master | abstract-history-safety-proved-in-verus; full-paper-open |
 | 2008 | OSDI | [Mencius: Building Efficient Replicated State Machines for WANs](https://www.usenix.org/legacy/event/osdi08/tech/full_papers/mao/mao_html/) | Rotating slot coordinators with suggest, skip and revoke | abstract-instance-safety-proved-in-verus; full-paper-open |
-| 2011 | NSDI | [Paxos Replicated State Machines as the Basis of a High-Performance Data Store](https://www.usenix.org/legacy/events/nsdi11/tech/full_papers/Bolosky.pdf) | New read-only view-check protocol without logging or clock synchronization | not-started |
-| 2012 | NSDI | [CORFU: A Shared Log Design for Flash Clusters](https://www.usenix.org/conference/nsdi12/technical-sessions/presentation/balakrishnan) | Shared-log append, hole filling and epoch sealing | not-started |
+| 2011 | NSDI | [Paxos Replicated State Machines as the Basis of a High-Performance Data Store](https://www.usenix.org/legacy/events/nsdi11/tech/full_papers/Bolosky.pdf) | New read-only view-check protocol without logging or clock synchronization | Verus: slot agreement, read freshness and register-history linearizability under host contracts. |
+| 2012 | NSDI | [CORFU: A Shared Log Design for Flash Clusters](https://www.usenix.org/conference/nsdi12/technical-sessions/presentation/balakrishnan) | Shared-log append, hole filling and epoch sealing | Verus: per-position agreement, validity, fencing, single-assignment refinement and layout agreement. |
 | 2013 | SOSP | [There Is More Consensus in Egalitarian Parliaments](https://www.cs.cmu.edu/~dga/papers/epaxos-sosp2013.pdf) | Leaderless agreement on commands and dependencies | existing-variant-proof-and-counterexample |
-| 2013 | VLDB | [Low-Latency Multi-Datacenter Databases using Replicated Commit](https://www.vldb.org/pvldb/vol6/p661-mahmoud.pdf) | Commit-decision replication with reduced Paxos coordination | not-started |
-| 2015 | NSDI | [Designing Distributed Systems Using Approximate Synchrony in Data Center Networks](https://www.usenix.org/conference/nsdi15/technical-sessions/presentation/ports) | Speculative agreement using mostly ordered multicast | not-started |
+| 2013 | VLDB | [Low-Latency Multi-Datacenter Databases using Replicated Commit](https://www.vldb.org/pvldb/vol6/p661-mahmoud.pdf) | Commit-decision replication with reduced Paxos coordination | Verus: atomic-commit agreement, prepared-quorum validity and atomic-decision refinement. |
+| 2015 | NSDI | [Designing Distributed Systems Using Approximate Synchrony in Data Center Networks](https://www.usenix.org/conference/nsdi15/technical-sessions/presentation/ports) | Speculative agreement using mostly ordered multicast | Verus: fast/slow agreement, recovery preservation, execution consistency and client linearizability. |
 | 2015 | SOSP | [Building Consistent Transactions with Inconsistent Replication](https://irenezhang.net/papers/tapir-sosp15.pdf) | Inconsistent replication with consensus operations and recovery reconciliation | not-started |
 | 2016 | OSDI | [Consolidating Concurrency Control and Consensus for Commits under Conflicts](https://www.usenix.org/conference/osdi16/technical-sessions/presentation/mu) | Unified consensus and concurrency control over dependencies | not-started |
 | 2016 | OSDI | [Just Say NO to Paxos Overhead: Replacing Consensus with Network Ordering](https://www.usenix.org/conference/osdi16/technical-sessions/presentation/li) | Consensus using ordered unreliable multicast | not-started |
@@ -77,9 +77,11 @@ These are targets for formalization. An obligation listed here is not a proved t
 
 Om. Conditional quorum intersection; probabilistic safety boundary; lease graph; concurrent reconfiguration.
 
-Model status: `not-started`. Source review: `abstract-and-selected-protocol-sections`.
+Model status: `conditional-agreement-and-formal-counterexamples`. Source review: `full-paper-protocol-sections-with-explicit-model-mapping`.
 
-The witness configuration deliberately permits a small probability of inconsistency. Unconditional agreement is not claimed by the authors; model the witness assumption or analyze probability of violation.
+Intersecting quorums and defined mixed lookups are required for the positive theorem. The literal normal-case read/write model admits a new/old inversion; Figure 5 can reference an absent proposal. Implementation behavior is not audited. Probabilistic bounds, regeneration and concurrent reconfiguration remain open.
+
+Local files: [src/protocol/Om/consensus.rs](../../src/protocol/Om/consensus.rs), [src/protocol/Om/lookup.rs](../../src/protocol/Om/lookup.rs), [src/protocol/Om/mod.rs](../../src/protocol/Om/mod.rs), [src/protocol/Om/read_write.rs](../../src/protocol/Om/read_write.rs), [docs/non-bft-consensus/om.md](../../docs/non-bft-consensus/om.md), [docs/non-bft-consensus/next-five-verification.json](../../docs/non-bft-consensus/next-five-verification.json), [src/protocol/next_five_witnesses.rs](../../src/protocol/next_five_witnesses.rs), [scripts/verify_consensus_next_five.sh](../../scripts/verify_consensus_next_five.sh).
 
 ### chain-2004
 
@@ -101,15 +103,23 @@ Local files: [src/protocol/Mencius/instance.rs](../../src/protocol/Mencius/insta
 
 Gaios / SMARTER reads. Read freshness across elections; execution barrier; recovery; membership change.
 
-Model status: `not-started`. Source review: `abstract-and-selected-protocol-sections`.
+Model status: `abstract-fixed-membership-read-protocol`. Source review: `full-paper-protocol-sections-with-explicit-model-mapping`.
 
 Include the new benign-fault read protocol. The paper also detects selected hardware corruptions and converts them to stopping failures; no arbitrary-Byzantine tolerance theorem is included.
+
+Recovery horizon and accurate committed metadata are explicit host contracts. Fixed membership; dynamic configuration and concrete SMARTER recovery remain open.
+
+Local files: [src/protocol/Gaios/mod.rs](../../src/protocol/Gaios/mod.rs), [src/protocol/Gaios/reads.rs](../../src/protocol/Gaios/reads.rs), [docs/non-bft-consensus/gaios.md](../../docs/non-bft-consensus/gaios.md), [docs/non-bft-consensus/next-five-verification.json](../../docs/non-bft-consensus/next-five-verification.json), [src/protocol/next_five_witnesses.rs](../../src/protocol/next_five_witnesses.rs), [scripts/verify_consensus_next_five.sh](../../scripts/verify_consensus_next_five.sh).
 
 ### corfu-2012
 
 CORFU. Per-position agreement; sealing; concurrent reconfiguration.
 
-Model status: `not-started`. Source review: `abstract-or-protocol-description`.
+Model status: `abstract-single-position-and-layout-consensus`. Source review: `full-paper-protocol-sections-with-explicit-model-mapping`.
+
+Atomic full-chain copying after sealing all survivors is stronger than minimal prefix migration. Whole-log append linearizability, sequencer allocation and physical refinement remain open.
+
+Local files: [src/protocol/Corfu/chain.rs](../../src/protocol/Corfu/chain.rs), [src/protocol/Corfu/layout.rs](../../src/protocol/Corfu/layout.rs), [src/protocol/Corfu/mod.rs](../../src/protocol/Corfu/mod.rs), [docs/non-bft-consensus/corfu.md](../../docs/non-bft-consensus/corfu.md), [docs/non-bft-consensus/next-five-verification.json](../../docs/non-bft-consensus/next-five-verification.json), [src/protocol/next_five_witnesses.rs](../../src/protocol/next_five_witnesses.rs), [scripts/verify_consensus_next_five.sh](../../scripts/verify_consensus_next_five.sh).
 
 ### epaxos-2013
 
@@ -123,13 +133,21 @@ Local files: [src/protocol/EPaxos/epaxos.rs](../../src/protocol/EPaxos/epaxos.rs
 
 Replicated Commit. Phase-one elision assumptions; commit agreement; recovery.
 
-Model status: `not-started`. Source review: `abstract-or-protocol-description`.
+Model status: `single-transaction-with-explicit-recovery-completion`. Source review: `full-paper-protocol-sections-with-explicit-model-mapping`.
+
+Unique initial client and durable local preparation. Higher-ballot recovery is an explicitly identified classic-Paxos completion, not detailed source pseudocode. Multi-transaction serializability remains open.
+
+Local files: [src/protocol/ReplicatedCommit/commit.rs](../../src/protocol/ReplicatedCommit/commit.rs), [src/protocol/ReplicatedCommit/mod.rs](../../src/protocol/ReplicatedCommit/mod.rs), [docs/non-bft-consensus/replicated-commit.md](../../docs/non-bft-consensus/replicated-commit.md), [docs/non-bft-consensus/next-five-verification.json](../../docs/non-bft-consensus/next-five-verification.json), [src/protocol/next_five_witnesses.rs](../../src/protocol/next_five_witnesses.rs), [scripts/verify_consensus_next_five.sh](../../scripts/verify_consensus_next_five.sh).
 
 ### specpaxos-2015
 
 Speculative Paxos. Speculation validation; rollback; view changes; multicast disorder.
 
-Model status: `not-started`. Source review: `abstract-or-protocol-description`.
+Model status: `abstract-view-snapshots-and-client-histories`. Source review: `full-paper-protocol-sections-with-explicit-model-mapping`.
+
+Fixed membership, fenced snapshots, exact prefix hashes, deterministic execution and unique operation IDs. Concrete merge, synchronization, rollback, lost-state recovery and membership changes remain open.
+
+Local files: [src/protocol/SpecPaxos/execution.rs](../../src/protocol/SpecPaxos/execution.rs), [src/protocol/SpecPaxos/mod.rs](../../src/protocol/SpecPaxos/mod.rs), [src/protocol/SpecPaxos/reconciliation.rs](../../src/protocol/SpecPaxos/reconciliation.rs), [docs/non-bft-consensus/speculative-paxos.md](../../docs/non-bft-consensus/speculative-paxos.md), [docs/non-bft-consensus/next-five-verification.json](../../docs/non-bft-consensus/next-five-verification.json), [src/protocol/next_five_witnesses.rs](../../src/protocol/next_five_witnesses.rs), [scripts/verify_consensus_next_five.sh](../../scripts/verify_consensus_next_five.sh).
 
 ### tapir-2015
 
