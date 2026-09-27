@@ -1,0 +1,15 @@
+note: verifying module protocol::Jetpack::application
+
+note: verifying module protocol::Jetpack::execution
+
+note: verifying module protocol::Jetpack::execution_witness
+
+note: verifying module protocol::Jetpack::ordering
+
+note: verifying module protocol::Jetpack::recovery
+
+note: verifying module protocol::Jetpack::registers
+
+note: verifying module protocol::Jetpack::view_change
+
+verification results:: 85 verified, 0 errors

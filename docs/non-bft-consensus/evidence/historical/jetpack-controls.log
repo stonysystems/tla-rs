@@ -1,0 +1,8 @@
+ack-after-freeze: expected RecoveryComplete counterexample found
+discard-accepted-set: expected Agreement counterexample found
+undersized-fast-quorum: expected RecoveryComplete counterexample found
+witness-fast-recovery: expected NoFastRecovery counterexample found
+witness-empty-recovery: expected NoEmptyRecovery counterexample found
+witness-recovery-retry: expected NoRetry counterexample found
+marker-without-durable-batch: expected marker_preserves proof failure found
+admit-during-view-change: expected admission_after_recovery proof failure found

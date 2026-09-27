@@ -1,0 +1,2 @@
+marker-without-durable-batch: expected marker_preserves proof failure found
+admit-during-view-change: expected admission_after_recovery proof failure found

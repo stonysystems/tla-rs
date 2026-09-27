@@ -1,0 +1,146 @@
+TLC2 Version 2026.09.25.163503 (rev: 8f4bc8b)
+Running breadth-first search Model-Checking with fp 69 and seed 1 with 1 worker on 64 cores with 14279MB heap and 64MB offheap memory [pid: 894958] (Linux 7.0.14-5-pve amd64, Debian 21.0.11 64bit, MSBDiskFPSet, DiskStateQueue).
+Parsing file /var/tmp/tla-rs/models/non_bft/gpac/PACRecovery.tla
+Parsing file /tmp/tlc-4807365843710760749/Naturals.tla (jar:file:/tmp/tla-rs-consensus-survey/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-4807365843710760749/FiniteSets.tla (jar:file:/tmp/tla-rs-consensus-survey/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-4807365843710760749/Sequences.tla (jar:file:/tmp/tla-rs-consensus-survey/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-4807365843710760749/TLC.tla (jar:file:/tmp/tla-rs-consensus-survey/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-4807365843710760749/_TLCTrace.tla (jar:file:/tmp/tla-rs-consensus-survey/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-4807365843710760749/TLCExt.tla (jar:file:/tmp/tla-rs-consensus-survey/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-4807365843710760749/Integers.tla (jar:file:/tmp/tla-rs-consensus-survey/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Integers
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module PACRecovery
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module PACRecovery
+Starting... (2026-09-26 15:41:37)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-26 15:41:37.
+Error: Invariant Agreement is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ decided = <<0, 0, 0, 0, 0>>
+/\ acceptedValue = <<0, 0, 0, 0, 0>>
+/\ promised = <<0, 0, 0, 0, 0>>
+/\ step = 0
+/\ proposal = <<0, 0, 0>>
+/\ acceptedBallot = <<0, 0, 0, 0, 0>>
+/\ votes = <<{}, {}, {}>>
+
+State 2: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 0, 0, 0, 0>>
+/\ acceptedValue = <<0, 0, 0, 0, 0>>
+/\ promised = <<1, 1, 1, 1, 1>>
+/\ step = 1
+/\ proposal = <<2, 0, 0>>
+/\ acceptedBallot = <<0, 0, 0, 0, 0>>
+/\ votes = <<{}, {}, {}>>
+
+State 3: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 0, 0, 0, 0>>
+/\ acceptedValue = <<2, 0, 0, 0, 0>>
+/\ promised = <<1, 1, 1, 1, 1>>
+/\ step = 2
+/\ proposal = <<2, 0, 0>>
+/\ acceptedBallot = <<1, 0, 0, 0, 0>>
+/\ votes = <<{1}, {}, {}>>
+
+State 4: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 0, 0, 0, 0>>
+/\ acceptedValue = <<2, 0, 0, 0, 0>>
+/\ promised = <<1, 2, 2, 2, 1>>
+/\ step = 3
+/\ proposal = <<2, 1, 0>>
+/\ acceptedBallot = <<1, 0, 0, 0, 0>>
+/\ votes = <<{1}, {}, {}>>
+
+State 5: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 0, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 0, 0, 0>>
+/\ promised = <<1, 2, 2, 2, 1>>
+/\ step = 4
+/\ proposal = <<2, 1, 0>>
+/\ acceptedBallot = <<1, 2, 0, 0, 0>>
+/\ votes = <<{1}, {2}, {}>>
+
+State 6: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 0, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 1, 0, 0>>
+/\ promised = <<1, 2, 2, 2, 1>>
+/\ step = 5
+/\ proposal = <<2, 1, 0>>
+/\ acceptedBallot = <<1, 2, 2, 0, 0>>
+/\ votes = <<{1}, {2, 3}, {}>>
+
+State 7: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 0, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 1, 1, 0>>
+/\ promised = <<1, 2, 2, 2, 1>>
+/\ step = 6
+/\ proposal = <<2, 1, 0>>
+/\ acceptedBallot = <<1, 2, 2, 2, 0>>
+/\ votes = <<{1}, {2, 3, 4}, {}>>
+
+State 8: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 1, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 1, 1, 0>>
+/\ promised = <<1, 2, 2, 2, 1>>
+/\ step = 7
+/\ proposal = <<2, 1, 0>>
+/\ acceptedBallot = <<1, 2, 2, 2, 0>>
+/\ votes = <<{1}, {2, 3, 4}, {}>>
+
+State 9: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 1, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 1, 1, 0>>
+/\ promised = <<3, 2, 3, 3, 1>>
+/\ step = 8
+/\ proposal = <<2, 1, 2>>
+/\ acceptedBallot = <<1, 2, 2, 2, 0>>
+/\ votes = <<{1}, {2, 3, 4}, {}>>
+
+State 10: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 1, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 1, 1, 0>>
+/\ promised = <<3, 2, 3, 3, 1>>
+/\ step = 9
+/\ proposal = <<2, 1, 2>>
+/\ acceptedBallot = <<3, 2, 2, 2, 0>>
+/\ votes = <<{1}, {2, 3, 4}, {1}>>
+
+State 11: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 1, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 2, 1, 0>>
+/\ promised = <<3, 2, 3, 3, 1>>
+/\ step = 10
+/\ proposal = <<2, 1, 2>>
+/\ acceptedBallot = <<3, 2, 3, 2, 0>>
+/\ votes = <<{1}, {2, 3, 4}, {1, 3}>>
+
+State 12: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 1, 0, 0, 0>>
+/\ acceptedValue = <<2, 1, 2, 2, 0>>
+/\ promised = <<3, 2, 3, 3, 1>>
+/\ step = 11
+/\ proposal = <<2, 1, 2>>
+/\ acceptedBallot = <<3, 2, 3, 3, 0>>
+/\ votes = <<{1}, {2, 3, 4}, {1, 3, 4}>>
+
+State 13: <ReplayNext line 72, col 15 to line 85, col 36 of module PACRecovery>
+/\ decided = <<0, 1, 2, 0, 0>>
+/\ acceptedValue = <<2, 1, 2, 2, 0>>
+/\ promised = <<3, 2, 3, 3, 1>>
+/\ step = 12
+/\ proposal = <<2, 1, 2>>
+/\ acceptedBallot = <<3, 2, 3, 3, 0>>
+/\ votes = <<{1}, {2, 3, 4}, {1, 3, 4}>>
+
+13 states generated, 13 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 13.
+Finished in 00s at (2026-09-26 15:41:37)

@@ -1,0 +1,470 @@
+[
+  {
+    "id": "om-2004",
+    "url": "https://www.usenix.org/legacy/events/nsdi04/tech/full_papers/yu/yu_html/index.html",
+    "status": "fetched",
+    "bytes": 84930,
+    "sha256": "22c5b7a4b51673b771685d11bfd1aaa7cc7ba5e9a8dbedabbc52e7ebec387523",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "chain-2004",
+    "url": "https://www.usenix.org/conference/osdi-04/chain-replication-supporting-high-throughput-and-availability",
+    "status": "fetched",
+    "bytes": 19951,
+    "sha256": "c9d870b5f9affc9c6a5fdd456257eb795a449105cb847fa5f9d096fc228c3a8c",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "mencius-2008",
+    "url": "https://www.usenix.org/legacy/event/osdi08/tech/full_papers/mao/mao_html/",
+    "status": "fetched",
+    "bytes": 201394,
+    "sha256": "82372ccca87dc871f9139605fa870f4f57af4394c001a737d3e848db430bbd0a",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "gaios-2011",
+    "url": "https://www.usenix.org/legacy/events/nsdi11/tech/full_papers/Bolosky.pdf",
+    "status": "fetched",
+    "bytes": 417758,
+    "sha256": "147cfc856aa9b664f51a890843f1a434a8408c7e1a936584266e1d7875950cb7",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "corfu-2012",
+    "url": "https://www.usenix.org/conference/nsdi12/technical-sessions/presentation/balakrishnan",
+    "status": "fetched",
+    "bytes": 44648,
+    "sha256": "d5bed64a2e8befbba267f346ac51a193cc150030301a21cd94b64d3eaff9c234",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "epaxos-2013",
+    "url": "https://www.cs.cmu.edu/~dga/papers/epaxos-sosp2013.pdf",
+    "status": "fetched",
+    "bytes": 730272,
+    "sha256": "4c8a6c44e32ebcca5ed0b182af5ecb8e8b5a7f83d8a732d47869f7314847d0aa",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "replicated-commit-2013",
+    "url": "https://www.vldb.org/pvldb/vol6/p661-mahmoud.pdf",
+    "status": "fetched",
+    "bytes": 1010830,
+    "sha256": "b17ad9d0ed4e3da5b15ad3a7863e5dc3f970119e1e49c13546f24c2c5ee5a4a4",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "specpaxos-2015",
+    "url": "https://www.usenix.org/conference/nsdi15/technical-sessions/presentation/ports",
+    "status": "fetched",
+    "bytes": 63656,
+    "sha256": "0b01d714aca9a647b4d85644e311f738ae31476c8253a42cd7b860c741cd62e3",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "tapir-2015",
+    "url": "https://irenezhang.net/papers/tapir-sosp15.pdf",
+    "status": "fetched",
+    "bytes": 408460,
+    "sha256": "31d76e5eed8d4988a123bfd1706585d9b822197fe2232ea41199cc1fd90c8719",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "janus-2016",
+    "url": "https://www.usenix.org/conference/osdi16/technical-sessions/presentation/mu",
+    "status": "fetched",
+    "bytes": 34684,
+    "sha256": "48b0676a9d78dd879f859a5a7870a8cce40cfb0a5b2f45fbd9902b90cd5e91ad",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "nopaxos-2016",
+    "url": "https://www.usenix.org/conference/osdi16/technical-sessions/presentation/li",
+    "status": "fetched",
+    "bytes": 34625,
+    "sha256": "b01abee808fb0dfde83f80ae11d55a4de8bd1b028ca7a9532ef2c9bcd3ffcf95",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "eris-2017",
+    "url": "https://danports.net/papers/eris-sosp17.pdf",
+    "status": "fetched",
+    "bytes": 381455,
+    "sha256": "41e7d77306076e36b542a807b93135e4b834f13f224af63aaa52eec5286a2fb3",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "netchain-2018",
+    "url": "https://www.usenix.org/conference/nsdi18/presentation/jin",
+    "status": "fetched",
+    "bytes": 37454,
+    "sha256": "e5229a4d70e1862c9b7fb7df88b3f52ec5aea3b4df17db17c159e763818cb19c",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "saucr-2018",
+    "url": "https://www.usenix.org/conference/osdi18/presentation/alagappan",
+    "status": "fetched",
+    "bytes": 37136,
+    "sha256": "3323a800faa7664c1936413d6f23576098dcb7c2320c55a27ec382cce68d90fb",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "dpaxos-2018",
+    "url": "https://www.nawab.me/Uploads/Nawab_DPaxos_SIGMOD2018.pdf",
+    "status": "fetched",
+    "bytes": 1046315,
+    "sha256": "64aabe9b8f5bb7c28e9381ac1a2db7b7ec1cb74a45cd547bf15c6a0379f8b54a",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "parallelraft-2018",
+    "url": "https://www.vldb.org/pvldb/vol11/p1849-cao.pdf",
+    "status": "fetched",
+    "bytes": 1805179,
+    "sha256": "ca27e619ad24d9d24cc0d20dcd0fe43e70deeaf7e324a6eaba7524c71b3092f4",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "curp-2019",
+    "url": "https://www.usenix.org/conference/nsdi19/presentation/park",
+    "status": "fetched",
+    "bytes": 35001,
+    "sha256": "756d121c543798ce235c80316864e775883b642d562b63682ac144ba2e8dc9c6",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "gpac-2019",
+    "url": "https://www.vldb.org/pvldb/vol12/p611-maiyya.pdf",
+    "status": "fetched",
+    "bytes": 484599,
+    "sha256": "794daa150dadea73a1166f34edd806d71b7c03e95d16a20efa743fd9e2f26b5d",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "flair-2020",
+    "url": "https://www.usenix.org/conference/nsdi20/presentation/takruri",
+    "status": "fetched",
+    "bytes": 35255,
+    "sha256": "3439332dc8a26a7919b0c37c2d55a9012cb8f476a92998a2b7ff8a7d3cd8ce7f",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "gryff-2020",
+    "url": "https://www.usenix.org/conference/nsdi20/presentation/burke",
+    "status": "fetched",
+    "bytes": 34508,
+    "sha256": "5d904571b59fed7bfb6ae2fe8b939e8005ea14d8f98fad9dbeda4746337161a6",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "pando-2020",
+    "url": "https://www.usenix.org/system/files/nsdi20-paper-uluyol.pdf",
+    "status": "fetched",
+    "bytes": 940380,
+    "sha256": "d28d9ab6e56e3a6ed8bf895d4bf87e4401a8626a3af4f0e6a4c7d416422a3f25",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "scalog-2020",
+    "url": "https://www.usenix.org/conference/nsdi20/presentation/ding",
+    "status": "fetched",
+    "bytes": 35547,
+    "sha256": "f95556ef52ecc0ea0034ca247997b33d953ac3ab16c7442666f57de5cc47880d",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "copilot-2020",
+    "url": "https://www.usenix.org/conference/osdi20/presentation/ngo",
+    "status": "fetched",
+    "bytes": 31816,
+    "sha256": "8c57f4925b8670e2c2295a99748faf060e6c4a18840daa0efe65d79c099dc1fe",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "delos-2020",
+    "url": "https://www.usenix.org/conference/osdi20/presentation/balakrishnan",
+    "status": "fetched",
+    "bytes": 37464,
+    "sha256": "c5baa49a5e6afb6f5b780e503d2c7cae1b7b1b370febe3ae5cc0db79af5b132d",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "mu-2020",
+    "url": "https://www.usenix.org/conference/osdi20/presentation/aguilera",
+    "status": "fetched",
+    "bytes": 33853,
+    "sha256": "8b9b0007534a3f056f9e362cad960e66074a7bae6416ba53b7626589b58fdeed",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "harmonia-2020",
+    "url": "https://drkp.net/papers/harmonia-vldb20.pdf",
+    "status": "fetched",
+    "bytes": 1747356,
+    "sha256": "abe44d58f1d952872fdb2addb202ca163a5ed298897faa0ce915867527864d7e",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "mongo-2021",
+    "url": "https://www.usenix.org/conference/nsdi21/presentation/zhou",
+    "status": "fetched",
+    "bytes": 30780,
+    "sha256": "e221cdfe589f62a996a2c53d6a627278fe0a5c779011e4cc2f558c2a1efa483b",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "toq-epaxos-2021",
+    "url": "https://www.usenix.org/conference/nsdi21/presentation/tollman",
+    "status": "fetched",
+    "bytes": 30948,
+    "sha256": "51f1681b3feac730dfa77619ff082925aec87d8fa2463fd0e2c4da9e4701b638",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "pigpaxos-2021",
+    "url": "https://2021.sigmod.org/sigmod_research_list.shtml",
+    "status": "fetched",
+    "bytes": 68196,
+    "sha256": "785245c04835bada51f611a24f45ecbecc20bc7fe586eec75bf00061c385397e",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "rabia-2021",
+    "url": "https://arxiv.org/abs/2109.12616",
+    "status": "fetched",
+    "bytes": 41842,
+    "sha256": "6b536fc2675435fbf78bec5aec7fa82701517096ad7a86eb8b22f4f4d7f4f71b",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "skyros-2021",
+    "url": "https://pages.cs.wisc.edu/~ra/nilext.pdf",
+    "status": "fetched",
+    "bytes": 872364,
+    "sha256": "82019e6e73b1766f4e600609b85fa9601828fb7a281579f3fb77bca097f8b5dc",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "compartmentalized-2021",
+    "url": "https://www.vldb.org/pvldb/vol14/p2203-whittaker.pdf",
+    "status": "fetched",
+    "bytes": 1232755,
+    "sha256": "7892b33e178b044eb520852616e4d0b5f672e7ea6063f3fc3f88aad443b517f6",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "gpac-errata-2021",
+    "url": "https://www.vldb.org/pvldb/vol14/p1166-maiyya.pdf",
+    "status": "fetched",
+    "bytes": 387947,
+    "sha256": "b9df32ada9c0dc29fa406a294dfeca7c26a8295bde361a9f3fd2b2ab488e2a8d",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "netlr-2022",
+    "url": "https://www.vldb.org/pvldb/vol15/p1337-lee.pdf",
+    "status": "fetched",
+    "bytes": 1182293,
+    "sha256": "32d35d4ff88c8e228c4f2c36916d359379594e5d7c69b2b149d558ea15928ebc",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "hydra-2023",
+    "url": "https://www.usenix.org/conference/nsdi23/presentation/choi",
+    "status": "fetched",
+    "bytes": 38094,
+    "sha256": "877d55c350fd20aa6193df6fbbdde5bc08dfb4862a4735d3bfea59b784960a06",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "quepaxa-2023",
+    "url": "https://discovery.ucl.ac.uk/id/eprint/10181480/1/quepaxa.pdf",
+    "status": "fetched",
+    "bytes": 1175204,
+    "sha256": "4bbb60d43d8bc4b3ff4d6484e8ca2431558bdaa3ecd67e4a7625fd70a23dc6c6",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "nezha-2023",
+    "url": "https://www.vldb.org/pvldb/vol16/p629-geng.pdf",
+    "status": "fetched",
+    "bytes": 1148426,
+    "sha256": "fd6a3916b66f69c930b065dc4b3431a9fd45c9354f8fbd2ec90c8f87f8d2d53a",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "swiftpaxos-2024",
+    "url": "https://www.usenix.org/conference/nsdi24/presentation/ryabinin",
+    "status": "fetched",
+    "bytes": 37181,
+    "sha256": "20cfa06e971f11c8e4edc1da4b8c24fb444aa48ab8717c1ea98c2806c840677e",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "caerus-2024",
+    "url": "https://www.vldb.org/pvldb/vol17/p469-hildred.pdf",
+    "status": "fetched",
+    "bytes": 864038,
+    "sha256": "e57b72b5c49714ef1a139b73f678db575f52eaa904e363757e5c71ad1e579c8c",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "palf-2024",
+    "url": "https://www.vldb.org/pvldb/vol17/p3745-xu.pdf",
+    "status": "fetched",
+    "bytes": 2629838,
+    "sha256": "f09909ce10bf2bab81899e0ec09461f42b24f5bff41953c9d570b66948de48b2",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "pineapple-2025",
+    "url": "https://www.usenix.org/conference/nsdi25/presentation/bantikyan",
+    "status": "fetched",
+    "bytes": 37794,
+    "sha256": "871bda1221938ead823e440c6271bf5b7318e0d0569d4acec0f6dd59ae83d48f",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "tiga-2025",
+    "url": "https://mpaxos.com/pub/tiga-sosp25.pdf",
+    "status": "fetched",
+    "bytes": 1437411,
+    "sha256": "0f4f6226f05bdd83ecd5fe24369fbd072e2461bc4cfe7f4d98a20221b7f9fb7c",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "cabinet-2025",
+    "url": "https://www.vldb.org/pvldb/vol18/p1439-zhang.pdf",
+    "status": "fetched",
+    "bytes": 2707953,
+    "sha256": "bbfca3bb9ed9910855ae77d5b077db1b315927dd23e30a821c9f5a98f00a499e",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "fleet-2025",
+    "url": "https://www.vldb.org/pvldb/vol18/p1522-fan.pdf",
+    "status": "fetched",
+    "bytes": 1781062,
+    "sha256": "d12509140bea6b8932aa59a0604d04c20a291a5bc5d4ae7e6611df139893c80c",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "holipaxos-2025",
+    "url": "https://www.vldb.org/pvldb/vol18/p2505-charapko.pdf",
+    "status": "fetched",
+    "bytes": 1433543,
+    "sha256": "67cdd5b06413417f54c4196aa476060070a40192ba9e73b5f0c8c3216a2d55e3",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "law-2025",
+    "url": "https://www.vldb.org/pvldb/vol18/p2831-giortamis.pdf",
+    "status": "fetched",
+    "bytes": 1063389,
+    "sha256": "731f4b7956fb698a8e65aa32ff4492fb741e118c382fb2f31e2f9f3a7a4c8ecd",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "bodega-2026",
+    "url": "https://www.usenix.org/conference/osdi26/presentation/hu-guanzhou",
+    "status": "fetched",
+    "bytes": 37947,
+    "sha256": "9957110c42f0e7ce8581a2ae8be2b7e171b2fd1fa39319013a38a40ec376c572",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "jetpack-2026",
+    "url": "https://www.usenix.org/conference/osdi26/presentation/tang",
+    "status": "fetched",
+    "bytes": 38143,
+    "sha256": "51a4b9638ae79d81b4c05e466b58c88bb07b89c3446d5f6304f08eb34a2ca1b4",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "fortification-2026",
+    "url": "https://assets.ctfassets.net/00voh0j35590/2EHUM3hbvPrvrYle4IAB5c/f5ad2be3b27726d04715e40785dd086c/leader-leases-paper-2.pdf",
+    "status": "fetched",
+    "bytes": 1166721,
+    "sha256": "b427fd037a22ee325ab0185a548873c3cc88afa8051921ac082710787b550816",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "leaseguard-2026",
+    "url": "https://arxiv.org/abs/2512.15659",
+    "status": "fetched",
+    "bytes": 43055,
+    "sha256": "db802fa5dd49d4121f17fe9ba6e47a9ff48153c1aa8f29f8be45f466279d9346",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "riot-2026",
+    "url": "https://jimwebber.org/publication/2026-sigmod/",
+    "status": "fetched",
+    "bytes": 26545,
+    "sha256": "b6fff7d3686976d6cfaa24603a58f3448463d8cd486e3c1b4811c6693a765f4e",
+    "format": "HTML",
+    "retrieved_on": "2026-09-26"
+  },
+  {
+    "id": "orca-2026",
+    "url": "https://www.vldb.org/pvldb/vol19/p3565-dharmawan.pdf",
+    "status": "fetched",
+    "bytes": 6169905,
+    "sha256": "5fadc9369f27c6543c5427f9033fd53df9659c8faf278fba926a3f4d4a4e40ad",
+    "format": "PDF",
+    "retrieved_on": "2026-09-26"
+  }
+]
