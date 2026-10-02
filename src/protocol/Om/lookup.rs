@@ -28,7 +28,7 @@ pub proof fn mixed_lookup_can_be_missing()
         finishes:Map::empty().insert(a,5int).insert(ac,17int).insert(b,11int).insert(bc,15int),
     };
     assert(c.processes.contains(0)); assert(c.processes!=Set::<int>::empty());
-    assert forall|x:Set<int>| c.quorums.contains(x) implies x.subset_of(c.witnesses) && x!=Set::<int>::empty() by {
+    assert forall|x:Set<int>| #![trigger x.subset_of(c.witnesses)] c.quorums.contains(x) implies x.subset_of(c.witnesses) && x!=Set::<int>::empty() by {
         assert(x.contains(0));
     }
     assert forall|x:Set<int>,y:Set<int>| c.quorums.contains(x) && c.quorums.contains(y)
@@ -39,7 +39,7 @@ pub proof fn mixed_lookup_can_be_missing()
     }
     assert(!p::uniform(h,0,0));
     assert forall|n:int| p::sees(h,b,n) implies n==0 || n==2 by {
-        let w=choose|w:int| h.quorums[b].contains(w) && h.processed.dom().contains((w,(0int,0int,n)))
+        let w=choose|w:int| #![trigger h.quorums[b].contains(w)] h.quorums[b].contains(w) && h.processed.dom().contains((w,(0int,0int,n)))
             && h.processed[(w,(0int,0int,n))]<=h.processed[(w,b)];
         assert(w==0 || w==2);
     }
@@ -54,11 +54,11 @@ pub proof fn mixed_lookup_can_be_missing()
     assert(p::sees(h,ac,0) && h.values[ac]==0);
     assert(p::saw_disagree(h,0,0));
     assert(!p::sees(h,a,2)) by {
-        assert forall|w:int| h.quorums[a].contains(w) && h.processed.dom().contains((w,b))
+        assert forall|w:int| #![trigger h.quorums[a].contains(w)] h.quorums[a].contains(w) && h.processed.dom().contains((w,b))
             implies h.processed[(w,b)]>h.processed[(w,a)] by { assert(w==0); }
     }
     assert forall|n:int| p::sees(h,bc,n) implies n==2 by {
-        let w=choose|w:int| h.quorums[bc].contains(w) && h.processed.dom().contains((w,(1int,0int,n)))
+        let w=choose|w:int| #![trigger h.quorums[bc].contains(w)] h.quorums[bc].contains(w) && h.processed.dom().contains((w,(1int,0int,n)))
             && h.processed[(w,(1int,0int,n))]<=h.processed[(w,bc)];
         assert(w==0 || w==2);
     }

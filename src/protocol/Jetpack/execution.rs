@@ -36,10 +36,10 @@ pub open spec fn structure<A, R>(s: State<A, R>, c: r::Config) -> bool {
     &&& s.available.dom() == s.linear.to_set() && s.points.dom() == s.linear.to_set()
 }
 pub open spec fn timing<A, R>(s: State<A, R>) -> bool {
-    &&& forall|x: int| s.calls.dom().contains(x) ==> s.calls[x] < s.clock
+    &&& forall|x: int| #![trigger s.calls.dom().contains(x)] s.calls.dom().contains(x) ==> s.calls[x] < s.clock
     &&& forall|x: int| s.points.dom().contains(x) ==> s.calls.dom().contains(x)
         && s.calls[x] < s.points[x] < s.clock
-    &&& forall|i: int, j: int| 0 <= i < j < s.linear.len() ==> s.points[s.linear[i]] < s.points[s.linear[j]]
+    &&& forall|i: int, j: int| #![trigger s.linear[i], s.linear[j]] 0 <= i < j < s.linear.len() ==> s.points[s.linear[i]] < s.points[s.linear[j]]
     &&& s.replies.dom() == s.returns.dom() && s.replies.dom().subset_of(s.available.dom())
     &&& forall|x: int| s.replies.dom().contains(x) ==> #[trigger] returned_ok(s, x)
 }
@@ -162,8 +162,8 @@ pub proof fn frame_timing<A, R>(s: State<A, R>, t: State<A, R>)
     requires timing(s), s.linear == t.linear, s.points == t.points, s.replies == t.replies,
         s.returns == t.returns, s.clock < t.clock,
         s.calls.dom().subset_of(t.calls.dom()),
-        forall|x: int| s.calls.dom().contains(x) ==> t.calls[x] == s.calls[x],
-        forall|x: int| t.calls.dom().contains(x) ==> t.calls[x] < t.clock,
+        forall|x: int| #![trigger t.calls[x]] #![trigger s.calls[x]] s.calls.dom().contains(x) ==> t.calls[x] == s.calls[x],
+        forall|x: int| #![trigger t.calls.dom().contains(x)] t.calls.dom().contains(x) ==> t.calls[x] < t.clock,
         s.available == t.available,
     ensures timing(t),
 {
@@ -171,7 +171,7 @@ pub proof fn frame_timing<A, R>(s: State<A, R>, t: State<A, R>)
         && t.calls[x] < t.points[x] < t.clock by {
         assert(s.calls.dom().contains(x) && s.calls[x] < s.points[x] < s.clock);
     }
-    assert forall|x: int| t.replies.dom().contains(x) implies t.replies[x] == t.available[x]
+    assert forall|x: int| #![trigger t.replies[x]] #![trigger t.available[x]] t.replies.dom().contains(x) implies t.replies[x] == t.available[x]
         && t.points.dom().contains(x) && t.points[x] < t.returns[x] < t.clock by {
         assert(returned_ok(s, x));
         assert(s.points[x] < s.returns[x] < s.clock);
@@ -189,7 +189,7 @@ pub proof fn append_timing<A, R>(s: State<A, R>, t: State<A, R>, x: int, result:
         && t.calls[y] < t.points[y] < t.clock by {
         if y != x { assert(s.calls.dom().contains(y) && s.calls[y] < s.points[y] < s.clock); }
     }
-    assert forall|i: int, j: int| 0 <= i < j < t.linear.len()
+    assert forall|i: int, j: int| #![trigger t.linear[i], t.linear[j]] 0 <= i < j < t.linear.len()
         implies t.points[t.linear[i]] < t.points[t.linear[j]] by {
         assert(s.linear.contains(s.linear[i]));
         assert(s.points.dom().contains(s.linear[i]));
@@ -198,7 +198,7 @@ pub proof fn append_timing<A, R>(s: State<A, R>, t: State<A, R>, x: int, result:
             assert(s.linear.contains(s.linear[j]));
         } else { assert(s.points[s.linear[i]] < s.clock); }
     }
-    assert forall|y: int| t.replies.dom().contains(y) implies t.replies[y] == t.available[y]
+    assert forall|y: int| #![trigger t.replies[y]] #![trigger t.available[y]] t.replies.dom().contains(y) implies t.replies[y] == t.available[y]
         && t.points.dom().contains(y) && t.points[y] < t.returns[y] < t.clock by {
         assert(s.available.dom().contains(y));
         assert(y != x);
@@ -258,7 +258,7 @@ pub proof fn commit_preserves<A, R>(s: State<A, R>, t: State<A, R>, c: r::Config
     a::fold_push(m, e, s.base, x);
     if s.pending.contains(x) {
         let i = choose|i: int| 0 <= i < s.pending.len() && s.pending[i] == x;
-        assert forall|j: int| 0 <= j < i implies a::independent(c, s.pending[i], s.pending[j]) by {
+        assert forall|j: int| #![trigger s.pending[j]] 0 <= j < i implies a::independent(c, s.pending[i], s.pending[j]) by {
             assert(s.pending[i] != s.pending[j]);
             assert(s.order.pending.contains(s.pending[i]) && s.order.pending.contains(s.pending[j]));
         }
@@ -304,7 +304,7 @@ pub proof fn protocol_preserves<A, R>(s: State<A, R>, t: State<A, R>, c: r::Conf
         o::Action::Commit { command, from_recovery } => commit_preserves(s, t, c, command, from_recovery),
         o::Action::Invoke { command } => {
             assert(t.order.calls =~= t.calls.dom());
-            assert forall|x: int| t.calls.dom().contains(x) implies t.calls[x] < t.clock by {
+            assert forall|x: int| #![trigger t.calls.dom().contains(x)] t.calls.dom().contains(x) implies t.calls[x] < t.clock by {
                 if x != command { assert(s.calls[x] < s.clock); }
             }
             frame_timing(s, t);
@@ -317,7 +317,7 @@ pub proof fn reply_preserves<A, R>(s: State<A, R>, t: State<A, R>, c: r::Config,
     ensures inv(t, c),
 {
     assert(t.replies.dom() =~= t.returns.dom());
-    assert forall|y: int| t.replies.dom().contains(y) implies t.replies[y] == t.available[y]
+    assert forall|y: int| #![trigger t.replies[y]] #![trigger t.available[y]] t.replies.dom().contains(y) implies t.replies[y] == t.available[y]
         && t.points.dom().contains(y) && t.points[y] < t.returns[y] < t.clock by {
         if y == x { assert(s.points.dom().contains(x)); assert(s.points[x] < s.clock); }
         else { assert(returned_ok(s, y)); assert(s.points[y] < s.returns[y] < s.clock); }
@@ -339,10 +339,10 @@ pub proof fn step_preserves<A, R>(s: State<A, R>, t: State<A, R>, c: r::Config, 
 pub open spec fn linearization<A, R>(s: State<A, R>, h: Seq<int>) -> bool {
     &&& h.no_duplicates() && h.to_set().subset_of(s.calls.dom())
     &&& s.replies.dom().subset_of(h.to_set())
-    &&& forall|x: int| s.replies.dom().contains(x)
+    &&& forall|x: int| #![trigger s.replies[x]] s.replies.dom().contains(x)
         ==> a::run(s.application, h).outputs.dom().contains(x)
             && a::run(s.application, h).outputs[x] == s.replies[x]
-    &&& forall|i: int, j: int| 0 <= i < h.len() && 0 <= j < h.len()
+    &&& forall|i: int, j: int| #![trigger h[i], h[j]] 0 <= i < h.len() && 0 <= j < h.len()
         && s.returns.dom().contains(h[i]) && s.returns[h[i]] < s.calls[h[j]] ==> i < j
 }
 pub proof fn invariant_linearizes<A, R>(s: State<A, R>, c: r::Config)
@@ -350,12 +350,12 @@ pub proof fn invariant_linearizes<A, R>(s: State<A, R>, c: r::Config)
     ensures linearization(s, s.linear), exists|h: Seq<int>| linearization(s, h),
 {
     assert(s.linear.to_set().subset_of(s.calls.dom()));
-    assert forall|x: int| s.replies.dom().contains(x) implies
+    assert forall|x: int| #![trigger s.replies[x]] s.replies.dom().contains(x) implies
         a::run(s.application, s.linear).outputs.dom().contains(x)
         && a::run(s.application, s.linear).outputs[x] == s.replies[x] by {
         assert(returned_ok(s, x));
     }
-    assert forall|i: int, j: int| 0 <= i < s.linear.len() && 0 <= j < s.linear.len()
+    assert forall|i: int, j: int| #![trigger s.linear[i], s.linear[j]] 0 <= i < s.linear.len() && 0 <= j < s.linear.len()
         && s.returns.dom().contains(s.linear[i]) && s.returns[s.linear[i]] < s.calls[s.linear[j]]
         implies i < j by {
         let x = s.linear[i]; let y = s.linear[j];
@@ -501,7 +501,7 @@ pub proof fn step_preserves_observations<A, R>(s: State<A, R>, t: State<A, R>, c
     requires r::config_ok(c), a::machine_ok(s.application, c), inv(s, c), next(s, t, c, action),
     ensures inv(t, c), t.application == s.application, o::prefix(s.base, t.base),
         s.replies.dom().subset_of(t.replies.dom()),
-        forall|x: int| s.replies.dom().contains(x) ==> t.replies[x] == s.replies[x],
+        forall|x: int| #![trigger t.replies[x]] #![trigger s.replies[x]] s.replies.dom().contains(x) ==> t.replies[x] == s.replies[x],
 {
     step_preserves(s, t, c, action);
     match action {
@@ -512,7 +512,7 @@ pub proof fn step_preserves_observations<A, R>(s: State<A, R>, t: State<A, R>, c
             }
         },
         Action::Reply { command } => {
-            assert forall|x: int| s.replies.dom().contains(x) implies t.replies[x] == s.replies[x] by {
+            assert forall|x: int| #![trigger t.replies[x]] #![trigger s.replies[x]] s.replies.dom().contains(x) implies t.replies[x] == s.replies[x] by {
                 assert(x != command);
             }
         },
@@ -523,7 +523,7 @@ pub proof fn observations_persist<A, R>(states: Seq<State<A, R>>, actions: Seq<A
     requires r::config_ok(c), a::machine_ok(m, c), behavior(states, actions, c, proposers, m),
         0 <= i <= j < states.len(),
     ensures states[i].replies.dom().subset_of(states[j].replies.dom()),
-        forall|x: int| states[i].replies.dom().contains(x) ==> states[j].replies[x] == states[i].replies[x],
+        forall|x: int| #![trigger states[j].replies[x]] #![trigger states[i].replies[x]] states[i].replies.dom().contains(x) ==> states[j].replies[x] == states[i].replies[x],
         o::prefix(states[i].base, states[j].base),
     decreases j - i,
 {
@@ -532,7 +532,7 @@ pub proof fn observations_persist<A, R>(states: Seq<State<A, R>>, actions: Seq<A
         reachable_inv(states, actions, c, proposers, m, j - 1);
         assert(next(states[j - 1], states[(j - 1) + 1], c, actions[j - 1]));
         step_preserves_observations(states[j - 1], states[j], c, actions[j - 1]);
-        assert forall|x: int| states[i].replies.dom().contains(x)
+        assert forall|x: int| #![trigger states[j].replies[x]] #![trigger states[i].replies[x]] states[i].replies.dom().contains(x)
             implies states[j].replies[x] == states[i].replies[x] by {
             assert(states[j - 1].replies.dom().contains(x));
             assert(states[j - 1].replies[x] == states[i].replies[x]);

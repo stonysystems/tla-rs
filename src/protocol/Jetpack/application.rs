@@ -74,7 +74,7 @@ pub proof fn commute_steps<A, R>(m: Machine<A, R>, c: r::Config, e: Execution<A,
 // Move x left across independent commands, preserving every returned value.
 pub proof fn move_left<A, R>(m: Machine<A, R>, c: r::Config, e: Execution<A, R>, h: Seq<int>, x: int)
     requires r::config_ok(c), machine_ok(m, c), commands_ok(c, h), c.commands.contains(x),
-        forall|y: int| h.contains(y) ==> independent(c, x, y),
+        forall|y: int| #![trigger h.contains(y)] h.contains(y) ==> independent(c, x, y),
     ensures fold(m, e, h.push(x)) == fold(m, advance(m, e, x), h),
     decreases h.len(),
 {
@@ -84,7 +84,7 @@ pub proof fn move_left<A, R>(m: Machine<A, R>, c: r::Config, e: Execution<A, R>,
         let y = h.last();
         assert(h.contains(y));
         assert(commands_ok(c, rest));
-        assert forall|z: int| rest.contains(z) implies independent(c, x, z) by {
+        assert forall|z: int| #![trigger rest.contains(z)] rest.contains(z) implies independent(c, x, z) by {
             assert(h.contains(z));
         }
         move_left(m, c, e, rest, x);
@@ -95,7 +95,7 @@ pub proof fn move_left<A, R>(m: Machine<A, R>, c: r::Config, e: Execution<A, R>,
 pub proof fn move_selected_left<A, R>(m: Machine<A, R>, c: r::Config,
                                      e: Execution<A, R>, h: Seq<int>, i: int)
     requires r::config_ok(c), machine_ok(m, c), commands_ok(c, h), 0 <= i < h.len(),
-        forall|j: int| 0 <= j < i ==> independent(c, h[i], h[j]),
+        forall|j: int| #![trigger h[j]] 0 <= j < i ==> independent(c, h[i], h[j]),
     ensures fold(m, e, h) == fold(m, advance(m, e, h[i]), remove_at(h, i)),
 {
     let p = h.subrange(0, i);
@@ -103,7 +103,7 @@ pub proof fn move_selected_left<A, R>(m: Machine<A, R>, c: r::Config,
     assert(h =~= p.push(h[i]) + q);
     assert(commands_ok(c, p));
     assert(c.commands.contains(h[i]));
-    assert forall|x: int| p.contains(x) implies independent(c, h[i], x) by {
+    assert forall|x: int| #![trigger p.contains(x)] p.contains(x) implies independent(c, h[i], x) by {
         let j = choose|j: int| 0 <= j < p.len() && p[j] == x;
         assert(h[j] == x);
     }
@@ -140,7 +140,7 @@ pub proof fn output_domain<A, R>(m: Machine<A, R>, e: Execution<A, R>, h: Seq<in
 pub proof fn append_before_independent<A, R>(m: Machine<A, R>, c: r::Config,
                                            p: Seq<int>, q: Seq<int>, x: int)
     requires r::config_ok(c), machine_ok(m, c), commands_ok(c, q), c.commands.contains(x),
-        forall|y: int| q.contains(y) ==> independent(c, x, y),
+        forall|y: int| #![trigger q.contains(y)] q.contains(y) ==> independent(c, x, y),
     ensures run(m, p.push(x) + q) == run(m, (p + q).push(x)),
         run(m, p.push(x) + q).outputs.dom().contains(x),
         run(m, p.push(x) + q).outputs[x] == (m.output)(run(m, p).state, x),
