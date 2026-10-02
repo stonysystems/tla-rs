@@ -14,21 +14,21 @@ pub open spec fn clients_ok<A,R>(s:r::History,c:r::Config,m:a::Machine<A,R>,h:Cl
         &&& reply.log.len()>0 && reply.log.last()==x
         &&& reply.value==a::result(m,reply.log,reply.log.len() as int-1)
         &&& reply.log.to_set().subset_of(h.calls.dom())
-        &&& forall|y:int| reply.log.contains(y) ==> h.calls[y] < reply.time
+        &&& forall|y:int| #![trigger reply.log.contains(y)] reply.log.contains(y) ==> h.calls[y] < reply.time
     }
 }
 pub open spec fn linearization<A,R>(m:a::Machine<A,R>,h:Clients<R>,log:Seq<int>) -> bool {
     &&& log.no_duplicates() && log.to_set().subset_of(h.calls.dom())
     &&& h.replies.dom().subset_of(log.to_set())
-    &&& forall|i:int| 0 <= i < log.len() && h.replies.dom().contains(log[i])
+    &&& forall|i:int| #![trigger a::result(m,log,i)] 0 <= i < log.len() && h.replies.dom().contains(log[i])
         ==> h.replies[log[i]].value==a::result(m,log,i)
-    &&& forall|i:int,j:int| 0 <= i < log.len() && 0 <= j < log.len()
+    &&& forall|i:int,j:int| #![trigger log[i], log[j]] 0 <= i < log.len() && 0 <= j < log.len()
         && h.replies.dom().contains(log[i]) && h.replies[log[i]].time < h.calls[log[j]] ==> i < j
 }
 pub proof fn largest_reply<R>(replies:Map<int,Reply<R>>) -> (x:int)
     requires replies.dom()!=Set::<int>::empty(),
     ensures replies.dom().contains(x),
-        forall|y:int| replies.dom().contains(y) ==> replies[y].log.len() <= replies[x].log.len(),
+        forall|y:int| #![trigger replies.dom().contains(y)] replies.dom().contains(y) ==> replies[y].log.len() <= replies[x].log.len(),
     decreases replies.dom().len(),
 {
     if replies.dom().len()==0 { replies.dom().lemma_len0_is_empty(); assert(false); }
@@ -44,12 +44,12 @@ pub proof fn largest_reply<R>(replies:Map<int,Reply<R>>) -> (x:int)
         let y=largest_reply(rest);
         assert(replies.dom().contains(y));
         if replies[x].log.len() >= replies[y].log.len() {
-            assert forall|z:int| replies.dom().contains(z) implies replies[z].log.len() <= replies[x].log.len() by {
+            assert forall|z:int| #![trigger replies.dom().contains(z)] replies.dom().contains(z) implies replies[z].log.len() <= replies[x].log.len() by {
                 if z!=x { assert(rest.dom().contains(z)); assert(rest[z].log.len() <= rest[y].log.len()); }
             }
             x
         } else {
-            assert forall|z:int| replies.dom().contains(z) implies replies[z].log.len() <= replies[y].log.len() by {
+            assert forall|z:int| #![trigger replies.dom().contains(z)] replies.dom().contains(z) implies replies[z].log.len() <= replies[y].log.len() by {
                 if z!=x { assert(rest.dom().contains(z)); assert(rest[z].log.len() <= rest[y].log.len()); }
             }
             y
@@ -61,7 +61,7 @@ pub proof fn certified_log_unique(s:r::History,c:r::Config,v:int,log:Seq<int>)
     ensures log.no_duplicates(),
 {
     r::certificate_has_voter(s,c,v,log);
-    let n=choose|n:int| c.nodes.contains(n) && r::installed(s,v,n) && r::prefix(log,s.logs[(v,n)]);
+    let n=choose|n:int| #![trigger r::installed(s,v,n)] c.nodes.contains(n) && r::installed(s,v,n) && r::prefix(log,s.logs[(v,n)]);
     assert(s.logs[(v,n)].no_duplicates());
 }
 pub proof fn reply_index<R>(h:Clients<R>,log:Seq<int>,x:int,i:int)
@@ -83,23 +83,23 @@ pub proof fn history_linearizable<A,R>(s:r::History,c:r::Config,m:a::Machine<A,R
     } else {
         let x=largest_reply(h.replies); let log=h.replies[x].log;
         certified_log_unique(s,c,h.replies[x].view,log);
-        assert forall|y:int| h.replies.dom().contains(y) implies r::prefix(h.replies[y].log,log) by {
+        assert forall|y:int| #![trigger h.replies.dom().contains(y)] h.replies.dom().contains(y) implies r::prefix(h.replies[y].log,log) by {
             r::certificates_compatible(s,c,h.replies[y].view,h.replies[y].log,h.replies[x].view,log);
             assert(h.replies[y].log.len() <= log.len());
         }
         assert(h.replies.dom().subset_of(log.to_set())) by {
-            assert forall|y:int| h.replies.dom().contains(y) implies log.to_set().contains(y) by {
+            assert forall|y:int| #![trigger log.to_set().contains(y)] h.replies.dom().contains(y) implies log.to_set().contains(y) by {
                 let i=h.replies[y].log.len() as int-1;
                 assert(h.replies[y].log[i]==y && log[i]==y);
                 assert(log.contains(y));
             }
         }
-        assert forall|i:int| 0 <= i < log.len() && h.replies.dom().contains(log[i])
+        assert forall|i:int| #![trigger a::result(m,log,i)] 0 <= i < log.len() && h.replies.dom().contains(log[i])
             implies h.replies[log[i]].value==a::result(m,log,i) by {
             let y=log[i]; reply_index(h,log,y,i);
             a::prefix_result(m,h.replies[y].log,log,i);
         }
-        assert forall|i:int,j:int| 0 <= i < log.len() && 0 <= j < log.len()
+        assert forall|i:int,j:int| #![trigger log[i], log[j]] 0 <= i < log.len() && 0 <= j < log.len()
             && h.replies.dom().contains(log[i]) && h.replies[log[i]].time < h.calls[log[j]] implies i < j by {
             let x=log[i]; let y=log[j]; reply_index(h,log,x,i);
             if j <= i {

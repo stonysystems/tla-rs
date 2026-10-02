@@ -28,13 +28,13 @@ pub proof fn om_nonempty_decision(v:int)
         assert(q.contains(0) && r.contains(0));
     }
     assert(c.processes.contains(0)); assert(c.processes != Set::<int>::empty());
-    assert forall|q:Set<int>| c.quorums.contains(q) implies q.subset_of(c.witnesses) && q != Set::<int>::empty() by {
+    assert forall|q:Set<int>| #![trigger q.subset_of(c.witnesses)] c.quorums.contains(q) implies q.subset_of(c.witnesses) && q != Set::<int>::empty() by {
         assert(q =~= set![0int]); assert(q.contains(0));
         assert(q.subset_of(c.witnesses));
     }
     assert(Om::consensus::config_ok(c));
     assert forall|q:int| Om::consensus::sees(h,p,q) implies q==0 by {
-        let w=choose|w:int| h.quorums[p].contains(w)
+        let w=choose|w:int| #![trigger h.quorums[p].contains(w)] h.quorums[p].contains(w)
             && h.processed.dom().contains((w,(0int,0int,q)))
             && h.processed[(w,(0int,0int,q))] <= h.processed[(w,p)];
         assert(w==0);
@@ -42,8 +42,8 @@ pub proof fn om_nonempty_decision(v:int)
     assert(Om::consensus::uniform(h,0,0));
     assert(Om::consensus::defined_execution(h,c));
     assert(!Om::consensus::saw_disagree(h,0,0)) by {
-        assert forall|q:int| Om::consensus::sees(h,ck,q) implies h.values[(1int,0int,q)]!=0 by {
-            let w=choose|w:int| h.quorums[ck].contains(w)
+        assert forall|q:int| #![trigger Om::consensus::sees(h,ck,q)] Om::consensus::sees(h,ck,q) implies h.values[(1int,0int,q)]!=0 by {
+            let w=choose|w:int| #![trigger h.quorums[ck].contains(w)] h.quorums[ck].contains(w)
                 && h.processed.dom().contains((w,(1int,0int,q)))
                 && h.processed[(w,(1int,0int,q))] <= h.processed[(w,ck)];
             assert(w==0 && q==0);
@@ -76,7 +76,7 @@ pub proof fn gaios_nonempty_read()
     }
     assert(ConsensusSafety::paxos::behavior(ss,aa,pc));
     assert(pc.quorums.contains(set![0int]));
-    assert forall|n:int| set![0int].contains(n) implies ConsensusSafety::paxos::voted(d,n,0,7) by {};
+    assert forall|n:int| #![trigger ConsensusSafety::paxos::voted(d,n,0,7)] set![0int].contains(n) implies ConsensusSafety::paxos::voted(d,n,0,7) by {};
     assert(ConsensusSafety::paxos::quorum_chosen(d,pc,0,7));
     let c=Gaios::reads::Config {paxos:pc,read_quorums:set![set![0int]]};
     let hist=ConsensusSafety::register_history::History {initial:0,
@@ -90,7 +90,7 @@ pub proof fn gaios_nonempty_read()
     assert(Gaios::reads::config_ok(c)); assert(Gaios::reads::host_ok(s,c)); assert(Gaios::reads::read_protocol(s,c));
 }
 pub proof fn speculative_fast_then_reconciliation()
-    ensures exists|s:SpecPaxos::reconciliation::History,c:SpecPaxos::reconciliation::Config|
+    ensures exists|s:SpecPaxos::reconciliation::History,c:SpecPaxos::reconciliation::Config| #![trigger SpecPaxos::reconciliation::well_formed(s,c)]
         SpecPaxos::reconciliation::config_ok(c) && SpecPaxos::reconciliation::well_formed(s,c)
         && SpecPaxos::reconciliation::fast(s,c,0,seq![1int,2int])
         && SpecPaxos::reconciliation::slow(s,c,1,seq![1int,2int])
@@ -116,7 +116,7 @@ pub proof fn speculative_fast_then_reconciliation()
     assert(SpecPaxos::reconciliation::config_ok(c));
     assert(SpecPaxos::reconciliation::quorum(c,q));
     assert(r.previous.dom()==q);
-    assert forall|n:int| q.contains(n) implies 0 <= r.previous[n] < 1
+    assert forall|n:int| #![trigger q.contains(n)] q.contains(n) implies 0 <= r.previous[n] < 1
         && SpecPaxos::reconciliation::installed(s,r.previous[n],n) && r.previous[n] <= r.maximum by {};
     assert(q.contains(0) && r.previous[0]==r.maximum);
     assert forall|u:int,n:int| SpecPaxos::reconciliation::installed(s,u,n) && u < 1 && q.contains(n)
@@ -158,7 +158,7 @@ pub proof fn corfu_read_survives_migration()
         if k==0 {} else if k==1 {} else if k==2 {} else if k==3 {}
         else if k==4 {assert(Corfu::chain::live(s4,1));}
         else if k==5 {} else if k==6 {
-            assert forall|n:int| Corfu::chain::live(s6,n) implies s6.sealed.contains(n) by {
+            assert forall|n:int| #![trigger Corfu::chain::live(s6,n)] Corfu::chain::live(s6,n) implies s6.sealed.contains(n) by {
                 let j=choose|j:int| 0 <= j < s6.chain.len() && s6.chain[j]==n;
                 assert(n==1);
             }
@@ -176,7 +176,7 @@ pub proof fn replicated_commit_recovers_chosen_commit()
     let pc=one_config();let c=ReplicatedCommit::commit::Config {paxos:pc,cohorts:set![0int]};
     assert(pc.acceptors.contains(0) && pc.acceptors!=Set::<int>::empty());
     assert(pc.quorums.contains(set![0int]) && pc.quorums!=Set::<Set<int>>::empty());
-    assert forall|q:Set<int>| pc.quorums.contains(q) implies q.subset_of(pc.acceptors) && q!=Set::<int>::empty() by {assert(q.contains(0));}
+    assert forall|q:Set<int>| #![trigger q.subset_of(pc.acceptors)] pc.quorums.contains(q) implies q.subset_of(pc.acceptors) && q!=Set::<int>::empty() by {assert(q.contains(0));}
     assert forall|q:Set<int>,r:Set<int>| pc.quorums.contains(q) && pc.quorums.contains(r)
         implies exists|a:int| q.contains(a) && r.contains(a) by {assert(q.contains(0) && r.contains(0));}
     assert(ConsensusSafety::paxos::config_ok(pc));
@@ -216,7 +216,7 @@ pub proof fn replicated_commit_recovers_chosen_commit()
             assert(s5.core.last_ballot[0]==0 && s5.core.last_value[0]==1);
             assert(s6.core.promise =~= ConsensusSafety::paxos::prepared_promises(s5.core,set![0int],1));
             assert(set![0int].contains(0));
-            assert(exists|dc:int| set![0int].contains(dc) && s5.core.last_ballot[dc]==0 && s5.core.last_value[dc]==1);
+            assert(exists|dc:int| #![trigger s5.core.last_ballot[dc]] #![trigger s5.core.last_value[dc]] set![0int].contains(dc) && s5.core.last_ballot[dc]==0 && s5.core.last_value[dc]==1);
             assert(ReplicatedCommit::commit::next(s5,s6,c,aa[5]));
         } else {
             assert(s7.core.promise =~= s6.core.promise.insert(0int,1int));

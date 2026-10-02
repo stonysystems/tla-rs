@@ -25,9 +25,9 @@ pub open spec fn config_ok(c: Config) -> bool {
 }
 pub open spec fn host_ok(s: Protocol, c: Config) -> bool {
     &&& h::execution_ok(s.history) && s.write_views.len() == s.history.writes.len()
-    &&& forall|v: int| s.views.dom().contains(v) ==> c.paxos.quorums.contains(s.views[v].quorum)
+    &&& forall|v: int| #![trigger s.views.dom().contains(v)] s.views.dom().contains(v) ==> c.paxos.quorums.contains(s.views[v].quorum)
         && s.views[v].recovered >= 0
-        && forall|a: int| s.views[v].quorum.contains(a) ==> s.recognitions.dom().contains((a, v))
+        && forall|a: int| #![trigger s.views[v].quorum.contains(a)] s.views[v].quorum.contains(a) ==> s.recognitions.dom().contains((a, v))
             && s.recognitions[(a, v)] <= s.views[v].elected
     &&& forall|i: int| 0 <= i < s.history.writes.len() ==> {
         let v = s.write_views[i];
@@ -37,7 +37,7 @@ pub open spec fn host_ok(s: Protocol, c: Config) -> bool {
         && p::quorum_chosen(s.slot_states[i].last(), c.paxos, v, s.history.writes[i].value)
     }
     // The prepared/reproposed horizon includes all possible earlier-view decisions.
-    &&& forall|v: int, i: int| s.views.dom().contains(v) && 0 <= i < s.history.writes.len()
+    &&& forall|v: int, i: int| #![trigger s.views.dom().contains(v), s.write_views[i]] s.views.dom().contains(v) && 0 <= i < s.history.writes.len()
         && s.write_views[i] < v ==> i < s.views[v].recovered
 }
 pub open spec fn read_protocol(s: Protocol, c: Config) -> bool {
@@ -51,10 +51,10 @@ pub open spec fn read_protocol(s: Protocol, c: Config) -> bool {
         &&& c.read_quorums.contains(st.replies.dom())
         &&& forall|a: int| st.replies.dom().contains(a) ==> st.at < st.replies[a] < rd.execute
         // A reply reporting this view cannot follow recognition of a higher view.
-        &&& forall|a: int, v: int| st.replies.dom().contains(a) && s.recognitions.dom().contains((a, v))
+        &&& forall|a: int, v: int| #![trigger s.recognitions.dom().contains((a, v))] st.replies.dom().contains(a) && s.recognitions.dom().contains((a, v))
             && s.recognitions[(a, v)] <= st.replies[a] ==> v <= st.view
         // The leader stamps its own actual committed prefix at receipt time.
-        &&& forall|i: int| 0 <= i < s.history.writes.len() && s.write_views[i] == st.view
+        &&& forall|i: int| #![trigger s.write_views[i]] 0 <= i < s.history.writes.len() && s.write_views[i] == st.view
             && s.history.writes[i].commit <= st.at ==> i < st.known
     }
 }
@@ -84,7 +84,7 @@ pub proof fn linearizable_reads_and_writes(s: Protocol, c: Config)
     ensures h::linearization(s.history, |a: h::Op, b: h::Op| h::before(s.history, a, b)),
         exists|order: spec_fn(h::Op, h::Op) -> bool| h::linearization(s.history, order),
 {
-    assert forall|r: int, i: int| s.history.reads.dom().contains(r) && 0 <= i < s.history.writes.len()
+    assert forall|r: int, i: int| #![trigger s.history.reads.dom().contains(r), s.history.writes[i]] s.history.reads.dom().contains(r) && 0 <= i < s.history.writes.len()
         && s.history.writes[i].commit < s.history.reads[r].call implies i < s.history.reads[r].cut by {
         read_is_fresh(s, c, r, i);
     }

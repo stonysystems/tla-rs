@@ -17,28 +17,28 @@ pub struct History {
 }
 pub open spec fn config_ok(c: Config) -> bool {
     &&& c.processes != Set::<int>::empty()
-    &&& forall|q: Set<int>| c.quorums.contains(q) ==> q.subset_of(c.witnesses) && q != Set::<int>::empty()
+    &&& forall|q: Set<int>| #![trigger q.subset_of(c.witnesses)] c.quorums.contains(q) ==> q.subset_of(c.witnesses) && q != Set::<int>::empty()
     &&& forall|q: Set<int>, r: Set<int>| c.quorums.contains(q) && c.quorums.contains(r)
         ==> exists|w: int| q.contains(w) && r.contains(w)
 }
 pub open spec fn done(h: History, k: Key) -> bool { h.quorums.dom().contains(k) }
 pub open spec fn issued(h: History, k: Key) -> bool { h.values.dom().contains(k) }
 pub open spec fn sees(h: History, k: Key, p: int) -> bool {
-    done(h, k) && exists|w: int| h.quorums[k].contains(w)
+    done(h, k) && exists|w: int| #![trigger h.quorums[k].contains(w)] h.quorums[k].contains(w)
         && h.processed.dom().contains((w, (k.0, k.1, p)))
         && h.processed[(w, (k.0, k.1, p))] <= h.processed[(w, k)]
 }
 pub open spec fn uniform(h: History, r: int, p: int) -> bool {
-    forall|q: int| sees(h, (0, r, p), q) ==> h.values[(0, r, q)] == h.values[(0, r, p)]
+    forall|q: int| #![trigger sees(h, (0, r, p), q)] sees(h, (0, r, p), q) ==> h.values[(0, r, q)] == h.values[(0, r, p)]
 }
 pub open spec fn agrees(h: History, r: int, p: int) -> bool {
     issued(h, (1, r, p)) && h.values[(1, r, p)] == 1
 }
 pub open spec fn saw_agree(h: History, r: int, p: int) -> bool {
-    exists|q: int| sees(h, (1, r, p), q) && agrees(h, r, q)
+    exists|q: int| #![trigger agrees(h, r, q)] sees(h, (1, r, p), q) && agrees(h, r, q)
 }
 pub open spec fn saw_disagree(h: History, r: int, p: int) -> bool {
-    exists|q: int| sees(h, (1, r, p), q) && h.values[(1, r, q)] == 0
+    exists|q: int| #![trigger sees(h, (1, r, p), q)] sees(h, (1, r, p), q) && h.values[(1, r, q)] == 0
 }
 pub open spec fn decision(h: History, r: int, p: int, v: int) -> bool {
     done(h, (1, r, p)) && !saw_disagree(h, r, p) && h.values[(0, r, p)] == v
@@ -46,11 +46,11 @@ pub open spec fn decision(h: History, r: int, p: int, v: int) -> bool {
 pub open spec fn defined_execution(h: History, c: Config) -> bool {
     &&& h.inputs.dom() == c.processes && h.starts.dom() == h.values.dom()
     &&& h.finishes.dom() == h.quorums.dom()
-    &&& forall|k: Key| issued(h, k) ==> 0 <= k.0 <= 1 && k.1 >= 0 && c.processes.contains(k.2)
-    &&& forall|w: int, k: Key| h.processed.dom().contains((w, k)) ==>
+    &&& forall|k: Key| #![trigger issued(h, k)] issued(h, k) ==> 0 <= k.0 <= 1 && k.1 >= 0 && c.processes.contains(k.2)
+    &&& forall|w: int, k: Key| #![trigger h.processed.dom().contains((w, k))] h.processed.dom().contains((w, k)) ==>
         c.witnesses.contains(w) && issued(h, k) && h.starts[k] < h.processed[(w, k)]
-    &&& forall|k: Key| done(h, k) ==> issued(h, k) && c.quorums.contains(h.quorums[k])
-        && forall|w: int| h.quorums[k].contains(w) ==> h.processed.dom().contains((w, k))
+    &&& forall|k: Key| #![trigger done(h, k)] #![trigger issued(h, k)] done(h, k) ==> issued(h, k) && c.quorums.contains(h.quorums[k])
+        && forall|w: int| #![trigger h.quorums[k].contains(w)] h.quorums[k].contains(w) ==> h.processed.dom().contains((w, k))
             && h.processed[(w, k)] < h.finishes[k]
     // Check access follows the completed proposal access and publishes its test.
     &&& forall|r: int, p: int| #[trigger] issued(h, (1, r, p)) ==> done(h, (0, r, p))
@@ -89,7 +89,7 @@ pub proof fn observed_was_issued(h: History, c: Config, k: Key, p: int)
     requires defined_execution(h, c), sees(h, k, p),
     ensures issued(h, (k.0, k.1, p)),
 {
-    let w = choose|w: int| h.quorums[k].contains(w)
+    let w = choose|w: int| #![trigger h.quorums[k].contains(w)] h.quorums[k].contains(w)
         && h.processed.dom().contains((w, (k.0, k.1, p)))
         && h.processed[(w, (k.0, k.1, p))] <= h.processed[(w, k)];
 }
@@ -176,7 +176,7 @@ pub proof fn agreement(h: History, c: Config, r: int, p: int, v: int, k: int, q:
 }
 pub proof fn proposal_validity(h: History, c: Config, r: int, p: int)
     requires config_ok(c), defined_execution(h, c), issued(h, (0, r, p)),
-    ensures exists|q: int| c.processes.contains(q) && h.values[(0, r, p)] == h.inputs[q],
+    ensures exists|q: int| #![trigger h.inputs[q]] c.processes.contains(q) && h.values[(0, r, p)] == h.inputs[q],
     decreases r,
 {
     if r == 0 { assert(c.processes.contains(p)); }
@@ -189,7 +189,7 @@ pub proof fn proposal_validity(h: History, c: Config, r: int, p: int)
 }
 pub proof fn decision_validity(h: History, c: Config, r: int, p: int, v: int)
     requires config_ok(c), defined_execution(h, c), decision(h, r, p, v),
-    ensures exists|q: int| c.processes.contains(q) && v == h.inputs[q],
+    ensures exists|q: int| #![trigger h.inputs[q]] c.processes.contains(q) && v == h.inputs[q],
 {
     decision_agreed(h, c, r, p, v);
     proposal_validity(h, c, r, p);

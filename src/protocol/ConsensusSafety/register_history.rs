@@ -30,16 +30,16 @@ pub open spec fn prefix_value(h: History, n: int) -> int {
     if n == 0 { h.initial } else { h.writes[n - 1].value }
 }
 pub open spec fn execution_ok(h: History) -> bool {
-    &&& forall|i: int| 0 <= i < h.writes.len() ==> h.writes[i].call < h.writes[i].commit
+    &&& forall|i: int| #![trigger h.writes[i]] 0 <= i < h.writes.len() ==> h.writes[i].call < h.writes[i].commit
         && match h.writes[i].reply { Some(t) => h.writes[i].commit < t, None => true }
-    &&& forall|i: int, j: int| 0 <= i < j < h.writes.len() ==> h.writes[i].commit < h.writes[j].commit
-    &&& forall|r: int| h.reads.dom().contains(r) ==> h.reads[r].call < h.reads[r].execute < h.reads[r].reply
+    &&& forall|i: int, j: int| #![trigger h.writes[i], h.writes[j]] 0 <= i < j < h.writes.len() ==> h.writes[i].commit < h.writes[j].commit
+    &&& forall|r: int| #![trigger h.reads.dom().contains(r)] h.reads.dom().contains(r) ==> h.reads[r].call < h.reads[r].execute < h.reads[r].reply
         && 0 <= h.reads[r].cut <= h.writes.len() && h.reads[r].result == prefix_value(h, h.reads[r].cut)
-    &&& forall|r: int, i: int| h.reads.dom().contains(r) && 0 <= i < h.reads[r].cut
+    &&& forall|r: int, i: int| #![trigger h.reads.dom().contains(r), h.writes[i]] h.reads.dom().contains(r) && 0 <= i < h.reads[r].cut
         ==> h.writes[i].commit <= h.reads[r].execute
 }
 pub open spec fn fresh(h: History) -> bool {
-    forall|r: int, i: int| h.reads.dom().contains(r) && 0 <= i < h.writes.len()
+    forall|r: int, i: int| #![trigger h.reads.dom().contains(r), h.writes[i]] h.reads.dom().contains(r) && 0 <= i < h.writes.len()
         && h.writes[i].commit < h.reads[r].call ==> i < h.reads[r].cut
 }
 // A strict total order of operations is a sequential history. Every completed
@@ -50,7 +50,7 @@ pub open spec fn linearization(h: History, order: spec_fn(Op, Op) -> bool) -> bo
     &&& forall|a: Op, b: Op| valid(h, a) && valid(h, b) && a != b ==> (order)(a, b) != (order)(b, a)
     &&& forall|a: Op, b: Op, c: Op| valid(h, a) && valid(h, b) && valid(h, c)
         && (order)(a, b) && (order)(b, c) ==> (order)(a, c)
-    &&& forall|a: Op, b: Op| valid(h, a) && valid(h, b) && response(h, a) is Some
+    &&& forall|a: Op, b: Op| #![trigger valid(h, a), valid(h, b)] valid(h, a) && valid(h, b) && response(h, a) is Some
         && response(h, a)->Some_0 < invocation(h, b) ==> (order)(a, b)
     &&& forall|r: int| h.reads.dom().contains(r) ==> {
         let x = h.reads[r];
@@ -103,7 +103,7 @@ pub proof fn history_linearizable(h: History)
         implies (order)(a, b) != (order)(b, a) by {
         if rank(h, a) == rank(h, b) { ranks_distinguish_kinds(h, a, b); }
     }
-    assert forall|a: Op, b: Op| valid(h, a) && valid(h, b) && response(h, a) is Some
+    assert forall|a: Op, b: Op| #![trigger valid(h, a), valid(h, b)] valid(h, a) && valid(h, b) && response(h, a) is Some
         && response(h, a)->Some_0 < invocation(h, b) implies (order)(a, b) by {
         real_time(h, a, b);
     }

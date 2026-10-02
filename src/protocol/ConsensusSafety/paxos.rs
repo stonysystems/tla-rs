@@ -14,7 +14,7 @@ pub struct Config {
 pub open spec fn config_ok(c: Config) -> bool {
     &&& c.acceptors != Set::<int>::empty()
     &&& c.quorums != Set::<Set<int>>::empty()
-    &&& forall|q: Set<int>| c.quorums.contains(q)
+    &&& forall|q: Set<int>| #![trigger q.subset_of(c.acceptors)] c.quorums.contains(q)
         ==> q.subset_of(c.acceptors) && q != Set::<int>::empty()
     &&& forall|q: Set<int>, r: Set<int>| c.quorums.contains(q) && c.quorums.contains(r)
         ==> exists|a: int| q.contains(a) && r.contains(a)
@@ -39,7 +39,7 @@ pub open spec fn blocked_or_same(s: State, a: int, b: int, v: int) -> bool {
 
 pub open spec fn protected_at(s: State, c: Config, k: int, v: int) -> bool {
     exists|q: Set<int>| c.quorums.contains(q)
-        && forall|a: int| q.contains(a) ==> blocked_or_same(s, a, k, v)
+        && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> blocked_or_same(s, a, k, v)
 }
 
 pub open spec fn safe_at(s: State, c: Config, b: int, v: int) -> bool {
@@ -50,14 +50,14 @@ pub open spec fn inv(s: State, c: Config) -> bool {
     &&& s.promise.dom() == c.acceptors
     &&& s.last_ballot.dom() == c.acceptors
     &&& s.last_value.dom() == c.acceptors
-    &&& forall|a: int| c.acceptors.contains(a) ==>
+    &&& forall|a: int| #![trigger c.acceptors.contains(a)] c.acceptors.contains(a) ==>
         0 <= s.promise[a] && -1 <= s.last_ballot[a] <= s.promise[a]
     &&& forall|a: int, b: int, v: int| voted(s, a, b, v) ==>
         c.acceptors.contains(a) && 0 <= b <= s.last_ballot[a]
         && s.proposals.dom().contains(b) && s.proposals[b] == v
-    &&& forall|a: int| c.acceptors.contains(a) && s.last_ballot[a] >= 0
+    &&& forall|a: int| #![trigger c.acceptors.contains(a)] c.acceptors.contains(a) && s.last_ballot[a] >= 0
         ==> voted(s, a, s.last_ballot[a], s.last_value[a])
-    &&& forall|b: int| s.proposals.dom().contains(b) ==>
+    &&& forall|b: int| #![trigger s.proposals.dom().contains(b)] s.proposals.dom().contains(b) ==>
         b >= 0 && safe_at(s, c, b, s.proposals[b])
 }
 
@@ -89,7 +89,7 @@ pub open spec fn revoke(s: State, t: State, c: Config,
     &&& b > 0
     &&& c.quorums.contains(q)
     &&& !s.proposals.dom().contains(b)
-    &&& forall|a: int| q.contains(a)
+    &&& forall|a: int| #![trigger q.contains(a)] q.contains(a)
         ==> s.promise[a] < b && s.last_ballot[a] <= maximum
     &&& if maximum == -1 { true } else {
         maximum >= 0 && exists|a: int| q.contains(a)
@@ -132,7 +132,7 @@ pub open spec fn next(s: State, t: State, c: Config, action: Action) -> bool {
 
 pub open spec fn quorum_chosen(s: State, c: Config, b: int, v: int) -> bool {
     exists|q: Set<int>| c.quorums.contains(q)
-        && forall|a: int| q.contains(a) ==> voted(s, a, b, v)
+        && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> voted(s, a, b, v)
 }
 
 // This is evidence permitting a learner to decide, not a new state guard.
@@ -148,16 +148,16 @@ pub proof fn init_inv(s: State, c: Config)
 pub proof fn safe_monotone_promises(s: State, t: State, c: Config, b: int, v: int)
     requires safe_at(s, c, b, v), t.votes == s.votes,
         s.promise.dom() == c.acceptors, t.promise.dom() == c.acceptors,
-        forall|a: int| c.acceptors.contains(a) ==> t.promise[a] >= s.promise[a],
+        forall|a: int| #![trigger c.acceptors.contains(a)] c.acceptors.contains(a) ==> t.promise[a] >= s.promise[a],
         config_ok(c),
     ensures safe_at(t, c, b, v),
 {
     assert forall|k: int| 0 <= k < b implies #[trigger] protected_at(t, c, k, v) by {
         assert(protected_at(s, c, k, v));
         let q = choose|q: Set<int>| c.quorums.contains(q)
-            && forall|a: int| q.contains(a) ==> blocked_or_same(s, a, k, v);
+            && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> blocked_or_same(s, a, k, v);
         assert(q.subset_of(c.acceptors));
-        assert forall|a: int| q.contains(a) implies blocked_or_same(t, a, k, v) by {
+        assert forall|a: int| #![trigger q.contains(a)] q.contains(a) implies blocked_or_same(t, a, k, v) by {
             assert(c.acceptors.contains(a));
             assert(blocked_or_same(s, a, k, v));
             assert(t.promise[a] >= s.promise[a]);
@@ -168,7 +168,7 @@ pub proof fn safe_monotone_promises(s: State, t: State, c: Config, b: int, v: in
             }
         }
         assert(c.quorums.contains(q)
-            && forall|a: int| q.contains(a) ==> blocked_or_same(t, a, k, v));
+            && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> blocked_or_same(t, a, k, v));
     }
 }
 
@@ -176,7 +176,7 @@ pub proof fn suggest_preserves(s: State, t: State, c: Config, v: int)
     requires config_ok(c), inv(s, c), suggest(s, t, v),
     ensures inv(t, c),
 {
-    assert forall|b: int| t.proposals.dom().contains(b) implies
+    assert forall|b: int| #![trigger t.proposals.dom().contains(b)] t.proposals.dom().contains(b) implies
         b >= 0 && safe_at(t, c, b, t.proposals[b]) by {
         if b != 0 { safe_monotone_promises(s, t, c, b, s.proposals[b]); }
     }
@@ -194,7 +194,7 @@ pub proof fn revoke_preserves(s: State, t: State, c: Config,
     ensures inv(t, c),
 {
     assert(q.subset_of(c.acceptors));
-    assert forall|a: int| c.acceptors.contains(a)
+    assert forall|a: int| #![trigger c.acceptors.contains(a)] c.acceptors.contains(a)
         implies t.promise[a] >= s.promise[a] by {};
     if maximum >= 0 {
         let witness = choose|a: int| q.contains(a)
@@ -210,7 +210,7 @@ pub proof fn revoke_preserves(s: State, t: State, c: Config,
                 safe_monotone_promises(s, t, c, maximum, v);
                 assert(protected_at(t, c, k, v));
             } else {
-                assert forall|a: int| q.contains(a) implies blocked_or_same(t, a, k, v) by {
+                assert forall|a: int| #![trigger q.contains(a)] q.contains(a) implies blocked_or_same(t, a, k, v) by {
                     assert(c.acceptors.contains(a));
                     if s.last_ballot[a] == k {
                         assert(k == maximum);
@@ -224,11 +224,11 @@ pub proof fn revoke_preserves(s: State, t: State, c: Config,
                     }
                 }
                 assert(c.quorums.contains(q)
-                    && forall|a: int| q.contains(a) ==> blocked_or_same(t, a, k, v));
+                    && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> blocked_or_same(t, a, k, v));
             }
         }
     }
-    assert forall|k: int| t.proposals.dom().contains(k) implies
+    assert forall|k: int| #![trigger t.proposals.dom().contains(k)] t.proposals.dom().contains(k) implies
         k >= 0 && safe_at(t, c, k, t.proposals[k]) by {
         if k != b { safe_monotone_promises(s, t, c, k, s.proposals[k]); }
     }
@@ -248,8 +248,8 @@ pub proof fn accept_preserves_safe(s: State, t: State, c: Config,
     assert forall|r: int| 0 <= r < k implies #[trigger] protected_at(t, c, r, v) by {
         assert(protected_at(s, c, r, v));
         let q = choose|q: Set<int>| c.quorums.contains(q)
-            && forall|n: int| q.contains(n) ==> blocked_or_same(s, n, r, v);
-        assert forall|n: int| q.contains(n) implies blocked_or_same(t, n, r, v) by {
+            && forall|n: int| #![trigger q.contains(n)] q.contains(n) ==> blocked_or_same(s, n, r, v);
+        assert forall|n: int| #![trigger q.contains(n)] q.contains(n) implies blocked_or_same(t, n, r, v) by {
             assert(blocked_or_same(s, n, r, v));
             if !voted(s, n, r, v) {
                 if n == a { assert(b > r); }
@@ -259,7 +259,7 @@ pub proof fn accept_preserves_safe(s: State, t: State, c: Config,
             }
         }
         assert(c.quorums.contains(q)
-            && forall|n: int| q.contains(n) ==> blocked_or_same(t, n, r, v));
+            && forall|n: int| #![trigger q.contains(n)] q.contains(n) ==> blocked_or_same(t, n, r, v));
     }
 }
 
@@ -270,7 +270,7 @@ pub proof fn accept_preserves(s: State, t: State, c: Config, a: int, b: int)
     assert(t.promise.dom() =~= c.acceptors);
     assert(t.last_ballot.dom() =~= c.acceptors);
     assert(t.last_value.dom() =~= c.acceptors);
-    assert forall|n: int| c.acceptors.contains(n) implies
+    assert forall|n: int| #![trigger c.acceptors.contains(n)] c.acceptors.contains(n) implies
         0 <= t.promise[n] && -1 <= t.last_ballot[n] <= t.promise[n] by {
         assert(0 <= s.promise[n] && -1 <= s.last_ballot[n] <= s.promise[n]);
     }
@@ -281,11 +281,11 @@ pub proof fn accept_preserves(s: State, t: State, c: Config, a: int, b: int)
             assert(k <= s.last_ballot[n] <= s.promise[n]);
         }
     }
-    assert forall|k: int| t.proposals.dom().contains(k) implies
+    assert forall|k: int| #![trigger t.proposals.dom().contains(k)] t.proposals.dom().contains(k) implies
         k >= 0 && safe_at(t, c, k, t.proposals[k]) by {
         accept_preserves_safe(s, t, c, a, b, k, s.proposals[k]);
     }
-    assert forall|n: int| c.acceptors.contains(n) && t.last_ballot[n] >= 0
+    assert forall|n: int| #![trigger c.acceptors.contains(n)] c.acceptors.contains(n) && t.last_ballot[n] >= 0
         implies voted(t, n, t.last_ballot[n], t.last_value[n]) by {
         if n != a { assert(voted(s, n, s.last_ballot[n], s.last_value[n])); }
     }
@@ -295,7 +295,7 @@ pub proof fn step_preserves(s: State, t: State, c: Config, action: Action)
     requires config_ok(c), inv(s, c), next(s, t, c, action),
     ensures inv(t, c), s.votes.subset_of(t.votes),
         s.proposals.dom().subset_of(t.proposals.dom()),
-        forall|b: int| s.proposals.dom().contains(b) ==> t.proposals[b] == s.proposals[b],
+        forall|b: int| #![trigger t.proposals[b]] #![trigger s.proposals[b]] s.proposals.dom().contains(b) ==> t.proposals[b] == s.proposals[b],
 {
     match action {
         Action::Suggest { value } => suggest_preserves(s, t, c, value),
@@ -312,9 +312,9 @@ pub proof fn quorum_agreement(s: State, c: Config, b: int, v: int, k: int, w: in
     ensures v == w,
 {
     let q = choose|q: Set<int>| c.quorums.contains(q)
-        && forall|a: int| q.contains(a) ==> voted(s, a, b, v);
+        && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> voted(s, a, b, v);
     let r = choose|q: Set<int>| c.quorums.contains(q)
-        && forall|a: int| q.contains(a) ==> voted(s, a, k, w);
+        && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> voted(s, a, k, w);
     let a = choose|a: int| q.contains(a) && r.contains(a);
     assert(voted(s, a, b, v));
     assert(voted(s, a, k, w));
@@ -322,7 +322,7 @@ pub proof fn quorum_agreement(s: State, c: Config, b: int, v: int, k: int, w: in
         assert(safe_at(s, c, k, w));
         assert(protected_at(s, c, b, w));
         let blocker = choose|q: Set<int>| c.quorums.contains(q)
-            && forall|a: int| q.contains(a) ==> blocked_or_same(s, a, b, w);
+            && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> blocked_or_same(s, a, b, w);
         let n = choose|a: int| q.contains(a) && blocker.contains(a);
         assert(voted(s, n, b, v));
         assert(blocked_or_same(s, n, b, w));
@@ -363,18 +363,18 @@ pub proof fn reachable_inv(states: Seq<State>, actions: Seq<Action>, c: Config, 
 pub proof fn learned_preserved(s: State, t: State, c: Config, v: int)
     requires learned(s, c, v), s.votes.subset_of(t.votes),
         s.proposals.dom().subset_of(t.proposals.dom()),
-        forall|b: int| s.proposals.dom().contains(b) ==> t.proposals[b] == s.proposals[b],
+        forall|b: int| #![trigger t.proposals[b]] #![trigger s.proposals[b]] s.proposals.dom().contains(b) ==> t.proposals[b] == s.proposals[b],
     ensures learned(t, c, v),
 {
     {
         let b = choose|b: int| quorum_chosen(s, c, b, v);
         let q = choose|q: Set<int>| c.quorums.contains(q)
-            && forall|a: int| q.contains(a) ==> voted(s, a, b, v);
-        assert forall|a: int| q.contains(a) implies voted(t, a, b, v) by {
+            && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> voted(s, a, b, v);
+        assert forall|a: int| #![trigger q.contains(a)] q.contains(a) implies voted(t, a, b, v) by {
             assert(voted(s, a, b, v));
         }
         assert(c.quorums.contains(q)
-            && forall|a: int| q.contains(a) ==> voted(t, a, b, v));
+            && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> voted(t, a, b, v));
         assert(quorum_chosen(t, c, b, v));
     }
 }

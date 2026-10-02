@@ -130,7 +130,7 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires RaftDistributedNext(ds, ds_)
-        ensures exists |sid: int| {
+        ensures exists |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNextWithReboot(ds.server_states[sid], ds_.server_states[sid],
                 ds.server_constants[sid])

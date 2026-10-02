@@ -34,7 +34,7 @@ pub open spec fn certificate(s: State, c: r::Config, x: int) -> bool {
 }
 pub open spec fn promise_order(s: State, c: r::Config, p: int, x: int) -> bool {
     &&& s.phase == 0 ==> s.queues[p].contains(x)
-    &&& forall|y: int| s.queues[p].contains(y) && !s.base.contains(y) && c.conflict.contains((x, y))
+    &&& forall|y: int| #![trigger s.base.contains(y)] s.queues[p].contains(y) && !s.base.contains(y) && c.conflict.contains((x, y))
         ==> before(s.queues[p], x, y)
 }
 pub open spec fn inv(s: State, c: r::Config) -> bool {
@@ -43,18 +43,18 @@ pub open spec fn inv(s: State, c: r::Config) -> bool {
     &&& s.proposers.subset_of(c.nodes) && s.proposers != Set::<int>::empty()
     &&& s.queues.dom() == c.nodes && s.acks.dom() == c.nodes
     &&& 0 <= s.phase <= 2
-    &&& forall|a: int| c.nodes.contains(a) ==> s.queues[a].no_duplicates()
+    &&& forall|a: int| #![trigger c.nodes.contains(a)] c.nodes.contains(a) ==> s.queues[a].no_duplicates()
         && s.queues[a].to_set().subset_of(s.calls) && s.acks[a].subset_of(s.calls)
-    &&& forall|a: int, x: int, y: int| c.nodes.contains(a)
+    &&& forall|a: int, x: int, y: int| #![trigger c.nodes.contains(a), c.conflict.contains((x, y))] c.nodes.contains(a)
         && s.acks[a].contains(x) && s.acks[a].contains(y)
         && !s.base.contains(x) && !s.base.contains(y) ==> !c.conflict.contains((x, y))
-    &&& forall|p: int, x: int| s.proposers.contains(p) && s.acks[p].contains(x)
+    &&& forall|p: int, x: int| #![trigger promise_order(s, c, p, x)] s.proposers.contains(p) && s.acks[p].contains(x)
         && !s.base.contains(x) ==> promise_order(s, c, p, x)
-    &&& forall|x: int| s.pending.contains(x) ==> certificate(s, c, x)
+    &&& forall|x: int| #![trigger certificate(s, c, x)] s.pending.contains(x) ==> certificate(s, c, x)
     &&& forall|x: int, y: int| s.pending.contains(x) && s.pending.contains(y)
         && x != y ==> independent(c, x, y)
     &&& s.phase != 0 ==> r::inv(s.core, c) && s.cut.subset_of(s.base)
-        && forall|a: int| c.nodes.contains(a) ==> s.core.logs[a] == s.acks[a].difference(s.cut)
+        && forall|a: int| #![trigger c.nodes.contains(a)] #![trigger s.core.logs[a]] c.nodes.contains(a) ==> s.core.logs[a] == s.acks[a].difference(s.cut)
     &&& s.phase == 2 ==> r::chosen(s.core, c, s.recovery_ballot, s.batch)
         && s.batch.subset_of(s.calls)
 }
@@ -87,9 +87,9 @@ pub open spec fn propose(s: State, t: State, p: int, x: int) -> bool {
 }
 pub open spec fn acknowledge(s: State, t: State, c: r::Config, a: int, x: int) -> bool {
     &&& c.nodes.contains(a) && s.calls.contains(x) && !s.base.contains(x)
-    &&& forall|y: int| s.acks[a].contains(y) && !s.base.contains(y) ==> !c.conflict.contains((x, y))
+    &&& forall|y: int| #![trigger s.base.contains(y)] s.acks[a].contains(y) && !s.base.contains(y) ==> !c.conflict.contains((x, y))
     &&& s.proposers.contains(a) ==> s.queues[a].contains(x)
-        && forall|y: int| s.queues[a].contains(y) && !s.base.contains(y) ==> !c.conflict.contains((x, y))
+        && forall|y: int| #![trigger s.base.contains(y)] s.queues[a].contains(y) && !s.base.contains(y) ==> !c.conflict.contains((x, y))
     &&& if s.phase == 0 { t.core == s.core }
         else { r::acknowledge(s.core, t.core, c, a, x) }
     &&& t == State { acks: s.acks.insert(a, s.acks[a].insert(x)), core: t.core, ..s }
@@ -102,7 +102,7 @@ pub open spec fn fast(s: State, t: State, c: r::Config, x: int) -> bool {
 // PR1: an earlier conflicting proposal must execute before this proposal.
 pub open spec fn ready(s: State, c: r::Config, p: int, x: int) -> bool {
     s.proposers.contains(p) && s.queues[p].contains(x)
-        && forall|y: int| before(s.queues[p], y, x) && c.conflict.contains((y, x)) ==> s.base.contains(y)
+        && forall|y: int| #![trigger s.base.contains(y)] before(s.queues[p], y, x) && c.conflict.contains((y, x)) ==> s.base.contains(y)
 }
 pub open spec fn commit(s: State, t: State, c: r::Config, x: int, from_recovery: bool) -> bool {
     &&& s.calls.contains(x) && !s.base.contains(x) && s.phase != 1
@@ -115,7 +115,7 @@ pub open spec fn commit(s: State, t: State, c: r::Config, x: int, from_recovery:
 // implementation is not verified here. Committed commands remain in base.
 pub open spec fn begin_recovery(s: State, t: State, c: r::Config, queues: Map<int, Seq<int>>) -> bool {
     &&& s.phase == 0 && queues.dom() == c.nodes
-    &&& forall|p: int| c.nodes.contains(p) ==> prefix(queues[p], s.queues[p])
+    &&& forall|p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) ==> prefix(queues[p], s.queues[p])
     &&& t == State {
         phase: 1, queues, cut: s.base,
         core: seeded(c, Map::new(c.nodes, |a: int| s.acks[a].difference(s.base))), ..s
@@ -191,9 +191,9 @@ pub proof fn pending_is_recoverable(s: State, c: r::Config, x: int)
 }
 pub proof fn commit_respects_fast(s: State, t: State, c: r::Config, x: int, from_recovery: bool)
     requires r::config_ok(c), inv(s, c), commit(s, t, c, x, from_recovery),
-    ensures forall|y: int| s.pending.contains(y) && x != y ==> independent(c, x, y),
+    ensures forall|y: int| #![trigger independent(c, x, y)] s.pending.contains(y) && x != y ==> independent(c, x, y),
 {
-    assert forall|y: int| s.pending.contains(y) && x != y implies independent(c, x, y) by {
+    assert forall|y: int| #![trigger independent(c, x, y)] s.pending.contains(y) && x != y implies independent(c, x, y) by {
         if from_recovery {
             pending_is_recoverable(s, c, y);
             r::recovery_complete_and_safe(s.core, c, s.recovery_ballot, s.batch, y);
@@ -217,7 +217,7 @@ pub proof fn frame_promises(s: State, t: State, c: r::Config, p: int, x: int)
         t.phase == 0 ==> s.phase == 0,
     ensures promise_order(t, c, p, x),
 {
-    assert forall|y: int| t.queues[p].contains(y) && !t.base.contains(y) && c.conflict.contains((x, y))
+    assert forall|y: int| #![trigger t.base.contains(y)] t.queues[p].contains(y) && !t.base.contains(y) && c.conflict.contains((x, y))
         implies before(t.queues[p], x, y) by {
         assert(!s.base.contains(y));
         assert(before(s.queues[p], x, y));
@@ -232,16 +232,16 @@ pub proof fn growing_base_preserves(s: State, t: State, c: r::Config)
         t.pending.subset_of(s.pending), t.pending.disjoint(t.base),
     ensures inv(t, c),
 {
-    assert forall|a: int| c.nodes.contains(a) implies t.queues[a].no_duplicates()
+    assert forall|a: int| #![trigger c.nodes.contains(a)] c.nodes.contains(a) implies t.queues[a].no_duplicates()
         && t.queues[a].to_set().subset_of(t.calls) && t.acks[a].subset_of(t.calls) by {
         assert(s.queues[a].to_set().subset_of(s.calls) && s.acks[a].subset_of(s.calls));
     }
-    assert forall|p: int, x: int| t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
+    assert forall|p: int, x: int| #![trigger promise_order(t, c, p, x)] t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
         implies promise_order(t, c, p, x) by {
         assert(promise_order(s, c, p, x));
         frame_promises(s, t, c, p, x);
     }
-    assert forall|x: int| t.pending.contains(x) implies certificate(t, c, x) by {
+    assert forall|x: int| #![trigger certificate(t, c, x)] t.pending.contains(x) implies certificate(t, c, x) by {
         assert(certificate(s, c, x));
     }
 }
@@ -267,14 +267,14 @@ pub proof fn propose_preserves(s: State, t: State, c: r::Config, p: int, x: int)
     ensures inv(t, c),
 {
     assert(t.queues.dom() =~= c.nodes);
-    assert forall|a: int| c.nodes.contains(a) implies t.queues[a].no_duplicates()
+    assert forall|a: int| #![trigger c.nodes.contains(a)] c.nodes.contains(a) implies t.queues[a].no_duplicates()
         && t.queues[a].to_set().subset_of(t.calls) && t.acks[a].subset_of(t.calls) by {
         if a == p {
             s.queues[p].lemma_push_to_set_commute(x);
             assert(t.queues[p].no_duplicates());
         }
     }
-    assert forall|a: int, y: int| t.proposers.contains(a) && t.acks[a].contains(y) && !t.base.contains(y)
+    assert forall|a: int, y: int| #![trigger promise_order(t, c, a, y)] t.proposers.contains(a) && t.acks[a].contains(y) && !t.base.contains(y)
         implies promise_order(t, c, a, y) by {
         assert(promise_order(s, c, a, y));
         if a == p {
@@ -282,7 +282,7 @@ pub proof fn propose_preserves(s: State, t: State, c: r::Config, p: int, x: int)
             let witness = choose|i: int| 0 <= i < s.queues[p].len() && s.queues[p][i] == y;
             assert(t.queues[p][witness] == y);
             assert(t.queues[p].contains(y));
-            assert forall|z: int| t.queues[p].contains(z) && !t.base.contains(z) && c.conflict.contains((y, z))
+            assert forall|z: int| #![trigger t.base.contains(z)] t.queues[p].contains(z) && !t.base.contains(z) && c.conflict.contains((y, z))
                 implies before(t.queues[p], y, z) by {
                 if z == x {
                     let i = choose|i: int| 0 <= i < s.queues[p].len() && s.queues[p][i] == y;
@@ -294,11 +294,11 @@ pub proof fn propose_preserves(s: State, t: State, c: r::Config, p: int, x: int)
                 }
             }
         } else {
-            assert forall|z: int| t.queues[a].contains(z) && !t.base.contains(z) && c.conflict.contains((y, z))
+            assert forall|z: int| #![trigger t.base.contains(z)] t.queues[a].contains(z) && !t.base.contains(z) && c.conflict.contains((y, z))
                 implies before(t.queues[a], y, z) by { assert(before(s.queues[a], y, z)); }
         }
     }
-    assert forall|y: int| t.pending.contains(y) implies certificate(t, c, y) by { assert(certificate(s, c, y)); }
+    assert forall|y: int| #![trigger certificate(t, c, y)] t.pending.contains(y) implies certificate(t, c, y) by { assert(certificate(s, c, y)); }
 }
 pub proof fn acknowledge_preserves(s: State, t: State, c: r::Config, a: int, x: int)
     requires r::config_ok(c), inv(s, c), acknowledge(s, t, c, a, x),
@@ -306,11 +306,11 @@ pub proof fn acknowledge_preserves(s: State, t: State, c: r::Config, a: int, x: 
 {
     assert(t.acks.dom() =~= c.nodes);
     if s.phase != 0 { r::acknowledge_preserves(s.core, t.core, c, a, x); }
-    assert forall|n: int| c.nodes.contains(n) implies t.queues[n].no_duplicates()
+    assert forall|n: int| #![trigger c.nodes.contains(n)] c.nodes.contains(n) implies t.queues[n].no_duplicates()
         && t.queues[n].to_set().subset_of(t.calls) && t.acks[n].subset_of(t.calls) by {
         assert(s.acks[n].subset_of(s.calls));
     }
-    assert forall|n: int, y: int, z: int| c.nodes.contains(n)
+    assert forall|n: int, y: int, z: int| #![trigger c.nodes.contains(n), c.conflict.contains((y, z))] c.nodes.contains(n)
         && t.acks[n].contains(y) && t.acks[n].contains(z) && !t.base.contains(y) && !t.base.contains(z)
         implies !c.conflict.contains((y, z)) by {
         if n == a && (y == x || z == x) {
@@ -318,10 +318,10 @@ pub proof fn acknowledge_preserves(s: State, t: State, c: r::Config, a: int, x: 
             if z != x { assert(!c.conflict.contains((x, z))); }
         }
     }
-    assert forall|p: int, y: int| t.proposers.contains(p) && t.acks[p].contains(y) && !t.base.contains(y)
+    assert forall|p: int, y: int| #![trigger promise_order(t, c, p, y)] t.proposers.contains(p) && t.acks[p].contains(y) && !t.base.contains(y)
         implies promise_order(t, c, p, y) by {
         if p == a && y == x {
-            assert forall|z: int| t.queues[p].contains(z) && !t.base.contains(z) && c.conflict.contains((y, z))
+            assert forall|z: int| #![trigger t.base.contains(z)] t.queues[p].contains(z) && !t.base.contains(z) && c.conflict.contains((y, z))
                 implies before(t.queues[p], y, z) by {
                 assert(!c.conflict.contains((x, z)));
             }
@@ -330,14 +330,14 @@ pub proof fn acknowledge_preserves(s: State, t: State, c: r::Config, a: int, x: 
             frame_promises(s, t, c, p, y);
         }
     }
-    assert forall|y: int| t.pending.contains(y) implies certificate(t, c, y) by {
+    assert forall|y: int| #![trigger certificate(t, c, y)] t.pending.contains(y) implies certificate(t, c, y) by {
         assert(certificate(s, c, y));
         assert(r::support(s.acks, c.nodes, y).subset_of(r::support(t.acks, c.nodes, y)));
         vstd::set_lib::lemma_len_subset(r::support(s.acks, c.nodes, y), r::support(t.acks, c.nodes, y));
     }
     if s.phase != 0 {
         assert(!s.cut.contains(x));
-        assert forall|n: int| c.nodes.contains(n) implies t.core.logs[n] == t.acks[n].difference(t.cut) by {
+        assert forall|n: int| #![trigger c.nodes.contains(n)] #![trigger t.core.logs[n]] c.nodes.contains(n) implies t.core.logs[n] == t.acks[n].difference(t.cut) by {
             assert(t.core.logs[n] =~= t.acks[n].difference(t.cut));
         }
     }
@@ -347,13 +347,13 @@ pub proof fn acknowledge_preserves(s: State, t: State, c: r::Config, a: int, x: 
 }
 pub proof fn fast_preserves(s: State, t: State, c: r::Config, x: int)
     requires r::config_ok(c), inv(s, c), fast(s, t, c, x),
-    ensures inv(t, c), forall|y: int| s.pending.contains(y) ==> independent(c, x, y),
+    ensures inv(t, c), forall|y: int| #![trigger independent(c, x, y)] s.pending.contains(y) ==> independent(c, x, y),
 {
-    assert forall|y: int| s.pending.contains(y) implies independent(c, x, y) by {
+    assert forall|y: int| #![trigger independent(c, x, y)] s.pending.contains(y) implies independent(c, x, y) by {
         assert(certificate(s, c, y));
         two_certificates_compatible(s, c, x, y);
     }
-    assert forall|y: int| t.pending.contains(y) implies certificate(t, c, y) by {
+    assert forall|y: int| #![trigger certificate(t, c, y)] t.pending.contains(y) implies certificate(t, c, y) by {
         if y != x { assert(certificate(s, c, y)); }
     }
     assert forall|y: int, z: int| t.pending.contains(y) && t.pending.contains(z) && y != z
@@ -361,7 +361,7 @@ pub proof fn fast_preserves(s: State, t: State, c: r::Config, x: int)
         if y == x { assert(independent(c, x, z)); }
         else if z == x { assert(independent(c, x, y)); }
     }
-    assert forall|p: int, y: int| t.proposers.contains(p) && t.acks[p].contains(y) && !t.base.contains(y)
+    assert forall|p: int, y: int| #![trigger promise_order(t, c, p, y)] t.proposers.contains(p) && t.acks[p].contains(y) && !t.base.contains(y)
         implies promise_order(t, c, p, y) by {
         assert(promise_order(s, c, p, y)); frame_promises(s, t, c, p, y);
     }
@@ -370,29 +370,29 @@ pub proof fn begin_preserves(s: State, t: State, c: r::Config, queues: Map<int, 
     requires r::config_ok(c), inv(s, c), begin_recovery(s, t, c, queues),
     ensures inv(t, c),
 {
-    assert forall|a: int| c.nodes.contains(a) implies queues[a].no_duplicates()
+    assert forall|a: int| #![trigger c.nodes.contains(a)] c.nodes.contains(a) implies queues[a].no_duplicates()
         && queues[a].to_set().subset_of(t.calls) && t.acks[a].subset_of(t.calls) by {
         assert(prefix(queues[a], s.queues[a]));
         assert(queues[a].to_set().subset_of(s.queues[a].to_set())) by {
-            assert forall|x: int| queues[a].contains(x) implies s.queues[a].contains(x) by {
+            assert forall|x: int| #![trigger queues[a].contains(x)] queues[a].contains(x) implies s.queues[a].contains(x) by {
                 let i = choose|i: int| 0 <= i < queues[a].len() && queues[a][i] == x;
                 assert(s.queues[a][i] == x);
             }
         }
         assert(queues[a].no_duplicates());
     }
-    assert forall|p: int, x: int| t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
+    assert forall|p: int, x: int| #![trigger promise_order(t, c, p, x)] t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
         implies promise_order(t, c, p, x) by {
         assert(promise_order(s, c, p, x));
-        assert forall|y: int| queues[p].contains(y) && !t.base.contains(y) && c.conflict.contains((x, y))
+        assert forall|y: int| #![trigger queues[p].contains(y)] #![trigger t.base.contains(y)] queues[p].contains(y) && !t.base.contains(y) && c.conflict.contains((x, y))
             implies before(queues[p], x, y) by {
             assert(s.queues[p].contains(y));
             assert(before(s.queues[p], x, y));
             prefix_preserves_before(queues[p], s.queues[p], x, y);
         }
     }
-    assert forall|x: int| t.pending.contains(x) implies certificate(t, c, x) by { assert(certificate(s, c, x)); }
-    assert forall|a: int, x: int, y: int| c.nodes.contains(a)
+    assert forall|x: int| #![trigger certificate(t, c, x)] t.pending.contains(x) implies certificate(t, c, x) by { assert(certificate(s, c, x)); }
+    assert forall|a: int, x: int, y: int| #![trigger c.nodes.contains(a), c.conflict.contains((x, y))] c.nodes.contains(a)
         && t.core.logs[a].contains(x) && t.core.logs[a].contains(y) implies !c.conflict.contains((x, y)) by {
         assert(s.acks[a].contains(x) && s.acks[a].contains(y) && !s.base.contains(x) && !s.base.contains(y));
     }
@@ -410,19 +410,19 @@ pub proof fn core_preserves(s: State, t: State, c: r::Config, action: r::Action)
     }
     assert(s.core.logs == t.core.logs);
     if s.phase == 2 { r::certificates_monotone(s.core, t.core, c, s.recovery_ballot, s.batch, 0); }
-    assert forall|p: int, x: int| t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
+    assert forall|p: int, x: int| #![trigger promise_order(t, c, p, x)] t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
         implies promise_order(t, c, p, x) by {
         assert(promise_order(s, c, p, x)); frame_promises(s, t, c, p, x);
     }
-    assert forall|x: int| t.pending.contains(x) implies certificate(t, c, x) by { assert(certificate(s, c, x)); }
+    assert forall|x: int| #![trigger certificate(t, c, x)] t.pending.contains(x) implies certificate(t, c, x) by { assert(certificate(s, c, x)); }
 }
 pub proof fn candidate_is_invoked(s: State, c: r::Config, v: Set<int>)
     requires r::config_ok(c), inv(s, c), s.phase != 0, r::candidate(s.core, c, v),
     ensures v.subset_of(s.calls),
 {
-    let q = choose|q: Set<int>| r::quorum(c, q) && q.subset_of(s.core.frozen)
+    let q = choose|q: Set<int>| #![trigger r::quorum(c, q)] r::quorum(c, q) && q.subset_of(s.core.frozen)
         && v == r::selected(c, s.core.logs, q);
-    assert forall|x: int| v.contains(x) implies s.calls.contains(x) by {
+    assert forall|x: int| #![trigger v.contains(x)] v.contains(x) implies s.calls.contains(x) by {
         let support = r::support(s.core.logs, q, x);
         assert(support.len() >= r::threshold(c) > 0);
         vstd::set::lemma_set_choose_len(support);
@@ -435,18 +435,18 @@ pub proof fn batch_preserves(s: State, t: State, c: r::Config, b: int, v: Set<in
     requires r::config_ok(c), inv(s, c), choose_batch(s, t, c, b, v),
     ensures inv(t, c),
 {
-    let q = choose|q: Set<int>| r::quorum(c, q) && forall|a: int| q.contains(a) ==> r::voted(s.core, a, b, v);
+    let q = choose|q: Set<int>| r::quorum(c, q) && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> r::voted(s.core, a, b, v);
     r::quorum_intersection(c, q, q);
     let a = choose|a: int| q.contains(a);
     assert(r::voted(s.core, a, b, v));
     assert(s.core.proposals.dom().contains(b) && s.core.proposals[b] == v);
     assert(r::candidate(s.core, c, v));
     candidate_is_invoked(s, c, v);
-    assert forall|p: int, x: int| t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
+    assert forall|p: int, x: int| #![trigger promise_order(t, c, p, x)] t.proposers.contains(p) && t.acks[p].contains(x) && !t.base.contains(x)
         implies promise_order(t, c, p, x) by {
         assert(promise_order(s, c, p, x)); frame_promises(s, t, c, p, x);
     }
-    assert forall|x: int| t.pending.contains(x) implies certificate(t, c, x) by { assert(certificate(s, c, x)); }
+    assert forall|x: int| #![trigger certificate(t, c, x)] t.pending.contains(x) implies certificate(t, c, x) by { assert(certificate(s, c, x)); }
 }
 pub proof fn finish_preserves(s: State, t: State, c: r::Config, proposers: Set<int>)
     requires r::config_ok(c), inv(s, c), finish(s, t, c, proposers),

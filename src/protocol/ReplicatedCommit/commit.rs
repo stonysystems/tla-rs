@@ -14,13 +14,13 @@ pub struct State {
     pub applied: Set<(int, int, int)>, // datacenter, cohort, decision
 }
 pub open spec fn prepared_dc(s: State, c: Config, dc: int) -> bool {
-    forall|shard: int| c.cohorts.contains(shard) ==> s.prepared.contains((dc, shard))
+    forall|shard: int| #![trigger c.cohorts.contains(shard)] c.cohorts.contains(shard) ==> s.prepared.contains((dc, shard))
 }
 pub open spec fn inv(s: State, c: Config) -> bool {
     &&& p::inv(s.core, c.paxos)
-    &&& forall|b: int| s.core.proposals.dom().contains(b) ==> s.core.proposals[b] == 0 || s.core.proposals[b] == 1
+    &&& forall|b: int| #![trigger s.core.proposals[b]] s.core.proposals.dom().contains(b) ==> s.core.proposals[b] == 0 || s.core.proposals[b] == 1
     &&& forall|dc: int, b: int| p::voted(s.core, dc, b, 1) ==> prepared_dc(s, c, dc)
-    &&& forall|dc: int| s.learned.dom().contains(dc) ==> c.paxos.acceptors.contains(dc)
+    &&& forall|dc: int| #![trigger s.learned.dom().contains(dc)] #![trigger c.paxos.acceptors.contains(dc)] s.learned.dom().contains(dc) ==> c.paxos.acceptors.contains(dc)
         && p::learned(s.core, c.paxos, s.learned[dc])
     &&& forall|dc: int, sh: int, d: int| s.applied.contains((dc, sh, d)) ==> c.cohorts.contains(sh)
         && s.learned.dom().contains(dc) && s.learned[dc] == d
@@ -63,10 +63,10 @@ pub proof fn init_inv(s: State, c: Config)
 pub proof fn core_preserves_learned(s: State, t: State, c: Config, a: p::Action)
     requires p::config_ok(c.paxos), inv(s,c), core_step(s,t,c,a),
     ensures p::inv(t.core,c.paxos),
-        forall|dc:int| s.learned.dom().contains(dc) ==> p::learned(t.core,c.paxos,s.learned[dc]),
+        forall|dc:int| #![trigger s.learned.dom().contains(dc)] s.learned.dom().contains(dc) ==> p::learned(t.core,c.paxos,s.learned[dc]),
 {
     p::step_preserves(s.core,t.core,c.paxos,a);
-    assert forall|dc:int| s.learned.dom().contains(dc) implies p::learned(t.core,c.paxos,s.learned[dc]) by {
+    assert forall|dc:int| #![trigger s.learned.dom().contains(dc)] s.learned.dom().contains(dc) implies p::learned(t.core,c.paxos,s.learned[dc]) by {
         p::learned_preserved(s.core,t.core,c.paxos,s.learned[dc]);
     }
 }
@@ -81,7 +81,7 @@ pub proof fn step_preserves(s: State, t: State, c: Config, a: Action)
             core_preserves_learned(s,t,c,p::Action::Revoke {ballot,quorum,maximum,value:decision});
             assert(quorum.subset_of(c.paxos.acceptors));
             if maximum >= 0 {
-                let dc = choose|dc:int| quorum.contains(dc) && s.core.last_ballot[dc] == maximum
+                let dc = choose|dc:int| #![trigger quorum.contains(dc)] quorum.contains(dc) && s.core.last_ballot[dc] == maximum
                     && s.core.last_value[dc] == decision;
                 assert(c.paxos.acceptors.contains(dc));
                 assert(p::voted(s.core,dc,maximum,decision));
@@ -117,7 +117,7 @@ pub proof fn commit_requires_prepared_quorum(s: State, c: Config)
 {
     let b = choose|b:int| p::quorum_chosen(s.core,c.paxos,b,1);
     let q = choose|q:Set<int>| c.paxos.quorums.contains(q)
-        && forall|dc:int| q.contains(dc) ==> p::voted(s.core,dc,b,1);
+        && forall|dc:int| #![trigger q.contains(dc)] q.contains(dc) ==> p::voted(s.core,dc,b,1);
     assert forall|dc:int| q.contains(dc) implies prepared_dc(s,c,dc) by { assert(p::voted(s.core,dc,b,1)); }
 }
 pub open spec fn behavior(ss:Seq<State>, aa:Seq<Action>, c:Config) -> bool {
@@ -151,7 +151,7 @@ pub proof fn atomic_commit_agreement(ss:Seq<State>,aa:Seq<Action>,c:Config,i:int
         ss[i].applied.contains((dc,sh,d)),ss[j].applied.contains((other,other_sh,e)),
     ensures d == e, d == 0 || d == 1,
         d == 1 ==> exists|q:Set<int>| c.paxos.quorums.contains(q)
-            && forall|a:int| q.contains(a) ==> prepared_dc(ss[j],c,a),
+            && forall|a:int| #![trigger q.contains(a)] q.contains(a) ==> prepared_dc(ss[j],c,a),
 {
     reachable_inv(ss,aa,c,i); reachable_inv(ss,aa,c,j);
     assert(p::learned(ss[i].core,c.paxos,d));
@@ -160,7 +160,7 @@ pub proof fn atomic_commit_agreement(ss:Seq<State>,aa:Seq<Action>,c:Config,i:int
     p::learned_agreement(ss[j].core,c.paxos,d,e);
     let b = choose|b:int| p::quorum_chosen(ss[j].core,c.paxos,b,d);
     let q = choose|q:Set<int>| c.paxos.quorums.contains(q)
-        && forall|a:int| q.contains(a) ==> p::voted(ss[j].core,a,b,d);
+        && forall|a:int| #![trigger q.contains(a)] q.contains(a) ==> p::voted(ss[j].core,a,b,d);
     let a = choose|a:int| q.contains(a);
     assert(p::voted(ss[j].core,a,b,d)); assert(ss[j].core.proposals[b] == d);
     if d == 1 { commit_requires_prepared_quorum(ss[j],c); }
@@ -175,7 +175,7 @@ pub open spec fn abstract_decision(s:State,c:Config) -> Option<int> {
 pub proof fn atomic_decision_refinement(s:State,t:State,c:Config,a:Action)
     requires p::config_ok(c.paxos),inv(s,c),next(s,t,c,a),
     ensures inv(t,c), abstract_decision(s,c) is Some ==> abstract_decision(t,c)==abstract_decision(s,c),
-        forall|dc:int| t.learned.dom().contains(dc) ==> abstract_decision(t,c)==Some(t.learned[dc]),
+        forall|dc:int| #![trigger t.learned.dom().contains(dc)] t.learned.dom().contains(dc) ==> abstract_decision(t,c)==Some(t.learned[dc]),
 {
     step_preserves(s,t,c,a);
     if abstract_decision(s,c) is Some {
@@ -184,7 +184,7 @@ pub proof fn atomic_decision_refinement(s:State,t:State,c:Config,a:Action)
         assert(abstract_decision(t,c) is Some);
         p::learned_agreement(t.core,c.paxos,d,abstract_decision(t,c)->Some_0);
     }
-    assert forall|dc:int| t.learned.dom().contains(dc) implies abstract_decision(t,c)==Some(t.learned[dc]) by {
+    assert forall|dc:int| #![trigger t.learned.dom().contains(dc)] t.learned.dom().contains(dc) implies abstract_decision(t,c)==Some(t.learned[dc]) by {
         assert(p::learned(t.core,c.paxos,t.learned[dc]));
         assert(abstract_decision(t,c) is Some);
         p::learned_agreement(t.core,c.paxos,t.learned[dc],abstract_decision(t,c)->Some_0);

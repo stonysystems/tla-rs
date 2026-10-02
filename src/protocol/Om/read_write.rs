@@ -59,7 +59,7 @@ pub proof fn new_old_inversion_has_no_linearization(s: State)
     }
 }
 pub proof fn reachable_new_old_inversion()
-    ensures exists|states: Seq<State>, actions: Seq<Action>|
+    ensures exists|states: Seq<State>, actions: Seq<Action>| #![trigger states.len(), actions.len()]
         states.len() == actions.len() + 1 && states[0] == init()
         && (forall|k: int| 0 <= k < actions.len() ==> #[trigger] next(states[k], states[k + 1], actions[k]))
         && states.last().phase == 3 && states.last().returns.dom() == set![0int, 1int, 2int]

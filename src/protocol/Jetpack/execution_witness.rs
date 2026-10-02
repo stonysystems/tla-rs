@@ -71,7 +71,7 @@ pub proof fn fast_reply_is_reachable()
         } else if k == 2 {
             assert(s2.order.queues[0][0] == 0);
             assert(s2.order.queues[0].contains(0));
-            assert forall|y: int| s2.order.queues[0].contains(y) && !s2.order.base.contains(y)
+            assert forall|y: int| #![trigger s2.order.base.contains(y)] s2.order.queues[0].contains(y) && !s2.order.base.contains(y)
                 implies !c.conflict.contains((0, y)) by {
                 let j = choose|j: int| 0 <= j < s2.order.queues[0].len() && s2.order.queues[0][j] == y;
                 assert(j == 0 && y == 0);

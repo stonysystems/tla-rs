@@ -17,10 +17,10 @@ pub open spec fn inv(s: State) -> bool {
     &&& s.epoch >= 0 && s.chain.len() > 0 && s.chain.no_duplicates()
     &&& s.cells.dom() == s.chain.to_set()
     &&& exists|n: int| live(s, n)
-    &&& forall|i: int, j: int| 0 <= i <= j < s.chain.len() && s.cells[s.chain[j]] is Some
+    &&& forall|i: int, j: int| #![trigger s.chain[j], s.chain[i]] 0 <= i <= j < s.chain.len() && s.cells[s.chain[j]] is Some
         ==> s.cells[s.chain[i]] == s.cells[s.chain[j]]
-    &&& forall|n: int| s.chain.contains(n) && s.cells[n] is Some ==> s.origins.contains(s.cells[n]->Some_0)
-    &&& forall|v: int, n: int| s.returned.contains(v) && s.chain.contains(n) ==> s.cells[n] == Some(v)
+    &&& forall|n: int| #![trigger s.chain.contains(n)] s.chain.contains(n) && s.cells[n] is Some ==> s.origins.contains(s.cells[n]->Some_0)
+    &&& forall|v: int, n: int| #![trigger s.returned.contains(v), s.chain.contains(n)] #![trigger s.returned.contains(v), s.cells[n]] s.returned.contains(v) && s.chain.contains(n) ==> s.cells[n] == Some(v)
 }
 pub open spec fn init(s: State, chain: Seq<int>) -> bool {
     chain.len() > 0 && chain.no_duplicates() && s == State { epoch: 0, chain,
@@ -50,11 +50,11 @@ pub open spec fn crash(s: State, t: State, n: int) -> bool {
 // position remains empty. Full-chain copying is an atomic migration abstraction;
 // it is stronger than the paper's minimal prefix-copy optimization.
 pub open spec fn migrate(s: State, t: State, chain: Seq<int>, value: Option<int>) -> bool {
-    &&& forall|n: int| live(s, n) ==> s.sealed.contains(n)
+    &&& forall|n: int| #![trigger live(s, n)] live(s, n) ==> s.sealed.contains(n)
     &&& chain.len() > 0 && chain.no_duplicates()
     &&& match value {
-        Some(v) => exists|n: int| live(s, n) && s.cells[n] == Some(v),
-        None => forall|n: int| live(s, n) ==> s.cells[n] is None,
+        Some(v) => exists|n: int| #![trigger live(s, n)] live(s, n) && s.cells[n] == Some(v),
+        None => forall|n: int| #![trigger live(s, n)] live(s, n) ==> s.cells[n] is None,
     }
     &&& t == State { epoch: s.epoch + 1, chain, cells: Map::new(chain.to_set(), |n: int| value),
         failed: Set::empty(), sealed: Set::empty(), ..s }
@@ -87,7 +87,7 @@ pub proof fn write_preserves(s: State, t: State, epoch: int, i: int, v: int)
     assert(live(t, survivor));
     assert(s.chain.contains(s.chain[i]));
     assert(t.cells.dom() =~= s.cells.dom());
-    assert forall|j: int, k: int| 0 <= j <= k < t.chain.len() && t.cells[t.chain[k]] is Some
+    assert forall|j: int, k: int| #![trigger t.chain[k], t.chain[j]] 0 <= j <= k < t.chain.len() && t.cells[t.chain[k]] is Some
         implies t.cells[t.chain[j]] == t.cells[t.chain[k]] by {
         if k == i {
             if j < i { assert(s.cells[s.chain[j]] == s.cells[s.chain[i - 1]]); }
@@ -95,10 +95,10 @@ pub proof fn write_preserves(s: State, t: State, epoch: int, i: int, v: int)
             assert(s.cells[s.chain[i]] == s.cells[s.chain[k]]); assert(false);
         } else { assert(s.cells[s.chain[j]] == s.cells[s.chain[k]]); }
     }
-    assert forall|w: int, n: int| t.returned.contains(w) && t.chain.contains(n) implies t.cells[n] == Some(w) by {
+    assert forall|w: int, n: int| #![trigger t.returned.contains(w), t.chain.contains(n)] #![trigger t.returned.contains(w), t.cells[n]] t.returned.contains(w) && t.chain.contains(n) implies t.cells[n] == Some(w) by {
         assert(s.cells[s.chain[i]] == Some(w)); assert(false);
     }
-    assert forall|n: int| t.chain.contains(n) && t.cells[n] is Some implies t.origins.contains(t.cells[n]->Some_0) by {
+    assert forall|n: int| #![trigger t.chain.contains(n)] t.chain.contains(n) && t.cells[n] is Some implies t.origins.contains(t.cells[n]->Some_0) by {
         if n == s.chain[i] {
             if i > 0 { assert(s.chain.contains(s.chain[i - 1])); }
         }
@@ -110,7 +110,7 @@ pub proof fn observe_preserves(s: State, t: State, epoch: int, v: int)
     let survivor = choose|n: int| live(s, n);
     assert(live(t, survivor));
     assert(s.chain.last() == s.chain[s.chain.len() as int - 1]);
-    assert forall|w: int, n: int| t.returned.contains(w) && t.chain.contains(n) implies t.cells[n] == Some(w) by {
+    assert forall|w: int, n: int| #![trigger t.returned.contains(w), t.chain.contains(n)] #![trigger t.returned.contains(w), t.cells[n]] t.returned.contains(w) && t.chain.contains(n) implies t.cells[n] == Some(w) by {
         if w == v {
             let i = choose|i: int| 0 <= i < s.chain.len() && s.chain[i] == n;
             assert(s.cells[s.chain[i]] == s.cells[s.chain[s.chain.len() as int - 1]]);
@@ -123,15 +123,15 @@ pub proof fn migrate_preserves(s: State, t: State, chain: Seq<int>, value: Optio
     assert(chain.contains(chain[0]));
     assert(live(t, chain[0]));
     if value is Some {
-        let n = choose|n: int| live(s, n) && s.cells[n] == value;
+        let n = choose|n: int| #![trigger live(s, n)] live(s, n) && s.cells[n] == value;
         assert(s.origins.contains(value->Some_0));
     }
-    assert forall|v: int, n: int| t.returned.contains(v) && t.chain.contains(n) implies t.cells[n] == Some(v) by {
+    assert forall|v: int, n: int| #![trigger t.returned.contains(v), t.chain.contains(n)] #![trigger t.returned.contains(v), t.cells[n]] t.returned.contains(v) && t.chain.contains(n) implies t.cells[n] == Some(v) by {
         let survivor = choose|m: int| live(s, m);
         assert(s.cells[survivor] == Some(v));
         match value {
             Some(w) => {
-                let m = choose|m: int| live(s, m) && s.cells[m] == Some(w);
+                let m = choose|m: int| #![trigger live(s, m)] live(s, m) && s.cells[m] == Some(w);
                 assert(s.cells[m] == Some(v));
             },
             None => { assert(s.cells[survivor] is None); assert(false); },
@@ -219,7 +219,7 @@ pub proof fn single_assignment_refinement(s: State, t: State, action: Action)
                 assert(s.cells[survivor]==Some(v));
                 if seed is None { assert(s.cells[survivor] is None); }
                 else {
-                    let n=choose|n:int| live(s,n) && s.cells[n]==seed;
+                    let n=choose|n:int| #![trigger live(s,n)] live(s,n) && s.cells[n]==seed;
                     assert(s.cells[n]==Some(v));
                 }
             },

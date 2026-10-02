@@ -22,8 +22,8 @@ pub open spec fn inv(s: State, c: r::Config) -> bool {
     &&& !s.markers.dom().contains(s.normal)
     &&& s.layers.dom() == s.markers.dom().insert(s.normal)
     &&& s.durable.subset_of(c.commands)
-    &&& forall|v: int| s.layers.dom().contains(v) ==> 0 <= v <= s.normal && r::inv(s.layers[v], c)
-    &&& forall|v: int| s.markers.dom().contains(v) ==>
+    &&& forall|v: int| #![trigger s.layers.dom().contains(v)] s.layers.dom().contains(v) ==> 0 <= v <= s.normal && r::inv(s.layers[v], c)
+    &&& forall|v: int| #![trigger s.markers.dom().contains(v)] s.markers.dom().contains(v) ==>
         v < s.normal && s.markers[v].value.subset_of(s.durable)
         && r::chosen(s.layers[v], c, s.markers[v].ballot, s.markers[v].value)
 }
@@ -90,11 +90,11 @@ pub proof fn layer_preserves(s: State, t: State, c: r::Config,
 {
     r::step_preserves(s.layers[view], after, c, action);
     assert(t.layers.dom() =~= s.layers.dom());
-    assert forall|v: int| t.layers.dom().contains(v)
+    assert forall|v: int| #![trigger t.layers.dom().contains(v)] t.layers.dom().contains(v)
         implies 0 <= v <= t.normal && r::inv(t.layers[v], c) by {
         if v != view { assert(r::inv(s.layers[v], c)); }
     }
-    assert forall|v: int| t.markers.dom().contains(v) implies
+    assert forall|v: int| #![trigger t.markers.dom().contains(v)] t.markers.dom().contains(v) implies
         v < t.normal && t.markers[v].value.subset_of(t.durable)
         && r::chosen(t.layers[v], c, t.markers[v].ballot, t.markers[v].value) by {
         assert(r::chosen(s.layers[v], c, s.markers[v].ballot, s.markers[v].value));
@@ -111,7 +111,7 @@ pub proof fn marker_preserves(s: State, t: State, c: r::Config,
 {
     r::init_inv(fresh, c);
     let q = choose|q: Set<int>| r::quorum(c, q)
-        && forall|a: int| q.contains(a) ==> r::voted(s.layers[s.normal], a, b, value);
+        && forall|a: int| #![trigger q.contains(a)] q.contains(a) ==> r::voted(s.layers[s.normal], a, b, value);
     r::quorum_intersection(c, q, q);
     let a = choose|a: int| q.contains(a);
     assert(s.layers.dom().contains(s.normal));
@@ -120,16 +120,16 @@ pub proof fn marker_preserves(s: State, t: State, c: r::Config,
     assert(s.layers[s.normal].proposals.dom().contains(b));
     assert(s.layers[s.normal].proposals[b] == value);
     assert(r::candidate(s.layers[s.normal], c, value));
-    let origin = choose|q: Set<int>| r::quorum(c, q) && q.subset_of(s.layers[s.normal].frozen)
+    let origin = choose|q: Set<int>| #![trigger r::quorum(c, q)] r::quorum(c, q) && q.subset_of(s.layers[s.normal].frozen)
         && value == r::selected(c, s.layers[s.normal].logs, q);
     assert(value.subset_of(c.commands));
     assert(!s.layers.dom().contains(s.target));
     assert(t.layers.dom() =~= t.markers.dom().insert(t.normal));
-    assert forall|v: int| t.layers.dom().contains(v)
+    assert forall|v: int| #![trigger t.layers.dom().contains(v)] t.layers.dom().contains(v)
         implies 0 <= v <= t.normal && r::inv(t.layers[v], c) by {
         if v != s.target { assert(r::inv(s.layers[v], c)); }
     }
-    assert forall|v: int| t.markers.dom().contains(v) implies
+    assert forall|v: int| #![trigger t.markers.dom().contains(v)] t.markers.dom().contains(v) implies
         v < t.normal && t.markers[v].value.subset_of(t.durable)
         && r::chosen(t.layers[v], c, t.markers[v].ballot, t.markers[v].value) by {
         if v != s.normal {
@@ -147,7 +147,7 @@ pub proof fn step_preserves(s: State, t: State, c: r::Config, action: Action)
         Action::Layer { view, after, action } => layer_preserves(s, t, c, view, after, action),
         Action::CommitMarker { ballot, value, fresh } => marker_preserves(s, t, c, ballot, value, fresh),
         Action::Admit { command } => {
-            assert forall|v: int| t.markers.dom().contains(v) implies
+            assert forall|v: int| #![trigger t.markers.dom().contains(v)] t.markers.dom().contains(v) implies
                 v < t.normal && t.markers[v].value.subset_of(t.durable)
                 && r::chosen(t.layers[v], c, t.markers[v].ballot, t.markers[v].value) by {
                 assert(s.markers[v].value.subset_of(s.durable));
