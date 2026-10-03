@@ -33,6 +33,13 @@ general mutation analysis. In particular, it does not currently support every in
 whole-state pattern; Raft's `s_mid = step_down_if_needed(...)` flow is a concrete reason Raft
 uses the functional convention.
 
+When lowering a state construction for `&mut self`, assignments of the form
+`self.field = self.field` or `self.field = self.field.clone()` are omitted:
+the receiver already owns the unchanged field. Other field updates still
+execute, including clones from a different source. Regenerate affected modules
+after changing this lowering; editing generated actions directly leaves the
+transpiler and other protocols inconsistent.
+
 Review mutable lowering carefully when one assigned field's expression reads another field
 that was assigned earlier. The emitted assignments are sequential, while a functional struct
 construction conceptually evaluates from one pre-state. Current structural tests do not prove

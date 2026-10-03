@@ -30,13 +30,13 @@ AddOption('--skip-verus',
   dest='skip_verus',
   default=False,
   action='store_true',
-  help="Skip Verus verification, only build C# projects")
+  help="Reuse an existing native protocol library without invoking Verus")
 
 AddOption('--skip-dotnet',
   dest='skip_dotnet',
   default=False,
   action='store_true',
-  help="Skip .NET/C# builds, only run Verus verification")
+  help="Do not register optional C# reference-tool targets")
 
 AddOption('--debug-build',
   dest='debug_build',
@@ -53,7 +53,7 @@ AddOption('--verus-extra-args',
   help='Extra arguments appended to every Verus invocation, e.g. '
        '--verus-extra-args="--time-expanded" (Phase 54.2.c timing capture)')
 
-verus_path = GetOption('verus_path')
+verus_path = GetOption('verus_path') or os.environ.get('VERUS_PATH')
 if verus_path is None and not GetOption('skip_verus'):
   sys.stderr.write("ERROR:  Missing --verus-path= on command line (use --skip-verus to skip Verus verification)\n")
   exit(-1)
@@ -117,7 +117,7 @@ def generate_verus_actions(source, target, env, for_signature):
   # anything here.
   # https://users.rust-lang.org/t/do-rust-compilers-have-optimization-flags-like-c-compilers-have/48833/7
   opt_flag = ["-g"] if GetOption('debug_build') else ["-C", "opt-level=3"]
-  cmd_line = [verus_script, "--crate-type=dylib", "--expand-errors"] + opt_flag + ["--compile", str(source[0])]
+  cmd_line = [verus_script, "--crate-name=tla_protocol", "--crate-type=rlib", "--expand-errors"] + opt_flag + ["--compile", str(source[0]), "-o", str(target[0])]
   if GetOption("no_verify"):
       cmd_line.append("--no-verify")
   # Phase 54.2.c: let callers append verifier flags (e.g. --time-expanded)
@@ -161,18 +161,30 @@ add_verus_builder(env)
 ####################################################################
 
 if not GetOption('skip_dotnet'):
-  # env.DotnetBuild('bin/IronLockServer.dll', 'csharp/IronLockServer/IronLockServer.csproj')
   env.DotnetBuild('bin/IronRSLClient.dll', 'csharp/IronRSLClient/IronRSLClient.csproj')
-  env.DotnetBuild('bin/IronRSLServer.dll', 'csharp/IronRSLServer/IronRSLServer.csproj')
   env.DotnetBuild('bin/IronRSLClientUDP.dll', 'csharp/IronRSLClientUDP/IronRSLClientUDP.csproj')
-  env.DotnetBuild('bin/IronRSLServerUDP.dll', 'csharp/IronRSLServerUDP/IronRSLServerUDP.csproj')
   env.DotnetBuild('bin/CreateIronServiceCerts.dll', 'csharp/CreateIronServiceCerts/CreateIronServiceCerts.csproj')
   env.DotnetBuild('bin/TestIoFramework.dll', 'csharp/TestIoFramework/TestIoFramework.csproj')
-  env.DotnetBuild('bin/IronProtocolServer.dll', 'csharp/IronProtocolServer/IronProtocolServer.csproj')
   env.DotnetBuild('bin/IronRaftClient.dll', 'csharp/IronRaftClient/IronRaftClient.csproj')
   env.DotnetBuild('bin/IronPrimaryBackupClient.dll', 'csharp/IronPrimaryBackupClient/IronPrimaryBackupClient.csproj')
   env.DotnetBuild('bin/IronPBFTClient.dll', 'csharp/IronPBFTClient/IronPBFTClient.csproj')
   env.DotnetBuild('bin/IronGenericClient.dll', 'csharp/IronGenericClient/IronGenericClient.csproj')
 
+protocol_library = 'bin/libtla_protocol.rlib'
 if not GetOption('skip_verus'):
-  env.VerusBuild('liblib.so', 'src/lib.rs')
+  env.VerusBuild(protocol_library, 'src/lib.rs')
+
+# C# targets above are explicit reference tools, never dependencies of the
+# default build. The deployed server, configuration tool and client are native.
+native_sources = [protocol_library, 'scripts/build_lion_runtime.sh']
+for runtime_dir in ('runtime/lion-server', 'runtime/lion-io'):
+  for root, dirs, files in os.walk(runtime_dir):
+    dirs[:] = [directory for directory in dirs if directory != 'target']
+    native_sources.extend(os.path.join(root, name) for name in files
+                          if name.endswith('.rs') or name in ('Cargo.toml', 'Cargo.lock'))
+native_binaries = env.Command(
+  ['bin/tla-rs-server', 'bin/tla-rs-config', 'bin/tla-rs-client'],
+  native_sources,
+  [['env', 'VERUS_PATH=' + (verus_script or os.environ.get('VERUS_PATH', os.path.expanduser('~/verus/verus'))),
+    'bash', 'scripts/build_lion_runtime.sh', '--reuse-protocol']])
+Default(native_binaries)

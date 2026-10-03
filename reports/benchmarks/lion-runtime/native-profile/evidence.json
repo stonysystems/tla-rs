@@ -1,0 +1,42 @@
+{
+  "kernel": "7.0.14-5-pve",
+  "arch": "x86_64",
+  "clock_ticks": 100,
+  "cpu": {
+    "elapsed_seconds": 3.0000996254384518,
+    "replicas": [
+      {
+        "ticks": 648,
+        "threads": 1,
+        "rss_kib": 10568,
+        "cpu_percent": 99.33003473391274
+      },
+      {
+        "ticks": 219,
+        "threads": 1,
+        "rss_kib": 10408,
+        "cpu_percent": 33.998870949191605
+      },
+      {
+        "ticks": 225,
+        "threads": 1,
+        "rss_kib": 10744,
+        "cpu_percent": 32.665581892360564
+      }
+    ]
+  },
+  "syscalls": {
+    "recvmmsg": {
+      "successful_calls": 6611,
+      "datagrams": 33606,
+      "max_batch": 35,
+      "mean_batch": 5.083345938587203
+    },
+    "sendmmsg": {
+      "successful_calls": 5369,
+      "datagrams": 79531,
+      "max_batch": 38,
+      "mean_batch": 14.813000558763271
+    }
+  }
+}

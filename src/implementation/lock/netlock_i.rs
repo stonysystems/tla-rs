@@ -242,15 +242,16 @@ verus! {
                 let _ = buf.len();
                 // marshall the message
                 cpacket.msg.serialize(&mut buf);
-                match netc.send(&cpacket.dst, &buf) {
+                let ghost bytes = buf@;
+                match netc.send(&cpacket.dst, buf) {
                     Ok(_) => {
-                        let ghost lpacket = LPacket::<AbstractEndPoint, Seq<u8>>{ dst: cpacket.dst@, src: netc.my_end_point(), msg: buf@ };
+                        let ghost lpacket = LPacket::<AbstractEndPoint, Seq<u8>>{ dst: cpacket.dst@, src: netc.my_end_point(), msg: bytes };
                         let ghost net_event = LIoOp::Send{s:  lpacket};
                         proof {
                             net_events = net_events + seq![net_event];
-                            assert_seqs_equal!( buf@ == cpacket.msg.ghost_serialize() );
-                            assert(net_packet_bound(buf@));
-                            let purported_cpacket = lock_demarshal_data(buf@);
+                            assert_seqs_equal!( bytes == cpacket.msg.ghost_serialize() );
+                            assert(net_packet_bound(bytes));
+                            let purported_cpacket = lock_demarshal_data(bytes);
                             lock_marshal_data_injective( &cpacket.msg, &purported_cpacket );
                         }
                         (true, Ghost(net_events))

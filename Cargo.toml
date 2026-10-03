@@ -12,7 +12,7 @@ categories = ["algorithms", "science"]
 #vstd = { git = "https://github.com/verus-lang/verus.git" }
 
 [package.metadata.verus.ide]
-extra_args = "--crate-type=dylib --expand-errors --multiple-errors 5"
+extra_args = "--crate-name=tla_protocol --crate-type=rlib --expand-errors --multiple-errors 5"
 
 # Commented out: file doesn't exist
 # [[bin]]

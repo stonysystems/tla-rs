@@ -70,7 +70,6 @@ impl CState {
         LTMSendPrepare(old(self)@, self@, c@, result@.map(|i, p: CTPCMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.tm_state = self.tm_state.clone();
         self.tm_prepared = clone_hashset_u64(&self.tm_prepared);
         self.rm_prepared = clone_hashset_u64(&self.rm_prepared);
         self.rm_committed = clone_hashset_u64(&self.rm_committed);
@@ -100,7 +99,6 @@ impl CState {
         let mut __rm_prepared = clone_hashset_u64(&self.rm_prepared);
         __rm_prepared.insert(rm.clone());
         let result = {
-            self.tm_state = self.tm_state.clone();
             self.tm_prepared = clone_hashset_u64(&self.tm_prepared);
             self.rm_prepared = __rm_prepared;
             self.rm_committed = clone_hashset_u64(&self.rm_committed);
@@ -138,7 +136,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.tm_state = self.tm_state.clone(); self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = clone_hashset_u64(&self.rm_committed); self.rm_aborted = __rm_aborted; vec![] }
+            { self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = clone_hashset_u64(&self.rm_committed); self.rm_aborted = __rm_aborted; vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -250,7 +248,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.tm_state = self.tm_state.clone(); self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = __rm_committed; self.rm_aborted = clone_hashset_u64(&self.rm_aborted); vec![] }
+            { self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = __rm_committed; self.rm_aborted = clone_hashset_u64(&self.rm_aborted); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -281,7 +279,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.tm_state = self.tm_state.clone(); self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = clone_hashset_u64(&self.rm_committed); self.rm_aborted = __rm_aborted; vec![] }
+            { self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = clone_hashset_u64(&self.rm_committed); self.rm_aborted = __rm_aborted; vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;

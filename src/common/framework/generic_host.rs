@@ -57,9 +57,7 @@ impl<H: ProtocolHost> GenericHostState<H> {
             return false;
         }
 
-        // Step 3: Send outbound packets
-        let _send_ok = deliver_outbound(&step_result.outbound, netc);
-
-        true
+        // A full native outbox is an explicit failure, never a successful send.
+        deliver_outbound(&step_result.outbound, netc)
     }
 }

@@ -112,7 +112,7 @@ jobs:
       - name: Install Python and scons
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip
+          sudo apt-get install -y python3-pip pkg-config libssl-dev
           pip3 install scons
 
       - name: Cache Verus
@@ -145,8 +145,13 @@ jobs:
           # breakdown to the same log (Phase 54.2.c); it changes no verifier
           # behaviour, only what is printed.
           set -o pipefail
-          scons --verus-path=$HOME/verus/verus --skip-dotnet \
+          scons --verus-path=$HOME/verus/verus \
             --verus-extra-args="--time-expanded" 2>&1 | tee verus-verify.log
+
+      - name: Exercise native Lion runtime
+        run: |
+          VERUS_PATH=$HOME/verus/verus scripts/build_lion_runtime.sh --reuse-protocol --test
+          DURATION=2 WARMUP_SECONDS=1 scripts/integration_test_cluster.sh
 
       # Phase 54.2.a: record which quantifier triggers Verus chose for us.
       # Runs even when verification failed (the notes are still emitted, and a
@@ -160,7 +165,7 @@ jobs:
             exit 0
           fi
           python3 scripts/trigger_inventory.py parse verus-verify.log \
-            --label "${VERUS_VERSION} scons --skip-dotnet (triggers-mode selective)" \
+            --label "${VERUS_VERSION} scons default native (triggers-mode selective)" \
             --verus-version "${VERUS_VERSION}" \
             --root . \
             --allow-empty \
@@ -181,7 +186,7 @@ jobs:
             exit 0
           fi
           python3 scripts/verus_timing.py parse verus-verify.log \
-            --label "${VERUS_VERSION} scons --skip-dotnet" \
+            --label "${VERUS_VERSION} scons default native" \
             --verus-version "${VERUS_VERSION}" \
             --allow-empty \
             -o verus-timing.json
@@ -305,7 +310,7 @@ jobs:
       - name: Install Python and scons
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip
+          sudo apt-get install -y python3-pip pkg-config libssl-dev
           pip3 install scons
 
       - name: Cache Verus
@@ -363,7 +368,7 @@ jobs:
       - name: Verify with Verus
         run: |
           set -o pipefail
-          scons --verus-path=$HOME/verus/verus --skip-dotnet 2>&1 \
+          scons --verus-path=$HOME/verus/verus 2>&1 \
             | tee verus-rolling.log
 
       # Report only. The committed ceiling of 0 was measured on the pinned

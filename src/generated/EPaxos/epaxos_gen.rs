@@ -84,13 +84,10 @@ impl CState {
         let mut __preaccept_senders = clone_hashset_u64(&HashSet::new());
         __preaccept_senders.insert(c.my_id.clone());
         let result = {
-            self.ballot = self.ballot.clone();
             self.cmd = (*value);
             self.seq = (self.committed_count + 1);
             self.dep_count = 0u64;
             self.is_leader = true;
-            self.committed_count = self.committed_count.clone();
-            self.executed_count = self.executed_count.clone();
             self.preaccept_senders = __preaccept_senders;
             self.accept_senders = HashSet::new();
             self.has_conflict = false;
@@ -122,18 +119,8 @@ impl CState {
         LSendPreAcceptOk(old(self)@, self@, c@, local_conflict, *local_seq as int, result@.map(|i, p: CEPaxosMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.ballot = self.ballot.clone();
-        self.phase = self.phase.clone();
-        self.cmd = self.cmd.clone();
-        self.seq = self.seq.clone();
-        self.dep_count = self.dep_count.clone();
-        self.is_leader = self.is_leader.clone();
-        self.committed_count = self.committed_count.clone();
-        self.executed_count = self.executed_count.clone();
         self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
         self.accept_senders = clone_hashset_u64(&self.accept_senders);
-        self.has_conflict = self.has_conflict.clone();
-        self.max_resp_seq = self.max_resp_seq.clone();
         let result = vec![CEPaxosMessage::PreAcceptOk {
     sender: c.my_id.clone(),
     seq: (*local_seq),
@@ -183,7 +170,7 @@ impl CState {
                 (*pa_seq)
             } else {
                 self.seq.clone()
-            }; self.ballot = self.ballot.clone(); self.phase = self.phase.clone(); self.cmd = self.cmd.clone(); self.is_leader = self.is_leader.clone(); self.committed_count = self.committed_count.clone(); self.executed_count = self.executed_count.clone(); self.accept_senders = clone_hashset_u64(&self.accept_senders); vec![] }
+            }; self.accept_senders = clone_hashset_u64(&self.accept_senders); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -210,17 +197,9 @@ impl CState {
         LFastCommit(old(self)@, self@, c@, result@.map(|i, p: CEPaxosMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.ballot = self.ballot.clone();
-        self.cmd = self.cmd.clone();
-        self.seq = self.seq.clone();
-        self.dep_count = self.dep_count.clone();
-        self.is_leader = self.is_leader.clone();
         self.committed_count = (self.committed_count + 1);
-        self.executed_count = self.executed_count.clone();
         self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
         self.accept_senders = clone_hashset_u64(&self.accept_senders);
-        self.has_conflict = self.has_conflict.clone();
-        self.max_resp_seq = self.max_resp_seq.clone();
         self.phase = CInstancePhase::Committed;
         let result = vec![CEPaxosMessage::Commit {
     cmd: self.cmd.clone(),
@@ -251,17 +230,8 @@ impl CState {
         let mut __accept_senders = clone_hashset_u64(&HashSet::new());
         __accept_senders.insert(c.my_id.clone());
         let result = {
-            self.ballot = self.ballot.clone();
-            self.cmd = self.cmd.clone();
-            self.seq = self.seq.clone();
-            self.dep_count = self.dep_count.clone();
-            self.is_leader = self.is_leader.clone();
-            self.committed_count = self.committed_count.clone();
-            self.executed_count = self.executed_count.clone();
             self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
             self.accept_senders = __accept_senders;
-            self.has_conflict = self.has_conflict.clone();
-            self.max_resp_seq = self.max_resp_seq.clone();
             self.phase = CInstancePhase::Accepted;
             vec![CEPaxosMessage::Accept {
     ballot: self.ballot.clone(),
@@ -289,18 +259,8 @@ impl CState {
         LSendAcceptOk(old(self)@, self@, c@, result@.map(|i, p: CEPaxosMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.ballot = self.ballot.clone();
-        self.phase = self.phase.clone();
-        self.cmd = self.cmd.clone();
-        self.seq = self.seq.clone();
-        self.dep_count = self.dep_count.clone();
-        self.is_leader = self.is_leader.clone();
-        self.committed_count = self.committed_count.clone();
-        self.executed_count = self.executed_count.clone();
         self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
         self.accept_senders = clone_hashset_u64(&self.accept_senders);
-        self.has_conflict = self.has_conflict.clone();
-        self.max_resp_seq = self.max_resp_seq.clone();
         let result = vec![CEPaxosMessage::AcceptOk {
     sender: c.my_id.clone(),
 }];
@@ -331,7 +291,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.accept_senders = __accept_senders; self.ballot = self.ballot.clone(); self.phase = self.phase.clone(); self.cmd = self.cmd.clone(); self.seq = self.seq.clone(); self.dep_count = self.dep_count.clone(); self.is_leader = self.is_leader.clone(); self.committed_count = self.committed_count.clone(); self.executed_count = self.executed_count.clone(); self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders); self.has_conflict = self.has_conflict.clone(); self.max_resp_seq = self.max_resp_seq.clone(); vec![] }
+            { self.accept_senders = __accept_senders; self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -357,17 +317,9 @@ impl CState {
         LSlowCommit(old(self)@, self@, c@, result@.map(|i, p: CEPaxosMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.ballot = self.ballot.clone();
-        self.cmd = self.cmd.clone();
-        self.seq = self.seq.clone();
-        self.dep_count = self.dep_count.clone();
-        self.is_leader = self.is_leader.clone();
         self.committed_count = (self.committed_count + 1);
-        self.executed_count = self.executed_count.clone();
         self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
         self.accept_senders = clone_hashset_u64(&self.accept_senders);
-        self.has_conflict = self.has_conflict.clone();
-        self.max_resp_seq = self.max_resp_seq.clone();
         self.phase = CInstancePhase::Committed;
         let result = vec![CEPaxosMessage::Commit {
     cmd: self.cmd.clone(),
@@ -393,17 +345,9 @@ impl CState {
         LExecute(old(self)@, self@, c@, result@.map(|i, p: CEPaxosMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.ballot = self.ballot.clone();
-        self.cmd = self.cmd.clone();
-        self.seq = self.seq.clone();
-        self.dep_count = self.dep_count.clone();
-        self.is_leader = self.is_leader.clone();
-        self.committed_count = self.committed_count.clone();
         self.executed_count = (self.executed_count + 1);
         self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
         self.accept_senders = clone_hashset_u64(&self.accept_senders);
-        self.has_conflict = self.has_conflict.clone();
-        self.max_resp_seq = self.max_resp_seq.clone();
         self.phase = CInstancePhase::Executed;
         let result = vec![CEPaxosMessage::ClientReply {
     cmd: self.cmd.clone(),
@@ -432,12 +376,8 @@ impl CState {
         __preaccept_senders.insert(c.my_id.clone());
         let result = {
             self.ballot = (*new_ballot);
-            self.cmd = self.cmd.clone();
-            self.seq = self.seq.clone();
             self.dep_count = 0u64;
             self.is_leader = true;
-            self.committed_count = self.committed_count.clone();
-            self.executed_count = self.executed_count.clone();
             self.preaccept_senders = __preaccept_senders;
             self.accept_senders = HashSet::new();
             self.has_conflict = false;
@@ -474,13 +414,10 @@ impl CState {
             lemma_empty_seq_map();
         }
         let result = {
-            self.ballot = self.ballot.clone();
             self.cmd = 0u64;
             self.seq = 0u64;
             self.dep_count = 0u64;
             self.is_leader = false;
-            self.committed_count = self.committed_count.clone();
-            self.executed_count = self.executed_count.clone();
             self.preaccept_senders = HashSet::new();
             self.accept_senders = HashSet::new();
             self.has_conflict = false;

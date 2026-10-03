@@ -35,7 +35,7 @@ The two flagship protocols carry machine-checked refinement proofs, verified end
 
 The repository also extends that foundation with additional distributed protocols, bidirectional
 TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
-deployable C# networking/runtime integration.
+deployable services with a native Rust+Lion runtime, configuration tool, and workload client.
 
 ## Quick Start: From a Spec to a Program
 
@@ -104,7 +104,8 @@ and verifies, compiles, and runs this example.
   Bully leader election.
 - A spec-to-executable transpiler that generates Rust implementations and Verus
   refinement contracts.
-- TLA+/Verus translation, bounded model checking, and a deployable C#/.NET networking runtime.
+- A native Rust+Lion server for all ten protocols, native configuration/identity
+  generation, and native workload clients. No C# or .NET is required on this path.
 
 ## Requirements
 
@@ -122,66 +123,80 @@ wget https://github.com/verus-lang/verus/releases/download/release/$V/verus-$V-x
 unzip -q verus-$V-x86-linux.zip -d ~/ && mv ~/verus-x86-linux ~/verus
 chmod +x ~/verus/verus && export VERUS_PATH=~/verus/verus
 
-sudo apt install scons          # `pip install scons` is blocked by PEP 668 on 24.04
+sudo apt install scons pkg-config libssl-dev
 ```
 
-.NET 6.0 SDK is needed only to build and run the services, not to verify.
+The native runtime uses Linux batched UDP syscalls and OpenSSL for identity generation
+and TLS. Lion is pinned in the runtime Cargo manifests; lockfiles are checked in.
 See [*The tla-rs Book*](docs/tla-rs-book.md), Chapters 2 and 16, for complete
 installation and development-environment guidance.
 
 ## Verify and build
 
 ```bash
-# Verify the Rust/Verus crate
-scons --verus-path="$VERUS_PATH" --skip-dotnet
-
-# Verify Rust and build the C# services
+# Verify the protocol library and build all three native executables
 scons --verus-path="$VERUS_PATH"
 
-# Build C# only, reusing an existing native library
-scons --skip-verus
+# Equivalent native-only build without SCons
+scripts/build_lion_runtime.sh
+
+# Explicitly skip proof checking during runtime iteration
+scripts/build_lion_runtime.sh --no-verify
 ```
 
 The Verus invocation covers all ten protocol modules in the crate. The current full-crate
-gate reports `1304 verified, 0 errors`, with no warnings or automatically chosen trigger
-notes, and runs on every push. Verification remains relative to the declared trusted and
-externally implemented boundaries; Appendix F of the book records those boundaries and
-the remaining proof escapes.
+gate reports `1496 verified, 0 errors`; it also emits an automatic-trigger note in
+Raft recovery. Verification remains relative to the declared trusted boundaries:
+the native scheduler, marshalling, Lion's OS-facing glue, configuration, and TLS
+integration are runtime-tested, not covered by an end-to-end service theorem.
 
 ## Running a service
 
 After building, generate a three-node RSL configuration:
 
 ```bash
-dotnet bin/CreateIronServiceCerts.dll \
+bin/tla-rs-config \
   outputdir=certs name=MyCounter type=IronRSL \
   addr1=127.0.0.1 port1=4001 \
   addr2=127.0.0.1 port2=4002 \
   addr3=127.0.0.1 port3=4003
 ```
 
-Set `LD_LIBRARY_PATH="$PWD"`, then start one UDP server per node using the generated
-service file and corresponding private-key file:
+Start one native process per node, using `server1`, `server2`, and `server3` private files:
 
 ```bash
-dotnet bin/IronRSLServerUDP.dll \
+bin/tla-rs-server \
   certs/MyCounter.IronRSL.service.txt \
   certs/MyCounter.IronRSL.server1.private.txt
 ```
 
+The server links `bin/libtla_protocol.rlib` directly. One Lion thread owns the replica,
+socket readiness, and timers; Linux `recvmmsg`/`sendmmsg` operate on batches of up to
+64 datagrams with reusable payload buffers. No callback ABI, shared protocol library,
+network worker thread, or `LD_LIBRARY_PATH` setup is needed.
+
+The default RSL network path is native Rust with Lion batched UDP on both
+server and client; no transport or wire-format option is needed. Use
+`transport=tcp` explicitly for plaintext TCP, or for a TLS client.
+
 Run a client from another terminal:
 
 ```bash
-dotnet bin/IronRSLClientUDP.dll \
-  ip1=127.0.0.1 port1=4001 \
-  ip2=127.0.0.1 port2=4002 \
-  ip3=127.0.0.1 port3=4003 \
-  nthreads=4 duration=10
+bin/tla-rs-client service=certs/MyCounter.IronRSL.service.txt \
+  nthreads=32 warmup=5 duration=30
 ```
 
-The other protocols use the shared `IronProtocolServer.dll`; Raft, Primary-Backup,
-PBFT, and EPaxos also have workload support through `scripts/bench_generic.sh`.
-Chapter 10 of the book contains the complete service recipes.
+The same server accepts `twophase`, `leaderelection`, `primarybackup`,
+`chainreplication`, `paxos`, `verticalpaxos`, `raft`, `pbft`, and `epaxos`; generate
+their files with `type=IronProtocol`. The native client covers RSL, Raft,
+Primary-Backup, PBFT, and EPaxos. `scripts/integration_test_cluster.sh` runs those
+workloads, startup checks for the remaining protocols, and RSL failure/recovery
+and stream-transport checks.
+
+For TLS, generate with `usessl=true` and run both server and client with
+`transport=tcp`. `UseSsl=true` cannot be downgraded to UDP. `transport=tcp` with
+`usessl=false` retains the legacy unauthenticated plaintext framing.
+Chapter 10 of the book describes the transport limits and trust boundary.
 
 ## Performance
 
@@ -190,10 +205,47 @@ and opt-in mutable-receiver lowering for eligible hot paths. RSL uses mutable lo
 for selected actions, avoiding unnecessary whole-state reconstruction while preserving
 the same Verus postconditions.
 
-This repository does not currently publish an RSL-versus-IronFleet or
-generated-versus-hand-tuned speedup: the available historical measurements are not a
-controlled, reproducible comparison. The benchmark requirements and runtime profiling
-workflow are documented in [Chapter 25 of the book](docs/tla-rs-book.md) and the
+Native measurements and methodology are recorded in the
+[Lion runtime report](reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md).
+`scripts/bench_rsl_runtime.sh` defaults to Lion's unbatched RSL methodology:
+plaintext TCP with `TCP_NODELAY`, two clients connected to every replica, a
+1-second request timeout, three seconds of initial idle time, five seconds of
+active warmup, three 30-second measured trials, and unpinned versus
+one-physical-core-per-replica configurations.
+RSL defaults are one request per batch, a 1,000-entry log bound, 1,000 ms baseline
+view timeout, 100 ms heartbeat, and 10 ms partial-batch timer. The timer no longer
+delays a lone request. UDP and TLS remain supported.
+
+The default benchmark is native-only. An explicit, isolated reference can be built
+with `scripts/build_lion_reference.sh --install-prerequisites`, then selected with
+`RUNTIMES='native csharp' REFERENCE_SERVER=/path/printed/by/the/builder`.
+This uses Lion's pinned original Dafny/C# server, not a production dependency.
+The same native load generator measures both arms, using their respective wire
+codecs. Results are **local end-to-end service comparisons**, not an identical-core
+I/O-only experiment or reproduction of Lion's remote-client hardware results.
+CSV and JSON evidence record actual post-warmup timing, latency/error counters,
+server CPU intervals, threads/RSS, affinity, compiled parameters, and binary hashes.
+Unverified external `BASELINE_SERVICE` comparisons are no longer accepted.
+
+An October 2026 sweep of the **pre-fix** batch-1 binary measured 1,273 ops/s
+at two workers, versus 2,868 ops/s for the original C# service at four
+workers. The transpiler was deep-cloning unchanged protocol fields on each
+mutable action; after fixing its lowering and regenerating the affected
+modules, the Verus-verified native batch-1 server reached a **4,482 ops/s**
+median at 64 workers (three 30-second trials). At the same four workers and
+batch size, the corrected native server reached **4,274 ops/s** versus
+**2,854 ops/s** for the original C# server. The 64-worker configuration favors
+throughput over latency (14.2 ms mean versus 0.94 ms at four workers).
+An isolated **pre-fix** native batch-32 variant reached 3,891 ops/s at 32
+workers; it uses a different batch limit and predates the generator fix, so
+it is not a matched comparison with the corrected server. The
+[runtime report](reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md)
+records the profiling evidence, concurrency curve, per-trial errors, source
+provenance, and comparisons. `NATIVE_BATCH_SIZE=32` is only a driver check
+for an explicitly built native variant; the production default remains 1.
+
+The benchmark requirements and runtime profiling workflow remain documented in
+[Chapter 25 of the book](docs/tla-rs-book.md) and the
 [generated-code performance record](transpiler/docs/EFFICIENT_EMIT.md).
 
 ## Documentation

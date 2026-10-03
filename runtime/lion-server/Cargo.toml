@@ -1,0 +1,31 @@
+[package]
+name = "tla-rs-lion-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tla-rs-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "tla-rs-config"
+path = "src/bin/config.rs"
+
+[[bin]]
+name = "tla-rs-client"
+path = "src/bin/client.rs"
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+lion = { git = "https://github.com/stonysystems/lion", rev = "aa5bebe74369003b16193d73d43727e95dcf4ea0", package = "lion" }
+tla-rs-lion-io = { path = "../lion-io" }
+openssl = "0.10"
+tokio-openssl = "0.6"
+tokio = { version = "1", default-features = false, features = ["io-util", "sync", "macros"] }
+libc = "0.2"
+parking_lot = "0.12"
+
+[profile.release]
+debug = 1

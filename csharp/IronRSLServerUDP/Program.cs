@@ -53,35 +53,18 @@ namespace IronRSLServerUDP
 
         public unsafe static void GetMyEndPointUDPStatic(void** endPoint)
         {
-            var localEP = (System.Net.IPEndPoint)uc.client.Client.LocalEndPoint;
-            // Console.WriteLine("Local endpoint (used as me): " + localEP.ToString());
-
-            byte[] ipBytes = localEP.Address.GetAddressBytes();
-            ushort port = (ushort)localEP.Port;
-
+            System.Net.IPEndPoint localEndPoint =
+                (System.Net.IPEndPoint)uc.client.Client.LocalEndPoint;
+            byte[] ipBytes = localEndPoint.Address.GetAddressBytes();
+            ushort port = (ushort)localEndPoint.Port;
             byte[] fullBytes = new byte[ipBytes.Length + 2];
             Array.Copy(ipBytes, fullBytes, ipBytes.Length);
             fullBytes[ipBytes.Length] = (byte)(port >> 8);
             fullBytes[ipBytes.Length + 1] = (byte)(port & 0xFF);
 
-            byte* remoteBuf;
-            allocate_buffer((ulong)fullBytes.Length, endPoint, &remoteBuf);
-            fullBytes.CopyTo(new Span<byte>(remoteBuf, fullBytes.Length));
-
-            // var localEP = (System.Net.IPEndPoint)uc.client.Client.LocalEndPoint;
-
-            // IPEndPoint myEP = new IPEndPoint(new IEndPoint(localEP.Address, (ushort)localEP.Port));
-            // byte[] endPointArray = myEP.GetAddress();
-            // ushort port = myEP.GetPort();
-
-            // byte[] fullBytes = new byte[endPointArray.Length + 2];
-            // Array.Copy(endPointArray, fullBytes, endPointArray.Length);
-            // fullBytes[endPointArray.Length] = (byte)(port >> 8);
-            // fullBytes[endPointArray.Length + 1] = (byte)(port & 0xFF);
-
-            // byte* remoteBuf;
-            // allocate_buffer((ulong)endPointArray.Length, endPoint, &remoteBuf);
-            // endPointArray.CopyTo(new Span<byte>(remoteBuf, endPointArray.Length));
+            byte* endpointBuffer;
+            allocate_buffer((ulong)fullBytes.Length, endPoint, &endpointBuffer);
+            fullBytes.CopyTo(new Span<byte>(endpointBuffer, fullBytes.Length));
         }
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -325,8 +308,6 @@ namespace IronRSLServerUDP
                 return;
             }
 
-            // Console.WriteLine($"Local endpoint (used as me): {uc.client.Client.LocalEndPoint}");
-            // Console.WriteLine($"Expected local endpoint: {ep.endpoint}");
 
 
             byte[][] serverEndpoints = serviceIdentity.Servers.Select(server =>

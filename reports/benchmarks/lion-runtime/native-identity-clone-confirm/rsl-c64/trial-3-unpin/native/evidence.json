@@ -1,0 +1,2856 @@
+{
+  "client_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63
+  ],
+  "client_binary": {
+    "path": "/var/tmp/tla-rs-lion/bin/tla-rs-client",
+    "sha256": "4be4d56a8075bc3899712c134cb60a2928928c7bdf23a33abd560c0022609d13"
+  },
+  "client_command": [
+    "/var/tmp/tla-rs-lion/bin/tla-rs-client",
+    "protocol=rsl",
+    "transport=tcp",
+    "service=/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.service.txt",
+    "nthreads=64",
+    "duration=30",
+    "warmup=5",
+    "wire=native",
+    "timeout_ms=1000",
+    "connect_all=true",
+    "settle=3"
+  ],
+  "configuration": "unpin",
+  "measurement": {
+    "boundary_samples": [
+      {
+        "client_connections": [
+          {
+            "local_kernel_address": "0100007F:AED4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AEE0",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AEEC",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AEF0",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AEF4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AEFC",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF08",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF0A",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF16",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF26",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF32",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF3E",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF48",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF50",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF52",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF5A",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF62",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF72",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF80",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF82",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF92",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AF9A",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFA8",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFB0",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFB6",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFB8",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFBC",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFC4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFD4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFE0",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFEE",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:AFFA",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B002",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B00E",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B01C",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B020",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B02A",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B030",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B034",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B03C",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B04A",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B04E",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B050",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B058",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B062",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B06C",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B072",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B076",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B080",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B084",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B086",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B08C",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B09A",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0A4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0B4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0C0",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0C4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0CC",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0DC",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0E4",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0EE",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B0F2",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B102",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:B106",
+            "remote_kernel_address": "0100007F:47E2",
+            "remote_port": 18402
+          },
+          {
+            "local_kernel_address": "0100007F:E3A4",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3AE",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3BE",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3C0",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3CA",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3CC",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3DA",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3E6",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3EE",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3F0",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3F6",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3F8",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3FA",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E3FC",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E40A",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E40C",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E414",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E41E",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E420",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E426",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E428",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E436",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E442",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E44C",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E456",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E462",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E468",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E472",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E482",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E48E",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E498",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4A4",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4A8",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4B4",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4BC",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4BE",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4CA",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4D6",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4E6",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4E8",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4F8",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E4FA",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E500",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E506",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E514",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E51C",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E526",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E536",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E542",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E54C",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E554",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E55C",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E568",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E56E",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E57A",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E58A",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E598",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E59A",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E5A2",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E5AE",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E5BA",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E5CA",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E5CE",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:E5DE",
+            "remote_kernel_address": "0100007F:47E1",
+            "remote_port": 18401
+          },
+          {
+            "local_kernel_address": "0100007F:CE34",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE3C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE3E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE42",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE52",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE58",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE5C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE60",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE6E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE7C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE82",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE8C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CE9A",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEA8",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEB4",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEC0",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEC4",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CED0",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEDC",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEEC",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEFA",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CEFE",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF0A",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF1A",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF26",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF2E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF3C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF46",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF4C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF50",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF5E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF6A",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF6E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF7C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF84",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF90",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CF96",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFA6",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFAE",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFB4",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFB8",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFC8",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFD6",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFE2",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFEE",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:CFF2",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D000",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D002",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D00E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D01C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D026",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D036",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D03C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D04A",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D054",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D05C",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D05E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D06A",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D06E",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D072",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D07A",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D086",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D088",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          },
+          {
+            "local_kernel_address": "0100007F:D090",
+            "remote_kernel_address": "0100007F:47E3",
+            "remote_port": 18403
+          }
+        ],
+        "monotonic_seconds": 390914.937293928,
+        "servers": [
+          {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ],
+            "cpu_ticks": 21,
+            "pid": 4173721,
+            "rss_bytes": 8650752,
+            "start_ticks": 39090661,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ],
+            "cpu_ticks": 24,
+            "pid": 4173722,
+            "rss_bytes": 9162752,
+            "start_ticks": 39090661,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ],
+            "cpu_ticks": 22,
+            "pid": 4173723,
+            "rss_bytes": 8708096,
+            "start_ticks": 39090661,
+            "threads": 1
+          }
+        ]
+      },
+      {
+        "monotonic_seconds": 390944.958566054,
+        "servers": [
+          {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ],
+            "cpu_ticks": 2896,
+            "pid": 4173721,
+            "rss_bytes": 23855104,
+            "start_ticks": 39090661,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ],
+            "cpu_ticks": 3025,
+            "pid": 4173722,
+            "rss_bytes": 26988544,
+            "start_ticks": 39090661,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62,
+              63
+            ],
+            "cpu_ticks": 2901,
+            "pid": 4173723,
+            "rss_bytes": 22863872,
+            "start_ticks": 39090661,
+            "threads": 1
+          }
+        ]
+      }
+    ],
+    "client_actual_elapsed_seconds": 30.005062148,
+    "client_connections_at_start": [
+      {
+        "local_kernel_address": "0100007F:AED4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AEE0",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AEEC",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AEF0",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AEF4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AEFC",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF08",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF0A",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF16",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF26",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF32",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF3E",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF48",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF50",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF52",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF5A",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF62",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF72",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF80",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF82",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF92",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AF9A",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFA8",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFB0",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFB6",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFB8",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFBC",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFC4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFD4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFE0",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFEE",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:AFFA",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B002",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B00E",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B01C",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B020",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B02A",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B030",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B034",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B03C",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B04A",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B04E",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B050",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B058",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B062",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B06C",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B072",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B076",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B080",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B084",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B086",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B08C",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B09A",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0A4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0B4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0C0",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0C4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0CC",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0DC",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0E4",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0EE",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B0F2",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B102",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:B106",
+        "remote_kernel_address": "0100007F:47E2",
+        "remote_port": 18402
+      },
+      {
+        "local_kernel_address": "0100007F:E3A4",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3AE",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3BE",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3C0",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3CA",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3CC",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3DA",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3E6",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3EE",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3F0",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3F6",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3F8",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3FA",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E3FC",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E40A",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E40C",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E414",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E41E",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E420",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E426",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E428",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E436",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E442",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E44C",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E456",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E462",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E468",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E472",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E482",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E48E",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E498",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4A4",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4A8",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4B4",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4BC",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4BE",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4CA",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4D6",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4E6",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4E8",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4F8",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E4FA",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E500",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E506",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E514",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E51C",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E526",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E536",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E542",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E54C",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E554",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E55C",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E568",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E56E",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E57A",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E58A",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E598",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E59A",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E5A2",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E5AE",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E5BA",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E5CA",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E5CE",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:E5DE",
+        "remote_kernel_address": "0100007F:47E1",
+        "remote_port": 18401
+      },
+      {
+        "local_kernel_address": "0100007F:CE34",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE3C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE3E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE42",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE52",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE58",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE5C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE60",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE6E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE7C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE82",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE8C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CE9A",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEA8",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEB4",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEC0",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEC4",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CED0",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEDC",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEEC",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEFA",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CEFE",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF0A",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF1A",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF26",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF2E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF3C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF46",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF4C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF50",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF5E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF6A",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF6E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF7C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF84",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF90",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CF96",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFA6",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFAE",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFB4",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFB8",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFC8",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFD6",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFE2",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFEE",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:CFF2",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D000",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D002",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D00E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D01C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D026",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D036",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D03C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D04A",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D054",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D05C",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D05E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D06A",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D06E",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D072",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D07A",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D086",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D088",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      },
+      {
+        "local_kernel_address": "0100007F:D090",
+        "remote_kernel_address": "0100007F:47E3",
+        "remote_port": 18403
+      }
+    ],
+    "client_process": {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-client protocol=rsl transport=tcp service=/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.service.txt nthreads=64 duration=30 warmup=5 wire=native timeout_ms=1000 connect_all=true settle=3 ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-client",
+      "pid": 4173724
+    },
+    "cpu_sample_seconds": 30.02127212600317,
+    "method": "Linux /proc/PID/stat user+system tick deltas at client marker arrival",
+    "per_server_cpu": [
+      {
+        "cpu_percent": 95.76542885768639,
+        "cpu_seconds": 28.75,
+        "pid": 4173721,
+        "rss_peak_bytes": 23855104,
+        "threads_peak": 1
+      },
+      {
+        "cpu_percent": 99.96245287023196,
+        "cpu_seconds": 30.01,
+        "pid": 4173722,
+        "rss_peak_bytes": 26988544,
+        "threads_peak": 1
+      },
+      {
+        "cpu_percent": 95.89866771522752,
+        "cpu_seconds": 28.79,
+        "pid": 4173723,
+        "rss_peak_bytes": 22863872,
+        "threads_peak": 1
+      }
+    ],
+    "scope": "server processes only; excludes client and launcher startup",
+    "server_cpu_percent": 291.62654944314585,
+    "server_cpu_seconds": 87.55,
+    "server_rss_peak_bytes": 73707520,
+    "server_threads_peak": 3,
+    "ticks_per_second": 100,
+    "warmup_marker_interval_seconds": 5.000208956014831
+  },
+  "metrics": {
+    "active_workers": 64,
+    "attempts": 136870,
+    "avg_latency_ms": 14.029259177324095,
+    "completed": 136806,
+    "connect_all": true,
+    "elapsed_seconds": 30.005062148,
+    "errors": 0,
+    "invalid_replies": 0,
+    "p50_latency_ms": 13.697023,
+    "p95_latency_ms": 17.563647,
+    "p99_latency_ms": 19.005439,
+    "percentile_relative_error_max": 0.008,
+    "protocol": "rsl",
+    "rejected": 0,
+    "settle_seconds": 3,
+    "stale_replies": 273792,
+    "throughput_ops_s": 4559.4306495752035,
+    "timeout_ms": 1000,
+    "timeouts": 0,
+    "tls": false,
+    "transport": "tcp",
+    "unfinished": 64,
+    "warmup_completed": 786,
+    "warmup_errors": 0,
+    "warmup_invalid_replies": 0,
+    "warmup_seconds": 5,
+    "warmup_timeouts": 256,
+    "wire": "native",
+    "worker_failures": [],
+    "workers": 64
+  },
+  "runtime": "native-lion",
+  "server_configuration": [
+    {
+      "baseline_view_timeout_ms": 1000,
+      "batch_size": 1,
+      "heartbeat_period_ms": 100,
+      "max_batch_delay_ms": 10,
+      "max_log_length": 1000,
+      "protocol": "rsl",
+      "runtime": "native-lion",
+      "tcp_nodelay": true,
+      "tls": false,
+      "transport": "tcp"
+    },
+    {
+      "baseline_view_timeout_ms": 1000,
+      "batch_size": 1,
+      "heartbeat_period_ms": 100,
+      "max_batch_delay_ms": 10,
+      "max_log_length": 1000,
+      "protocol": "rsl",
+      "runtime": "native-lion",
+      "tcp_nodelay": true,
+      "tls": false,
+      "transport": "tcp"
+    },
+    {
+      "baseline_view_timeout_ms": 1000,
+      "batch_size": 1,
+      "heartbeat_period_ms": 100,
+      "max_batch_delay_ms": 10,
+      "max_log_length": 1000,
+      "protocol": "rsl",
+      "runtime": "native-lion",
+      "tcp_nodelay": true,
+      "tls": false,
+      "transport": "tcp"
+    }
+  ],
+  "server_processes": [
+    {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-server /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.service.txt /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.server1.private.txt protocol=rsl transport=tcp verbose=false ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-server",
+      "pid": 4173721
+    },
+    {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-server /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.service.txt /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.server2.private.txt protocol=rsl transport=tcp verbose=false ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-server",
+      "pid": 4173722
+    },
+    {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-server /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.service.txt /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.server3.private.txt protocol=rsl transport=tcp verbose=false ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-server",
+      "pid": 4173723
+    }
+  ],
+  "service_path": "/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/native-identity-clone-confirm/rsl-c64/trial-3-unpin/Cluster.IronRSL.service.txt",
+  "service_sha256": "a9d33988d08734d68ef93ecb19961cdd614aca8aa83a9b65289d0d09d852883c",
+  "trial": 3,
+  "wire": "native"
+}

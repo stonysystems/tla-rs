@@ -22,6 +22,11 @@ use crate::implementation::EPaxos::message::*;
 use std::collections::HashSet;
 use std::time::Instant;
 
+// Recovery discards accumulated acknowledgments, unlike a retransmit. Allow
+// 100ms without protocol progress before restarting a round; scheduler turns
+// can occur many times per millisecond under continuous native receive traffic.
+const RECOVERY_TIMEOUT_MS: u128 = 100;
+
 /// EPaxos protocol configuration.
 pub struct EPaxosConfig {
     /// All peer endpoints (ordered by node index).
@@ -104,6 +109,8 @@ pub struct EPaxosHost {
     last_metrics_time: Instant,
     /// Committed count at last metrics output (for delta computation).
     last_metrics_committed: u64,
+    /// Last proposal, new acknowledgment, accept phase, or recovery attempt.
+    last_progress_time: Instant,
     /// Client endpoint for the current pending command (if any).
     pending_client: Option<EndPoint>,
 }
@@ -223,6 +230,7 @@ impl EPaxosHost {
             &seq,
             conflict,
         );
+        self.last_progress_time = Instant::now();
 
         StepResult {
             ok: true,
@@ -283,6 +291,7 @@ impl EPaxosHost {
         }
 
         let _sent = self.state.CReceiveAcceptOk(&config.constants, &sender_id);
+        self.last_progress_time = Instant::now();
 
         StepResult {
             ok: true,
@@ -331,6 +340,7 @@ impl EPaxosHost {
         self.pending_client = client_ep;
 
         let _sent = self.state.CPropose(&config.constants, &value);
+        self.last_progress_time = Instant::now();
 
         // Broadcast PreAccept to all other replicas
         let others = Self::other_peers(config);
@@ -443,6 +453,7 @@ impl EPaxosHost {
         }
 
         let _sent = self.state.CStartAccept(&config.constants);
+        self.last_progress_time = Instant::now();
 
         // Broadcast Accept to all other replicas
         let others = Self::other_peers(config);
@@ -577,14 +588,33 @@ impl EPaxosHost {
         }
     }
 
-    /// Timer action: Recover a stalled instance by proposing a new ballot.
-    /// Fires when phase is PreAccepted or Accepted (not yet committed/executed).
+    /// Timer action: Recover an instance after a real interval without progress.
+    /// Ready quorums must finish their round instead of losing acknowledgments.
     fn try_recover(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
         // Guard: phase must be PreAccepted or Accepted
         if !matches!(
             self.state.phase,
             CInstancePhase::PreAccepted | CInstancePhase::Accepted
         ) {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
+        }
+
+        // A native turn runs multiple timer actions after each packet. Never
+        // erase a ready quorum just because Recover precedes its commit slot.
+        let quorum_ready = self.state.is_leader
+            && match self.state.phase {
+                CInstancePhase::PreAccepted => {
+                    self.state.preaccept_senders.len() as u64 >= config.constants.fast_quorum_size
+                }
+                CInstancePhase::Accepted => {
+                    self.state.accept_senders.len() as u64 >= config.constants.quorum_size
+                }
+                _ => false,
+            };
+        if quorum_ready || self.last_progress_time.elapsed().as_millis() < RECOVERY_TIMEOUT_MS {
             return StepResult {
                 ok: true,
                 outbound: GenericOutbound::None,
@@ -602,6 +632,7 @@ impl EPaxosHost {
         }
 
         let _sent = self.state.CRecover(&config.constants, &new_ballot);
+        self.last_progress_time = Instant::now();
 
         // Broadcast PreAccept with new ballot to all replicas
         let others = Self::other_peers(config);
@@ -632,6 +663,7 @@ impl ProtocolHost for EPaxosHost {
             propose_counter: 0,
             last_metrics_time: Instant::now(),
             last_metrics_committed: 0,
+            last_progress_time: Instant::now(),
             pending_client: None,
         })
     }

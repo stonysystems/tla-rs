@@ -89,11 +89,11 @@ pub fn StaticParams() -> (p:CParameters)
 {
     CParameters{
         max_log_length: 1000,
-        baseline_view_timeout_period: 400,
-        heartbeat_period: 30,
+        baseline_view_timeout_period: 1000,
+        heartbeat_period: 100,
         max_integer_val: 0x8000_0000_0000_0000 - 1,
-        max_batch_size: 32,
-        max_batch_delay: 30,
+        max_batch_size: 1,
+        max_batch_delay: 10,
     }
 }
 }

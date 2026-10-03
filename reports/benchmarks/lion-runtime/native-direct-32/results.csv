@@ -1,0 +1,4 @@
+runtime,protocol,workers,trial,completed,elapsed_seconds,throughput_ops_s,avg_latency_ms,p50_latency_ms,p95_latency_ms,p99_latency_ms,timeouts,rejected,errors,invalid_replies,stale_replies,unfinished,active_workers,warmup_completed
+native-lion,rsl,32,1,68480,10.001232161,6847.156320102146,4.670553046787383,4.587519,6.291455,8.519679,0,0,0,0,137024,32,32,15872
+native-lion,rsl,32,2,70752,10.001819593,7073.912835772142,4.518881124236771,4.489215,5.832703,7.667711,0,0,0,0,141568,32,32,16096
+native-lion,rsl,32,3,70981,10.000574775,7097.6920424056325,4.5045428098082585,4.456447,5.963775,7.110655,0,0,0,0,142016,32,32,15456

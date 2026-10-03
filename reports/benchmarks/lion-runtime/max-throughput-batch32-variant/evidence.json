@@ -1,0 +1,42 @@
+{
+  "base_server_sha256": "29fe5d848cca69bebf4171f3ac424462dfca7f6e388514415c3e77a10ab0c6bc",
+  "batch_size_original": 1,
+  "batch_size_variant": 32,
+  "bench_driver_env": {
+    "BIN_DIR": "/tmp/tla-rs-lion-batch32-ouf93jif/bin",
+    "CONFIGS": "unpin",
+    "NATIVE_BATCH_SIZE": "32",
+    "RUNTIMES": "native",
+    "TRANSPORT": "tcp"
+  },
+  "changed_files": [
+    "implementation/RSL/cparameters.rs"
+  ],
+  "client_and_config_binaries_identical_to_base": true,
+  "compilation": {
+    "cargo_manifest": "runtime/lion-server/Cargo.toml",
+    "cargo_options": "build --locked --release --bin tla-rs-server",
+    "rustflags": "-L dependency=<verus directory> --extern tla_protocol=<variant rlib>",
+    "source": "/tmp/tla-rs-lion-batch32-ouf93jif/src/lib.rs",
+    "target_dir": "/tmp/tla-rs-lion-batch32-ouf93jif/target"
+  },
+  "exact_source_change": "max_batch_size: 1, -> max_batch_size: 32,",
+  "experiment": "isolated native RSL batch-size variant, not production or original Lion reference",
+  "original_parameters_sha256": "ff2773d2d07fe1850379a79b3918cc2a05639df4100add1157559b28a6cbd7e2",
+  "source_base": "/var/tmp/tla-rs-lion/src",
+  "source_files_compared": 391,
+  "source_variant": "/tmp/tla-rs-lion-batch32-ouf93jif/src",
+  "unchanged_params": {
+    "baseline_view_timeout_ms": 1000,
+    "heartbeat_period_ms": 100,
+    "max_batch_delay_ms": 10,
+    "max_log_length": 1000
+  },
+  "variant_parameters_sha256": "fcef66ef559d042ce1bb635235c646fc4ef9f9c058ce13c14a8fb986ea1d05bd",
+  "variant_rlib_sha256": "fb233f56b2d900dd7207ed4a8b233ef1b388405983462f0c4db811546f45cc44",
+  "variant_server": {
+    "path": "/tmp/tla-rs-lion-batch32-ouf93jif/bin/tla-rs-server",
+    "sha256": "e894974ede325697c9545e7f325f04d805ea08c297b359dd8297a10e9982ef5a"
+  },
+  "verified_by": "Verus 0.2026.08.02.b677dd5: 1496 verified, 0 errors; --compile -C opt-level=3"
+}

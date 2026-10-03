@@ -162,6 +162,9 @@ verus! {
     #[verifier(external_body)]
     pub fn rsl_demarshall_data_method(buffer: &Vec<u8>) -> (out: CMessage)
     {
+        if buffer.len() == 0 {
+            return CMessage::CMessageInvalid{};
+        }
         // println!("trying to deserialize CMessage");
         // println!("buffer len: {}", buffer.len());
         if buffer[0] == 1 {
@@ -253,6 +256,7 @@ verus! {
                 let ghost net_event: NetEvent = LIoOp::Receive{
                     r: LPacket{dst: local_addr@, src: src_ep@, msg: message@}
                 };
+                netc.recycle_buffer(message);
                 (ReceiveResult::Packet{cpacket}, Ghost(net_event))
             }
         }
@@ -261,15 +265,13 @@ verus! {
     #[verifier(external_body)]
     pub fn send_packet(cpacket: &CPacket, netc: &mut NetClient) -> (rc:(bool, Ghost<Option<NetEvent>>))
     {
-        // let ghost net_events = Seq::<NetEvent>::empty();
-        let mut buf: Vec<u8> = Vec::new();
+        let mut buf = netc.take_buffer();
         cpacket.msg.serialize(&mut buf);
-
-        let _ = buf.len();
-        match netc.send(&cpacket.dst, &buf)
+        let ghost bytes = buf@;
+        match netc.send(&cpacket.dst, buf)
         {
             Ok(_) => {
-                let ghost lpacket = LPacket::<AbstractEndPoint, Seq<u8>>{ dst: cpacket.dst@, src: netc.my_end_point(), msg: buf@ };
+                let ghost lpacket = LPacket::<AbstractEndPoint, Seq<u8>>{ dst: cpacket.dst@, src: netc.my_end_point(), msg: bytes };
                 let ghost net_event = LIoOp::Send{s:  lpacket};
                 (true, Ghost(Some(net_event)))
             },

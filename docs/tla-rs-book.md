@@ -59,9 +59,9 @@ An `assume` accepts a proposition at a proof site. `#[verifier::external_body]` 
 function specifications trust a body or interface contract. The project also uses
 `#[verus::trusted]` as a trusted-code *audit classification* for Verus line accounting; it
 identifies code that requires manual inspection and should not be confused with a successful
-proof of its assumptions. Finally, the C# network runtime and unsafe Rust/FFI entry points
-sit outside the deductively verified protocol core. Chapter 14 develops this trust model in
-detail.
+proof of its assumptions. Finally, the native Rust+Lion host, OS-facing transport glue,
+identity handling, and marshalling sit outside the deductively verified protocol core. Chapter 14
+develops this trust model in detail.
 
 ## End-to-end artifact flow
 
@@ -82,9 +82,9 @@ spec-to-exec transpiler
        ▼
 Verus verification
        ▼
-Rust shared library ── FFI ── C# I/O and service runtime
-       ▼
-runnable distributed service
+Rust protocol rlib ── owned Rust values ── native Rust+Lion runtime
+                                                ▼
+                                     runnable distributed service
 ```
 
 The hand-written sources and derived artifacts are deliberately separate:
@@ -162,9 +162,10 @@ The project brings together two lines of work:
 Both original projects used Dafny. tla-rs re-expresses their core ideas in
 Rust with [Verus](https://github.com/verus-lang/verus), then extends the
 workflow with more protocols, TLA+/Verus translation, source-first model
-checking, code-generation options for Rust ownership patterns, and a C#
-networking/runtime layer. The root [README](../README.md) gives the short
-project overview and paper attribution. The separate DPOR search path is very
+checking, code-generation options for Rust ownership patterns, and service
+runtimes: native Rust+Lion for all ten protocols, with native configuration and
+workload tools. The root [README](../README.md) gives the short project
+overview and paper attribution. The separate DPOR search path is very
 incomplete and not usable, as Chapter 8 explains.
 
 ### What is included
@@ -217,7 +218,10 @@ hand-written Verus spec                    optional TLA+ source
           Verus verification
                 │
                 ▼
-       Rust shared library + C# runtime
+       Rust protocol rlib
+                │
+                ▼
+       native Rust+Lion runtime
                 │
                 ▼
        runnable distributed service
@@ -232,7 +236,8 @@ The repository keeps these concerns separate:
 | `src/implementation/<P>/` | Concrete support code, host/scheduler integration, and messages |
 | `src/services/<P>/` | Service entry points |
 | `transpiler/` | Spec parser, mode analysis, code generation, TLA+ tools, and model checker |
-| `csharp/` | Networking, certificate handling, clients, and process lifecycle |
+| `runtime/lion-server/`, `runtime/lion-io/` | Native all-protocol server, configuration/client tools, and Lion transport I/O |
+| `csharp/` | Historical C# implementations and reference wire-format/client tooling; not the native deployment path |
 
 ### What the evidence means
 
@@ -247,7 +252,7 @@ are blurred together. This book uses the following meanings consistently.
 | DPOR output | Nothing reliable in the current implementation; treat it only as a development diagnostic | Verification, reliable bug-finding evidence, or a release gate |
 | `assume(...)` | Verus may use the proposition without a proof at that site | Evidence that the proposition is true |
 | `#[verifier(external_body)]` or an external specification | A trusted body is used through a specified interface | Verification of the hidden implementation |
-| C#/FFI and host/runtime code | The machinery that performs real I/O and invokes the protocol | Deductive Verus verification unless a particular relation is explicitly modeled and proved |
+| Service hosts, FFI, and runtime code | The machinery that performs real I/O and invokes the protocol | Deductive Verus verification unless a particular relation is explicitly modeled and proved |
 
 `#[verus::trusted]` deserves a separate warning: in this tree it is used as an
 audit/line-count classification marker. Do not infer from the marker alone
@@ -293,7 +298,7 @@ promise that unrelated future releases will behave identically.
 | Verus | `0.2026.08.02.b677dd5` |
 | Rust for that Verus release | `1.97.1` |
 | Rust for the transpiler | A recent stable toolchain |
-| .NET SDK | 6.0.x, needed only for the integrated services |
+| OpenSSL and pkg-config | Native identity generation and TLS; Ubuntu packages `libssl-dev pkg-config` |
 | Python and SCons | Needed only for the integrated build; on Ubuntu 24.04 use `sudo apt install scons` because system `pip` is PEP 668-managed |
 
 The pinned Verus Linux binary links against glibc 2.39, which is why the CI
@@ -1399,7 +1404,7 @@ scons --verus-path="$VERUS_PATH" --skip-dotnet
 ```
 
 SCons invokes Verus with `src/lib.rs` as the crate root and builds
-`liblib.so`; it fails if verification or compilation fails. Use
+`bin/libtla_protocol.rlib` and the native service tools; it fails if verification or compilation fails. Use
 `--verus-extra-args="--time-expanded"` when collecting the timing format used
 by CI. `--no-verify` deliberately skips proof checking and must never be
 reported as a verification pass.
@@ -2124,191 +2129,297 @@ translation.
 
 ## Chapter 10 — Build and Run an Integrated Protocol
 
-The quickstart proves that the spec-to-executable path works without a
-network. An integrated protocol adds a native Rust/Verus shared library, a C#
-UDP runtime, certificates that identify the replicas, and one or more service
-processes. Treat verification and deployment as separate gates: a service can
-build without being verified, and a verified crate can still be misconfigured
-at runtime.
+All ten integrated protocols run in the native Rust+Lion server. The protocol
+library is directly linked as a Rust `rlib`; configuration, identity generation,
+workload clients, deployment scripts, and transport I/O require no C# or .NET.
+Verification and deployment remain separate gates: a verified crate can still
+be misconfigured, and the OS-facing runtime is a trusted boundary.
 
-### Choose the build you intend
+### Build the native service tools
 
-Run SCons from the repository root. `--verus-path` takes the path to the
-`verus` executable itself.
-
-| Goal | Command | What it establishes |
-|---|---|---|
-| Verify/compile Rust and build all C# projects | `scons --verus-path="$VERUS_PATH"` | Full local build gate |
-| Verify/compile only the Rust/Verus crate | `scons --verus-path="$VERUS_PATH" --skip-dotnet` | Produces `liblib.so`; no C# binaries |
-| Build only the C# projects | `scons --skip-verus` | Produces `bin/*.dll`; reuses any existing native library |
-| Build one C# target | `scons --skip-verus bin/IronRSLServerUDP.dll` | Builds that target without invoking Verus |
-
-The integrated commands are defined in [`SConstruct`](../SConstruct). The
-normal Verus action both verifies and compiles `src/lib.rs` into `liblib.so`.
-`--no-verify` asks Verus to compile without checking proofs; it is useful only
-when verification has already passed for the same sources, and its output must
-not be described as verified.
-
-The C# projects currently target .NET 6. After building, expose the repository
-root to the native loader before starting a service:
+Install the pinned Rust/Verus toolchain from Chapter 2, plus `pkg-config` and
+OpenSSL development headers (`libssl-dev` on Ubuntu). `VERUS_PATH` names the
+Verus executable, not its directory.
 
 ```bash
-export LD_LIBRARY_PATH="$PWD"
+export VERUS_PATH=/path/to/verus/verus
+scons --verus-path="$VERUS_PATH"
+# Equivalent native-only build:
+scripts/build_lion_runtime.sh
 ```
 
-If `liblib.so` is old, C# can load an ABI that no longer matches the Rust
-sources. Rebuild it after Rust, generated-code, feature, or toolchain changes.
+Both commands verify and compile `src/lib.rs` into `bin/libtla_protocol.rlib`,
+then build `bin/tla-rs-server`, `bin/tla-rs-config`, and `bin/tla-rs-client`.
+Cargo and Verus must use the same Rust toolchain because owned Rust values
+cross this direct linkage boundary. Lion's revision and Cargo lockfiles are
+pinned. Neither a callback ABI nor a dynamically loaded protocol library is used.
 
-### Run the RSL service
+`scripts/build_lion_runtime.sh --no-verify` explicitly skips proof checking.
+It is useful for runtime iteration, never evidence of a verification pass.
+`--reuse-protocol --test` reuses an already-built protocol library and runs the
+native protocol/identity/stream and batched-UDP tests. Rebuild the library first
+after protocol changes. SCons also supports `--skip-verus` for intentional reuse;
+its default targets remain native. Explicit C# client/reference-tool targets
+are historical tools, not deployment dependencies; old C# server binaries need
+their historical ABI-compatible protocol build.
 
-RSL uses dedicated UDP server and client binaries. First generate identities
-and a three-replica service description:
+### Run a three-node RSL service
+
+Generate the service and private identities without external tools:
 
 ```bash
-dotnet bin/CreateIronServiceCerts.dll \
-  outputdir=certs name=MyCounter type=IronRSL \
+bin/tla-rs-config outputdir=certs name=MyCounter type=IronRSL \
   addr1=127.0.0.1 port1=4001 \
   addr2=127.0.0.1 port2=4002 \
   addr3=127.0.0.1 port3=4003
 ```
 
-Start one server per terminal, keeping `LD_LIBRARY_PATH` set in each:
+This writes the existing PascalCase/Base64 JSON format, RSA identities and
+PKCS#12 private keys. Private files use mode `0600`. The native loader checks
+certificate/private-key consistency and membership. Do not publish private files.
+
+Start one process per terminal, substituting `server2` and `server3` for the
+other two identities:
 
 ```bash
-dotnet bin/IronRSLServerUDP.dll \
-  certs/MyCounter.IronRSL.service.txt \
+bin/tla-rs-server certs/MyCounter.IronRSL.service.txt \
   certs/MyCounter.IronRSL.server1.private.txt
 ```
 
-```bash
-dotnet bin/IronRSLServerUDP.dll \
-  certs/MyCounter.IronRSL.service.txt \
-  certs/MyCounter.IronRSL.server2.private.txt
-```
+Then run the native counter workload:
 
 ```bash
-dotnet bin/IronRSLServerUDP.dll \
-  certs/MyCounter.IronRSL.service.txt \
-  certs/MyCounter.IronRSL.server3.private.txt
+bin/tla-rs-client service=certs/MyCounter.IronRSL.service.txt \
+  nthreads=32 warmup=5 duration=30
 ```
 
-Then run a workload from a fourth terminal:
+These commands use the default native Rust network stack: Lion's batched UDP
+transport and native wire format. RSL is inferred from the service identity
+on the server and is the native client's default protocol. Use explicit
+`transport=tcp` only when selecting TCP or TLS.
 
-```bash
-dotnet bin/IronRSLClientUDP.dll \
-  ip1=127.0.0.1 port1=4001 \
-  ip2=127.0.0.1 port2=4002 \
-  ip3=127.0.0.1 port3=4003 \
-  nthreads=4 duration=10
-```
+`[[READY]]` marks server readiness. SIGINT/SIGTERM stop the owning Lion loop
+and drop its sockets/tasks. No `LD_LIBRARY_PATH` setup is needed.
 
-Stop the servers with Ctrl-C when the experiment finishes. The older
-`IronRSLServer.dll` and `IronRSLClient.dll` TCP+SSL pair remains available for
-compatibility; use the UDP pair for the maintained default path.
+### Select another protocol
 
-### Run a protocol through the shared server
-
-The other nine protocol selectors share
-[`IronProtocolServer.dll`](../csharp/IronProtocolServer/Program.cs):
+The same executable accepts:
 
 ```text
-twophase  leaderelection  primarybackup  chainreplication  paxos
-verticalpaxos  raft  pbft  epaxos
+rsl twophase leaderelection primarybackup chainreplication paxos
+verticalpaxos raft pbft epaxos
 ```
 
-The server form is:
+For non-RSL protocols generate with `type=IronProtocol`, then pass the matching
+`protocol=` to server and client. Workload adapters cover RSL, Raft,
+Primary-Backup, PBFT, and EPaxos; the remaining protocols have server support,
+not a generic application client.
+
+The benchmark helpers generate fresh native identities and clean up only their own
+processes. PBFT uses four replicas; the other helpers use three. RSL defaults to
+plaintext TCP; generic protocols retain UDP. Workload defaults are two clients,
+five seconds of warmup, three 30-second trials, and both unpinned and
+one-physical-core-per-replica runs. `CONFIGS=unpin` selects only the unpinned
+configuration; `TRANSPORT=udp` explicitly selects datagrams:
 
 ```bash
-dotnet bin/IronProtocolServer.dll \
-  <service-description> <node-private-key> protocol=<selector>
+# <protocol> [duration_seconds] [trials] [threads]
+scripts/bench_generic.sh raft 10 3 32
+scripts/bench_generic.sh epaxos 10 3 32
+scripts/bench_generic.sh pbft 10 3 32
+scripts/bench_generic.sh primarybackup 10 3 32
+# Default Lion-style two-client RSL matrix:
+scripts/bench_rsl_runtime.sh
+# Change concurrency without editing/rebuilding protocol parameters:
+CLIENT_COUNTS='1 2 4 8 16 32' PROTOCOLS=rsl scripts/bench_vary_clients.sh
 ```
 
-Server support is not the same as workload-client support. The maintained
-[`IronGenericClient.dll`](../csharp/IronGenericClient/Program.cs) has adapters
-for `raft`, `pb`/`primarybackup`, `pbft`, and `epaxos` only. For those four, the
-repository helper starts the right number of servers, runs the client, prints
-its results, and cleans up the processes it started:
+Clients separate warmup from measurement and report actual completed operations,
+elapsed monotonic time, latency percentiles, timeouts, and malformed/rejected
+replies. Any executor may reply to RSL; a reply's sender is not a leader hint.
+A run fails if any worker completes no measured request, or if invalid replies occur.
+The matrix additionally fails on measured transport errors and records timeouts,
+rejections, stale replies, and unfinished requests. A send cancelled solely by the
+measurement deadline is unfinished work, not a transport error. The client emits
+flushed `[[MEASURE_START]]`/`[[MEASURE_END]]` markers; the driver samples server
+`/proc` CPU tick deltas over that interval, not lifetime `ps %CPU`. Its sampler
+interval is recorded separately from the client's authoritative monotonic elapsed
+time. RSS/thread peaks, actual affinity, binary hashes, live `[[CONFIG]]` parameters,
+and matched pair identities are retained in CSV/JSON evidence.
+
+### Compare against Lion's isolated reference
+
+RSL's `StaticParams` now matches Lion's pinned IronFleet workload: batch size 1,
+log length 1,000, baseline view timeout 1,000 ms, heartbeat 100 ms, and batch delay
+10 ms. A single pending request fills its batch immediately; this differs from the
+old 32-request/30 ms batching regime. TCP disables Nagle on accepted and outbound
+connections. The native deployment and default benchmark still require no C#.
 
 ```bash
-# scripts/bench_generic.sh <protocol> [duration_seconds] [trials] [threads]
-scripts/bench_generic.sh raft 8 1 4
-scripts/bench_generic.sh epaxos 8 1 4
-scripts/bench_generic.sh pbft 8 1 4
+# Explicit opt-in only; builds outside the repository in the user's cache.
+scripts/build_lion_reference.sh --install-prerequisites
+# Set this to the absolute REFERENCE_SERVER path printed by the builder:
+export REFERENCE_SERVER=/path/to/tla-rs-csharp-reference
+RUNTIMES='native csharp' scripts/bench_rsl_runtime.sh
 ```
 
-Generate the certificate files expected by the helper before running it. Raft
-and EPaxos use three nodes in `bench/certs`:
+The builder exports original source from Lion commit
+`aa5bebe74369003b16193d73d43727e95dcf4ea0`, uses .NET SDK 6.0.428/Dafny 3.4.0,
+and selects `lion=false safeguard=false`: the original C# IoScheduler, including
+both `TCP_NODELAY` fixes. Dafny is compiled with verification explicitly skipped;
+that build is not new proof evidence. Missing tools are acquired only with
+`--install-prerequisites`; existing paths can be supplied with `--dotnet`,
+`--dafny-path`, and `--scons`. The old managed stack is benchmark-only, not a
+recommended deployment.
+
+Both arms use the same native client, concurrency, warmup, timing, service keys,
+ports, and protocol parameters. The client selects `wire=native` or `wire=ironfleet`
+because the Rust/Verus and original Dafny/C# cores serialize messages differently.
+Only the reference launcher normalizes the service type to `IronRSLCounter`.
+Runtime order and configuration order alternate by trial. Replica pinning uses
+distinct physical cores within the allowed CPU set; the client remains unpinned
+in both configurations.
+
+Like Lion's original client, the RSL benchmark starts connections to every replica
+and leaves three seconds idle before sending requests. It then adds five seconds
+of active warmup; neither interval enters the measured throughput denominator.
+`SETTLE_SECONDS` and `REQUEST_TIMEOUT_MS` default to 3 and 1,000 for RSL
+(0 and 100 for generic workloads). The driver verifies the client's actual kernel
+TCP connection set at measurement start: with two clients and three replicas,
+each replica must have two client connections. The standalone client retains its
+lazy-connect/no-idle defaults; the benchmark selects `connect_all=true settle=3`
+and `timeout_ms=1000` explicitly.
+
+Lion rounds its timeout clock and durations to milliseconds. The native client
+pads send timers by two ticks so a sub-millisecond phase budget cannot expire
+early; it distinguishes a phase-limited cancellation from an operation timeout.
+Completion counts still require a matching reply before the monotonic deadline.
+
+These are local-loopback **whole-service** comparisons, not an I/O-only swap of an
+identical protocol core. Lion's published results used a remote client and different
+hardware. The native client also excludes warmup from the throughput denominator,
+rather than inheriting the original client's initial-sleep accounting. An unknown
+already-running `BASELINE_SERVICE` cannot establish matched parameters and is
+rejected. See the [runtime report](../reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md)
+for measured results and the precise comparison limits.
+
+### Measure throughput rather than two-client latency
+
+The default two-client matrix cannot establish maximum throughput. Hold the
+RSL/TCP parameters fixed and sweep one-outstanding-request-per-worker
+concurrency; each count gets a fresh cluster:
 
 ```bash
-dotnet bin/CreateIronServiceCerts.dll \
-  outputdir=bench/certs name=MyRaft type=IronProtocol \
-  addr1=127.0.0.1 port1=4001 \
-  addr2=127.0.0.1 port2=4002 \
-  addr3=127.0.0.1 port3=4003
+PROTOCOLS=rsl CLIENT_COUNTS='1 2 4 8' CONFIGS=unpin \
+  RUNTIMES='native csharp' REFERENCE_SERVER=/absolute/path/to/tla-rs-csharp-reference \
+  DURATION=30 TRIALS=3 WARMUP_SECONDS=5 SETTLE_SECONDS=3 \
+  REQUEST_TIMEOUT_MS=1000 OUTPUT_DIR=/fresh/throughput-output \
+  scripts/bench_vary_clients.sh
 ```
 
-PBFT uses four nodes in `bench/certs_4node`:
+The October 2026 [pre-fix throughput comparison](../reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md)
+repeated that peak region and surveyed up to 128 workers. Among tested counts,
+native batch-1 RSL reached a median 1,273 ops/s at two workers; original
+batch-1 C# reached 2,868 ops/s at four. A native-only source copy changed
+`StaticParams.max_batch_size` from 1 to 32 while leaving the other parameters
+unchanged; this verified **pre-fix** variant reached 3,891 ops/s at 32 workers,
+but one worker waited for the 10 ms partial-batch deadline and saw only
+95 ops/s. Those results remain historical, not estimates for the corrected
+native executable.
+
+The 2026-10-03 investigation traced most native per-turn CPU time to
+`self.field = self.field.clone()` for unchanged fields in generated mutable
+RSL actions. The transpiler now omits these identity assignments. After
+regeneration and whole-crate Verus verification, three 30-second trials of
+the production batch-1 server reached a median **4,482 ops/s at 64 workers**,
+versus **1,273 ops/s** at the old native peak. At the same four workers and
+batch size, the corrected native and original C# servers reached
+**4,274** and **2,854 ops/s** respectively, a **1.498×** ratio. The old
+batch-32 variant predates this fix and cannot be used as a current
+same-generator batch-size comparison. The 64-worker setting costs
+14.2 ms mean latency, versus 0.94 ms at four workers. These are observed
+best results among tested concurrencies, not universal throughput limits.
+
+For an isolated variant, place the variant's verified rlib and server beside
+**unchanged** `tla-rs-config` and `tla-rs-client` in a separate `BIN_DIR`.
+Set `RUNTIMES=native NATIVE_BATCH_SIZE=32` with the same concurrency-sweep
+helper; the driver verifies every server's emitted batch size. Its default
+`NATIVE_BATCH_SIZE=1` preserves the matched Lion methodology. Selecting the
+C# reference with any other native batch-size expectation is rejected.
+
+### TCP and TLS compatibility
+
+UDP is the default unencrypted datagram transport. Generate with `usessl=true`
+to select TLS over TCP; use `transport=tcp` on the client. The server defaults
+to TCP for TLS services and rejects an explicit UDP downgrade.
+`transport=tcp` with `usessl=false` retains the legacy unauthenticated plaintext
+protocol: public-key introduction followed by big-endian u64-length frames.
+TLS verifies possession of certificate keys, pins configured member keys and
+exact common names, and accepts transient client identities. The runtime uses
+OpenSSL over Lion TCP streams; Tokio I/O traits/channels do not introduce a
+Tokio runtime.
+
+Stream limits are 8 MiB per frame, 16 KiB per introduction key, 32 queued frames
+per connection, 256 incoming events, and 256 connections. Handshakes time out
+after 5 seconds and writes after 10 seconds. Replica sends queue without
+waiting for a failed peer; connection failures are reported and dropped
+according to the protocol's unreliable-network contract. Listener failures
+remain fatal. Rejected clients or disconnected replicas do not terminate a
+healthy server. There is no fallback from TLS to plaintext.
+
+Live stream workload/recovery evidence covers RSL. Generic benchmark defaults
+remain UDP. An exploratory two-client PBFT/TCP check committed 233 requests during
+warmup, then made no measured progress; its cause is not diagnosed. Explicit TCP
+selection is not evidence that every generic protocol has a working stream
+workload. The [runtime report](../reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md)
+retains that failed check rather than treating startup as correctness.
+
+### Exercise the runtime
 
 ```bash
-dotnet bin/CreateIronServiceCerts.dll \
-  outputdir=bench/certs_4node name=MyRaft type=IronProtocol \
-  addr1=127.0.0.1 port1=4001 \
-  addr2=127.0.0.1 port2=4002 \
-  addr3=127.0.0.1 port3=4003 \
-  addr4=127.0.0.1 port4=4004
+scripts/integration_test_cluster.sh
+scripts/integration_test_cluster.sh rsl raft
+TRANSPORT=tcp USE_SSL=true scripts/integration_test_cluster.sh rsl
 ```
 
-Primary Backup uses the same `bench/certs` filename convention but needs a
-two-node service. Regenerate that directory with only `addr1`/`port1` and
-`addr2`/`port2`, then run:
-
-```bash
-scripts/bench_generic.sh pb 8 1 4
-```
-
-Because different protocols reuse `MyRaft.IronProtocol.service.txt`, do not
-assume certificates left by a previous node-count experiment are suitable.
-The client prints aggregate operations per second and average latency. These
-numbers depend on hardware, system load, build mode, client count, and run
-duration; they are performance observations, not proof results.
-
-### Use the cluster smoke test for its stated purpose
-
-The integration harness accepts all ten selectors:
-
-```bash
-./scripts/integration_test_cluster.sh
-./scripts/integration_test_cluster.sh rsl raft
-./scripts/integration_test_cluster.sh twophase
-```
-
-[`integration_test_cluster.sh`](../scripts/integration_test_cluster.sh)
-generates temporary certificates, starts replicas, waits for readiness, and
-checks that they stay alive. It runs an end-to-end request/reply client for RSL
-and, when its dedicated client is available, a Raft workload. For the other
-protocols—including TwoPhase—the pass condition is startup and short-term
-stability, not application-level semantic coverage.
+The harness exercises request/reply workloads for the five supported clients,
+RSL quorum progress after killing a replica, progress after its restart, and
+RSL plaintext/TLS transport. Other selectors are explicitly startup-only checks,
+not evidence of application-level correctness. A restarted replica being alive
+does not establish durable recovery: the native runtime adds no persistent log.
 
 ### Understand the runtime boundary
-
-The integrated path crosses several boundaries:
 
 ```text
 generated action and Verus contract
         ↓
-hand-written Rust scheduler/host
+bounded native protocol step, owned input/output buffers
         ↓
-Rust native I/O and FFI declarations
-        ↓
-C# UDP runtime, files, sockets, clocks, and processes
+one Lion executor thread: replica + readiness + timer scheduling
+        ├── UDP: recvmmsg/sendmmsg batches, up to 64 datagrams
+        └── TCP/TLS: bounded per-connection tasks and frame queues
 ```
 
-An `ensures` clause on a generated action establishes that action's relation
-to its logical predicate when its preconditions hold. It does not by itself
-prove that the host calls every action under exactly the modeled conditions,
-that marshalling is injective, or that the operating system delivers packets.
-Report those runtime components as trusted or separately tested unless a
-specific refinement theorem covers them.
+RSL turns execute a complete ten-action scheduling round; observable progress
+can schedule another turn immediately. Heartbeat, election, and batching
+deadlines determine idle wakeups. Generic hosts receive bounded action turns
+and a 1 ms maintenance tick for their existing time guards. UDP payload
+ownership moves between socket buffers and the protocol buffer pool; partial
+sends retain their unsent suffix. Empty datagrams are not timeout indicators.
+
+PBFT's host queues real client requests with their endpoints, retains a bounded
+last-reply cache, and retransmits its actual Prepare vote even after entering
+Commit. It does not fabricate application work during idle ticks. EPaxos recovery
+waits for 100 ms without protocol progress and does not erase an already-ready
+quorum. These host scheduling policies are runtime integration, not changes to
+the generated consensus actions. EPaxos remains a single-instance host: clients
+can time out and retry requests dropped while another command is in flight.
+
+An action's `ensures` clause establishes its logical relation under its
+preconditions. It does not establish scheduler fairness, marshalling
+injectivity, TLS correctness, or packet delivery by the OS. Report the native
+adapter, Lion's OS-facing glue, and configuration/security code as trusted or
+runtime-tested unless a separate theorem covers them.
 
 ## Chapter 11 — Add a Small Protocol End to End
 
@@ -2553,7 +2664,7 @@ it; only widen to the full crate or cluster after the local stage passes.
 | Generated Rust fails Verus | Focused `--verify-only-module` | Generated contract/proof, logical lemma, bounds, or generator bug |
 | Finite model finds a trace | Save JSON report and replay the shortest trace | Spec/invariant or intended model bounds |
 | Finite model exhausts immediately | Inspect constants, enum subsets, initial states, and enabled actions | Over-constrained model or transition extraction |
-| C# cannot load native code | Check `liblib.so`, `LD_LIBRARY_PATH`, architecture, and current build | Build/loader/ABI boundary |
+| Native runtime cannot link/start | Check matching Verus/Cargo Rust toolchains, OpenSSL, architecture, and rebuilt `bin/libtla_protocol.rlib` | Build/linker/runtime boundary |
 | Cluster starts but makes no progress | Check every replica log, ports, node count, roles, and quorum | Certificates, scheduler, message routing, or protocol logic |
 
 ### Separate annotation syntax from synthesis
@@ -2653,24 +2764,25 @@ one cannot be erased by reporting that the other verifies.
 
 Use the exact service description and private key for each node count. Confirm
 that no two live nodes bind the same port, that the selector matches the Rust
-dispatch, and that enough replicas are ready for a quorum. If native loading
-fails:
+dispatch, and that enough replicas are ready for a quorum. For build or loader
+failures, check the toolchain and system library dependencies:
 
 ```bash
-ls -l liblib.so
-export LD_LIBRARY_PATH="$PWD"
-dotnet --info
+rustc --version
+"$VERUS_PATH" --version
+ldd bin/tla-rs-server
+scripts/build_lion_runtime.sh
 ```
 
-Rebuild rather than copying an arbitrary shared object into place. Prefer the
+Rebuild rather than copying an arbitrary executable or library into place. Prefer the
 repository helper scripts because they track the PIDs they start. When running
 servers manually, stop those known terminals or PIDs; avoid broad `pkill`
 patterns that can terminate unrelated experiments.
 
 Zero throughput is a symptom, not a diagnosis. Read the server logs before
 changing proof code: the common causes are a missing replica, mismatched
-certificate set, wrong number of client endpoints, blocked port, stale native
-library, or a scheduler action whose guard never becomes true.
+certificate set, wrong number of client endpoints, blocked port, stale executable,
+or a scheduler action whose guard never becomes true.
 
 ### Choose a daily loop
 
@@ -2679,7 +2791,7 @@ library, or a scheduler action whose guard never becomes true.
 | Spec action | Annotation check → bounded BFS/DFS model → scratch generation → focused Verus | Invariants/refinement, parity test, whole crate |
 | Annotation/config | `--dump-config` → scratch generation → `cmp` | Regeneration suite and focused/whole verification |
 | Transpiler implementation | Small regression test → affected protocol regeneration | Full transpiler tests, parity test, whole crate |
-| Runtime message/host | Unit/round-trip test → one protocol smoke test | Whole crate, C# build, protocol-specific integration test |
+| Runtime message/host | Unit/round-trip test → one protocol smoke test | Whole crate, Rust/C# host build, protocol-specific integration test |
 | Documentation only | Validate commands and relative links | Run every inexpensive command represented as current behavior |
 
 A productive spec-edit loop is:
@@ -2712,9 +2824,9 @@ or a proof of the entire deployment stack. Plan around these boundaries:
 | DPOR model checking is very incomplete, under development, and not usable | Do not use DPOR for protocol validation, bug-finding conclusions, or release evidence |
 | TLA+ import/export supports a documented subset | Lint and round-trip representative modules; inspect semantic differences described in Chapters 8–9 |
 | Some mature protocol/refinement paths still have explicit assumptions or special generation configuration | Scope claims to the modules actually checked and audit each boundary |
-| Hosts, FFI, C# networking, clocks, files, and OS behavior are not automatically covered by action contracts | Test them and describe them as trusted unless a specific proof says otherwise |
-| The generic workload client supports four of the nine shared-server protocols | Add a protocol-specific client before claiming functional end-to-end coverage for another selector |
-| The maintained integrated path is Linux x86-64 with `liblib.so` and the pinned CI toolchain | Treat other platforms/tool versions as new validation work |
+| Native host scheduling, marshalling, networking, clocks, files, and OS behavior are not automatically covered by action contracts | Test them and describe them as trusted unless a specific refinement theorem covers them |
+| The native workload client supports five of the ten server protocols | Add a protocol-specific client before claiming functional end-to-end coverage for another selector |
+| The maintained integrated path is Linux x86-64 with direct Rust linkage and the pinned CI toolchain | Treat other platforms/tool versions as new validation work |
 
 ### Report a reproducible failure
 
@@ -2722,7 +2834,7 @@ A useful issue or review note includes:
 
 - the commit and dirty diff relevant to the failure;
 - `verus --version`, `rustc --version`, `cargo --version`, and, for integrated
-  failures, `dotnet --info` and the platform;
+  failures, OpenSSL version and the platform;
 - the smallest spec (with its inline directives; plus the `.automan` if using the sidecar form) and TOML that reproduce generation;
 - the exact command and complete error output;
 - a model configuration and shortest BFS/DFS trace for a state-space failure;
@@ -2744,8 +2856,8 @@ gates.
 ## Chapter 13 — Contributor Orientation and Non-Negotiable Policies
 
 tla-rs combines a specification language, a code generator, deductive proofs, a
-bounded model checker, native Rust, and a C# runtime. A change that looks local can
-therefore alter several different claims: what the protocol means, what executable
+bounded model checker, native Rust, and C# compatibility runtimes. A change that looks local
+can therefore alter several different claims: what the protocol means, what executable
 code is produced, what Verus proves, what the model checker explored, or what the
 runtime actually does. The first job of a contributor is to know which of those
 surfaces is being changed.
@@ -2956,28 +3068,24 @@ The non-RSL protocols implement the shared traits in
 - `StepResult` and `GenericOutbound` describe sends, broadcasts, sequences, or no
   output.
 
-`src/services/<P>/` contains service entry points. `src/lib.rs` exposes the generic
-`protocol_main_wrapper`, which dispatches a protocol name to one of the ten service
-modules currently wired into the library. RSL also retains a dedicated wrapper and
-dedicated C# server/client binaries.
+`src/services/<P>/` retains protocol service definitions. `src/lib.rs` exports
+`NativeReplica` and `WirePacket`; `src/native_runtime.rs` dispatches all ten
+protocols through bounded steps with owned input/output buffers.
 
-### Rust/C# boundary
+### Native runtime boundary
 
-The C# runtime owns UDP receive/send operations, time, endpoint discovery, service
-configuration, and process lifecycle. It passes callbacks into Rust through exported C
-ABI functions. Rust owns buffers allocated through `allocate_buffer` and reclaims them
-through the paired ownership protocol. The wrapper functions, raw pointers, callback
-contracts, deserialization behavior, and C# implementation are outside ordinary Verus
-body verification and must be treated as a runtime trust boundary.
+`runtime/lion-server/` owns endpoint discovery, service/private identity files,
+process lifecycle, and the Lion event loop. `runtime/lion-io/` connects Linux
+batch syscalls to Lion's readiness machinery. `NativeReplica` executes bounded
+protocol turns; it never calls sockets or waits for network input. `NetClient`
+uses owned packet buffers and a supplied monotonic clock rather than foreign
+callbacks. No raw allocation/free or service-entry C ABI remains in the crate.
 
-The crate root currently uses `#![verus::trusted]`. Verus's line-count/audit tooling
-uses that attribute to classify the affected source for manual TCB review; do not infer
-from the marker alone that every declaration in the crate was unchecked. Separately,
-the exported FFI functions are marked external and their bodies and environment are a
-real proof boundary. Both facts belong in an end-to-end trust statement. A green Verus
-run still provides valuable function- and proof-level checking, but it must not be
-described as verification of the C# runtime, raw-pointer behavior, networking, or the
-entire executable environment.
+The crate root still uses `#![verus::trusted]` as a line-count/audit
+classification; that marker alone does not imply every declaration is unchecked.
+Native host scheduling, OS syscalls, deserialization, and TLS/configuration are
+real trust boundaries. A green Verus run provides function- and proof-level
+checking, not a theorem about the entire executable environment.
 
 ### Trust inventory
 
@@ -3006,8 +3114,8 @@ When a change crosses a boundary, update all adjacent contracts:
   tests;
 - a new scheduler action requires `LNext` coverage, action classification, host
   dispatch, guard/witness handling, and timeout/message tests;
-- a changed FFI callback requires matching Rust and C# signatures plus ownership and
-  failure-path tests;
+- a changed FFI callback requires matching Rust and C# caller signatures where used,
+  plus ownership and failure-path tests;
 - a removed trusted body requires a verified body and a regression test that fails if
   the trust marker returns.
 
@@ -3081,13 +3189,14 @@ Verus utilities. These directories are high-leverage: changing a contract here c
 affect many protocols and proof obligations. Prefer monomorphic, well-specified bridge
 lemmas over broad axioms when Verus cannot reason directly about a standard collection.
 
-### C# runtime
+### Service runtimes
 
-`csharp/Common/` and the service projects implement networking and interop. The generic
-server dispatches protocol names through `protocol_main_wrapper`. A generic client is
-currently implemented for Raft, Primary-Backup, PBFT, and EPaxos; other server entries
-exist but do not automatically imply a matching benchmark client. RSL has separate UDP
-server and client projects. Certificate generation is shared.
+`runtime/lion-server/` supplies `tla-rs-server`, `tla-rs-config`, and
+`tla-rs-client`, sharing configuration and Lion TCP/TLS modules. Its UDP event
+loop uses `runtime/lion-io/` for real batched syscalls. All ten protocol selectors
+use the same native runtime. The client covers RSL, Raft, Primary-Backup, PBFT,
+and EPaxos. `csharp/` remains historical/reference source, not a native runtime
+dependency. Chapter 10 contains current launch and transport recipes.
 
 ### Transpiler crate
 
@@ -3137,31 +3246,31 @@ release was built. At the time of this draft, CI pins Verus
 `0.2026.08.02.b677dd5` and Rust `1.97.1`. Treat `.github/workflows/ci.yml` as
 authoritative when these values change.
 
-The other build dependencies are Python 3 with SCons and the .NET 6 SDK. The current
+The other native build dependencies are OpenSSL, pkg-config, and optionally Python 3 with SCons. The current
 Verus release launcher requires a glibc 2.39 environment, so CI uses Ubuntu 24.04 for
 verification. `scripts/verify_local.sh` documents a lower-glibc path that invokes
 `rust_verify` directly with a compatible Rust toolchain and Z3 binary.
 
 ### Build graph and SCons options
 
-`SConstruct` has two independent groups of targets: C# projects and the Verus/Rust
-`liblib.so`. The `--verus-path` value is the path to the Verus executable, not its
-containing directory.
+`SConstruct` defaults to the verified Rust protocol rlib and all three native
+service tools. Explicit C# reference-tool targets are separate and never default
+dependencies. `--verus-path` names the Verus executable, not its directory.
 
 ```bash
-# Verify/compile Rust and build C# projects
+# Verify/compile the protocol library and build the native tools
 scons --verus-path=/path/to/verus/verus
 
-# Verify/compile only the Rust/Verus crate
-scons --verus-path=/path/to/verus/verus --skip-dotnet
+# Verify/compile only the protocol library
+scons --verus-path=/path/to/verus/verus bin/libtla_protocol.rlib
 
-# Build only C# projects
-scons --skip-verus
+# Reuse an existing protocol library; build native tools only
+VERUS_PATH=/path/to/verus/verus scons --skip-verus
 
 # Compile Rust without verification (runtime iteration only)
 scons --verus-path=/path/to/verus/verus --skip-dotnet --no-verify
 
-# Debug rather than optimized output
+# Debug protocol code rather than optimized protocol code
 scons --verus-path=/path/to/verus/verus --debug-build
 
 # Pass diagnostics through to Verus
@@ -3975,38 +4084,37 @@ unless that inference is a documented and tested part of the host contract.
 
 ### Service and generic dispatch
 
-The service entry parses the endpoint/configuration data, initializes the host, and
-runs the generic network loop. `protocol_main_wrapper` currently recognizes:
+The native server parses configuration, initializes `NativeReplica`, and drives bounded
+steps through Lion. `NativeReplica::new` currently recognizes:
 
 ```text
 rsl, twophase, leaderelection, primarybackup, chainreplication,
 paxos, verticalpaxos, raft, pbft, epaxos
 ```
 
-Add a new protocol consistently to Rust module declarations, the wrapper match,
-supported-name diagnostics, the C# server usage/validation text, and SCons project
-targets where applicable. Add a dispatch test so those lists cannot drift silently.
+Add a protocol consistently to Rust module declarations, `NativeReplica`, native
+configuration selectors, and the workload client when its wire protocol supports
+one. Exercise real startup and request/reply behavior rather than testing copies
+of selector lists. The native client currently supports RSL, Raft, Primary-Backup,
+PBFT, and EPaxos; server dispatch alone does not create an application workflow.
 
-The generic benchmark client currently supports only Raft, Primary-Backup, PBFT, and
-EPaxos. A server dispatch entry does not mean an end-user client workflow exists.
+### Native ownership and failure paths
 
-### FFI ownership and failure paths
+The runtime passes an owned `WirePacket` into a bounded protocol step, drains
+owned outbound packets, and recycles consumed payload buffers. No C# delegate
+layout or foreign allocation/free pair participates. Test:
 
-The C# server supplies callbacks for endpoint discovery, time, receive, and send. Rust
-exports allocation/free helpers and the protocol wrapper. Any signature change must be
-made atomically on both sides. Test at least:
+- empty and oversized datagrams without conflating empty input with timeout;
+- malformed endpoints and deserialization failures;
+- cancellation and re-arming of readiness;
+- partial batch sends without replaying their completed prefix;
+- monotonic timer delivery under continuous receive traffic;
+- replica failure, restart, and healthy quorum progress;
+- TLS key/name pinning, plaintext mismatch, and rejected-peer isolation;
+- bounded queues and shutdown while I/O is pending.
 
-- zero-length and oversized buffers;
-- invalid UTF-8 protocol names;
-- malformed endpoint bytes;
-- receive timeout and receive failure;
-- deserialization failure;
-- send failure;
-- allocation ownership on early returns;
-- unknown protocol names and return codes.
-
-The FFI functions are external/trusted from Verus's perspective. Rust type checking does
-not protect a mismatched C# delegate layout.
+Rust ownership removes cross-language buffer contracts, not the trust boundary
+around unsafe batch syscalls or the correctness obligations of the host scheduler.
 
 ### I/O logs and packet identity
 
@@ -4693,8 +4801,9 @@ When measuring a service, separate at least:
 
 - protocol transition time;
 - serialization/deserialization;
-- FFI crossings and allocation;
-- C# receive/send loop;
+- owned-buffer/channel scheduling and allocation in the native host;
+- receive/send loops and framing; FFI/managed runtime costs only in explicitly
+  selected historical comparisons;
 - batching and client concurrency;
 - cryptography or certificate setup when enabled.
 
@@ -6248,8 +6357,8 @@ All rows inherit boundaries outside the narrow table:
   trusted/manual-audit classification used by Verus audit tooling. It is not the same
   as counting proof assumptions, and the attribute alone does not say which bodies were
   or were not checked.
-- exported Rust ABI functions, raw-pointer ownership, callbacks, and the C# runtime are
-  external to ordinary Verus body proofs;
+- the bounded native scheduler, owned-packet integration, unsafe syscall glue, and
+  identity/TLS implementation are external to ordinary Verus body proofs;
 - UDP/TCP delivery, clocks, scheduling, filesystem/configuration parsing, process
   behavior, and cryptographic/platform libraries need explicit environment assumptions
   and runtime tests;
@@ -6509,7 +6618,7 @@ proof assumptions just listed.
 | `assume(P)` | Adds proposition `P` to the proof context without proving it at that site. |
 | `external_body` | Trusts a function's specified contract without checking its body in the ordinary way. |
 | `#[verus::trusted]` | Marks source for Verus's trusted/manual-audit classification; inventory separately from direct assumptions. |
-| FFI | Foreign-function interface between Rust and the C# runtime. |
+| FFI | Foreign-function interface connecting Rust protocol code to its native Rust or C# service host. |
 | Generated artifact | Derived checked-in code that must be reproduced from spec, annotation, config, and transpiler sources. |
 
 ### Error index

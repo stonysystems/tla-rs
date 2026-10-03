@@ -2,9 +2,6 @@
 use crate::common::collections::comparable::*;
 use crate::common::framework::{args_t::clone_vec_u8, environment_s::*};
 use crate::implementation::common::marshalling::*;
-use std::collections::HashMap;
-use std::net::UdpSocket;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use vstd::prelude::*;
 use vstd::slice::*;
 use vstd::std_specs::cmp::PartialEqSpecImpl;
@@ -159,86 +156,19 @@ verus! {
 
     pub closed spec fn from_trusted_code() -> bool { true }
 
+    /// Owned wire data exchanged directly with the native runtime.
+    pub struct WirePacket {
+        pub peer: Vec<u8>,
+        pub bytes: Vec<u8>,
+    }
+
     #[verifier(external_body)]
-    pub struct NetClientCPointers {
-        get_time_func: extern "C" fn() -> u64,
-        receive_func: extern "C" fn(i32, *mut bool, *mut bool, *mut *mut std::vec::Vec<u8>, *mut *mut std::vec::Vec<u8>),
-        send_func: extern "C" fn(u64, *const u8, u64, *const u8) -> bool
-    }
-
-    #[verifier::external_body]
-    pub struct DuctTapeProfiler {
-        last_event: SystemTime,
-        last_report: SystemTime,
-        event_counter: HashMap<std::string::String, u64>,
-    }
-
-    impl DuctTapeProfiler {
-        #[verifier(external)]
-        fn new() -> Self {
-            println!("Report-ready");
-            DuctTapeProfiler {
-                last_event: SystemTime::now(),
-                last_report: SystemTime::now(),
-                event_counter: HashMap::new(),
-            }
-        }
-
-        #[verifier(external)]
-        fn duration_as_ns(duration: &Duration) -> u64
-        {
-            duration.as_secs() * 1_000_000_000 + duration.subsec_nanos() as u64
-        }
-
-        #[verifier(external)]
-        fn mark_duration(&mut self, label: &str) {
-            let now = SystemTime::now();
-            let duration_ns = Self::duration_as_ns(&now.duration_since(self.last_event).expect("arrow of time"));
-            self.increment_event(label, duration_ns);
-            self.last_event = now;
-            self.maybe_report(&now);
-        }
-
-        #[verifier(external)]
-        fn record_event(&mut self, label: &str) {
-            self.increment_event(label, 1);
-        }
-
-        #[verifier(external)]
-        fn increment_event(&mut self, label: &str, incr: u64) {
-            if let Some(entry) = self.event_counter.get_mut(label) {
-                *entry += incr;
-            } else {
-                self.event_counter.insert(label.to_string(), incr);
-            }
-        }
-
-        #[verifier(external)]
-        fn maybe_report(&mut self, now: &SystemTime)
-        {
-            let report_period = 1 * 1_000_000_000;
-            let report_duration_ns = Self::duration_as_ns(&now.duration_since(self.last_report).expect("arrow of time"));
-            if report_duration_ns > report_period {
-                self.increment_event("report-duration-ns", report_duration_ns);
-                self.report();
-                self.last_report = now.clone();
-                self.event_counter = HashMap::new();
-            }
-        }
-
-        #[verifier(external)]
-        fn report(&self)
-        {
-            for (key, value) in &self.event_counter {
-                if key.ends_with("-ns") {
-                    let ms = *value as f64 / 1e6;
-                    println!("{key}: {ms} ms");
-                } else {
-                    println!("{key}: {value} count");
-                }
-            }
-            println!("");
-        }
+    pub struct NativeIo {
+        pub(crate) incoming: Option<WirePacket>,
+        pub(crate) outbound: Vec<WirePacket>,
+        pub(crate) buffers: Vec<Vec<u8>>,
+        pub(crate) endpoints: Vec<Vec<u8>>,
+        pub(crate) clock_ms: u64,
     }
 
     pub open spec fn MaxPacketSize() -> int { 0xFFFF_FFFF_FFFF_FFFF }
@@ -260,8 +190,7 @@ verus! {
         pub state: Ghost<State>,
         pub history: Ghost<History>,
         pub end_point: EndPoint,
-        pub c_pointers: NetClientCPointers,
-        pub profiler: DuctTapeProfiler,
+        pub(crate) native: NativeIo,
     }
 
     impl NetClient {
@@ -270,12 +199,7 @@ verus! {
         //////////////////////////////////////////////////////////////////////////////
 
         #[verifier(external)]
-        pub fn new(
-            end_point: EndPoint,
-            get_time_func: extern "C" fn() -> u64,
-            receive_func: extern "C" fn(i32, *mut bool, *mut bool, *mut *mut std::vec::Vec<u8>, *mut *mut std::vec::Vec<u8>),
-            send_func: extern "C" fn(u64, *const u8, u64, *const u8) -> bool
-        ) -> (net_client: Self)
+        pub fn new(end_point: EndPoint) -> (net_client: Self)
             requires from_trusted_code(),
             ensures
                 net_client.state() is Receiving,
@@ -286,8 +210,13 @@ verus! {
                 state: Ghost(State::Receiving),
                 history: Ghost(seq![]),
                 end_point,
-                c_pointers: NetClientCPointers{get_time_func: get_time_func, receive_func: receive_func, send_func: send_func},
-                profiler: DuctTapeProfiler::new(),
+                native: NativeIo {
+                    incoming: None,
+                    outbound: Vec::with_capacity(64),
+                    buffers: Vec::with_capacity(64),
+                    endpoints: Vec::with_capacity(64),
+                    clock_ms: 0,
+                },
             }
         }
 
@@ -349,7 +278,7 @@ verus! {
             requires
                 from_trusted_code()
         {
-            (self.c_pointers.get_time_func)()
+            self.native.clock_ms
         }
 
         #[verifier(external_body)]
@@ -368,40 +297,17 @@ verus! {
         }
 
         #[verifier(external)]
-        pub unsafe fn receive_internal(&mut self, time_limit_s: i32) -> (result: NetcReceiveResult)
+        pub fn receive_internal(&mut self, time_limit_ms: i32) -> (result: NetcReceiveResult)
         {
-            let mut ok: bool = true;
-            let mut timed_out: bool = true;
-            let mut remote = std::mem::MaybeUninit::<*mut std::vec::Vec<u8>>::uninit();
-            let mut buffer = std::mem::MaybeUninit::<*mut std::vec::Vec<u8>>::uninit();
-
-            // self.profiler.mark_duration("processing-ns");
-            (self.c_pointers.receive_func)(time_limit_s, &mut ok, &mut timed_out, remote.as_mut_ptr(), buffer.as_mut_ptr());
-            // self.profiler.mark_duration("awaiting-receive-ns");
-
-            if ok {
-                if timed_out {
-                    self.profiler.record_event("receive-timedout");
-                    NetcReceiveResult::TimedOut{}
-                }
-                else {
-                    self.profiler.record_event("receive-ok");
-                    let remote_ptr: *mut std::vec::Vec<u8> = remote.assume_init();
-                    let buffer_ptr: *mut std::vec::Vec<u8> = buffer.assume_init();
-                    let remote_box: Box<std::vec::Vec<u8>> = Box::<std::vec::Vec<u8>>::from_raw(remote_ptr);
-                    let buffer_box: Box<std::vec::Vec<u8>> = Box::<std::vec::Vec<u8>>::from_raw(buffer_ptr);
-                    let remote_vec: std::vec::Vec<u8> = *remote_box;
-                    let buffer_vec: std::vec::Vec<u8> = *buffer_box;
-                    let mut remote_verus_vec: Vec<u8> = Vec::new();
-                    remote_verus_vec = remote_vec;
-                    let mut buffer_verus_vec: Vec<u8> = Vec::new();
-                    buffer_verus_vec = buffer_vec;
-                    NetcReceiveResult::Received{sender: EndPoint{id: remote_verus_vec}, message: buffer_verus_vec}
-                }
+            if time_limit_ms < 0 {
+                return NetcReceiveResult::Error;
             }
-            else {
-                self.profiler.record_event("receive-error");
-                NetcReceiveResult::Error{}
+            match self.native.incoming.take() {
+                Some(packet) => NetcReceiveResult::Received {
+                    sender: EndPoint { id: packet.peer },
+                    message: packet.bytes,
+                },
+                None => NetcReceiveResult::TimedOut,
             }
         }
 
@@ -432,7 +338,7 @@ verus! {
                 }
             }
         {
-            let result: NetcReceiveResult = unsafe { self.receive_internal(time_limit_s) };
+            let result: NetcReceiveResult = self.receive_internal(time_limit_s);
             match result {
                 NetcReceiveResult::Received{ref sender, ref message} => {
                     self.history = Ghost(self.history@ + seq![LIoOp::Receive{ r: LPacket::<AbstractEndPoint, Seq<u8>> { dst: self.my_end_point(), src: sender@, msg: message@ } } ]);
@@ -448,28 +354,38 @@ verus! {
         }
 
         #[verifier(external)]
-        pub unsafe fn send_internal(&mut self, remote: &EndPoint, message: &Vec<u8>) -> (result: Result<(), IronfleetIOError>)
-        {
-            let remote_raw: *const u8 = remote.id.as_ptr();
-            let message_raw: *const u8 = message.as_ptr();
-            let b: bool = (self.c_pointers.send_func)(remote.id.len() as u64, remote_raw, message.len() as u64, message_raw);
-            if b {
-                Ok(())
-            }
-            else {
-                Err(IronfleetIOError{message: "Failed to send".to_string()})
+        pub fn take_buffer(&mut self) -> Vec<u8> {
+            self.native.buffers.pop().unwrap_or_else(|| Vec::with_capacity(2048))
+        }
+
+        #[verifier(external)]
+        pub fn recycle_buffer(&mut self, mut buffer: Vec<u8>) {
+            // Bound retained memory even after unusually large stream messages.
+            if self.native.buffers.len() < 256 && buffer.capacity() <= 65536 {
+                buffer.clear();
+                self.native.buffers.push(buffer);
             }
         }
 
         #[verifier(external_body)]
-        pub fn send_internal_wrapper(&mut self, remote: &EndPoint, message: &Vec<u8>) -> (result: Result<(), IronfleetIOError>)
-        ensures
-            *self == *old(self),
+        pub fn send_internal(&mut self, remote: &EndPoint, message: Vec<u8>) -> (result: Result<(), IronfleetIOError>)
+            ensures
+                self.my_end_point() == old(self).my_end_point(),
+                self.state() == old(self).state(),
+                self.history() == old(self).history(),
         {
-            unsafe { self.send_internal(remote, message) }
+            if self.native.outbound.len() >= 4096 {
+                self.recycle_buffer(message);
+                return Err(IronfleetIOError { message: "native outbound buffer limit reached".to_string() });
+            }
+            let mut peer = self.native.endpoints.pop().unwrap_or_default();
+            peer.clear();
+            peer.extend_from_slice(&remote.id);
+            self.native.outbound.push(WirePacket { peer, bytes: message });
+            Ok(())
         }
 
-        pub fn send(&mut self, recipient: &EndPoint, message: &Vec<u8>) -> (result: Result<(), IronfleetIOError> )
+        pub fn send(&mut self, recipient: &EndPoint, message: Vec<u8>) -> (result: Result<(), IronfleetIOError> )
             requires
                 !(old(self).state() is Error)
             ensures
@@ -478,11 +394,12 @@ verus! {
                 result is Ok ==> self.state() is Sending,
                 result is Ok ==> self.history() == old(self).history() + seq![LIoOp::Send{s: LPacket{dst: recipient@, src: self.my_end_point(), msg: message@}}],
         {
-            let result: Result<(), IronfleetIOError> = self.send_internal_wrapper(recipient, message);
+            let ghost bytes = message@;
+            let result: Result<(), IronfleetIOError> = self.send_internal(recipient, message);
             match result {
                 Ok(_) => {
                     self.state = Ghost(State::Sending{});
-                    self.history = Ghost(self.history@ + seq![LIoOp::Send{s: LPacket{dst: recipient@, src: self.my_end_point(), msg: message@}}]);
+                    self.history = Ghost(self.history@ + seq![LIoOp::Send{s: LPacket{dst: recipient@, src: self.my_end_point(), msg: bytes}}]);
                 }
                 Err(_) => {
                     self.state = Ghost(State::Error{});

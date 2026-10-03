@@ -1,0 +1,359 @@
+{
+  "client_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63
+  ],
+  "client_binary": {
+    "path": "/var/tmp/tla-rs-lion/bin/tla-rs-client",
+    "sha256": "b0d31cb18ef1b3da75540ff623d0c535a41d7a9942658a6467554c4cb2df8b1a"
+  },
+  "client_command": [
+    "/var/tmp/tla-rs-lion/bin/tla-rs-client",
+    "protocol=rsl",
+    "transport=tcp",
+    "service=/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.service.txt",
+    "nthreads=2",
+    "duration=30",
+    "warmup=5",
+    "wire=native"
+  ],
+  "configuration": "1core",
+  "measurement": {
+    "boundary_samples": [
+      {
+        "monotonic_seconds": 89815.051102506,
+        "servers": [
+          {
+            "affinity": [
+              0
+            ],
+            "cpu_ticks": 236,
+            "pid": 2114063,
+            "rss_bytes": 10252288,
+            "start_ticks": 8980994,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              1
+            ],
+            "cpu_ticks": 310,
+            "pid": 2114064,
+            "rss_bytes": 9711616,
+            "start_ticks": 8980994,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              2
+            ],
+            "cpu_ticks": 238,
+            "pid": 2114065,
+            "rss_bytes": 9625600,
+            "start_ticks": 8980994,
+            "threads": 1
+          }
+        ]
+      },
+      {
+        "monotonic_seconds": 89845.054224483,
+        "servers": [
+          {
+            "affinity": [
+              0
+            ],
+            "cpu_ticks": 2593,
+            "pid": 2114063,
+            "rss_bytes": 18640896,
+            "start_ticks": 8980994,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              1
+            ],
+            "cpu_ticks": 3301,
+            "pid": 2114064,
+            "rss_bytes": 16003072,
+            "start_ticks": 8980994,
+            "threads": 1
+          },
+          {
+            "affinity": [
+              2
+            ],
+            "cpu_ticks": 2576,
+            "pid": 2114065,
+            "rss_bytes": 18014208,
+            "start_ticks": 8980994,
+            "threads": 1
+          }
+        ]
+      }
+    ],
+    "client_actual_elapsed_seconds": 30.00094167,
+    "client_process": {
+      "affinity": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-client protocol=rsl transport=tcp service=/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.service.txt nthreads=2 duration=30 warmup=5 wire=native ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-client",
+      "pid": 2114066
+    },
+    "cpu_sample_seconds": 30.003121977002593,
+    "method": "Linux /proc/PID/stat user+system tick deltas at client marker arrival",
+    "per_server_cpu": [
+      {
+        "cpu_percent": 78.55849140654901,
+        "cpu_seconds": 23.57,
+        "pid": 2114063,
+        "rss_peak_bytes": 18640896,
+        "threads_peak": 1
+      },
+      {
+        "cpu_percent": 99.68962570937127,
+        "cpu_seconds": 29.91,
+        "pid": 2114064,
+        "rss_peak_bytes": 16003072,
+        "threads_peak": 1
+      },
+      {
+        "cpu_percent": 77.92522397476097,
+        "cpu_seconds": 23.38,
+        "pid": 2114065,
+        "rss_peak_bytes": 18014208,
+        "threads_peak": 1
+      }
+    ],
+    "scope": "server processes only; excludes client and launcher startup",
+    "server_cpu_percent": 256.1733410906813,
+    "server_cpu_seconds": 76.86,
+    "server_rss_peak_bytes": 52658176,
+    "server_threads_peak": 3,
+    "ticks_per_second": 100,
+    "warmup_marker_interval_seconds": 5.000121061995742
+  },
+  "metrics": {
+    "active_workers": 2,
+    "attempts": 38843,
+    "avg_latency_ms": 1.54452332674236,
+    "completed": 38841,
+    "elapsed_seconds": 30.00094167,
+    "errors": 0,
+    "invalid_replies": 0,
+    "p50_latency_ms": 1.540095,
+    "p95_latency_ms": 2.605055,
+    "p99_latency_ms": 2.932735,
+    "percentile_relative_error_max": 0.008,
+    "protocol": "rsl",
+    "rejected": 0,
+    "stale_replies": 77687,
+    "throughput_ops_s": 1294.6593619372882,
+    "timeouts": 0,
+    "tls": false,
+    "transport": "tcp",
+    "unfinished": 2,
+    "warmup_completed": 3908,
+    "warmup_errors": 0,
+    "warmup_invalid_replies": 0,
+    "warmup_seconds": 5,
+    "warmup_timeouts": 20,
+    "wire": "native",
+    "worker_failures": [],
+    "workers": 2
+  },
+  "runtime": "native-lion",
+  "server_configuration": [
+    {
+      "baseline_view_timeout_ms": 1000,
+      "batch_size": 1,
+      "heartbeat_period_ms": 100,
+      "max_batch_delay_ms": 10,
+      "max_log_length": 1000,
+      "protocol": "rsl",
+      "runtime": "native-lion",
+      "tcp_nodelay": true,
+      "tls": false,
+      "transport": "tcp"
+    },
+    {
+      "baseline_view_timeout_ms": 1000,
+      "batch_size": 1,
+      "heartbeat_period_ms": 100,
+      "max_batch_delay_ms": 10,
+      "max_log_length": 1000,
+      "protocol": "rsl",
+      "runtime": "native-lion",
+      "tcp_nodelay": true,
+      "tls": false,
+      "transport": "tcp"
+    },
+    {
+      "baseline_view_timeout_ms": 1000,
+      "batch_size": 1,
+      "heartbeat_period_ms": 100,
+      "max_batch_delay_ms": 10,
+      "max_log_length": 1000,
+      "protocol": "rsl",
+      "runtime": "native-lion",
+      "tcp_nodelay": true,
+      "tls": false,
+      "transport": "tcp"
+    }
+  ],
+  "server_processes": [
+    {
+      "affinity": [
+        0
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-server /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.service.txt /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.server1.private.txt protocol=rsl transport=tcp verbose=false ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-server",
+      "pid": 2114063
+    },
+    {
+      "affinity": [
+        1
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-server /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.service.txt /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.server2.private.txt protocol=rsl transport=tcp verbose=false ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-server",
+      "pid": 2114064
+    },
+    {
+      "affinity": [
+        2
+      ],
+      "cmdline": "/var/tmp/tla-rs-lion/bin/tla-rs-server /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.service.txt /var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.server3.private.txt protocol=rsl transport=tcp verbose=false ",
+      "exe": "/var/tmp/tla-rs-lion/bin/tla-rs-server",
+      "pid": 2114065
+    }
+  ],
+  "service_path": "/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/lion-aligned-2-corrected/trial-2-1core/Cluster.IronRSL.service.txt",
+  "service_sha256": "c02253b5efd558ecf4d30235b502131a4e3bcc65b7c25a7354f862593431ce89",
+  "trial": 2,
+  "wire": "native"
+}

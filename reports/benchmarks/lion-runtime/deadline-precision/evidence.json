@@ -1,0 +1,13 @@
+{
+  "lion_revision": "aa5bebe74369003b16193d73d43727e95dcf4ea0",
+  "method": "Actual Lion Runtime timeout of std::future::pending, measured with std::time::Instant; compiled against the same release Lion rlib as the client",
+  "requested_budget_us": 900,
+  "original_timeout_elapsed_us": 3,
+  "original_expired_before_requested_budget": true,
+  "padding_ms": 2,
+  "padded_timeout_elapsed_us": 2083,
+  "padded_expired_before_requested_budget": false,
+  "cause": "Lion floors both its Instant clock and std::time::Duration conversions to milliseconds",
+  "client_change": "Pad send timer by two milliseconds; classify cancellation by whether the measurement deadline or operation timeout bounded the send; retain and log genuine send errors",
+  "scope": "Demonstrates a real early-expiration mechanism. The aborted matrix's discarded send-error detail is unavailable, so this probe does not prove that its sole error was a false positive."
+}

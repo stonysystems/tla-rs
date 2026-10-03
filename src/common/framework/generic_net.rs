@@ -24,7 +24,9 @@ pub fn receive_packet<M: ProtocolMessage>(
         NetcReceiveResult::Error => GenericReceiveResult::Fail,
         NetcReceiveResult::TimedOut {} => GenericReceiveResult::Timeout,
         NetcReceiveResult::Received { sender, message } => {
-            match M::deserialize_from_bytes(&message) {
+            let decoded = M::deserialize_from_bytes(&message);
+            netc.recycle_buffer(message);
+            match decoded {
                 None => GenericReceiveResult::Fail,
                 Some(msg) => {
                     let packet = GenericPacket {
@@ -43,10 +45,10 @@ pub fn receive_packet<M: ProtocolMessage>(
 ///
 /// Returns true on success, false on send failure.
 pub fn send_packet<M: ProtocolMessage>(dst: &EndPoint, msg: &M, netc: &mut NetClient) -> bool {
-    let mut buf: Vec<u8> = Vec::new();
+    let mut buf = netc.take_buffer();
     msg.serialize_to_bytes(&mut buf);
 
-    match netc.send(dst, &buf) {
+    match netc.send(dst, buf) {
         Ok(_) => true,
         Err(_) => false,
     }

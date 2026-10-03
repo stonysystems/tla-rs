@@ -1,0 +1,94 @@
+{
+  "source": "results.csv and per-cell evidence.json",
+  "started_at_utc": "2026-09-29T18:00:33Z",
+  "finished_at_utc": "2026-09-29T18:08:38Z",
+  "statistic": "median across three trials; throughput ratios are ratios of medians",
+  "summary": [
+    {
+      "configuration": "unpin",
+      "runtime": "native-lion",
+      "trials": 3,
+      "throughput_ops_s": 1264.924400521545,
+      "avg_latency_ms": 1.5808522878149047,
+      "p50_latency_ms": 1.581055,
+      "p95_latency_ms": 2.703359,
+      "p99_latency_ms": 3.031039,
+      "server_cpu_percent": 256.14371901547736,
+      "server_rss_peak_bytes": 38694912.0,
+      "server_threads_peak": 3.0,
+      "throughput_range": [
+        1137.7325463709963,
+        1275.0290651604917
+      ],
+      "timeouts": 4,
+      "completed": 110334
+    },
+    {
+      "configuration": "unpin",
+      "runtime": "csharp-ironfleet",
+      "trials": 3,
+      "throughput_ops_s": 2113.8948684497436,
+      "avg_latency_ms": 0.9458177839538294,
+      "p50_latency_ms": 0.778239,
+      "p95_latency_ms": 1.785855,
+      "p99_latency_ms": 2.097151,
+      "server_cpu_percent": 1249.4760288615212,
+      "server_rss_peak_bytes": 188022784.0,
+      "server_threads_peak": 140.0,
+      "throughput_range": [
+        2098.36636969203,
+        2127.914708759845
+      ],
+      "timeouts": 0,
+      "completed": 190207
+    },
+    {
+      "configuration": "1core",
+      "runtime": "native-lion",
+      "trials": 3,
+      "throughput_ops_s": 1268.7454984938547,
+      "avg_latency_ms": 1.576095322885742,
+      "p50_latency_ms": 1.572863,
+      "p95_latency_ms": 2.670591,
+      "p99_latency_ms": 3.014655,
+      "server_cpu_percent": 253.86891449603755,
+      "server_rss_peak_bytes": 51159040.0,
+      "server_threads_peak": 3.0,
+      "throughput_range": [
+        1171.177484269022,
+        1282.9987025889454
+      ],
+      "timeouts": 0,
+      "completed": 111689
+    },
+    {
+      "configuration": "1core",
+      "runtime": "csharp-ironfleet",
+      "trials": 3,
+      "throughput_ops_s": 78.46333650219984,
+      "avg_latency_ms": 25.46674146304163,
+      "p50_latency_ms": 24.117247,
+      "p95_latency_ms": 39.059455,
+      "p99_latency_ms": 51.904511,
+      "server_cpu_percent": 299.71280912404296,
+      "server_rss_peak_bytes": 197754880.0,
+      "server_threads_peak": 84.0,
+      "throughput_range": [
+        78.08728630958134,
+        78.6282072486109
+      ],
+      "timeouts": 0,
+      "completed": 7056
+    }
+  ],
+  "native_over_csharp_throughput": {
+    "unpin": 0.598385671586968,
+    "1core": 16.169915212033885
+  },
+  "total_measured_completions": 419286,
+  "measured_transport_errors": 0,
+  "measured_invalid_replies": 0,
+  "measured_timeouts": 4,
+  "matched_established_tcp_connections_per_cell": 6,
+  "host_memory_total_kib": 65791560
+}

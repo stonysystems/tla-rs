@@ -1,0 +1,496 @@
+{
+  "groups": [
+    {
+      "cells": 24,
+      "completed": 1229722,
+      "csv": "/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/max-throughput-confirm/results.csv",
+      "measured_invalid_replies": 0,
+      "measured_timeouts": 4,
+      "measured_transport_errors": 0,
+      "name": "batch1-matched-30s",
+      "requested_duration_seconds": 30,
+      "sampled_client_counts": [
+        {
+          "max_ops_per_second": 1070.5310001823873,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 0.9407416499262837,
+          "median_ops_per_second": 1062.6098603523587,
+          "median_p99_latency_ms": 1.892351,
+          "median_total_server_cpu_percent": 893.5673296255835,
+          "min_ops_per_second": 1054.0286859451855,
+          "runtime": "csharp-ironfleet",
+          "workers": 1
+        },
+        {
+          "max_ops_per_second": 1172.0450856832995,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 0.8541944250605155,
+          "median_ops_per_second": 1170.4955851637683,
+          "median_p99_latency_ms": 1.531903,
+          "median_total_server_cpu_percent": 223.28581737604225,
+          "min_ops_per_second": 1167.8386093830043,
+          "runtime": "native-lion",
+          "workers": 1
+        },
+        {
+          "max_ops_per_second": 2146.108782507678,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 0.9475740264621315,
+          "median_ops_per_second": 2109.8323651956644,
+          "median_p99_latency_ms": 2.064383,
+          "median_total_server_cpu_percent": 1246.8982746344784,
+          "min_ops_per_second": 2022.6806127411724,
+          "runtime": "csharp-ironfleet",
+          "workers": 2
+        },
+        {
+          "max_ops_per_second": 1281.7356452888134,
+          "measured_timeouts": 4,
+          "median_mean_latency_ms": 1.5711544344717405,
+          "median_ops_per_second": 1272.7128191117586,
+          "median_p99_latency_ms": 2.998271,
+          "median_total_server_cpu_percent": 255.51370098048758,
+          "min_ops_per_second": 1191.3247083295716,
+          "runtime": "native-lion",
+          "workers": 2
+        },
+        {
+          "max_ops_per_second": 2876.7122962338685,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 1.3945037233258553,
+          "median_ops_per_second": 2867.594447510001,
+          "median_p99_latency_ms": 2.768895,
+          "median_total_server_cpu_percent": 1476.7122789048792,
+          "min_ops_per_second": 2825.4180291604994,
+          "runtime": "csharp-ironfleet",
+          "workers": 4
+        },
+        {
+          "max_ops_per_second": 1269.0903217870307,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 3.1750790407250595,
+          "median_ops_per_second": 1259.6007416410641,
+          "median_p99_latency_ms": 5.668863,
+          "median_total_server_cpu_percent": 253.57595744892657,
+          "min_ops_per_second": 1259.3537835212187,
+          "runtime": "native-lion",
+          "workers": 4
+        },
+        {
+          "max_ops_per_second": 2830.5227499640046,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 2.8886551402241563,
+          "median_ops_per_second": 2768.7971386325403,
+          "median_p99_latency_ms": 4.620287,
+          "median_total_server_cpu_percent": 1431.0756747898363,
+          "min_ops_per_second": 2681.288157762533,
+          "runtime": "csharp-ironfleet",
+          "workers": 8
+        },
+        {
+          "max_ops_per_second": 1215.0708880458114,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 6.623827772719744,
+          "median_ops_per_second": 1207.2743556286134,
+          "median_p99_latency_ms": 10.682367,
+          "median_total_server_cpu_percent": 252.52061625810802,
+          "min_ops_per_second": 1206.2241486021223,
+          "runtime": "native-lion",
+          "workers": 8
+        }
+      ],
+      "trials": 3
+    },
+    {
+      "cells": 12,
+      "completed": 186833,
+      "csv": "/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/max-throughput-sweep/results.csv",
+      "measured_invalid_replies": 0,
+      "measured_timeouts": 0,
+      "measured_transport_errors": 0,
+      "name": "batch1-matched-10s",
+      "requested_duration_seconds": 10,
+      "sampled_client_counts": [
+        {
+          "max_ops_per_second": 2842.256523211001,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 1.4067348936851363,
+          "median_ops_per_second": 2842.256523211001,
+          "median_p99_latency_ms": 2.883583,
+          "median_total_server_cpu_percent": 1481.2276306879803,
+          "min_ops_per_second": 2842.256523211001,
+          "runtime": "csharp-ironfleet",
+          "workers": 4
+        },
+        {
+          "max_ops_per_second": 1246.8721328529837,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 3.2061654831622834,
+          "median_ops_per_second": 1246.8721328529837,
+          "median_p99_latency_ms": 5.767167,
+          "median_total_server_cpu_percent": 254.72491157877644,
+          "min_ops_per_second": 1246.8721328529837,
+          "runtime": "native-lion",
+          "workers": 4
+        },
+        {
+          "max_ops_per_second": 2721.471981967406,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 2.937829239520958,
+          "median_ops_per_second": 2721.471981967406,
+          "median_p99_latency_ms": 4.685823,
+          "median_total_server_cpu_percent": 1437.2468274462142,
+          "min_ops_per_second": 2721.471981967406,
+          "runtime": "csharp-ironfleet",
+          "workers": 8
+        },
+        {
+          "max_ops_per_second": 1206.5612574060326,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 6.625519092377796,
+          "median_ops_per_second": 1206.5612574060326,
+          "median_p99_latency_ms": 10.682367,
+          "median_total_server_cpu_percent": 253.5001071916098,
+          "min_ops_per_second": 1206.5612574060326,
+          "runtime": "native-lion",
+          "workers": 8
+        },
+        {
+          "max_ops_per_second": 2464.3630694583912,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 6.486864158432709,
+          "median_ops_per_second": 2464.3630694583912,
+          "median_p99_latency_ms": 9.437183,
+          "median_total_server_cpu_percent": 1337.3932816630786,
+          "min_ops_per_second": 2464.3630694583912,
+          "runtime": "csharp-ironfleet",
+          "workers": 16
+        },
+        {
+          "max_ops_per_second": 1112.0772467382876,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 14.371205496225059,
+          "median_ops_per_second": 1112.0772467382876,
+          "median_p99_latency_ms": 20.840447,
+          "median_total_server_cpu_percent": 255.1654375116158,
+          "min_ops_per_second": 1112.0772467382876,
+          "runtime": "native-lion",
+          "workers": 16
+        },
+        {
+          "max_ops_per_second": 2095.2545511605763,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 15.248339387206029,
+          "median_ops_per_second": 2095.2545511605763,
+          "median_p99_latency_ms": 20.447231,
+          "median_total_server_cpu_percent": 1186.8347518079738,
+          "min_ops_per_second": 2095.2545511605763,
+          "runtime": "csharp-ironfleet",
+          "workers": 32
+        },
+        {
+          "max_ops_per_second": 946.0199267680367,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 33.72905776756471,
+          "median_ops_per_second": 946.0199267680367,
+          "median_p99_latency_ms": 45.613055,
+          "median_total_server_cpu_percent": 252.9825135386074,
+          "min_ops_per_second": 946.0199267680367,
+          "runtime": "native-lion",
+          "workers": 32
+        },
+        {
+          "max_ops_per_second": 1718.0496365571591,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 37.142968097271506,
+          "median_ops_per_second": 1718.0496365571591,
+          "median_p99_latency_ms": 45.875199,
+          "median_total_server_cpu_percent": 1023.28349581307,
+          "min_ops_per_second": 1718.0496365571591,
+          "runtime": "csharp-ironfleet",
+          "workers": 64
+        },
+        {
+          "max_ops_per_second": 793.8989059184125,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 80.2840228309203,
+          "median_ops_per_second": 793.8989059184125,
+          "median_p99_latency_ms": 101.711871,
+          "median_total_server_cpu_percent": 297.43139226414945,
+          "min_ops_per_second": 793.8989059184125,
+          "runtime": "native-lion",
+          "workers": 64
+        },
+        {
+          "max_ops_per_second": 1154.116328056942,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 110.27557443665022,
+          "median_ops_per_second": 1154.116328056942,
+          "median_p99_latency_ms": 143.654911,
+          "median_total_server_cpu_percent": 810.997884982673,
+          "min_ops_per_second": 1154.116328056942,
+          "runtime": "csharp-ironfleet",
+          "workers": 128
+        },
+        {
+          "max_ops_per_second": 375.53152188746054,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 334.4020157152741,
+          "median_ops_per_second": 375.53152188746054,
+          "median_p99_latency_ms": 683.671551,
+          "median_total_server_cpu_percent": 299.86778601685177,
+          "min_ops_per_second": 375.53152188746054,
+          "runtime": "native-lion",
+          "workers": 128
+        }
+      ],
+      "trials": 1
+    },
+    {
+      "cells": 15,
+      "completed": 1243308,
+      "csv": "/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/max-throughput-batch32-confirm/results.csv",
+      "measured_invalid_replies": 0,
+      "measured_timeouts": 111,
+      "measured_transport_errors": 0,
+      "name": "batch32-native-30s",
+      "requested_duration_seconds": 30,
+      "sampled_client_counts": [
+        {
+          "max_ops_per_second": 1406.7613917346603,
+          "measured_timeouts": 56,
+          "median_mean_latency_ms": 11.962589809817022,
+          "median_ops_per_second": 1336.944821484179,
+          "median_p99_latency_ms": 12.517375,
+          "median_total_server_cpu_percent": 43.291917438014266,
+          "min_ops_per_second": 1301.7571858317747,
+          "runtime": "native-lion",
+          "workers": 16
+        },
+        {
+          "max_ops_per_second": 2008.949196107988,
+          "measured_timeouts": 55,
+          "median_mean_latency_ms": 11.968066899858673,
+          "median_ops_per_second": 2004.6917292601147,
+          "median_p99_latency_ms": 13.238271,
+          "median_total_server_cpu_percent": 62.61565193596417,
+          "min_ops_per_second": 1841.0166079897363,
+          "runtime": "native-lion",
+          "workers": 24
+        },
+        {
+          "max_ops_per_second": 3905.4491955034823,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 8.221329546480948,
+          "median_ops_per_second": 3890.546148200405,
+          "median_p99_latency_ms": 12.058623,
+          "median_total_server_cpu_percent": 151.74123654188344,
+          "min_ops_per_second": 3886.497496089989,
+          "runtime": "native-lion",
+          "workers": 32
+        },
+        {
+          "max_ops_per_second": 3534.7360725686167,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 13.74633627819477,
+          "median_ops_per_second": 3490.294839566509,
+          "median_p99_latency_ms": 20.447231,
+          "median_total_server_cpu_percent": 153.48433493737292,
+          "min_ops_per_second": 3445.4185037413804,
+          "runtime": "native-lion",
+          "workers": 48
+        },
+        {
+          "max_ops_per_second": 3136.268229592996,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 20.437693659802378,
+          "median_ops_per_second": 3130.227992217945,
+          "median_p99_latency_ms": 29.229055,
+          "median_total_server_cpu_percent": 151.20047733104698,
+          "min_ops_per_second": 3119.8499562911793,
+          "runtime": "native-lion",
+          "workers": 64
+        }
+      ],
+      "trials": 3
+    },
+    {
+      "cells": 8,
+      "completed": 116575,
+      "csv": "/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/max-throughput-batch32-sweep/results.csv",
+      "measured_invalid_replies": 0,
+      "measured_timeouts": 9,
+      "measured_transport_errors": 0,
+      "name": "batch32-native-10s",
+      "requested_duration_seconds": 10,
+      "sampled_client_counts": [
+        {
+          "max_ops_per_second": 95.06692958056823,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 10.51067905573081,
+          "median_ops_per_second": 95.06692958056823,
+          "median_p99_latency_ms": 11.010047,
+          "median_total_server_cpu_percent": 8.296962722555355,
+          "min_ops_per_second": 95.06692958056823,
+          "runtime": "native-lion",
+          "workers": 1
+        },
+        {
+          "max_ops_per_second": 189.92128271820368,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 10.518788130526316,
+          "median_ops_per_second": 189.92128271820368,
+          "median_p99_latency_ms": 11.075583,
+          "median_total_server_cpu_percent": 9.7956507261841,
+          "min_ops_per_second": 189.92128271820368,
+          "runtime": "native-lion",
+          "workers": 2
+        },
+        {
+          "max_ops_per_second": 281.03338477388337,
+          "measured_timeouts": 9,
+          "median_mean_latency_ms": 14.22366744823906,
+          "median_ops_per_second": 281.03338477388337,
+          "median_p99_latency_ms": 11.075583,
+          "median_total_server_cpu_percent": 9.597209765758564,
+          "min_ops_per_second": 281.03338477388337,
+          "runtime": "native-lion",
+          "workers": 4
+        },
+        {
+          "max_ops_per_second": 731.6320200419533,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 10.927918656284154,
+          "median_ops_per_second": 731.6320200419533,
+          "median_p99_latency_ms": 11.665407,
+          "median_total_server_cpu_percent": 20.886845698508772,
+          "min_ops_per_second": 731.6320200419533,
+          "runtime": "native-lion",
+          "workers": 8
+        },
+        {
+          "max_ops_per_second": 1404.3255634111347,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 11.382833889157828,
+          "median_ops_per_second": 1404.3255634111347,
+          "median_p99_latency_ms": 12.517375,
+          "median_total_server_cpu_percent": 40.57893126058874,
+          "min_ops_per_second": 1404.3255634111347,
+          "runtime": "native-lion",
+          "workers": 16
+        },
+        {
+          "max_ops_per_second": 3695.2472410173846,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 8.646934357239475,
+          "median_ops_per_second": 3695.2472410173846,
+          "median_p99_latency_ms": 13.107199,
+          "median_total_server_cpu_percent": 149.15297569122234,
+          "min_ops_per_second": 3695.2472410173846,
+          "runtime": "native-lion",
+          "workers": 32
+        },
+        {
+          "max_ops_per_second": 3067.962946698007,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 20.826646159877466,
+          "median_ops_per_second": 3067.962946698007,
+          "median_p99_latency_ms": 31.064063,
+          "median_total_server_cpu_percent": 150.6071557450466,
+          "min_ops_per_second": 3067.962946698007,
+          "runtime": "native-lion",
+          "workers": 64
+        },
+        {
+          "max_ops_per_second": 2188.620116254239,
+          "measured_timeouts": 0,
+          "median_mean_latency_ms": 58.26050251566497,
+          "median_ops_per_second": 2188.620116254239,
+          "median_p99_latency_ms": 68.681727,
+          "median_total_server_cpu_percent": 152.60413662963649,
+          "min_ops_per_second": 2188.620116254239,
+          "runtime": "native-lion",
+          "workers": 128
+        }
+      ],
+      "trials": 1
+    }
+  ],
+  "matched_connections_verified_per_cell": "3 times the stated worker count at measurement start",
+  "methods": {
+    "all_connections_to_each_replica": true,
+    "batch32_is_native_only": true,
+    "client_idle_seconds": 3,
+    "duration_confirm_seconds": 30,
+    "duration_exploratory_seconds": 10,
+    "one_core_pinning": false,
+    "one_outstanding_request_per_client_worker": true,
+    "timeout_ms": 1000,
+    "trials_confirm": 3,
+    "trials_exploratory": 1,
+    "warmup_seconds": 5
+  },
+  "peaks": {
+    "batch1-matched-30s/csharp-ironfleet": {
+      "max_ops_per_second": 2876.7122962338685,
+      "measured_timeouts": 0,
+      "median_mean_latency_ms": 1.3945037233258553,
+      "median_ops_per_second": 2867.594447510001,
+      "median_p99_latency_ms": 2.768895,
+      "median_total_server_cpu_percent": 1476.7122789048792,
+      "min_ops_per_second": 2825.4180291604994,
+      "runtime": "csharp-ironfleet",
+      "workers": 4
+    },
+    "batch1-matched-30s/native-lion": {
+      "max_ops_per_second": 1281.7356452888134,
+      "measured_timeouts": 4,
+      "median_mean_latency_ms": 1.5711544344717405,
+      "median_ops_per_second": 1272.7128191117586,
+      "median_p99_latency_ms": 2.998271,
+      "median_total_server_cpu_percent": 255.51370098048758,
+      "min_ops_per_second": 1191.3247083295716,
+      "runtime": "native-lion",
+      "workers": 2
+    },
+    "batch32-native-30s/native-lion": {
+      "max_ops_per_second": 3905.4491955034823,
+      "measured_timeouts": 0,
+      "median_mean_latency_ms": 8.221329546480948,
+      "median_ops_per_second": 3890.546148200405,
+      "median_p99_latency_ms": 12.058623,
+      "median_total_server_cpu_percent": 151.74123654188344,
+      "min_ops_per_second": 3886.497496089989,
+      "runtime": "native-lion",
+      "workers": 32
+    }
+  },
+  "scope": "observed best of tested client counts; three unpinned loopback RSL TCP replicas, no TLS; not a universal capacity limit",
+  "separate_driver_smokes_excluded_from_peaks": {
+    "fifteen_second_default_smoke": {
+      "completed": 18760,
+      "csv": "/var/tmp/tla-rs-lion/reports/benchmarks/lion-runtime/max-throughput-default-driver-smoke/results.csv",
+      "status": "complete",
+      "throughput_ops_s": 1250.5909083706194,
+      "workers": 4
+    },
+    "two_second_default_smoke": {
+      "completed": 0,
+      "errors": 0,
+      "invalid_replies": 0,
+      "measurement_seconds": 2.004075433,
+      "metrics_origin": "/tmp/tla-rs-lion-batch1-driver-smoke/trial-1-unpin/native/client.log",
+      "reason": "every worker must complete measured requests; short window did not progress",
+      "status": "failed",
+      "timeouts": 2,
+      "warmup_completed": 2,
+      "warmup_timeouts": 6
+    }
+  },
+  "source_variant_manifest": "../max-throughput-batch32-variant/evidence.json",
+  "total_cells": 59,
+  "total_completed": 2776438,
+  "total_errors": 0,
+  "total_invalid": 0,
+  "total_measured_timeouts": 124
+}

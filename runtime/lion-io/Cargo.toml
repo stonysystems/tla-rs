@@ -1,0 +1,19 @@
+[package]
+name = "tla-rs-lion-io"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "tla_rs_lion_io"
+
+[dependencies]
+libc = "0.2"
+lion-executor = { git = "https://github.com/stonysystems/lion", rev = "aa5bebe74369003b16193d73d43727e95dcf4ea0", package = "lion-executor" }
+lion-reactor = { git = "https://github.com/stonysystems/lion", rev = "aa5bebe74369003b16193d73d43727e95dcf4ea0", package = "lion-reactor" }
+lion-utility = { git = "https://github.com/stonysystems/lion", rev = "aa5bebe74369003b16193d73d43727e95dcf4ea0", package = "lion-utility" }
+mio = { version = "1", features = ["os-poll", "net"] }
+socket2 = "0.6"
+
+[dev-dependencies]
+lion = { git = "https://github.com/stonysystems/lion", rev = "aa5bebe74369003b16193d73d43727e95dcf4ea0", package = "lion" }

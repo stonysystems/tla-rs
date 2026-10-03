@@ -14,6 +14,8 @@ bin/
 doubts.txt
 .apas
 Cargo.lock
+!runtime/lion-server/Cargo.lock
+!runtime/lion-io/Cargo.lock
 # Verus/rustc build artifacts
 lib.long-type-*.txt
 rustc-ice-*.txt
@@ -30,3 +32,12 @@ docs/osdi26_poster_briefing.md
 # Python bytecode (scripts/)
 __pycache__/
 *.pyc
+
+# Native benchmark identities and logs are generated; retain compact evidence only.
+*.private.txt
+reports/benchmarks/lion-runtime/**/*
+!reports/benchmarks/lion-runtime/**/
+!reports/benchmarks/lion-runtime/**/results.csv
+!reports/benchmarks/lion-runtime/**/evidence.json
+!reports/benchmarks/lion-runtime/**/metadata.json
+!reports/benchmarks/lion-runtime/native-identity-clone-confirm/profile-steady-leader.log
