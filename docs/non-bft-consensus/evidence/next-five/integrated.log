@@ -1,0 +1,27 @@
+note: verifying module protocol::ConsensusSafety::paxos
+
+note: verifying module protocol::ConsensusSafety::register_history
+
+note: verifying module protocol::ConsensusSafety::state_machine
+
+note: verifying module protocol::Corfu::chain
+
+note: verifying module protocol::Corfu::layout
+
+note: verifying module protocol::Gaios::reads
+
+note: verifying module protocol::Om::consensus
+
+note: verifying module protocol::Om::lookup
+
+note: verifying module protocol::Om::read_write
+
+note: verifying module protocol::ReplicatedCommit::commit
+
+note: verifying module protocol::SpecPaxos::execution
+
+note: verifying module protocol::SpecPaxos::reconciliation
+
+note: verifying module protocol::next_five_witnesses
+
+verification results:: 74 verified, 0 errors

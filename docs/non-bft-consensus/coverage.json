@@ -1,0 +1,471 @@
+{
+  "as_of": "2026-09-26",
+  "census_complete": false,
+  "method": "Primary proceedings title keyword screening and manual primary-source candidate review. No claim that keyword-negative titles have been fully screened.",
+  "title_keywords": [
+    "consens",
+    "paxos",
+    "raft",
+    "quorum",
+    "replicat",
+    "shared log",
+    "logging",
+    "commitment",
+    "fault.toler",
+    "transaction",
+    "consisten"
+  ],
+  "retrievals": [
+    {
+      "venue": "NSDI",
+      "year": 2012,
+      "url": "https://www.usenix.org/conference/nsdi12/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 30,
+      "sha256": "3dbc29dd855de4603d78953efb7bc8b31eeeb1ab68f1b63551a4392f263232fc",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2013,
+      "url": "https://www.usenix.org/conference/nsdi13/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 38,
+      "sha256": "20d6645b559132ee23658cfb1644440ba021c5b341d0ecedc52f466793154d44",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2014,
+      "url": "https://www.usenix.org/conference/nsdi14/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 37,
+      "sha256": "bd7e06c31d0e82b71d540d86755f75eb944825141fce42d31be16deb3aaec722",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2015,
+      "url": "https://www.usenix.org/conference/nsdi15/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 42,
+      "sha256": "1623c4b76848b1f99ef67b499559c596ecea233430f49b65f082ebdd74b11674",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2016,
+      "url": "https://www.usenix.org/conference/nsdi16/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 46,
+      "sha256": "39b70a69d66f9f31d2036c0acabe4e6bb397f9eebc37cecbef681fa70d508916",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2017,
+      "url": "https://www.usenix.org/conference/nsdi17/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 45,
+      "sha256": "5b833649cbd6657b66da8c457114a6a3a0fdc56f791f0158b43513f1519979c3",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2018,
+      "url": "https://www.usenix.org/conference/nsdi18/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 40,
+      "sha256": "a97066824b2e7314aa4621ef6e1b4a2efb6075db973ad268313db300d9e0abbd",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2019,
+      "url": "https://www.usenix.org/conference/nsdi19/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 49,
+      "sha256": "061b3d486e81a733d85d780b4fe6ff009501cbca138d048c042f1361b9171b12",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2020,
+      "url": "https://www.usenix.org/conference/nsdi20/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 65,
+      "sha256": "b2ff59a0c95c7a55455d12834c4382cc53a901517abf41825c1dca3c442bd9a9",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2021,
+      "url": "https://www.usenix.org/conference/nsdi21/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 59,
+      "sha256": "1e54e1c392a7b61f1acec3c7b08af4e4da5cbcdbac8db775845a76ad18e0586c",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2022,
+      "url": "https://www.usenix.org/conference/nsdi22/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 78,
+      "sha256": "66ebafc0ad0ffb8e9c793d0e2b7349ff43a2d5183fbe43ee2b4ce58687ade833",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2023,
+      "url": "https://www.usenix.org/conference/nsdi23/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 96,
+      "sha256": "8ef0e8d95439b9fc5e2351180a21834826fde41620dea1135bb4ea51d1122988",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2024,
+      "url": "https://www.usenix.org/conference/nsdi24/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 112,
+      "sha256": "e050f9da69e4bae7347cab1529aefa6268b3432299c4ee217b06ae327e4db706",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2025,
+      "url": "https://www.usenix.org/conference/nsdi25/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 84,
+      "sha256": "add90ea81142e2e7c4560c354ea43d5260326fa784d0128aeea813a0609b79a5",
+      "error": null
+    },
+    {
+      "venue": "NSDI",
+      "year": 2026,
+      "url": "https://www.usenix.org/conference/nsdi26/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 152,
+      "sha256": "414704e1f1f7449cd90bb40a626c9f228ad90ce3640ae044f8c0de8abf5db1f1",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2012,
+      "url": "https://www.usenix.org/conference/osdi12/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 25,
+      "sha256": "ed9e5de2560ecb7f92f08bd71080d55555b6b94809b436a0e9c04494cbb06034",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2014,
+      "url": "https://www.usenix.org/conference/osdi14/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 42,
+      "sha256": "62f6686a08cb7c3306431dc0963b599f5c83ef8d6f5c1311656f4d6d2139b335",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2016,
+      "url": "https://www.usenix.org/conference/osdi16/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 47,
+      "sha256": "b993a66cccf3bbf55fe539067d1094c50427b43ec914792b7567a34dc6c97db4",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2018,
+      "url": "https://www.usenix.org/conference/osdi18/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 47,
+      "sha256": "dbed624409751e55e997c7e52c983bf1ac381c225afc3f72ca1374be4e15bf71",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2020,
+      "url": "https://www.usenix.org/conference/osdi20/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 70,
+      "sha256": "679e1115905dcca20d5a44de65a93ea72be3c5ccbcf3514781731ff6fd46eae3",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2021,
+      "url": "https://www.usenix.org/conference/osdi21/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 34,
+      "sha256": "a3dad16b5121f07dbc4c0130b0652fd69ac388ce2bdc57dbeb4902f603030cfe",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2022,
+      "url": "https://www.usenix.org/conference/osdi22/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 52,
+      "sha256": "235aef534ca2d722203b48aa87d5c3e6c329bef0339c36ff1dd32d6edfd9c06d",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2023,
+      "url": "https://www.usenix.org/conference/osdi23/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 56,
+      "sha256": "17af52c99c4b188abed65b18986bc3007820aeed6873f8958efdf41333100422",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2024,
+      "url": "https://www.usenix.org/conference/osdi24/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 54,
+      "sha256": "3c16391ac314f15137e9b4c89452e9e86a7db92fb7919a59073aea54e33cbd1a",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2025,
+      "url": "https://www.usenix.org/conference/osdi25/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 54,
+      "sha256": "c2c0ad639beeface56d0b203caf75d3bbf07359b67e3cc9dcd71939ab56dde81",
+      "error": null
+    },
+    {
+      "venue": "OSDI",
+      "year": 2026,
+      "url": "https://www.usenix.org/conference/osdi26/technical-sessions",
+      "status": "keyword-screened",
+      "extracted_links": 137,
+      "sha256": "0da795ef2a211503f9fb1962d244d76c9213197981012d02159c39b54296ec3d",
+      "error": null
+    },
+    {
+      "venue": "SOSP",
+      "year": 2025,
+      "url": "https://sigops.org/s/conferences/sosp/2025/schedule.html",
+      "status": "candidate-search-only",
+      "extracted_links": 7,
+      "sha256": "0bc2fbcb9cbbc810cd8c494dbf21c7116b6f68fd959c3a541040d867f9ba1940",
+      "error": null
+    },
+    {
+      "venue": "SOSP",
+      "year": 2024,
+      "url": "https://sigops.org/s/conferences/sosp/2024/program.html",
+      "status": "retrieval-failed",
+      "extracted_links": 0,
+      "sha256": null,
+      "error": "curl: (22) The requested URL returned error: 404\n"
+    },
+    {
+      "venue": "SOSP",
+      "year": 2023,
+      "url": "https://sosp2023.mpi-sws.org/program.html",
+      "status": "candidate-search-only",
+      "extracted_links": 6,
+      "sha256": "b1ca7574d2135647662905d071529b97d6bceedf399845c430848796aa90bb81",
+      "error": null
+    },
+    {
+      "volume": 1,
+      "conference_year": 2008,
+      "url": "https://www.vldb.org/pvldb/volumes/1/",
+      "status": "keyword-screened",
+      "sha256": "b3feb20f1131c8be717592f087da8659cb7119c2b4e1f44c14422756b08b7bb6",
+      "title_count": 169,
+      "venue": "VLDB",
+      "candidate_count": 7
+    },
+    {
+      "volume": 2,
+      "conference_year": 2009,
+      "url": "https://www.vldb.org/pvldb/volumes/2/",
+      "status": "keyword-screened",
+      "sha256": "79eae201c61e2a9463668fe65b01627e5d75d01a6868513a16bb93ebe75e9bd3",
+      "title_count": 167,
+      "venue": "VLDB",
+      "candidate_count": 5
+    },
+    {
+      "volume": 3,
+      "conference_year": 2010,
+      "url": "https://www.vldb.org/pvldb/volumes/3/",
+      "status": "keyword-screened",
+      "sha256": "f8e2b5305d25a241acb0216ea098548e782d0477d38c3fe72e8acdaafe34fd80",
+      "title_count": 177,
+      "venue": "VLDB",
+      "candidate_count": 10
+    },
+    {
+      "volume": 4,
+      "conference_year": 2011,
+      "url": "https://www.vldb.org/pvldb/volumes/4/",
+      "status": "keyword-screened",
+      "sha256": "092f0d2e85067158ff3715ac628b5e64be34458bff2ba5d809cb68632c946ff9",
+      "title_count": 178,
+      "venue": "VLDB",
+      "candidate_count": 7
+    },
+    {
+      "volume": 5,
+      "conference_year": 2012,
+      "url": "https://www.vldb.org/pvldb/volumes/5/",
+      "status": "keyword-screened",
+      "sha256": "a569e28f9b0b9a50481def71bbe2f440308dda6c7695fbf24fd799543ba6fdf3",
+      "title_count": 222,
+      "venue": "VLDB",
+      "candidate_count": 5
+    },
+    {
+      "volume": 6,
+      "conference_year": 2013,
+      "url": "https://www.vldb.org/pvldb/volumes/6/",
+      "status": "keyword-screened",
+      "sha256": "f3f11d8b5880414c6e879c1141fb1213c332598e45ca24b3fc0b28840b369143",
+      "title_count": 237,
+      "venue": "VLDB",
+      "candidate_count": 5
+    },
+    {
+      "volume": 7,
+      "conference_year": 2014,
+      "url": "https://www.vldb.org/pvldb/volumes/7/",
+      "status": "keyword-screened",
+      "sha256": "3d345574213daf1e16910f322c782ebdf09387ef7d8f550a4d44935453d9e689",
+      "title_count": 233,
+      "venue": "VLDB",
+      "candidate_count": 9
+    },
+    {
+      "volume": 8,
+      "conference_year": 2015,
+      "url": "https://www.vldb.org/pvldb/volumes/8/",
+      "status": "keyword-screened",
+      "sha256": "6d81f607d906233ce124a8937e8c8218e2f4488e2e44953acc4ef3d74fb31ff0",
+      "title_count": 244,
+      "venue": "VLDB",
+      "candidate_count": 7
+    },
+    {
+      "volume": 9,
+      "conference_year": 2016,
+      "url": "https://www.vldb.org/pvldb/volumes/9/",
+      "status": "keyword-screened",
+      "sha256": "593a63d8933f6d851738a8fba4c37294cc2d6f1a601c09f10ef10d5deb168043",
+      "title_count": 190,
+      "venue": "VLDB",
+      "candidate_count": 3
+    },
+    {
+      "volume": 10,
+      "conference_year": 2017,
+      "url": "https://www.vldb.org/pvldb/volumes/10/",
+      "status": "keyword-screened",
+      "sha256": "6effc5898a22b60e67da9d48393391ba60c3301a9e15104aee9cc0aadc5f5b25",
+      "title_count": 220,
+      "venue": "VLDB",
+      "candidate_count": 10
+    },
+    {
+      "volume": 11,
+      "conference_year": 2018,
+      "url": "https://www.vldb.org/pvldb/volumes/11/",
+      "status": "keyword-screened",
+      "sha256": "c37a0a5d37a76d6f033655917ea669a80239a014aa31b02e567c3fe29fb5821e",
+      "title_count": 220,
+      "venue": "VLDB",
+      "candidate_count": 9
+    },
+    {
+      "volume": 12,
+      "conference_year": 2019,
+      "url": "https://www.vldb.org/pvldb/volumes/12/",
+      "status": "keyword-screened",
+      "sha256": "a97363b69fd9f73349dad86d76abeaf2eb5784230f2be1a60d3d018eac86b56f",
+      "title_count": 234,
+      "venue": "VLDB",
+      "candidate_count": 13
+    },
+    {
+      "volume": 13,
+      "conference_year": 2020,
+      "url": "https://www.vldb.org/pvldb/volumes/13/",
+      "status": "keyword-screened",
+      "sha256": "1d95d0982182701be0d2a95a5be3961832380defb70f96c9f35f1ba80f435197",
+      "title_count": 280,
+      "venue": "VLDB",
+      "candidate_count": 11
+    },
+    {
+      "volume": 14,
+      "conference_year": 2021,
+      "url": "https://www.vldb.org/pvldb/volumes/14/",
+      "status": "keyword-screened",
+      "sha256": "491b20692cdc072075ff92fcbf3d48daeea406594f4acca4687e4c8401a24045",
+      "title_count": 336,
+      "venue": "VLDB",
+      "candidate_count": 12
+    },
+    {
+      "volume": 15,
+      "conference_year": 2022,
+      "url": "https://www.vldb.org/pvldb/volumes/15/",
+      "status": "keyword-screened",
+      "sha256": "d771256171dc5d1d694c487a1e6acb582c77be4eca72538ac14f19b40b5fb1f4",
+      "title_count": 370,
+      "venue": "VLDB",
+      "candidate_count": 12
+    },
+    {
+      "volume": 16,
+      "conference_year": 2023,
+      "url": "https://www.vldb.org/pvldb/volumes/16/",
+      "status": "keyword-screened",
+      "sha256": "57f4928d694e3e8a5c056f5bf7dfaa28a760786bfaae27b3d0bb13d67f2d3364",
+      "title_count": 384,
+      "venue": "VLDB",
+      "candidate_count": 15
+    },
+    {
+      "volume": 17,
+      "conference_year": 2024,
+      "url": "https://www.vldb.org/pvldb/volumes/17/",
+      "status": "keyword-screened",
+      "sha256": "06482bf286fe64f050f0a00f834d7cf0cb866ff5f083d66fffe6620dcdb9deae",
+      "title_count": 422,
+      "venue": "VLDB",
+      "candidate_count": 14
+    },
+    {
+      "volume": 18,
+      "conference_year": 2025,
+      "url": "https://www.vldb.org/pvldb/volumes/18/",
+      "status": "keyword-screened",
+      "sha256": "946d40238d98dc2417a8c1464bfe0ad58b73197ec719f5505b541ed0b708d128",
+      "title_count": 483,
+      "venue": "VLDB",
+      "candidate_count": 32
+    },
+    {
+      "volume": 19,
+      "conference_year": 2026,
+      "url": "https://www.vldb.org/pvldb/volumes/19/",
+      "status": "keyword-screened",
+      "sha256": "fa5e96e4783a1620f27fe69eb50b3da6f8ee0b49693a234730865cd117884e11",
+      "title_count": 445,
+      "venue": "VLDB",
+      "candidate_count": 11
+    }
+  ]
+}

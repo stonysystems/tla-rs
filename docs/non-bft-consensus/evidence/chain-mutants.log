@@ -1,0 +1,3 @@
+empty-new-tail: rejected by CompletedPrefix
+repeated-request: rejected by Unique
+out-of-order-forward: rejected by Propagation

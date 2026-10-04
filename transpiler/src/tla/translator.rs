@@ -5683,7 +5683,7 @@ impl ModuleTranslator {
             TlaExpr::OpApply { op, args } => r(op) || args.iter().any(&r),
             TlaExpr::Prime(inner) => r(inner),
             TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
-                vars.iter().any(|qb| qb.set.as_ref().is_some_and(&r)) || r(body)
+                vars.iter().any(|qb| qb.set.as_ref().is_some_and(r)) || r(body)
             }
             TlaExpr::IfThenElse {
                 cond,
@@ -5733,7 +5733,7 @@ impl ModuleTranslator {
             TlaExpr::OpApply { op, args } => r(op) || args.iter().any(&r),
             TlaExpr::Prime(inner) => r(inner),
             TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
-                vars.iter().any(|qb| qb.set.as_ref().is_some_and(&r)) || r(body)
+                vars.iter().any(|qb| qb.set.as_ref().is_some_and(r)) || r(body)
             }
             TlaExpr::IfThenElse {
                 cond,

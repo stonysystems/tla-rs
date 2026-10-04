@@ -1,0 +1,386 @@
+{
+  "checked_on": "2026-09-26",
+  "paper_level_completion": false,
+  "tools": {
+    "verus": {
+      "version": "0.2026.08.02.b677dd5",
+      "sha256": "ad2669f579d898ede53f2bf84e80a1daf4e3578739b0f5807ef209a0c9f382dd"
+    }
+  },
+  "file_sha256": {
+    "src/protocol/ChainReplication/paper_model.rs": "b0e089338180ede29ac4a0af96a0ad01eb369b86c30ef0dc3649d69fe6a8d155",
+    "models/non_bft/chain_replication/ChainReplication.tla": "aa2f9f2d0af30b385e56a6a3b4025a1d033783b0a39e7643795efb044f10aa7d",
+    "models/non_bft/chain_replication/ChainReplication.cfg": "ebb6a5b9aecb138726c4dd7543fec8fa388caa87ae60b0ee62ffce6291330f44",
+    "models/non_bft/gpac/PACRecovery.tla": "5d5b708679aaeae59c80edfc880542f1b2273f9012e6f1ab2758389aaf5bde7c",
+    "models/non_bft/gpac/PACOriginal.cfg": "e2beada1270cbfdc31bdc75b55ed0d296dc887c6df790199ee4c34a306231d96",
+    "models/non_bft/gpac/PACCorrectedReplay.cfg": "e766dca4252358272844e7645ecdf6724db640a50d8f0162c5581aede1a0e96f",
+    "scripts/verify_consensus_chain.sh": "d83f063e0f4af25ffc1a3a0ac16b562d4589bfebc894d180c048a7c27e164e59",
+    "scripts/verify_consensus_chain_mutants.py": "fac68abfb4c16c155a2cc43e45ad1d81bde29b91e923c00c3c875c960942b7b6",
+    "scripts/verify_consensus_gpac.sh": "2ddd30e4d3c2a1ce37257b70561f2cab6f310e4576e7b023ebb2c4315f22bbea",
+    "src/protocol/Mencius/instance.rs": "21aa12623cac6846bb42b8ef51e3b1d5de3a46ee6b8eda13dc0e1ba69d6b8695",
+    "models/non_bft/mencius/CoordinatedPaxos.tla": "a0e97aba6b6623180036da452bf08a805bbc28b8946cd6b2c56dea31aeac5619",
+    "models/non_bft/mencius/CoordinatedPaxos.cfg": "f6ed2dddecf63ff90b26cc15bd81d8e628e56336b490cfdaaefc91e0c1af7bd9",
+    "scripts/verify_consensus_mencius.sh": "4a7b22697e1ff4cf2f81b731bbc3dd1a556f79203c2788063e7416f5c897ca77",
+    "scripts/verify_consensus_mencius_mutants.py": "cb81046795dd222f154f4da90e89ee81a71041726596d44c5c80c8d1e8340fde",
+    "src/protocol/Jetpack/recovery.rs": "f6bdd895b733c696c8c7ae8981289846849fd92bfede864c4798b0255acb227d",
+    "src/protocol/Jetpack/view_change.rs": "403dd16c5ed73575b2dba2260df61dee9fe8b38716295d2eec5857d5e602ed46",
+    "src/protocol/Jetpack/proof_harness.rs": "a52b4ffaa0c940ac0147f25e38e0452849a628c9334cda57ca6ccba4cb85406e",
+    "src/protocol/Jetpack/mod.rs": "98a871aac4186454461277ef29cfc0a0266f47229a8cebd19f524bc97cfdc841",
+    "models/non_bft/jetpack/JetpackRecovery.tla": "86ef958ca8b0f498a3e7d772a486b58b90e6528dcd8abc8b28c58c151f99a3fe",
+    "models/non_bft/jetpack/JetpackRecovery.cfg": "f20b89ff8768a1711b92f975959f491272acfed22577da213ff5bd741ac1bdcd",
+    "scripts/verify_consensus_jetpack.sh": "0c00c39ec62642ee0b37c03f2fdcbcf1a9cd13123717b6f0c58b6e19823c376e",
+    "scripts/verify_consensus_jetpack_controls.py": "63a336f3c2f5db9635b3192bfa1cf0745cd5fff7aa0b0475771ef247763b1376",
+    "src/protocol/Jetpack/application.rs": "81a6b52bd45d01f72fbe0cc2ccecec3f71bea9341565ac33c8d5d0908ae0b767",
+    "src/protocol/Jetpack/ordering.rs": "9401bcd3cd3807ce04e83759f04c3c26dbc9f5d181d3fd0e71b48a1bd93c3928",
+    "src/protocol/Jetpack/execution.rs": "39c456f1ffa34ec107f3f01bdea2edbbcb1ce54bfec1a5dd9c69d855e88fbd68",
+    "src/protocol/Jetpack/registers.rs": "b2da144b6ed8481fc6d348d52af28b95f1d2e81c764291eb5dfea8cd8be1f1bc",
+    "src/protocol/Jetpack/execution_witness.rs": "4dab07783cc2a3d14439550d7d5de5db43bd0973d27280a954729495305ba420"
+  },
+  "formalization_sources": [
+    {
+      "id": "chain-2004-section-3.1",
+      "url": "https://www.cs.cornell.edu/home/rvr/papers/OSDI04.pdf",
+      "sha256": "1a16a4c0f4ea53979d77ccfa54d18f98874d7a4ea602e061fd2d6e32e56b60ac"
+    },
+    {
+      "id": "gpac-2019",
+      "url": "https://www.vldb.org/pvldb/vol12/p611-maiyya.pdf",
+      "sha256": "794daa150dadea73a1166f34edd806d71b7c03e95d16a20efa743fd9e2f26b5d"
+    },
+    {
+      "id": "gpac-errata-2021",
+      "url": "https://www.vldb.org/pvldb/vol14/p1166-maiyya.pdf",
+      "sha256": "b9df32ada9c0dc29fa406a294dfeca7c26a8295bde361a9f3fd2b2ab488e2a8d"
+    },
+    {
+      "id": "mencius-2008-section-4.2",
+      "url": "https://www.usenix.org/legacy/event/osdi08/tech/full_papers/mao/mao.pdf",
+      "sha256": "03f7d06fafad78ed1dc7a78a1257e5a74f0baec2ee3b05c52224cd5aad1f0146"
+    },
+    {
+      "id": "jetpack-2026",
+      "url": "https://www.usenix.org/system/files/osdi26-tang.pdf",
+      "sha256": "19b480f481b862543cb2270bde0f1d77f9e0c31b6f7f073eb50d0d525191559e",
+      "artifact_commit": "c03e318ec355b11edd42aac56c68d0765f88d1d2",
+      "artifact_url": "https://github.com/stonysystems/jetpack/tree/c03e318ec355b11edd42aac56c68d0765f88d1d2/tla",
+      "reference_sha256": {
+        "docs/jetpack_reference/base_raft.tla": "fffdab345cd4e98827c6595cae711f401dd309480dfe997505274e47dd229b5b",
+        "docs/jetpack_reference/jetpack.tla": "8e3818b418e6ed6d50982e21f4f49ce211a5912ed51c868f1595f61598e26fcd",
+        "docs/jetpack_reference/jetpack_raft_composition.tla": "0915815bd636956021c527333a390cd3f1684bacf8925421c6853d2c88ddbb4e"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "chain-standalone-verus",
+      "result": "pass",
+      "verified": 10,
+      "errors": 0,
+      "scope": "Unbounded finite-execution safety of history-level abstract model",
+      "log": "evidence/chain-verification.log",
+      "proof_engine": "Verus"
+    },
+    {
+      "name": "chain-crate-integration",
+      "result": "pass",
+      "verified": 10,
+      "errors": 0,
+      "scope": "Selected module through src/lib.rs; not whole-crate verification",
+      "log": "evidence/chain-integrated.log",
+      "proof_engine": "Verus"
+    },
+    {
+      "name": "mencius-standalone-verus",
+      "result": "pass",
+      "verified": 14,
+      "errors": 0,
+      "scope": "Unbounded finite-execution agreement and coordinator origin of a single-instance abstraction",
+      "log": "evidence/mencius-verification.log",
+      "proof_engine": "Verus"
+    },
+    {
+      "name": "mencius-crate-integration",
+      "result": "pass",
+      "verified": 14,
+      "errors": 0,
+      "scope": "Selected module through src/lib.rs; not whole-crate verification",
+      "log": "evidence/mencius-integrated.log",
+      "proof_engine": "Verus"
+    },
+    {
+      "name": "jetpack-standalone-verus",
+      "result": "pass",
+      "verified": 85,
+      "errors": 0,
+      "no_cheating": true,
+      "scope": "Arbitrary finite-execution recovery safety, conditional fast/base ordering agreement, execution consistency and client linearizability; includes supporting lemmas",
+      "log": "evidence/jetpack-verification.log",
+      "proof_engine": "Verus",
+      "main_theorems": [
+        {
+          "file": "src/protocol/Jetpack/recovery.rs",
+          "function": "execution_safety",
+          "properties": [
+            "recovery-set agreement across retries",
+            "recovery completeness for fast-committed commands",
+            "conflict exclusion relative to fast-committed commands"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/view_change.rs",
+          "function": "admission_after_recovery",
+          "properties": [
+            "prior-view fast commands are durable before new admission",
+            "admission occurs only in an installed normal view"
+          ],
+          "contract": "Separate coarser model with abstract atomic durable recovery-batch commitment"
+        },
+        {
+          "file": "src/protocol/Jetpack/ordering.rs",
+          "function": "commit_respects_fast",
+          "properties": [
+            "A distinct conflicting base command cannot overtake a pending certified fast command"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/ordering.rs",
+          "function": "finish_preserves",
+          "properties": [
+            "Executing the chosen recovery batch drains pending fast commands before normal admission"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/execution.rs",
+          "function": "reachable_order_agreement",
+          "properties": [
+            "Conflicting-command order agrees between base execution and the ghost sequential witness"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/execution.rs",
+          "function": "replica_execution_agreement",
+          "properties": [
+            "Semantic execution of any two common-base prefixes agrees on shared commands and client replies"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/execution.rs",
+          "function": "execution_consistency_over_time",
+          "properties": [
+            "Earlier client replies equal later base-prefix execution results, across modeled recovery retries and views"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/execution.rs",
+          "function": "drained_state_agreement",
+          "properties": [
+            "Base execution and the sequential witness have equal states and outputs when pending is empty"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/execution.rs",
+          "function": "history_linearizable",
+          "properties": [
+            "Every finite reachable client history has a legal sequential completion preserving returned values and real-time order"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/registers.rs",
+          "function": "machine_ok",
+          "properties": [
+            "Reads and atomic exchanges on distinct registers satisfy the state/output independence contract"
+          ]
+        },
+        {
+          "file": "src/protocol/Jetpack/execution_witness.rs",
+          "function": "fast_reply_is_reachable",
+          "properties": [
+            "A concrete reachable execution returns a fast result before any base execution"
+          ]
+        }
+      ],
+      "host_and_application_contracts": [
+        "Host supplies a common durable executed prefix and enforces PR1/PR2 proposer order",
+        "Host fences normal proposals and preserves per-proposer prefixes during recovery",
+        "Fast result computation uses the modeled executed base prefix",
+        "Application independence preserves both states and outputs",
+        "Fixed replica membership; logical operation IDs are unique; view-local messages are fenced"
+      ],
+      "command": "VERUS_PATH=/path/to/verus bash scripts/verify_consensus_jetpack.sh"
+    },
+    {
+      "name": "jetpack-crate-integration",
+      "result": "pass",
+      "verified": 85,
+      "errors": 0,
+      "scope": "Selected recovery, view_change, application, ordering, execution, registers and execution_witness modules through src/lib.rs; not whole-crate verification",
+      "log": "evidence/jetpack-integrated.log",
+      "proof_engine": "Verus",
+      "command": "/path/to/verus --crate-type=lib src/lib.rs --triggers-mode silent --verify-only-module protocol::Jetpack::recovery --verify-only-module protocol::Jetpack::view_change --verify-only-module protocol::Jetpack::application --verify-only-module protocol::Jetpack::ordering --verify-only-module protocol::Jetpack::execution --verify-only-module protocol::Jetpack::registers --verify-only-module protocol::Jetpack::execution_witness"
+    }
+  ],
+  "not_checked": [
+    "Full Chain Replication master/network refinement",
+    "Chain Replication client linearizability and liveness",
+    "Mechanical correspondence between independently written TLA+ and Verus models",
+    "General PAC/G-PAC corrected-protocol safety or liveness",
+    "Existing EPaxos/Tiga proof packages",
+    "Whole repository verification",
+    "Full Mencius multi-instance scheduling and skip aggregation",
+    "Message-level refinement of Coordinated Paxos prepare collection",
+    "Mencius liveness and client deduplication",
+    "Jetpack membership changes, liveness and client retry/deduplication",
+    "Jetpack refinement to author TLA+ artifact, unmerged recovery schedules or host implementations",
+    "Jetpack host-contract refinement: common executed prefix, proposer ordering, fenced prefix recovery including holes and marker discovery",
+    "Jetpack local fast-result computation, replica execution, stale-view message rejection and physical garbage collection in implementation code"
+  ],
+  "proof_policy": {
+    "engine": "Verus",
+    "completion_basis": "Named, formally proved properties with explicit assumptions and scope",
+    "run_tlc": false,
+    "model_checking_counts_as_proof": false,
+    "mutation_checks_count_as_proof": false
+  },
+  "historical_tools": {
+    "tla_tools": {
+      "release_url": "https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar",
+      "reported_tlc_version": "2026.09.25.163503 (rev: 8f4bc8b)",
+      "sha256": "ab4694601923fd5ac06452abbf847c366a5054a3d739552085edd6ed986c29ec",
+      "version_note": "Re-read from the Jetpack run; earlier 2.19 label was incorrect. Jar SHA-256 is unchanged."
+    }
+  },
+  "historical_checks": [
+    {
+      "name": "chain-tlc",
+      "result": "pass",
+      "generated_states": 12059,
+      "distinct_states": 2632,
+      "depth": 13,
+      "bounds": {
+        "requests": 3,
+        "initial_nodes": 3,
+        "max_nodes": 3
+      },
+      "log": "evidence/chain-verification.log",
+      "counts_as_proof": false
+    },
+    {
+      "name": "chain-mutation-controls",
+      "result": "pass",
+      "expected_counterexamples": {
+        "empty-new-tail": "CompletedPrefix",
+        "repeated-request": "Unique",
+        "out-of-order-forward": "Propagation"
+      },
+      "log": "evidence/chain-mutants.log",
+      "counts_as_proof": false
+    },
+    {
+      "name": "pac-original-replay",
+      "result": "expected-counterexample",
+      "invariant": "Agreement",
+      "tlc_exit_code": 12,
+      "distinct_states": 13,
+      "depth": 13,
+      "scope": "Fixed replay of the published PAC recovery witness",
+      "log": "evidence/pac-original.log",
+      "counts_as_proof": false
+    },
+    {
+      "name": "pac-corrected-replay",
+      "result": "pass",
+      "tlc_exit_code": 0,
+      "distinct_states": 13,
+      "depth": 13,
+      "scope": "Same fixed schedule only; Agreement and weakly fair ReplayCompletes",
+      "log": "evidence/pac-corrected.log",
+      "counts_as_proof": false
+    },
+    {
+      "name": "mencius-tlc",
+      "result": "pass",
+      "generated_states": 28903,
+      "distinct_states": 6917,
+      "depth": 13,
+      "bounds": {
+        "acceptors": 3,
+        "ballots": 3,
+        "commands": 2,
+        "noop": 1
+      },
+      "log": "evidence/mencius-verification.log",
+      "counts_as_proof": false
+    },
+    {
+      "name": "mencius-mutation-controls",
+      "result": "pass",
+      "expected_counterexamples": {
+        "unilateral-command-learning": "Agreement",
+        "discard-accepted-value": "Agreement"
+      },
+      "log": "evidence/mencius-mutants.log",
+      "counts_as_proof": false
+    },
+    {
+      "name": "jetpack-tlc",
+      "result": "pass",
+      "generated_states": 487468,
+      "distinct_states": 60975,
+      "depth": 21,
+      "bounds": {
+        "replicas": 3,
+        "conflicting_commands": 2,
+        "ballots": 2
+      },
+      "invariants": [
+        "TypeOK",
+        "ReplyAccuracy",
+        "RecoveryComplete",
+        "RecoveryConflictFree",
+        "Agreement"
+      ],
+      "scope": "One normal view recovery; view-composition model is Verus-only",
+      "log": "evidence/historical/jetpack-verification.log",
+      "counts_as_proof": false
+    },
+    {
+      "name": "jetpack-controls",
+      "result": "pass",
+      "expected_counterexamples": {
+        "ack-after-freeze": "RecoveryComplete",
+        "discard-accepted-set": "Agreement",
+        "undersized-fast-quorum": "RecoveryComplete"
+      },
+      "reachability_witnesses": [
+        "nonempty-fast-recovery",
+        "empty-recovery",
+        "two-chosen-recovery-ballots"
+      ],
+      "expected_verus_failures": {
+        "marker-without-durable-batch": "marker_preserves",
+        "admit-during-view-change": "admission_after_recovery"
+      },
+      "log": "evidence/historical/jetpack-controls.log",
+      "counts_as_proof": false
+    }
+  ],
+  "auxiliary_checks": [
+    {
+      "name": "jetpack-verus-mutation-controls",
+      "result": "pass",
+      "counts_as_proof": false,
+      "expected_verus_failures": {
+        "marker-without-durable-batch": "marker_preserves",
+        "admit-during-view-change": "admission_after_recovery"
+      },
+      "log": "evidence/jetpack-controls.log"
+    }
+  ],
+  "additional_verification_ledgers": [
+    {
+      "file": "next-five-verification.json",
+      "checked_on": "2026-09-27",
+      "scope": "Om, Gaios, CORFU, Replicated Commit and Speculative Paxos; new scoped safety results and Om counterexamples"
+    }
+  ]
+}
