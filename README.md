@@ -145,7 +145,7 @@ scripts/build_lion_runtime.sh --no-verify
 ```
 
 The Verus invocation covers all ten protocol modules in the crate. The current full-crate
-gate reports `1496 verified, 0 errors`; it also emits an automatic-trigger note in
+gate reports `1685 verified, 0 errors`; it also emits an automatic-trigger note in
 Raft recovery. Verification remains relative to the declared trusted boundaries:
 the native scheduler, marshalling, Lion's OS-facing glue, configuration, and TLS
 integration are runtime-tested, not covered by an end-to-end service theorem.
