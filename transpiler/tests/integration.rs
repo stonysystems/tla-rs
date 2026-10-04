@@ -4615,6 +4615,147 @@ fn resolve_verus_binary() -> Option<std::path::PathBuf> {
     }
 }
 
+/// Identity state updates must preserve the outputs that remain after the
+/// mutable receiver is removed from the functional return tuple.
+#[test]
+fn test_mut_self_noop_outputs_verify_and_execute() {
+    use std::process::Command;
+
+    let Some(verus) = resolve_verus_binary() else {
+        eprintln!("Skipping: set VERUS_PATH to verify and execute mutable no-op outputs");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("create no-op regression directory");
+    let spec = dir.path().join("noop_spec.rs");
+    let config = dir.path().join("noop.toml");
+    let generated = dir.path().join("noop_gen.rs");
+    let main = dir.path().join("main.rs");
+    let binary = dir.path().join("noop");
+    std::fs::write(
+        &spec,
+        r#"use vstd::prelude::*;
+verus! {
+pub struct LState { pub value: Seq<u64>, pub epoch: int }
+pub struct LMessage { pub value: int }
+
+// @automan predicate(s: in, s_: out, sent: out)
+pub open spec fn LNoop(s: LState, s_: LState, sent: Seq<LMessage>) -> bool {
+    &&& s_ == LState { value: s.value, epoch: s.epoch }
+    &&& sent == seq![LMessage { value: 7 }]
+}
+
+// @automan predicate(s: in, s_: out, sent: out, tag: out)
+pub open spec fn LNoopMany(s: LState, s_: LState, sent: Seq<LMessage>, tag: u64) -> bool {
+    &&& s_ == LState { value: s.value, epoch: s.epoch }
+    &&& sent == seq![LMessage { value: 8 }]
+    &&& tag == 11
+}
+
+// @automan predicate(s: in, s_: out)
+pub open spec fn LNoopUnit(s: LState, s_: LState) -> bool {
+    s_ == LState { value: s.value, epoch: s.epoch }
+}
+
+// @automan predicate(s: in, s_: out)
+pub open spec fn LReplace(s: LState, s_: LState) -> bool {
+    s_ == LState { value: s.value, epoch: 9 }
+}
+}
+"#,
+    )
+    .expect("write no-op spec");
+    std::fs::write(
+        &config,
+        r#"mut_self_types = ["CState"]
+[naming]
+spec_prefix = "L"
+exec_prefix = "C"
+int_type = "i64"
+nat_type = "u64"
+[remapping]
+LState = "CState"
+LMessage = "CMessage"
+[output]
+generate_inline_types = true
+generate_proofs = true
+custom_imports = ["use vstd::prelude::*;", "use crate::noop_spec::*;"]
+"#,
+    )
+    .expect("write no-op config");
+    let output = Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .arg("--input")
+        .arg(&spec)
+        .arg("--config")
+        .arg(&config)
+        .arg("--output")
+        .arg(&generated)
+        .output()
+        .expect("run transpiler for no-op outputs");
+    assert!(
+        output.status.success(),
+        "no-op generation failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    std::fs::write(
+        &main,
+        r#"#![allow(non_snake_case)]
+#![verifier::deprecated_postcondition_mut_ref_style(true)]
+mod noop_spec;
+mod noop_gen;
+use noop_gen::CState;
+
+fn main() {
+    for initial in [vec![], vec![3u64, 5, 3]] {
+        let mut state = CState { value: initial.clone(), epoch: 2 };
+        let sent = state.CNoop();
+        assert_eq!(state.value, initial);
+        assert_eq!(state.epoch, 2);
+        assert_eq!(sent.iter().map(|message| message.value).collect::<Vec<_>>(), vec![7]);
+
+        let (sent, tag) = state.CNoopMany();
+        assert_eq!(state.value, initial);
+        assert_eq!(state.epoch, 2);
+        assert_eq!(sent.iter().map(|message| message.value).collect::<Vec<_>>(), vec![8]);
+        assert_eq!(tag, 11);
+
+        let (): () = state.CNoopUnit();
+        assert_eq!(state.value, initial);
+        assert_eq!(state.epoch, 2);
+
+        let (): () = state.CReplace();
+        assert_eq!(state.value, initial);
+        assert_eq!(state.epoch, 9);
+    }
+}
+"#,
+    )
+    .expect("write no-op execution harness");
+    let output = Command::new(verus)
+        .arg("--compile")
+        .arg(&main)
+        .arg("-o")
+        .arg(&binary)
+        .current_dir(dir.path())
+        .output()
+        .expect("verify and compile no-op outputs");
+    assert!(
+        output.status.success(),
+        "no-op verification/compilation failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let output = Command::new(binary)
+        .output()
+        .expect("execute generated no-op actions");
+    assert!(
+        output.status.success(),
+        "no-op actions changed state or returned incorrect outputs:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 fn first_verus_error_code(stderr: &str) -> Option<&str> {
     for line in stderr.lines() {
         if let Some(idx) = line.find("error[E") {

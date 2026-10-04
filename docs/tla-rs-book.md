@@ -1238,6 +1238,12 @@ because several handlers compute an intermediate whole state and then reason
 from that value; the current `&mut self` transform cannot generally lift that
 pattern into a mutation.
 
+Identity field assignments, including `self.field = self.field.clone()`, are
+omitted. Removing every state assignment must still preserve non-state return
+values: a no-op action can return messages or a tuple of outputs. The lowering
+uses the method's return type, not the number of assignments left, to retain
+the output binding used by both the executable return and its proof.
+
 For functional code that must repeatedly rebuild large states,
 `arc_wrap_types` or `arc_wrap_fields` can make selected unchanged clones
 shallow. Arc wrapping conflicts with `mut_self_types`: the transpiler clears
@@ -2201,6 +2207,37 @@ on the server and is the native client's default protocol. Use explicit
 `[[READY]]` marks server readiness. SIGINT/SIGTERM stop the owning Lion loop
 and drop its sockets/tasks. No `LD_LIBRARY_PATH` setup is needed.
 
+Server and client hostname resolution use the same IPv4-preferred policy,
+falling back to IPv6 when no IPv4 address is available. This applies to service
+members, client `ipN=` endpoints, and the client's `bind=` address.
+The server's `addr=` override controls listening only: `addr=0.0.0.0` accepts
+IPv4 traffic on all interfaces while retaining the advertised service member
+identity. Keep that advertised endpoint reachable at the configured service port.
+
+#### UDP RSL client restarts
+
+An RSL UDP client is identified by its source IP/port, not by the lifetime of
+its socket. A restarted worker must not start again at sequence 1, and random
+sequence numbers are insufficient because RSL requires increasing numbers.
+The client reserves nonoverlapping ranges of $2^{32}$ sequence numbers before
+sending, storing the exclusive upper bound in `tla-rs/rsl-sequence` under an
+absolute `XDG_STATE_HOME`, or under `$HOME/.local/state` otherwise.
+Concurrent processes serialize reservations with `rsl-sequence.lock`; checkpoint
+replacement is atomic and synchronized to disk before a range is used.
+The wall clock supplies only a lower bound: retained state prevents reuse even
+after clock rollback. Unused numbers are abandoned on exit, and an exhausted
+range is replenished. Ordinary requests and retries do not perform disk I/O.
+
+Keep this state directory across client restarts. Processes or containers that
+can reuse the same source IP/port must share it, with appropriate permissions,
+on a filesystem supporting file locks, atomic rename, and synchronization.
+Do not delete, roll back, or independently clone the checkpoint while a cluster
+can retain requests or replies from those endpoints. Missing home/state-directory
+configuration, corrupt state, exhausted sequence space, or persistence errors
+fail the workload rather than silently resetting its sequence.
+This checkpoint is specific to UDP RSL; TCP clients retain their existing
+per-client identity behavior.
+
 ### Select another protocol
 
 The same executable accepts:
@@ -2347,6 +2384,37 @@ helper; the driver verifies every server's emitted batch size. Its default
 `NATIVE_BATCH_SIZE=1` preserves the matched Lion methodology. Selecting the
 C# reference with any other native batch-size expectation is rejected.
 
+### UDP packet policy and state transfer
+
+Ordinary UDP messages keep their existing bytes and datagram boundaries.
+Messages larger than 65,507 bytes are fragmented only between configured
+members. This allows RSL to transfer application state and a reply cache that
+no longer fit in one UDP datagram. Both replicas must support this framing;
+legacy peers remain compatible with ordinary packets, not oversized transfers.
+
+Fragment datagrams are at most 1,232 bytes: the reserved eight-byte
+`\xffTLAFRG1` prefix, a 16-byte message identity (eight random session bytes
+followed by a big-endian u64 counter), big-endian u32 message length and byte
+offset, then up to 1,200 payload bytes. Offsets are multiples of 1,200.
+Reassembly handles reordering and identical duplicates, rejects conflicting
+fragments, and accepts fragment sources only from configured member endpoints.
+Endpoint membership is not authentication; UDP remains spoofable and unencrypted.
+
+Limits are 8 MiB per message, 64 MiB of queued message payloads, 4,096 queued
+messages, and 64 MiB of incomplete reassembly payloads. At most 64 incomplete
+messages are retained, with at most four per peer; they expire five seconds
+after their first fragment. Only one batch of at most 64 outgoing datagrams is
+materialized at a time. These payload limits exclude bounded metadata and the
+current syscall batch.
+
+Packet-local send errors discard the failed datagram without terminating the
+replica or resending the successful prefix. Queue-limit and malformed-fragment
+failures are also dropped and reported; structural socket failures remain fatal.
+There are no transport acknowledgements or retransmissions: a missing fragment
+loses the message, and recovery/retry remains the protocol's responsibility.
+RSL snapshot requests are triggered by phase-two messages advertising a truncated
+log. The transport adds neither periodic recovery requests nor persistent storage.
+
 ### TCP and TLS compatibility
 
 UDP is the default unencrypted datagram transport. Generate with `usessl=true`
@@ -2366,6 +2434,11 @@ waiting for a failed peer; connection failures are reported and dropped
 according to the protocol's unreliable-network contract. Listener failures
 remain fatal. Rejected clients or disconnected replicas do not terminate a
 healthy server. There is no fallback from TLS to plaintext.
+
+Several connections may share an identity. Replies prefer the newest open
+connection; older live routes remain available if it closes. Closing either
+connection removes only its own route, not the surviving identity's route.
+In-flight writes remain subject to the unreliable-network contract.
 
 Live stream workload/recovery evidence covers RSL. Generic benchmark defaults
 remain UDP. An exploratory two-client PBFT/TCP check committed 233 requests during

@@ -178,6 +178,14 @@ network worker thread, or `LD_LIBRARY_PATH` setup is needed.
 The default RSL network path is native Rust with Lion batched UDP on both
 server and client; no transport or wire-format option is needed. Use
 `transport=tcp` explicitly for plaintext TCP, or for a TLS client.
+Ordinary UDP packets retain their wire format; oversized replica messages use
+bounded fragmentation up to 8 MiB. Both member endpoints must run the revised
+transport for oversized state transfer. Packet-local send failures are dropped
+without terminating the replica.
+
+Client and server hostname resolution both prefer IPv4, falling back to IPv6.
+A server override such as `addr=0.0.0.0` changes its listening address, not its
+advertised member identity in the service file.
 
 Run a client from another terminal:
 
@@ -185,6 +193,15 @@ Run a client from another terminal:
 bin/tla-rs-client service=certs/MyCounter.IronRSL.service.txt \
   nthreads=32 warmup=5 duration=30
 ```
+
+UDP RSL clients reserve persistent request-sequence ranges under
+`$XDG_STATE_HOME/tla-rs/`, or `$HOME/.local/state/tla-rs/` when an absolute
+`XDG_STATE_HOME` is not set. Retain this directory across restarts and share it
+between clients that can reuse the same source IP/port; do not delete or roll
+back its `rsl-sequence` checkpoint while a cluster can retain old requests or
+replies. This prevents cached replies from being counted as new work after
+endpoint reuse, including when the wall clock moves backward. The directory
+must be writable; TCP clients do not require this checkpoint.
 
 The same server accepts `twophase`, `leaderelection`, `primarybackup`,
 `chainreplication`, `paxos`, `verticalpaxos`, `raft`, `pbft`, and `epaxos`; generate

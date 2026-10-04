@@ -350,7 +350,7 @@ impl CLearner {
         if self.unexecuted_learner_state.contains_key(&opn) {
                         let mut __unexecuted_learner_state = clone_clearnerstate(&self.unexecuted_learner_state);
             __unexecuted_learner_state.remove(&opn);
-            { self.constants = self.constants.clone_up_to_view(); self.max_ballot_seen = self.max_ballot_seen.clone(); self.unexecuted_learner_state = __unexecuted_learner_state }
+            { self.constants = self.constants.clone_up_to_view(); self.unexecuted_learner_state = __unexecuted_learner_state }
 
         } else {
             

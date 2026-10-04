@@ -26,11 +26,13 @@ fi
 [[ -f "$ROOT/bin/libtla_protocol.rlib" ]] || { printf 'Native protocol rlib missing\n' >&2; exit 1; }
 # Same Rust toolchain as Verus; owned Rust values never cross a foreign ABI.
 # Unit-separator encoding preserves paths containing whitespace.
-export CARGO_ENCODED_RUSTFLAGS="${CARGO_ENCODED_RUSTFLAGS:+$CARGO_ENCODED_RUSTFLAGS$'\x1f'}-L"$'\x1f'"dependency=$VERUS_DIR"$'\x1f'"--extern"$'\x1f'"tla_protocol=$ROOT/bin/libtla_protocol.rlib"
+protocol_flags="-L"$'\x1f'"dependency=$VERUS_DIR"$'\x1f'"-L"$'\x1f'"dependency=$ROOT/bin"$'\x1f'"--extern"$'\x1f'"tla_protocol=$ROOT/bin/libtla_protocol.rlib"
+export CARGO_ENCODED_RUSTFLAGS="${CARGO_ENCODED_RUSTFLAGS:+$CARGO_ENCODED_RUSTFLAGS$'\x1f'}$protocol_flags"
+export CARGO_ENCODED_RUSTDOCFLAGS="${CARGO_ENCODED_RUSTDOCFLAGS:+$CARGO_ENCODED_RUSTDOCFLAGS$'\x1f'}$protocol_flags"
 cargo build --locked --release --manifest-path "$ROOT/runtime/lion-server/Cargo.toml" --bins
 if [[ "$run_tests" == true ]]; then
     cargo test --locked --release --manifest-path "$ROOT/runtime/lion-server/Cargo.toml"
-    env -u CARGO_ENCODED_RUSTFLAGS cargo test --locked --manifest-path "$ROOT/runtime/lion-io/Cargo.toml"
+    env -u CARGO_ENCODED_RUSTFLAGS -u CARGO_ENCODED_RUSTDOCFLAGS cargo test --locked --manifest-path "$ROOT/runtime/lion-io/Cargo.toml"
 fi
 for binary in tla-rs-server tla-rs-config tla-rs-client; do
     install -m 0755 "$ROOT/runtime/lion-server/target/release/$binary" "$ROOT/bin/$binary"

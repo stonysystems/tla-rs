@@ -1852,7 +1852,7 @@ macro_rules! derive_marshalable_for_enum {
         exec fn deserialize(data: &Vec<u8>, start: usize) -> (res: Option<(Self, usize)>)
           // req, ens from trait
         {
-          if data.len() == 0 || start >= data.len() - 1 {
+          if start >= data.len() {
             return None;
           }
           let tag = data[start];

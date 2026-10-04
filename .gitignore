@@ -11,6 +11,7 @@ lib.pdb
 *~
 venv/
 bin/
+!runtime/lion-server/src/bin/
 doubts.txt
 .apas
 Cargo.lock

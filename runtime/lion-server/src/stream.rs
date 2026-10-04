@@ -69,7 +69,7 @@ struct Shared {
     identity: Identity,
     tls: Option<SslContext>,
     known: Arc<HashMap<Vec<u8>, Remote>>,
-    connections: Mutex<HashMap<Vec<u8>, ConnectionSlot>>,
+    connections: Mutex<HashMap<Vec<u8>, Vec<ConnectionSlot>>>,
     incoming: mpsc::Sender<Received>,
     shutdown: watch::Receiver<bool>,
     permits: Arc<Semaphore>,
@@ -223,40 +223,41 @@ impl StreamTransport {
     }
 
     fn route(&self, peer: &[u8]) -> Result<mpsc::Sender<SendRequest>, String> {
-        Ok({
-            let mut connections = self.shared.connections.lock();
-            if let Some(connection) = connections.get(peer) {
-                connection.sender.clone()
-            } else {
-                let remote = self
-                    .shared
-                    .known
-                    .get(peer)
-                    .cloned()
-                    .ok_or("no connected client or configured member for destination")?;
-                let permit = self
-                    .shared
-                    .permits
-                    .clone()
-                    .try_acquire_owned()
-                    .map_err(|_| "TCP connection limit reached")?;
-                let (sender, receiver) = mpsc::channel(CONNECTION_QUEUE);
-                let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed);
-                let peer = peer.to_vec();
-                connections.insert(
-                    peer.clone(),
-                    ConnectionSlot {
-                        id,
-                        sender: sender.clone(),
-                    },
-                );
-                let shared = self.shared.clone();
-                lion::spawn(async move {
-                    connect_connection(shared, remote, peer, id, receiver, permit).await;
-                });
-                sender
+        let mut connections = self.shared.connections.lock();
+        if let Some(routes) = connections.get_mut(peer) {
+            routes.retain(|connection| !connection.sender.is_closed());
+            if let Some(connection) = routes.last() {
+                return Ok(connection.sender.clone());
             }
-        })
+            connections.remove(peer);
+        }
+        let remote = self
+            .shared
+            .known
+            .get(peer)
+            .cloned()
+            .ok_or("no connected client or configured member for destination")?;
+        let permit = self
+            .shared
+            .permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| "TCP connection limit reached")?;
+        let (sender, receiver) = mpsc::channel(CONNECTION_QUEUE);
+        let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed);
+        let peer = peer.to_vec();
+        connections.insert(
+            peer.clone(),
+            vec![ConnectionSlot {
+                id,
+                sender: sender.clone(),
+            }],
+        );
+        let shared = self.shared.clone();
+        lion::spawn(async move {
+            connect_connection(shared, remote, peer, id, receiver, permit).await;
+        });
+        Ok(sender)
     }
 }
 
@@ -373,12 +374,13 @@ async fn accept_connection(
     };
     let (sender, receiver) = mpsc::channel(CONNECTION_QUEUE);
     let id = shared.next_id.fetch_add(1, Ordering::Relaxed);
-    // Multiple simultaneous connections are valid in IoFramework. Replacing
-    // the route leaves the old connection draining its already queued frames.
+    // Prefer the newest connection, keeping older live routes for failover.
     shared
         .connections
         .lock()
-        .insert(peer.clone(), ConnectionSlot { id, sender });
+        .entry(peer.clone())
+        .or_default()
+        .push(ConnectionSlot { id, sender });
     run_connection(shared, stream, peer, id, receiver, permit).await;
 }
 
@@ -444,11 +446,11 @@ async fn connect_connection(
 
 fn remove_connection(shared: &Shared, peer: &[u8], id: u64) {
     let mut connections = shared.connections.lock();
-    if connections
-        .get(peer)
-        .is_some_and(|connection| connection.id == id)
-    {
-        connections.remove(peer);
+    if let Some(routes) = connections.get_mut(peer) {
+        routes.retain(|connection| connection.id != id);
+        if routes.is_empty() {
+            connections.remove(peer);
+        }
     }
 }
 
@@ -501,9 +503,7 @@ async fn run_connection(
                 return Err(error);
             }
         }
-        // Losing the preferred outbound route must not interrupt inbound data
-        // on a still-live connection (e.g. simultaneous reciprocal connects).
-        std::future::pending::<Result<(), String>>().await
+        Ok(())
     };
     let result = tokio::select! {
         _ = shutdown.changed() => Ok(()),
@@ -630,6 +630,109 @@ mod tests {
         assert!(validate_certificate(&other.certificate, Some(&public), &known).is_err());
         public.friendly_name = "server2".into();
         assert!(validate_certificate(&identity.certificate, Some(&public), &known).is_err());
+    }
+
+    async fn assert_exchange(
+        server: &mut StreamTransport,
+        client: &mut StreamTransport,
+        server_peer: &[u8],
+        client_peer: &[u8],
+        payload: &[u8],
+    ) {
+        client.send(server_peer, payload).await.unwrap();
+        let (sender, bytes) = server.recv().await.unwrap();
+        assert_eq!(sender, client_peer);
+        assert_eq!(bytes, payload);
+        server.send(&sender, &bytes).await.unwrap();
+        let (sender, bytes) = client.recv().await.unwrap();
+        assert_eq!(sender, server_peer);
+        assert_eq!(bytes, payload);
+    }
+
+    #[test]
+    fn same_identity_connections_keep_surviving_routes_in_plaintext_and_tls() {
+        let identity = Identity::generate("server1", 2048).unwrap();
+        let client_identity = Identity::generate("client", 2048).unwrap();
+        for use_ssl in [false, true] {
+            for close_preferred in [false, true] {
+                lion::Runtime::new().unwrap().block_on(async {
+                    lion::time::timeout(Duration::from_secs(10), async {
+                        let mut service = ServiceIdentity {
+                            friendly_name: "test".into(),
+                            service_type: "IronRSL".into(),
+                            servers: vec![PublicIdentity {
+                                friendly_name: "server1".into(),
+                                public_key: identity.public_key.clone(),
+                                host_name_or_address: "127.0.0.1".into(),
+                                port: 0,
+                            }],
+                            use_ssl,
+                        };
+                        let server_peer = sha256(&identity.public_key).to_vec();
+                        let client_peer = sha256(&client_identity.public_key).to_vec();
+                        let config = Config {
+                            protocol: "rsl".into(),
+                            transport: crate::config::Transport::Tcp,
+                            bind: "127.0.0.1:0".parse().unwrap(),
+                            me: server_peer.clone(),
+                            peers: vec![server_peer.clone()],
+                            verbose: false,
+                            identity: identity.clone(),
+                            service: service.clone(),
+                            servers: Vec::new(),
+                        };
+                        let mut server = StreamTransport::bind(&config).await.unwrap();
+                        service.servers[0].port = server.local_addr().unwrap().port();
+                        let mut first =
+                            StreamTransport::new(client_identity.clone(), &service).unwrap();
+                        assert_exchange(
+                            &mut server,
+                            &mut first,
+                            &server_peer,
+                            &client_peer,
+                            b"original connection",
+                        )
+                        .await;
+                        let mut second =
+                            StreamTransport::new(client_identity.clone(), &service).unwrap();
+                        assert_exchange(
+                            &mut server,
+                            &mut second,
+                            &server_peer,
+                            &client_peer,
+                            b"replacement connection",
+                        )
+                        .await;
+
+                        let mut survivor = if close_preferred {
+                            drop(second);
+                            first
+                        } else {
+                            drop(first);
+                            second
+                        };
+                        // A peer error is emitted only after that connection's
+                        // route has been cleaned up. No timing sleeps are needed.
+                        assert!(matches!(server.recv().await, Err(ReceiveError::Peer(_))));
+                        assert_exchange(
+                            &mut server,
+                            &mut survivor,
+                            &server_peer,
+                            &client_peer,
+                            b"surviving connection",
+                        )
+                        .await;
+                    })
+                    .await
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "same-identity exchange timed out: TLS={use_ssl}, \
+                             close_preferred={close_preferred}"
+                        )
+                    });
+                });
+            }
+        }
     }
 
     #[test]

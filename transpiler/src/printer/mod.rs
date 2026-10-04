@@ -389,24 +389,20 @@ impl Printer {
                                 let remaining_count = Self::count_non_struct_in_expr(value);
                                 let mut new_stmts: Vec<ExecExpr> = stmts[..let_idx].to_vec();
 
-                                match &transformed {
-                                    ExecExpr::Block(inner) => {
-                                        // Last element of inner is the remaining return value
-                                        // Everything before it is field assignments
-                                        if inner.len() > 1 {
-                                            // Field assignments
-                                            new_stmts
-                                                .extend(inner[..inner.len() - 1].iter().cloned());
-                                            // Rebind result to remaining value
-                                            let remaining = &inner[inner.len() - 1];
+                                match transformed {
+                                    ExecExpr::Block(mut inner) => {
+                                        // Return shape, not assignment count, determines
+                                        // whether the tail is an output. Identity state
+                                        // fields can leave no assignments before it.
+                                        let remaining =
+                                            if returns_unit { None } else { inner.pop() };
+                                        new_stmts.extend(inner);
+                                        if let Some(remaining) = remaining {
                                             new_stmts.push(ExecExpr::Let {
                                                 pattern: tail_var.clone(),
                                                 ty: None,
-                                                value: Box::new(remaining.clone()),
+                                                value: Box::new(remaining),
                                             });
-                                        } else if inner.len() == 1 {
-                                            // Only field assignments, no remaining return
-                                            new_stmts.extend(inner.iter().cloned());
                                         }
                                     }
                                     _ => {
@@ -2560,7 +2556,6 @@ mod tests {
             out
         );
     }
-
 
     /// Phase 42.8.c.2.iv.E. The translator emits a dedicated `Clone` node, not a
     /// `.clone()` MethodCall, for `(self.clone(), ..)`. Found by dumping the AST the

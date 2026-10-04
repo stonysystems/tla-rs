@@ -234,6 +234,58 @@ For the matched four-worker row, set `CLIENT_COUNTS=4`,
 launcher described below. Neither the batch-32 historical variant nor the
 reference binary was rebuilt as part of the generator fix.
 
+## Post-review correctness revisions (2026-10-04)
+
+These revisions are correctness changes, not a new throughput comparison; the
+measurements above retain their original binaries and methodology.
+
+- Source packaging now exempts `runtime/lion-server/src/bin/` from the build-output
+  ignore rule, so the native client and configuration sources are included.
+- Native UDP preserves ordinary datagrams and fragments oversized member messages
+  up to 8 MiB, with bounded queues/reassembly and five-second expiry. Packet-local
+  send errors discard only the failed datagram; a successful send prefix is never
+  retransmitted. See the book's UDP policy for wire framing and limits.
+- TCP/TLS retains multiple live routes per identity. Closing the newest or oldest
+  connection leaves the other connection usable.
+- Mutable-state lowering retains non-state output bindings even when identity
+  elimination removes every state assignment. The regression generates, verifies,
+  compiles, and executes unchanged-state actions with single, multiple, and no
+  outputs, plus a changed-state unit action.
+- Recovery testing exposed a shared enum-decoder boundary error: a fieldless
+  variant at the final byte was rejected. Fixing that guard allows phase-one vote
+  messages ending in an increment tag to deserialize. The redundant manual RSL
+  request/2a/2b decoders were removed. A deterministic 1,500-client recovery test
+  failed before this fix and passes afterward, including an isolated restarted
+  replica answering from its transferred reply cache.
+
+Verification: **1,496 Verus obligations, zero errors; 29 native runtime/I/O tests;
+2,732 transpiler tests passed**. Regeneration used the transpiler and the existing
+merge-preservation policy, without hand-editing generated code.
+
+A clean export of versionable sources, without an existing protocol library,
+passed the default `scons --verus-path=/path/to/verus` build and produced all three
+native binaries. Those binaries passed workloads for RSL, Raft, Primary-Backup,
+PBFT, and EPaxos; the other five protocols were startup-only checks. RSL also
+passed UDP quorum failure/restart and plaintext TCP/TLS workloads.
+The short measured workloads had no transport errors or invalid replies;
+Primary-Backup and EPaxos retained **57 and 50 timeouts**, respectively.
+RSL had no measured timeouts, but its warmup intervals did include timeouts.
+
+A separate live check, repeated with the clean-build binaries, committed 1,500
+distinct-client increments. Both surviving replicas returned a **67,541-byte
+AppStateSupply in 57 fragments** without exiting. After leader turnover triggered
+recovery, the restarted replica returned cached reply **1** with both other
+replicas paused; after resuming them, the next new client obtained counter value
+**1,502**. All three replicas remained alive. This proves snapshot application
+and reply-cache recovery, not only successful transmission or process startup.
+
+Reproduce the permanent gates with:
+
+```bash
+VERUS_PATH=/path/to/verus scripts/build_lion_runtime.sh --test
+VERUS_PATH=/path/to/verus cargo test --locked --manifest-path transpiler/Cargo.toml
+```
+
 ## What changed
 
 `src/implementation/RSL/cparameters.rs::StaticParams` now matches the pinned Lion

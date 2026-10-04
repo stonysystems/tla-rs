@@ -20,6 +20,9 @@ struct Cluster {
     packets: VecDeque<(usize, WirePacket)>,
     now: u64,
     clock_step: u64,
+    active: Vec<bool>,
+    leader: Option<usize>,
+    max_snapshot_bytes: usize,
 }
 
 impl Cluster {
@@ -35,12 +38,21 @@ impl Cluster {
             packets: VecDeque::new(),
             now: 0,
             clock_step: 1,
+            active: vec![true; 3],
+            leader: None,
+            max_snapshot_bytes: 0,
         }
     }
 
     fn collect(&mut self, source: usize, replies: &mut Vec<Vec<u8>>, client: &[u8]) {
         let packets: Vec<_> = self.nodes[source].outbound().drain(..).collect();
         for mut packet in packets {
+            if packet.bytes.first() == Some(&4) {
+                self.leader = Some(source);
+            }
+            if packet.bytes.first() == Some(&9) {
+                self.max_snapshot_bytes = self.max_snapshot_bytes.max(packet.bytes.len());
+            }
             if let Some(destination) = self.peers.iter().position(|peer| *peer == packet.peer) {
                 packet.peer.clone_from(&self.peers[source]);
                 self.packets.push_back((destination, packet));
@@ -53,16 +65,21 @@ impl Cluster {
     }
 
     fn increment(&mut self, client: &[u8], sequence: u64) -> u64 {
-        self.packets.push_back((
-            0,
-            WirePacket {
-                peer: client.to_vec(),
-                bytes: request(sequence),
-            },
-        ));
         let mut replies = Vec::new();
-        for _ in 0..1000 {
+        for turn in 0..1000 {
             for node in 0..self.nodes.len() {
+                if !self.active[node] {
+                    continue;
+                }
+                if turn % 10 == 0 {
+                    self.packets.push_back((
+                        node,
+                        WirePacket {
+                            peer: client.to_vec(),
+                            bytes: request(sequence),
+                        },
+                    ));
+                }
                 self.nodes[node].step(self.now, None).unwrap();
                 self.collect(node, &mut replies, client);
             }
@@ -70,6 +87,9 @@ impl Cluster {
                 let Some((destination, packet)) = self.packets.pop_front() else {
                     break;
                 };
+                if !self.active[destination] {
+                    continue;
+                }
                 self.nodes[destination]
                     .step(self.now, Some(packet))
                     .unwrap();
@@ -99,6 +119,44 @@ fn rsl_single_requests_commit_without_a_batch_timer_or_duplicate_reexecution() {
     cluster.clock_step = 0;
     assert_eq!(cluster.increment(&client, 0), 1);
     assert_eq!(cluster.increment(&client, 1), 2);
+}
+
+#[test]
+fn rsl_reused_client_endpoint_accepts_new_sequence_ranges() {
+    let mut cluster = Cluster::new();
+    let client = endpoint(5001);
+    assert_eq!(cluster.increment(&client, 1), 1);
+    // Restarted clients skip unused reservations, rather than resetting to 1.
+    assert_eq!(cluster.increment(&client, 1 << 60), 2);
+    assert_eq!(cluster.increment(&client, (1 << 60) + (1 << 32)), 3);
+}
+
+#[test]
+fn rsl_lagging_replica_recovers_large_reply_cache_after_leader_failure() {
+    let mut cluster = Cluster::new();
+    for index in 0..1500 {
+        assert_eq!(
+            cluster.increment(&endpoint(5001 + index), 0),
+            u64::from(index) + 1
+        );
+    }
+    let leader = cluster.leader.expect("committed requests have a proposer");
+    let lagging = (leader + 1) % cluster.nodes.len();
+    cluster.nodes[lagging] =
+        NativeReplica::new("rsl", cluster.peers[lagging].clone(), cluster.peers.clone()).unwrap();
+    cluster.active[leader] = false;
+    cluster.clock_step = 100;
+    assert_eq!(cluster.increment(&endpoint(7001), 0), 1501);
+    assert!(
+        cluster.max_snapshot_bytes > 65_507,
+        "recovery must exercise an oversized snapshot"
+    );
+
+    // With no quorum available, a reply to the oldest client can only come
+    // from the transferred cache, not log replay or a newly committed command.
+    cluster.active.fill(false);
+    cluster.active[lagging] = true;
+    assert_eq!(cluster.increment(&endpoint(5001), 0), 1);
 }
 
 #[test]
