@@ -150,70 +150,8 @@ Raft recovery. Verification remains relative to the declared trusted boundaries:
 the native scheduler, marshalling, Lion's OS-facing glue, configuration, and TLS
 integration are runtime-tested, not covered by an end-to-end service theorem.
 
-## Running a service
-
-After building, generate a three-node RSL configuration:
-
-```bash
-bin/tla-rs-config \
-  outputdir=certs name=MyCounter type=IronRSL \
-  addr1=127.0.0.1 port1=4001 \
-  addr2=127.0.0.1 port2=4002 \
-  addr3=127.0.0.1 port3=4003
-```
-
-Start one native process per node, using `server1`, `server2`, and `server3` private files:
-
-```bash
-bin/tla-rs-server \
-  certs/MyCounter.IronRSL.service.txt \
-  certs/MyCounter.IronRSL.server1.private.txt
-```
-
-The server links `bin/libtla_protocol.rlib` directly. One Lion thread owns the replica,
-socket readiness, and timers; Linux `recvmmsg`/`sendmmsg` operate on batches of up to
-64 datagrams with reusable payload buffers. No callback ABI, shared protocol library,
-network worker thread, or `LD_LIBRARY_PATH` setup is needed.
-
-The default RSL network path is native Rust with Lion batched UDP on both
-server and client; no transport or wire-format option is needed. Use
-`transport=tcp` explicitly for plaintext TCP, or for a TLS client.
-Ordinary UDP packets retain their wire format; oversized replica messages use
-bounded fragmentation up to 8 MiB. Both member endpoints must run the revised
-transport for oversized state transfer. Packet-local send failures are dropped
-without terminating the replica.
-
-Client and server hostname resolution both prefer IPv4, falling back to IPv6.
-A server override such as `addr=0.0.0.0` changes its listening address, not its
-advertised member identity in the service file.
-
-Run a client from another terminal:
-
-```bash
-bin/tla-rs-client service=certs/MyCounter.IronRSL.service.txt \
-  nthreads=32 warmup=5 duration=30
-```
-
-UDP RSL clients reserve persistent request-sequence ranges under
-`$XDG_STATE_HOME/tla-rs/`, or `$HOME/.local/state/tla-rs/` when an absolute
-`XDG_STATE_HOME` is not set. Retain this directory across restarts and share it
-between clients that can reuse the same source IP/port; do not delete or roll
-back its `rsl-sequence` checkpoint while a cluster can retain old requests or
-replies. This prevents cached replies from being counted as new work after
-endpoint reuse, including when the wall clock moves backward. The directory
-must be writable; TCP clients do not require this checkpoint.
-
-The same server accepts `twophase`, `leaderelection`, `primarybackup`,
-`chainreplication`, `paxos`, `verticalpaxos`, `raft`, `pbft`, and `epaxos`; generate
-their files with `type=IronProtocol`. The native client covers RSL, Raft,
-Primary-Backup, PBFT, and EPaxos. `scripts/integration_test_cluster.sh` runs those
-workloads, startup checks for the remaining protocols, and RSL failure/recovery
-and stream-transport checks.
-
-For TLS, generate with `usessl=true` and run both server and client with
-`transport=tcp`. `UseSsl=true` cannot be downgraded to UDP. `transport=tcp` with
-`usessl=false` retains the legacy unauthenticated plaintext framing.
-Chapter 10 of the book describes the transport limits and trust boundary.
+For service configuration, deployment, client workloads, and transport options,
+see [Chapter 10 of *The tla-rs Book*](docs/tla-rs-book.md#run-a-three-node-rsl-service).
 
 ## Performance
 
