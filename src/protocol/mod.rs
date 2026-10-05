@@ -10,6 +10,7 @@ pub mod SpecPaxos;
 pub mod next_five_witnesses;
 pub mod EPaxos;
 pub mod LeaderElection;
+pub mod Mako;
 pub mod Mencius;
 pub mod PBFT;
 pub mod Paxos;
