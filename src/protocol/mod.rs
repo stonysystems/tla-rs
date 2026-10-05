@@ -19,5 +19,6 @@ pub mod RSL;
 pub mod Raft;
 pub mod TwoPhase;
 pub mod Tiga;
+pub mod CausalMesh;
 pub mod VerticalPaxos;
 pub mod common;
