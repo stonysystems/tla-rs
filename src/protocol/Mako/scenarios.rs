@@ -116,6 +116,10 @@ pub proof fn theorem_partial_failure_reachable() -> (h: Seq<State>)
     assert(read_max(h.last(), one(0, 2, 1, Set::empty().insert(0)), 1, 1));
     let h = take(c, h, Action::Begin { id: 1, tx: one(0, 2, 1, Set::empty().insert(0)) });
     let h = take(c, h, Action::Install { id: 1, shard: 0 });
+    // Supply the installed transaction witnessing the replicated endpoint.
+    assert(h.last().tx.dom().contains(1));
+    assert(h.last().installed.contains((1, 0)));
+    assert(h.last().tx[1] == one(0, 2, 1, Set::empty().insert(0)));
     let h = take(c, h, Action::Replicate { stream: k(0, 0), progress: 2 });
     let h = take(c, h, Action::Advance);
     // Healthy new-epoch work runs before the old epoch is finalized.
@@ -133,7 +137,12 @@ pub proof fn theorem_partial_failure_reachable() -> (h: Seq<State>)
     let h = take(c, h, Action::Close { stream: k(0, 0), good: true });
     let h = take(c, h, Action::Close { stream: k(0, 1), good: false });
     let h = take(c, h, Action::Finalize { epoch: 0 });
+    // The missing shard is an explicit counterexample to both final cuts.
+    assert(endpoint(h.last(), k(0, 1)) == Bound::Finite(0));
+    assert(!covered(h.last().tx[0].vc[1], endpoint(h.last(), k(0, 1))));
+    assert(!covered(h.last().tx[1].vc[1], endpoint(h.last(), k(0, 1))));
     let h = take(c, h, Action::Rollback { id: 0, shard: 0 });
+    assert(!covered(h.last().tx[1].vc[1], endpoint(h.last(), k(0, 1))));
     let h = take(c, h, Action::Rollback { id: 1, shard: 0 });
     h
 }

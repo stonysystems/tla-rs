@@ -276,6 +276,16 @@ The verifier run uses `--no-cheating` and Verus
 The standalone proof contains no `assume`, `admit`, external proof bodies, or
 trusted-module annotations. No files under `src/generated` are changed.
 
+The standalone proof and all eleven controls also pass on rolling Verus
+`0.2026.10.04.426d8b0`. Publication checks must cover both the pinned and rolling
+toolchains, including CI's whole-crate verification (`scons --verus-path=/path/to/verus`),
+not just the standalone harness. On the rolling toolchain, unfolding `read_max`
+inside `step_streams` caused excessive quantifier instantiation; this lemma
+keeps that predicate locally opaque because it needs only the allocated-clock
+equation. The partial-failure scenario supplies explicit installed-transaction
+and missing-shard witnesses. These proof hints do not change the model,
+theorem statements, or solver resource limits.
+
 The constructive scenario proofs establish that the model permits:
 
 1. A two-shard transaction to install, replicate, acknowledge, and replay.

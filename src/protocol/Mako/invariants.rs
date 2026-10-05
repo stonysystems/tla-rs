@@ -162,6 +162,9 @@ pub proof fn step_streams(c: Config, s: State, z: State, a: Action)
     requires inv(c, s), step(c, s, z, a)
     ensures streams_ok(c, z)
 {
+    // Stream ordering needs the allocated clock, not the read-dependency
+    // quantifier inside read_max; unfolding it floods the rolling solver.
+    hide(read_max);
     reveal(step);
     if let Action::Close { stream: k, good } = a { close_no_pending(c, s, z, k, good); }
     assert forall|k: Stream| stream(c, k) implies #[trigger] z.progress[k] <= z.tail[k] <= z.clock[(k.epoch, k.shard)] by {
