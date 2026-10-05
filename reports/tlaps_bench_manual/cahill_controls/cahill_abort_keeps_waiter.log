@@ -1,0 +1,11 @@
+note: verifying module TLAPSBench::cahill_support
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-crmixren/src/protocol/TLAPSBench/cahill_support.rs:69:66
+   |
+69 |     assert forall |r: int| c.txns.contains(r) implies #[trigger] node(u,c,r) by { assert(node(s,c,r)); }
+   |                                                                  ^^^^^^^^^^^ assertion failed
+
+verification results:: 10 verified, 1 errors
+error: aborting due to 1 previous error
+

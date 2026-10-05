@@ -1,0 +1,24 @@
+note: verifying module TLAPSBench::zab_sessions
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-mzwzvevz/src/protocol/TLAPSBench/zab_sessions.rs:79:44
+   |
+79 | ...nsures apply(s,c,a).oracle != Some(i),apply(s,c,a).nodes[i].learners.subset_of(s.nodes[i].learners)
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+83 | ...   Action::Timeout(x,y) | Action::Connect(x,y) | Action::CEpoch(x,y) | Action::NewEpoch(x,y) | Action::AckEpoch(x,y) | Action::NewLeader(x,y) | Action::AckLd(x,y) | Action::CommitLd(x,y) | Action::Propose(x,y) | Action::Ack(x,y) | Action::Commit(x,y) =>...
+   |       ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- at the end of the function body
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-mzwzvevz/src/protocol/TLAPSBench/zab_sessions.rs:78:109
+   |
+78 |     requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),s.nodes[i].role == Role::Leading,apply(s,c,a).nodes[i].ro...
+   |                                                                                                             ^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 7 verified, 1 errors
+error: aborting due to 1 previous error
+

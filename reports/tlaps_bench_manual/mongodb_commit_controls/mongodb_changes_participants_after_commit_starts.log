@@ -1,0 +1,14 @@
+note: verifying module TLAPSBench::mongodb_participants
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-88uk_ju0/src/protocol/TLAPSBench/mongodb_participants.rs:98:40
+    |
+ 98 |     ensures selected(apply(s,c,a),c,t),txn(apply(s,c,a),c,t) == txn(s,c,t)
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+101 |     if let Action::RouterStart { r: ar,t: at,ts }=a { if at == t { assert(s.routers[r][t].read_ts == c.no_value); assert(false); } }
+    |            -------------------------------------- at the end of the function body
+
+verification results:: 7 verified, 1 errors
+error: aborting due to 1 previous error
+

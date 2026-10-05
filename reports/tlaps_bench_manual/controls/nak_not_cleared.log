@@ -1,0 +1,20 @@
+note: verifying module TLAPSBench::flash_liveness
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-culhfzm0/src/protocol/TLAPSBench/flash_liveness.rs:76:12
+   |
+76 |     assert(handles(g, a) && enabled(s, c, a) && apply(s, c, a) != s);
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-culhfzm0/src/protocol/TLAPSBench/flash_liveness.rs:80:13
+   |
+78 | pub proof fn handler_clears(s: LState, u: LState, c: Constants, g: Group)
+   | ------------------------------------------------------------------------- at the end of the function body
+79 |     requires simple_group(g, c), group_taken(s, u, c, g)
+80 |     ensures !pending(u, g)
+   |             ^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 2 verified, 2 errors
+error: aborting due to 2 previous errors
+

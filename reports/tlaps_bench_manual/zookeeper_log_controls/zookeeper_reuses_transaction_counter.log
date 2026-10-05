@@ -1,0 +1,31 @@
+note: verifying module TLAPSBench::zookeeper_log_order
+
+error: precondition not satisfied
+   --> /tmp/tlaps-manual-control-k60ona4o/src/protocol/TLAPSBench/zookeeper_log_order.rs:136:97
+    |
+136 | ...x].history; let t=h[h.len()-1]; logs::request(s.election.nodes[x].history,s.nodes[x].accepted,t);
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+   ::: /tmp/tlaps-manual-control-k60ona4o/src/protocol/TLAPSBench/zookeeper_log_math.rs:72:43
+    |
+ 72 | ...>= 0,t.zxid == (Zxid { epoch: e,counter: if fle::latest(h).zxid.epoch == e { fle::latest(h).zxid.counter+1 } else { 1 } })
+    |         --------------------------------------------------------------------------------------------------------------------- failed precondition
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-k60ona4o/src/protocol/TLAPSBench/zookeeper_log_order.rs:206:13
+    |
+206 |     ensures payload(m,apply(s,c,a).nodes[i].accepted)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+219 |     if s.election.nodes[i].history.len() > 0 { assert(s.election.nodes[i].history.last().zxid.counter > 0); }
+    |     --------------------------------------------------------------------------------------------------------- at the end of the function body
+
+error: function body check: Resource limit (rlimit) exceeded; consider rerunning with --profile for more details
+   --> /tmp/tlaps-manual-control-k60ona4o/src/protocol/TLAPSBench/zookeeper_log_order.rs:203:1
+    |
+203 | pub proof fn other_payload(s: LState,c: Constants,a: Action,i: int,j: int,m: Message)
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+verification results:: 16 verified, 2 errors
+error: aborting due to 3 previous errors
+

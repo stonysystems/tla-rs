@@ -1,0 +1,44 @@
+note: verifying module TLAPSBench::hashicorp_config
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-_zqquhwb/src/protocol/TLAPSBench/hashicorp_config.rs:36:13
+   |
+36 |     ensures node_inv(apply(s,c,a).nodes[i])
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+44 |         Action::ClientRequest { i: j,value } => if i == j {
+   |         ------------------------------------ at the end of the function body
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-_zqquhwb/src/protocol/TLAPSBench/hashicorp_config.rs:36:22
+   |
+36 |     ensures node_inv(apply(s,c,a).nodes[i])
+   |                      ^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-_zqquhwb/src/protocol/TLAPSBench/hashicorp_config.rs:39:11
+   |
+39 |     let n=s.nodes[i]; let u=apply(s,c,a);
+   |           ^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-_zqquhwb/src/protocol/TLAPSBench/hashicorp_config.rs:42:22
+   |
+42 |     config_positions(u.nodes[i].log);
+   |                      ^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 8 verified, 1 errors
+error: aborting due to 1 previous error
+

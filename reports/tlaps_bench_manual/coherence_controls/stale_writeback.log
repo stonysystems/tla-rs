@@ -1,0 +1,16 @@
+note: verifying module TLAPSBench::flash_coherence
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-6s1ckd9t/src/protocol/TLAPSBench/flash_coherence.rs:139:13
+    |
+139 |       ensures mem_data(apply(s,c,a))
+    |               ^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+145 | /         Action::Store { src,.. } | Action::RemoteRequest { src,.. } | Action::RemoteReplace { src }
+146 | |         | Action::LocalNak { src,.. } | Action::LocalRelay { src,.. } | Action::LocalGrant { src,.. }
+147 | |         | Action::InvalidateAck { src } | Action::ReceiveReplace { src } => { expose_node(s,c,src); },
+    | |________________________________________________________________________- at the end of the function body
+
+verification results:: 9 verified, 1 errors
+error: aborting due to 1 previous error
+

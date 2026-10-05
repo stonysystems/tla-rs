@@ -1,0 +1,42 @@
+{
+  "benchmark_commit": "ffa3e31da28f960b70d8c5d44f2735e75d6edcac",
+  "status": "reachable_invalid_index_certified_and_source_goal_evaluation_errors_audited",
+  "goals": [
+    "Integrity",
+    "GlobalPrimaryOrder",
+    "LocalPrimaryOrder"
+  ],
+  "transitions": 197,
+  "source_modified": false,
+  "source_audit": "source_replay_results.json",
+  "source_audit_sha256": "7c4e5059ad6c32a1e31f07a36314fc8def69415cacb9ee1171a986e858a14169",
+  "verus_certificate": {
+    "theorem": "zookeeper_bad_index::counterexample",
+    "infinite_behavior": true,
+    "stutter_after_index": 197,
+    "no_cheating": true,
+    "full_harness_verified_functions": 2074,
+    "full_harness_errors": 0,
+    "verus": "Verus\n  Version: 0.2026.08.30.b432e82\n  Profile: release\n  Platform: linux_x86_64\n  Toolchain: 1.97.1-x86_64-unknown-linux-gnu",
+    "command": [
+      "verus",
+      "--crate-type=lib",
+      "--no-cheating",
+      "--triggers-mode",
+      "silent",
+      "--rlimit",
+      "30",
+      "--num-threads",
+      "8",
+      "-V",
+      "spinoff-all",
+      "src/protocol/tlaps_bench_harness.rs"
+    ],
+    "verification_log": "../verification.log",
+    "verification_log_sha256": "2cf49a6889257ea9c9a83efeb07a8d03ce5fbcd59b637d49f923acb3ef1aaa7e",
+    "proof_sha256": "279430ae9a353349cfecb7c639910680733cc1d16e66e12f7425a587ed0cc664",
+    "identifier_proof_sha256": "9ff30d19badf8f18fd29c1305095be2e1f432e6479b0c7d6b19501a617a0557c",
+    "generator_sha256": "fec0472dd0224bd8b316ecd5c7d6bdccc49d9a193d5e4e93ed08d835255b580e"
+  },
+  "scope": "Verus certifies the reachable invalid committed range. The three original source goals fail to evaluate; their negations are not claimed as Verus theorems."
+}

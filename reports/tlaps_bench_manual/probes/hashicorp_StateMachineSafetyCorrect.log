@@ -1,0 +1,26 @@
+note: verifying root module
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+ --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/hashicorp_StateMachineSafetyCorrect.rs:8:7
+  |
+8 | proof fn init(c:model::Constants)
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/hashicorp_StateMachineSafetyCorrect.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/hashicorp_StateMachineSafetyCorrect.rs:14:13
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       --------------------------------------------------------------- at the end of the function body
+13 |     requires model::valid_constants(c), proofs::inductive(s,c), model::state_machine_safety(s), model::enabled(s,c,a)
+14 |     ensures model::state_machine_safety(model::apply(s,c,a))
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 1 verified, 1 errors (partial verification with `--verify-*`)
+error: aborting due to 1 previous error
+

@@ -1,0 +1,11 @@
+note: verifying module TLAPSBench::flash_control
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-0n0w8d9a/src/protocol/TLAPSBench/flash_control.rs:98:80
+   |
+98 | ...   Action::LocalRelay { src,exclusive } => { expose_node(s,c,src); assert(work(u,c,w) ==> u.dir.pending); assert(work(u,c,w) && w...
+   |                                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 9 verified, 1 errors
+error: aborting due to 1 previous error
+

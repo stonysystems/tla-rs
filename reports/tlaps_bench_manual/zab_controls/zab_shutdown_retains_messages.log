@@ -1,0 +1,14 @@
+note: verifying module TLAPSBench::zab_connections
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-xzb179qa/src/protocol/TLAPSBench/zab_connections.rs:95:13
+   |
+93 | pub proof fn preserve_packet(s: LState,c: Constants,a: Action,i: int,j: int)
+   | ---------------------------------------------------------------------------- at the end of the function body
+94 |     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j)
+95 |     ensures apply(s,c,a).msgs[(i,j)].len() > 0 ==> packet_link(apply(s,c,a),i,j)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 7 verified, 1 errors
+error: aborting due to 1 previous error
+

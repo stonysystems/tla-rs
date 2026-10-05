@@ -1,0 +1,34 @@
+note: verifying module TLAPSBench::zab_ack_messages
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-xkc2pjqh/src/protocol/TLAPSBench/zab_ack_messages.rs:17:53
+   |
+14 | pub proof fn created(s: LState,c: Constants,a: Action,i: int,j: int,z: Zxid,ld: bool)
+   | ------------------------------------------------------------------------------------- at the end of the function body
+...
+17 |     ensures apply(s,c,a).nodes[j].history.len() > 0,last(apply(s,c,a).nodes[j].history) == z,
+   |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-xkc2pjqh/src/protocol/TLAPSBench/zab_ack_messages.rs:16:48
+   |
+16 |         !s.msgs[(j,i)].contains(message(z,ld)),apply(s,c,a).msgs[(j,i)].contains(message(z,ld))
+   |                                                ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-xkc2pjqh/src/protocol/TLAPSBench/zab_ack_messages.rs:16:10
+   |
+16 |         !s.msgs[(j,i)].contains(message(z,ld)),apply(s,c,a).msgs[(j,i)].contains(message(z,ld))
+   |          ^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 2 verified, 1 errors
+error: aborting due to 1 previous error
+

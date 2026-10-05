@@ -1,0 +1,45 @@
+note: verifying module TLAPSBench::open_addressing_proof
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-vnng6hob/src/protocol/TLAPSBench/open_addressing_proof.rs:27:25
+   |
+27 |     requires writer_inv(s.threads[p], c),
+   |                         ^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-vnng6hob/src/protocol/TLAPSBench/open_addressing_proof.rs:28:18
+   |
+28 |         in_evict(s.threads[p].pc) ==> s.threads[p].stack.len() > 0,
+   |                  ^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-vnng6hob/src/protocol/TLAPSBench/open_addressing_proof.rs:28:39
+   |
+28 |         in_evict(s.threads[p].pc) ==> s.threads[p].stack.len() > 0,
+   |                                       ^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-vnng6hob/src/protocol/TLAPSBench/open_addressing_proof.rs:32:9
+   |
+32 | /         thread_step(s, c, p, pick).pc == Pc::Done ==>
+33 | |             s.threads[p].pc == Pc::Done || s.threads[p].pc == Pc::Pick && c.fps.difference(s.history).is_empty()
+   | |________________________________________________________________________________________________________________^ failed this postcondition
+...
+39 |       assert forall |i: int| 0 <= i < t2.stack.len() implies t2.stack[i].pc == Pc::EndEv by {
+   |       ------ at the end of the function body
+
+verification results:: 14 verified, 1 errors
+error: aborting due to 1 previous error
+

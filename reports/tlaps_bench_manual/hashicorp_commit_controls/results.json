@@ -1,0 +1,12 @@
+[
+  {
+    "control": "hashicorp_config_without_current_term_commit",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "hashicorp_premature_config_commit",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

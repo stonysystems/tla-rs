@@ -1,0 +1,7 @@
+[
+  {
+    "control": "zookeeper_reuses_transaction_counter",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

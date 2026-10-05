@@ -1,0 +1,11 @@
+note: verifying module TLAPSBench::flash_shared
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-23uulpcn/src/protocol/TLAPSBench/flash_shared.rs:150:135
+    |
+150 | ...(requests(u,p)); assert(location(u,p)); assert(shared_info(u,p)); assert(data_info(u,p)); },
+    |                                                   ^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 8 verified, 1 errors
+error: aborting due to 1 previous error
+

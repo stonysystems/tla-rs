@@ -1,0 +1,17 @@
+note: verifying module TLAPSBench::tlb_quiescence
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-qs71p41k/src/protocol/TLAPSBench/tlb_quiescence.rs:168:13
+    |
+168 |       ensures step(s, c, p, a).procs[p].pc == Pc::InitiatorUpdateEntry
+    |  _____________^
+169 | |         || step(s, c, p, a).procs[p].pc == Pc::InitiatorWaitForQuiescence
+170 | |             && step(s, c, p, a).procs[p].todo.len() < s.procs[p].todo.len(),
+    | |___________________________________________________________________________^ failed this postcondition
+...
+175 |       match a { Step::WaitQuiescence(q) => { vstd::iset::lemma_iset_remove_len(s.procs[p].todo, q); }, _ => {} }
+    |                 ----------------------- at the end of the function body
+
+verification results:: 8 verified, 1 errors
+error: aborting due to 1 previous error
+

@@ -1,0 +1,29 @@
+note: verifying module TLAPSBench::zk_election_types
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /tmp/tlaps-manual-control-2sk9u7dt/src/protocol/TLAPSBench/zk_election_types.rs:34:1
+   |
+34 | pub proof fn notification_ok(n: LServer,c: Constants,i: int)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-2sk9u7dt/src/protocol/TLAPSBench/zk_election_types.rs:36:13
+   |
+34 | pub proof fn notification_ok(n: LServer,c: Constants,i: int)
+   | ------------------------------------------------------------ at the end of the function body
+35 |     requires c.servers.contains(i),node(n,c,i)
+36 |     ensures packet(notification(n,i),c),notification(n,i).source == i
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-2sk9u7dt/src/protocol/TLAPSBench/zk_election_types.rs:36:41
+   |
+34 | pub proof fn notification_ok(n: LServer,c: Constants,i: int)
+   | ------------------------------------------------------------ at the end of the function body
+35 |     requires c.servers.contains(i),node(n,c,i)
+36 |     ensures packet(notification(n,i),c),notification(n,i).source == i
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 10 verified, 1 errors
+error: aborting due to 2 previous errors
+

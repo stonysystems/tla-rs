@@ -1,0 +1,12 @@
+[
+  {
+    "control": "release_append_without_log_persistence",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "commit_without_acknowledgment_quorum",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

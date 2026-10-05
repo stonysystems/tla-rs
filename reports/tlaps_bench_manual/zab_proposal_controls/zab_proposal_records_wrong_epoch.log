@@ -1,0 +1,45 @@
+note: verifying module TLAPSBench::zab_proposal_order
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-705jfk18/src/protocol/TLAPSBench/zab_proposal_order.rs:12:59
+   |
+12 |     ensures 0 <= w.0 <= time,c.servers.contains(p.source),b[w.0].nodes[p.source].role == Role::Leading,b[w.0].nodes[p.source].phase ...
+   |                                                           ^^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-705jfk18/src/protocol/TLAPSBench/zab_proposal_order.rs:12:104
+   |
+12 |     ensures 0 <= w.0 <= time,c.servers.contains(p.source),b[w.0].nodes[p.source].role == Role::Leading,b[w.0].nodes[p.source].phase ...
+   |                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-705jfk18/src/protocol/TLAPSBench/zab_proposal_order.rs:13:9
+   |
+13 |           b[w.0].nodes[p.source].current == p.epoch,0 <= w.1 < b[w.0].nodes[p.source].history.len(),
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+17 | /     if time == 0 { assert(false); (0,0) }
+18 | |     else if b[time-1].proposals.contains(p) { origin(b,c,time-1,p) }
+19 | |     else {
+20 | |         let prev=time-1; let a=super::zab_sessions::step(b,c,prev); let s=b[prev]; let u=b[time];
+...  |
+35 | |     }
+   | |_____- at the end of the function body
+
+error: function body check: Resource limit (rlimit) exceeded; consider rerunning with --profile for more details
+  --> /tmp/tlaps-manual-control-705jfk18/src/protocol/TLAPSBench/zab_proposal_order.rs:46:1
+   |
+46 | pub proof fn pair(b: Behavior<LState>,c: Constants,time: int,j: int,p: Proposal,q: Proposal)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+verification results:: 3 verified, 2 errors
+error: aborting due to 2 previous errors
+

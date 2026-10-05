@@ -1,0 +1,16 @@
+note: verifying module TLAPSBench::tlb_progress
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-rdlibtgb/src/protocol/TLAPSBench/tlb_progress.rs:16:9
+   |
+13 |   pub proof fn update_step(s: LState, c: Constants, p: int, a: Step)
+   |   ------------------------------------------------------------------ at the end of the function body
+...
+16 | /         (step(s, c, p, a).procs[p].pc == Pc::InitiatorReactivate && !step(s, c, p, a).plock[s.procs[p].writepmap])
+17 | |         || (safety::updated(step(s, c, p, a).procs[p].pc)
+18 | |             && update_rank(step(s, c, p, a).procs[p].pc) < update_rank(s.procs[p].pc))
+   | |______________________________________________________________________________________^ failed this postcondition
+
+verification results:: 8 verified, 1 errors
+error: aborting due to 1 previous error
+

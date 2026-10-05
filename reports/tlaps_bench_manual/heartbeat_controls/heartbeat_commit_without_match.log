@@ -1,0 +1,45 @@
+note: verifying module TLAPSBench::etcd_leader_trace
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-tjh0wh5z/src/protocol/TLAPSBench/etcd_leader_trace.rs:24:42
+   |
+24 |     ensures c.servers.contains(m.source),s.nodes[m.source].role == Role::Leader,s.nodes[m.source].term == m.term,
+   |                                          ^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-tjh0wh5z/src/protocol/TLAPSBench/etcd_leader_trace.rs:24:81
+   |
+24 |     ensures c.servers.contains(m.source),s.nodes[m.source].role == Role::Leader,s.nodes[m.source].term == m.term,
+   |                                                                                 ^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-tjh0wh5z/src/protocol/TLAPSBench/etcd_leader_trace.rs:25:25
+   |
+25 |         logs::segment(m,s.nodes[m.source].log),
+   |                         ^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-tjh0wh5z/src/protocol/TLAPSBench/etcd_leader_trace.rs:27:9
+   |
+27 | /         m.body->AppendRequest_mode == Mode::Heartbeat ==> m.body->AppendRequest_prev == 0 && m.body->AppendRequest_entries.len() == 0
+28 | |             && m.body->AppendRequest_commit <= s.nodes[m.source].matched[m.dest]
+   | |________________________________________________________________________________^ failed this postcondition
+...
+31 |       broadcast use vstd::multiset::group_multiset_axioms;
+   |       ---------------------------------------------------- at the end of the function body
+
+verification results:: 3 verified, 1 errors
+error: aborting due to 1 previous error
+

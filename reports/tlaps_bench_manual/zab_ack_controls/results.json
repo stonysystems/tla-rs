@@ -1,0 +1,12 @@
+[
+  {
+    "control": "zab_ack_without_storage",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "zab_omit_sync_ack",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "control": "zab_old_leader_reconnects",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

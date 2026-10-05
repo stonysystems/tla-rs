@@ -1,0 +1,23 @@
+note: verifying root module
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+ --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/zab_PrefixConsistency.rs:8:7
+  |
+8 | proof fn init(c:model::Constants)
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function body check: Resource limit (rlimit) exceeded; consider rerunning with --profile for more details
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/zab_PrefixConsistency.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/zab_PrefixConsistency.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+verification results:: 1 verified, 1 errors (partial verification with `--verify-*`)
+error: aborting due to 1 previous error
+

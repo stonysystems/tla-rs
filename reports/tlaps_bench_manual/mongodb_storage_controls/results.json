@@ -1,0 +1,17 @@
+[
+  {
+    "control": "mongodb_changes_request_read_timestamp",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "mongodb_ignores_prepare_blocking",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "mongodb_ignores_write_conflicts",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

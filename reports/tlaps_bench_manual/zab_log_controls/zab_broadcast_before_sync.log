@@ -1,0 +1,34 @@
+note: verifying module TLAPSBench::zab_sync
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-0m_l7mof/src/protocol/TLAPSBench/zab_sync.rs:112:13
+    |
+112 |     ensures apply(s,c,a).nodes[j].current == apply(s,c,a).nodes[i].current || pending(apply(s,c,a).msgs[(i,j)],apply(s,c,a).nodes[i].current,k)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+131 |     if pending(q,e,q.len() as int) { let p=choose |p: int| 0 <= p < q.len() && leader_message(q[p],e); assert(leader_message(q.push(u.msgs[(i,j)].last())[p],e)); }
+    |     --------------------------------------------------------------------------------------------------------------------------------------------------------------- at the end of the function body
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-0m_l7mof/src/protocol/TLAPSBench/zab_sync.rs:111:128
+    |
+111 | ...contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len(),apply(s,c,a).msgs[(i,j)][k] is Propose
+    |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+   --> vstd/map.rs:87:12
+    |
+    = note: recommendation not met
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-0m_l7mof/src/protocol/TLAPSBench/zab_sync.rs:111:97
+    |
+111 |     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len(),appl...
+    |                                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+   --> vstd/map.rs:87:12
+    |
+    = note: recommendation not met
+
+verification results:: 8 verified, 1 errors
+error: aborting due to 1 previous error
+

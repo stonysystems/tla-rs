@@ -1,0 +1,20 @@
+note: verifying module TLAPSBench::flash_directory
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-65pc1je4/src/protocol/TLAPSBench/flash_directory.rs:55:23
+   |
+55 |         _ => { assert(work(u,c,w)); },
+   |                       ^^^^^^^^^^^ assertion failed
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-65pc1je4/src/protocol/TLAPSBench/flash_directory.rs:135:13
+    |
+133 | pub proof fn collecting_step(s: LState,c: Constants,a: Action)
+    | -------------------------------------------------------------- at the end of the function body
+134 |     requires inductive(s,c),enabled(s,c,a),s.collecting,apply(s,c,a).dir.pending
+135 |     ensures apply(s,c,a).collecting,apply(s,c,a).dir.invalidating.subset_of(s.dir.invalidating)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 14 verified, 2 errors
+error: aborting due to 2 previous errors
+

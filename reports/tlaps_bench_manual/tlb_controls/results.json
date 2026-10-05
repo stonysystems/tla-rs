@@ -1,0 +1,12 @@
+[
+  {
+    "control": "quiescence_keeps_work",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "pmap_lock_not_released",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,11 @@
+note: verifying module TLAPSBench::cahill_conflicts
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-ceuebunr/src/protocol/TLAPSBench/cahill_conflicts.rs:57:17
+   |
+57 |         implies !(#[trigger] u.txns[r].incoming && u.txns[r].outgoing) by {}
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 5 verified, 1 errors
+error: aborting due to 1 previous error
+

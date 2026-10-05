@@ -1,0 +1,22 @@
+[
+  {
+    "control": "cahill_commits_with_both_flags",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "cahill_read_omits_newer_writer_flag",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "cahill_write_omits_reader_flag",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "cahill_ignores_prior_committed_writer",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,47 @@
+note: verifying module TLAPSBench::zookeeper_bad_index_probe
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+ --> /var/tmp/zookeeper_bad_index_probe.rs:7:1
+  |
+7 | pub proof fn integrity_at_concrete_state()
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+ --> /var/tmp/zookeeper_bad_index_probe.rs:8:13
+  |
+7 | pub proof fn integrity_at_concrete_state()
+  | ------------------------------------------ at the end of the function body
+8 |     ensures model::integrity(trace::state(197),trace::constants())
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /var/tmp/zookeeper_bad_index_probe.rs:10:1
+   |
+10 | pub proof fn global_order_at_concrete_state()
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /var/tmp/zookeeper_bad_index_probe.rs:11:13
+   |
+10 | pub proof fn global_order_at_concrete_state()
+   | --------------------------------------------- at the end of the function body
+11 |     ensures model::global_primary_order(trace::state(191),trace::constants())
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /var/tmp/zookeeper_bad_index_probe.rs:13:1
+   |
+13 | pub proof fn local_order_at_concrete_state()
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /var/tmp/zookeeper_bad_index_probe.rs:14:13
+   |
+13 | pub proof fn local_order_at_concrete_state()
+   | -------------------------------------------- at the end of the function body
+14 |     ensures model::local_primary_order(trace::state(191),trace::constants())
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 0 verified, 3 errors
+error: aborting due to 3 previous errors
+

@@ -1,0 +1,7 @@
+[
+  {
+    "control": "heartbeat_commit_without_match",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

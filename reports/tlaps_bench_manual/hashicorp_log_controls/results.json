@@ -1,0 +1,17 @@
+[
+  {
+    "control": "hashicorp_append_without_previous_term",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "hashicorp_acknowledge_unstored_suffix",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "hashicorp_vote_without_log_comparison",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

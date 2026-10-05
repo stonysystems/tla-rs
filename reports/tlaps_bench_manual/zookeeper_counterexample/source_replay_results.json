@@ -1,0 +1,82 @@
+{
+  "benchmark_commit": "ffa3e31da28f960b70d8c5d44f2735e75d6edcac",
+  "source_sha256": {
+    "benchmark/proof-from-scratch-module/ZooKeeper_LowLevel/ZkV3_7_0Model.tla": "e7b3e1ca768c5ff1306672b1a964c217e2bf3b5f1ee18741785bb51c46eb5159",
+    "benchmark/proof-from-scratch-module/ZooKeeper_LowLevel/ZkV3_7_0Defs.tla": "10d0fba1024c6d6707bc4d2d5769bfca8f7c51e4e60aaabf2473d5b014eebeca",
+    "benchmark/proof-from-scratch-module/ZooKeeper_LowLevel/ZkV3_7_0/FastLeaderElection.tla": "a7c0a9dd611363cbc283431725f78a2957b790a22e048aafd3d14d006de63665"
+  },
+  "source_files_byte_identical": true,
+  "method": "Exact source replay and complete finite-state comparison; this script asserts no Verus result.",
+  "request_choice": 0,
+  "request_choice_note": "Value is used only by the fixed natural-number choice; instantiated to {0} for TLC. Actions and goal definitions are unchanged.",
+  "servers": 3,
+  "max_epoch": 4,
+  "transitions": 167,
+  "tlc_jar_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "audit_script_sha256": "111edb9ae7c83eb09e55c4669026b2cd315930d42e71ecbce0779e301f3fe176",
+  "replays": {
+    "PrimaryIntegrity": {
+      "failure_at_state": 132,
+      "states_compared": 133,
+      "invariant_violation_confirmed": true,
+      "evaluation_error_confirmed": false,
+      "log": "replay-PrimaryIntegrity.log.gz",
+      "exit_code": 12,
+      "violation_at_state": 132
+    },
+    "PrefixConsistency": {
+      "failure_at_state": 135,
+      "states_compared": 136,
+      "invariant_violation_confirmed": true,
+      "evaluation_error_confirmed": false,
+      "log": "replay-PrefixConsistency.log.gz",
+      "exit_code": 12,
+      "violation_at_state": 135
+    },
+    "Agreement": {
+      "failure_at_state": 163,
+      "states_compared": 164,
+      "invariant_violation_confirmed": true,
+      "evaluation_error_confirmed": false,
+      "log": "replay-Agreement.log.gz",
+      "exit_code": 12,
+      "violation_at_state": 163
+    },
+    "TotalOrder": {
+      "failure_at_state": 167,
+      "states_compared": 168,
+      "invariant_violation_confirmed": true,
+      "evaluation_error_confirmed": false,
+      "log": "replay-TotalOrder.log.gz",
+      "exit_code": 12,
+      "violation_at_state": 167
+    }
+  },
+  "sha256": {
+    "trace.json.gz": "c1a1bf8ffdfd145d65b0b846ebabaf083d6970ea48a09f49f3488cc0d63b57d6",
+    "guided.log.gz": "f1eb3e886ed8eb5271a57c8b16d1944796931b1e052738c49a0887414d8dca2d",
+    "guided-prefix.log.gz": "04c31922f5ae091263b76390d4abcff3b31a7c77c9e70baa34b21db4f11961fc",
+    "guided-agreement.log.gz": "709568bee184c97cdcfbad7ec7870c2bf0ca10fa4dc909b09041615eef73b1d4",
+    "guided-all.log.gz": "5f7aef719f7cb99d02dbcfa3895502852ebc4c72d11fe8ed6ed0823445e9f14f",
+    "Guided.tla": "e0d6f3ae6840374d12d5411317f1989b9486ed63185405cdd06e6b0e1b2b1ccb",
+    "Guided.cfg": "299124135de4c1e20a06df8420656b78b277991b5dce8c4d96fce7c6a39b3ec8",
+    "GuidedPrefix.cfg": "5dee8e846e5b6476ac160547a38252e9974c42db8e9d7dbd4a66d8a7158ccb19",
+    "GuidedTrace.tla": "264f68b1b29ed7e375ba1963c14dd6769a008765652f9e4280064d691fc4d696",
+    "GuidedTrace.cfg": "5dee8e846e5b6476ac160547a38252e9974c42db8e9d7dbd4a66d8a7158ccb19",
+    "GuidedAll.tla": "1145da44f0ce7667d516431c4786ac3c4c2722c0b480c36b1fae5c83c95d32d0",
+    "GuidedAll.cfg": "43db47a26e4b663db2746d9df73505af9f05a95203297055898be088c95aec96",
+    "GuidedAgreement.cfg": "1c2835a97037490147ad2682be112e6084d3195763635f9d413ddf4a2e433689",
+    "TLAPS.tla": "2ba09b8cee542416d3b82ebb7ac571d0fa7eeff79cb1f4d7432730791c48bc3c",
+    "actions.json": "a5d0a9aff9bde199c8b8eb0e73635ca56b3f9605fb313688e3740e5ab44a2a61",
+    "Replay.tla": "0393d4c44dce0ce891cf603670b64704039ad56e8fb613a750d2bb24eff4fca9",
+    "ReplayPrimaryIntegrity.cfg": "cb692b0bbf88eb3d940514921ce5eb76bf6a47d4a15b02ee9aa1a412feb9628f",
+    "ReplayPrefixConsistency.cfg": "c48f0cf284fe7cc4797484cc004cacc37aba0f9aa6492e365a333b85731cf8a8",
+    "ReplayAgreement.cfg": "d7159c9ed882166f153c4cc86389448fac89a82b6beccf21d66e7fb6c5d4fb00",
+    "ReplayTotalOrder.cfg": "feb2f85d4b77be19068a3d3c2296a19282c1723e55977e39d58639ffee30ef85",
+    "replay-PrimaryIntegrity.log.gz": "774405c52c5f6d0563528c4f7fea88c3508bb3df11f3f232853cde2c5fe41962",
+    "replay-PrefixConsistency.log.gz": "6598c1775d61198c694bc32bb73df0ed37b5df3e630ca369a9758fcd8539cc60",
+    "replay-Agreement.log.gz": "d29dd659c4ef734b65b7901a444abbfdfbb325f2b45e372505c8f8e120c5b812",
+    "replay-TotalOrder.log.gz": "ba02977e9f41ba512afeec130240e5259817d788a19a39adb6db2a85edfc992d",
+    "README.md": "9978280b99542149a5fd7ab1014ed6603c16655707ac5e54c42443b73a8ae684"
+  }
+}

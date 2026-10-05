@@ -1,0 +1,14 @@
+note: verifying module TLAPSBench::flash_requests
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-2pl_t9wq/src/protocol/TLAPSBench/flash_requests.rs:93:9
+   |
+93 |         handles(Group::Uni(n),a) ==> rank(apply(s,c,a),n) < rank(s,n)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+98 |         Action::LocalRelay { src,exclusive } => {},
+   |         ------------------------------------ at the end of the function body
+
+verification results:: 8 verified, 1 errors
+error: aborting due to 1 previous error
+

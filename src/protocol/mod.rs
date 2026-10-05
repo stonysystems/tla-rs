@@ -21,3 +21,4 @@ pub mod TwoPhase;
 pub mod Tiga;
 pub mod VerticalPaxos;
 pub mod common;
+pub mod TLAPSBench;

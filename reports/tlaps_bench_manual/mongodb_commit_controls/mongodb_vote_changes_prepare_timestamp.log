@@ -1,0 +1,31 @@
+note: verifying module TLAPSBench::mongodb_votes
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-0t9qk20h/src/protocol/TLAPSBench/mongodb_votes.rs:51:24
+   |
+51 |                 assert(m == Vote { shard: p.shard,txn: p.txn,to: p.coordinator,ts: next_ts(s.shards[p.shard],c) });
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-0t9qk20h/src/protocol/TLAPSBench/mongodb_votes.rs:58:38
+   |
+58 |         assert forall |v: (int,int)| u.shards[i].txns[t].votes.contains(v) implies #[trigger] cert(u,c,t,v.0,v.1) by {
+   |                                      ^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-0t9qk20h/src/protocol/TLAPSBench/mongodb_votes.rs:59:16
+   |
+59 |             if s.shards[i].txns[t].votes.contains(v) { assert(cert(s,c,t,v.0,v.1)); retained(s,c,a,t,v.0,v.1); }
+   |                ^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+verification results:: 6 verified, 1 errors
+error: aborting due to 1 previous error
+

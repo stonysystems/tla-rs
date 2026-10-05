@@ -1,0 +1,52 @@
+note: verifying module TLAPSBench::zab_epochs
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-mkyi3bja/src/protocol/TLAPSBench/zab_epochs.rs:103:51
+    |
+103 |                 Action::NewEpoch(_,_) => { assert(node(apply(s,c,a).nodes[i],c,i)); },
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-mkyi3bja/src/protocol/TLAPSBench/zab_epochs.rs:79:45
+   |
+79 | ...nsures node(apply(s,c,a).nodes[i],c,i),s.nodes[i].accepted <= apply(s,c,a).nodes[i].accepted
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+83 | ...   Action::Timeout(x,y) | Action::Connect(x,y) | Action::CEpoch(x,y) | Action::NewEpoch(x,y) | Action::AckEpoch(x,y) | Action::NewLeader(x,y) | Action::AckLd(x,y) | Action::CommitLd(x,y) | Action::Propose(x,y) | Action::Ack(x,y) | Action::Commit(x,y) => {
+   |       ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- at the end of the function body
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /tmp/tlaps-manual-control-mkyi3bja/src/protocol/TLAPSBench/zab_epochs.rs:77:1
+   |
+77 | pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-mkyi3bja/src/protocol/TLAPSBench/zab_epochs.rs:100:72
+    |
+100 | ...   Action::AckEpoch(_,_) => if let Message::AckEpoch(e,h)=s.msgs[(y,x)][0] { collections::ae_update(s.nodes[x].ae,y,e,h); collec...
+    |                                                              ^^^^^^^^^^^^^
+    |
+   --> vstd/map.rs:87:12
+    |
+    = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-mkyi3bja/src/protocol/TLAPSBench/zab_epochs.rs:89:66
+   |
+89 |                 Action::CEpoch(_,_) => if let Message::CEpoch(e)=s.msgs[(y,x)][0] {
+   |                                                                  ^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: function body check: Resource limit (rlimit) exceeded; consider rerunning with --profile for more details
+   --> /tmp/tlaps-manual-control-mkyi3bja/src/protocol/TLAPSBench/zab_epochs.rs:157:1
+    |
+157 | pub proof fn advance(s: LState,c: Constants,a: Action,i: int)
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+verification results:: 8 verified, 2 errors
+error: aborting due to 3 previous errors
+

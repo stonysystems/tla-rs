@@ -1,0 +1,12 @@
+[
+  {
+    "control": "mongodb_changes_participants_after_commit_starts",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "mongodb_vote_changes_prepare_timestamp",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

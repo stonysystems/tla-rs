@@ -1,0 +1,14 @@
+note: verifying module TLAPSBench::hashicorp_votes
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-fwwl2b16/src/protocol/TLAPSBench/hashicorp_votes.rs:71:13
+   |
+71 |     ensures history(advance(g,c,a).state,c,b)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+77 |     if let Action::CompleteVote(i) = a { assert(types::node(s.nodes[i],c)); }
+   |            ----------------------- at the end of the function body
+
+verification results:: 8 verified, 1 errors
+error: aborting due to 1 previous error
+

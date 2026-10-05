@@ -1,0 +1,12 @@
+[
+  {
+    "control": "zab_broadcast_omits_proposal_record",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "zab_proposal_records_wrong_epoch",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,41 @@
+note: verifying module TLAPSBench::etcd_retention
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /tmp/tlaps-manual-control-0_3l9p4l/src/protocol/TLAPSBench/etcd_retention.rs:42:1
+   |
+42 | pub proof fn preserve(s: LState,c: Constants,a: Action,i: int,h: Seq<nat>,bound: nat)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-0_3l9p4l/src/protocol/TLAPSBench/etcd_retention.rs:45:13
+   |
+45 |       ensures live(apply(s,c,a),i,h,bound),
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+50 | /     if u.nodes[i].term <= bound {
+51 | |         if let Action::Receive { m,how } = a {
+52 | |             if m.dest == i && how == Receive::AppendConflict {
+53 | |                 assert(packet(h,m)); let v=choose |v: Seq<nat>| logs::segment(m,v) && #[trigger] compatible(h,v);
+...  |
+62 | |     }
+   | |_____- at the end of the function body
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-0_3l9p4l/src/protocol/TLAPSBench/etcd_retention.rs:58:57
+   |
+58 |         assert forall |k: int| 0 <= k < h.len() implies #[trigger] h[k] == #[trigger] u.nodes[i].log[k] by {
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-0_3l9p4l/src/protocol/TLAPSBench/etcd_retention.rs:58:76
+   |
+58 |         assert forall |k: int| 0 <= k < h.len() implies #[trigger] h[k] == #[trigger] u.nodes[i].log[k] by {
+   |                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/seq.rs:972:12
+   |
+   = note: recommendation not met
+
+verification results:: 5 verified, 1 errors
+error: aborting due to 2 previous errors
+

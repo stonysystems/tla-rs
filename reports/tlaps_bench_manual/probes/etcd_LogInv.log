@@ -1,0 +1,35 @@
+note: verifying root module
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+ --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_LogInv.rs:8:7
+  |
+8 | proof fn init(c:model::Constants)
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_LogInv.rs:10:13
+   |
+ 8 | proof fn init(c:model::Constants)
+   |       --------------------------- at the end of the function body
+ 9 |     requires model::valid_constants(c)
+10 |     ensures model::log_inv(model::initial(c),c)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_LogInv.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_LogInv.rs:14:13
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       --------------------------------------------------------------- at the end of the function body
+13 |     requires model::valid_constants(c), proofs::inductive(s,c), model::log_inv(s,c), model::enabled(s,c,a)
+14 |     ensures model::log_inv(model::apply(s,c,a),c)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 0 verified, 2 errors (partial verification with `--verify-*`)
+error: aborting due to 2 previous errors
+

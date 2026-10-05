@@ -1,0 +1,36 @@
+note: verifying module TLAPSBench::zab_current_logs
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-47l8yd5e/src/protocol/TLAPSBench/zab_current_logs.rs:44:13
+   |
+44 |       ensures image(b,c,time+1,b[time+1].nodes[i].history,b[time+1].nodes[i].current)
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+93 | /     if math::same(s.nodes[i].history,u.nodes[i].history) && s.nodes[i].current == u.nodes[i].current {
+94 | |         transfer(b,c,time,s.nodes[i].history,u.nodes[i].history,s.nodes[i].current);
+95 | |     }
+   | |_____- at the end of the function body
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-47l8yd5e/src/protocol/TLAPSBench/zab_current_logs.rs:43:91
+   |
+43 |     requires connections::safety_spec(b,c),time >= 0,c.servers.contains(i),image(b,c,time,b[time].nodes[i].history,b[time].nodes[i]....
+   |                                                                                           ^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-47l8yd5e/src/protocol/TLAPSBench/zab_current_logs.rs:43:116
+   |
+43 | ...ers.contains(i),image(b,c,time,b[time].nodes[i].history,b[time].nodes[i].current)
+   |                                                            ^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 3 verified, 1 errors
+error: aborting due to 1 previous error
+

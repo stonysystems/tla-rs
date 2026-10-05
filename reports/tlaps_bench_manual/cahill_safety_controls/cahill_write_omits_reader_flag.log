@@ -1,0 +1,41 @@
+note: verifying module TLAPSBench::cahill_overlap_access
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-9wxxkz5d/src/protocol/TLAPSBench/cahill_overlap_access.rs:57:135
+   |
+57 | ...readers.contains(r) && (committed(s.history).contains(r) || s.txns[r].incoming);
+   |                                                                ^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-9wxxkz5d/src/protocol/TLAPSBench/cahill_overlap_access.rs:59:17
+   |
+59 |         implies u.txns[r].outgoing && u.txns[w].incoming by {
+   |                 ^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-9wxxkz5d/src/protocol/TLAPSBench/cahill_overlap_access.rs:59:17
+   |
+59 |         implies u.txns[r].outgoing && u.txns[w].incoming by {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-9wxxkz5d/src/protocol/TLAPSBench/cahill_overlap_access.rs:65:95
+   |
+65 |             overlap::old_overlap(s.history,u.history,r,t); assert(records::node(s,r)); assert(s.txns[r].siread.contains(k));
+   |                                                                                               ^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+verification results:: 1 verified, 1 errors
+error: aborting due to 1 previous error
+

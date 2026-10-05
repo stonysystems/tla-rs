@@ -1,0 +1,12 @@
+[
+  {
+    "control": "vote_without_log_comparison",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "truncate_two_entries_on_conflict",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "control": "overwrite_positive_entry",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "skip_matching_fingerprint",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "flush_without_marking",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

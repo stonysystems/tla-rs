@@ -1,0 +1,52 @@
+note: verifying module TLAPSBench::hashicorp_votes
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-phthil8b/src/protocol/TLAPSBench/hashicorp_votes.rs:56:19
+   |
+56 |     requires node(s.nodes[i],i),enabled(s,c,a),c.servers.contains(i)
+   |                   ^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-phthil8b/src/protocol/TLAPSBench/hashicorp_votes.rs:57:13
+   |
+57 |     ensures node(apply(s,c,a).nodes[i],i)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+60 |     if let Action::Receive { m,how } = a {
+   |            ------------------------- at the end of the function body
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-phthil8b/src/protocol/TLAPSBench/hashicorp_votes.rs:57:18
+   |
+57 |     ensures node(apply(s,c,a).nodes[i],i)
+   |                  ^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-phthil8b/src/protocol/TLAPSBench/hashicorp_votes.rs:71:13
+   |
+71 |     ensures history(advance(g,c,a).state,c,b)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+77 |     if let Action::CompleteVote(i) = a { assert(types::node(s.nodes[i],c)); }
+   |            ----------------------- at the end of the function body
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-phthil8b/src/protocol/TLAPSBench/hashicorp_votes.rs:81:13
+   |
+79 | pub proof fn released_compatible(g: ProofState,c: Constants,a: Action,b: Ballot,v: Ballot)
+   | ------------------------------------------------------------------------------------------ at the end of the function body
+80 |     requires inductive(g,c),enabled(g.state,c,a),g.votes.contains(b),released(g.state,a).contains(v)
+81 |     ensures compatible(b,v)
+   |             ^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 6 verified, 3 errors
+error: aborting due to 3 previous errors
+

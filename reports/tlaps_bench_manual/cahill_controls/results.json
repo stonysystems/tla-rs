@@ -1,0 +1,17 @@
+[
+  {
+    "control": "cahill_abort_keeps_waiter",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "cahill_keeps_deadlock_cycle",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "cahill_acquires_owned_lock",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

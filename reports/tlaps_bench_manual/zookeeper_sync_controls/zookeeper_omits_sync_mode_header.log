@@ -1,0 +1,41 @@
+note: verifying module TLAPSBench::zookeeper_pending_mode
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-sesxdvwv/src/protocol/TLAPSBench/zookeeper_pending_mode.rs:32:8
+   |
+32 |     if u.election.nodes[i].role == Role::Leading && i != j && u.nodes[i].forwarding.contains(j) && u.nodes[j].mode == Mode::None && ...
+   |        ^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-sesxdvwv/src/protocol/TLAPSBench/zookeeper_pending_mode.rs:32:63
+   |
+32 |     if u.election.nodes[i].role == Role::Leading && i != j && u.nodes[i].forwarding.contains(j) && u.nodes[j].mode == Mode::None && ...
+   |                                                               ^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-sesxdvwv/src/protocol/TLAPSBench/zookeeper_pending_mode.rs:32:100
+   |
+32 |     if u.election.nodes[i].role == Role::Leading && i != j && u.nodes[i].forwarding.contains(j) && u.nodes[j].mode == Mode::None && ...
+   |                                                                                                    ^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-sesxdvwv/src/protocol/TLAPSBench/zookeeper_pending_mode.rs:33:72
+   |
+33 |         if i == x && j == y { let k=s.msgs[(x,y)].len() as int; assert(fifo::mode(u.msgs[(i,j)][k])); }
+   |                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 7 verified, 1 errors
+error: aborting due to 1 previous error
+

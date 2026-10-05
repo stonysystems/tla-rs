@@ -1,0 +1,34 @@
+note: verifying module TLAPSBench::open_addressing_proof
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-4fz8rmxr/src/protocol/TLAPSBench/open_addressing_proof.rs:179:13
+    |
+179 |     ensures sorted(apply(s, c, a))
+    |             ^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+182 |     if let Action::Writer { p, pick } = a {
+    |            -------------------------- at the end of the function body
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-4fz8rmxr/src/protocol/TLAPSBench/open_addressing_proof.rs:183:17
+    |
+183 |         let t = s.threads[p];
+    |                 ^^^^^^^^^^^^
+    |
+   --> vstd/map.rs:87:12
+    |
+    = note: recommendation not met
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-4fz8rmxr/src/protocol/TLAPSBench/open_addressing_proof.rs:187:68
+    |
+187 |                     merge_smaller(s.external, s.newexternal, value(s.table[wrap(t.ei, c.k)]));
+    |                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+   --> vstd/imap.rs:71:12
+    |
+    = note: recommendation not met
+
+verification results:: 14 verified, 1 errors
+error: aborting due to 1 previous error
+
