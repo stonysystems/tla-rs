@@ -1,0 +1,11 @@
+note: verifying module TLAPSBench::cahill_first_committer
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-25f940ln/src/protocol/TLAPSBench/cahill_first_committer.rs:77:65
+   |
+77 |                         if r == t && !protected(s,r,k) { assert(k == key && writers_since(s,t,k).is_empty()); }
+   |                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 2 verified, 1 errors
+error: aborting due to 1 previous error
+

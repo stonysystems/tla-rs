@@ -1,0 +1,23 @@
+note: verifying module TLAPSBench::tlb_proof
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-ivxm3t6g/src/protocol/TLAPSBench/tlb_proof.rs:118:48
+    |
+118 |         Step::AcquireResponderLock => { assert(local_inv(u, c, q)); },
+    |                                                ^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-ivxm3t6g/src/protocol/TLAPSBench/tlb_proof.rs:157:48
+    |
+157 |         Step::AcquireResponderLock => { assert(pair_inv(u, c, q, r)); },
+    |                                                ^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-ivxm3t6g/src/protocol/TLAPSBench/tlb_proof.rs:173:16
+    |
+173 |         assert(false);
+    |                ^^^^^ assertion failed
+
+verification results:: 6 verified, 3 errors
+error: aborting due to 3 previous errors
+

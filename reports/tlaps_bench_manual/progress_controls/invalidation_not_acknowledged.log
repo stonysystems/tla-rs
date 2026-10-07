@@ -1,0 +1,26 @@
+note: verifying module TLAPSBench::flash_invalidation
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-p5z4xuau/src/protocol/TLAPSBench/flash_invalidation.rs:20:12
+   |
+20 |     assert(handles(Group::Inv(n),a) && enabled(s,c,a) && apply(s,c,a) != s);
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-p5z4xuau/src/protocol/TLAPSBench/flash_invalidation.rs:25:9
+   |
+25 |           handles(Group::Inv(n),a) ==> rank(apply(s,c,a),n) < rank(s,n)
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+31 | /         Action::Store { .. } | Action::RemoteRequest { .. } | Action::LocalForward { .. }
+32 | |         | Action::LocalGet | Action::LocalGetX | Action::RemoteWriteback { .. }
+33 | |         | Action::LocalWriteback | Action::RemoteReplace { .. } | Action::LocalReplace
+34 | |         | Action::ReceiveNak { .. } | Action::ClearNak | Action::LocalNak { .. }
+...  |
+37 | |         | Action::ReceiveWriteback | Action::ReceiveForwardAck | Action::ReceiveSharedWriteback
+38 | |         | Action::ReceiveReplace { .. } | Action::Stutter => {},
+   | |_________________________________________________________- at the end of the function body
+
+verification results:: 3 verified, 2 errors
+error: aborting due to 2 previous errors
+

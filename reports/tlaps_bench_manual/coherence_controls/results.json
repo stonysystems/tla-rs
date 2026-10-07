@@ -1,0 +1,22 @@
+[
+  {
+    "control": "duplicate_exclusive_owner",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "stale_writeback",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "unlocked_forwarding",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "acknowledge_without_invalidating",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

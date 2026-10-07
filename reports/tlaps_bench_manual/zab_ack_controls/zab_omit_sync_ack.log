@@ -1,0 +1,32 @@
+note: verifying module TLAPSBench::zab_log_math
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-m7ylwvqo/src/protocol/TLAPSBench/zab_log_math.rs:114:13
+    |
+112 |   pub proof fn ack_prefix(h: Seq<Txn>,i: int,p: int)
+    |   -------------------------------------------------- at the end of the function body
+113 |       requires shape(h),0 <= p < h.len()
+114 |       ensures forall |k: int| 0 <= k < h.len() ==> (#[trigger] update_ack(h,i,h[p].zxid)[k]).ack ==
+    |  _____________^
+115 | |         (if k <= p { h[k].ack.insert(i) } else { h[k].ack })
+    | |____________________________________________________________^ failed this postcondition
+
+note: recommendation not met: cannot prove that there exists values that satisfy the condition of the choose expression
+   --> /tmp/tlaps-manual-control-m7ylwvqo/src/protocol/TLAPSBench/zab_log_math.rs:121:27
+    |
+121 | ...: int| 0 <= b <= h.len() && (forall |k: int| 0 <= k < b ==> !newer(h[k].zxid,z)) && (b < h.len() ==> newer(h[b].zxid,z));
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-m7ylwvqo/src/protocol/TLAPSBench/zab_log_math.rs:123:32
+    |
+123 |     if b > p+1 { assert(!newer(h[p+1].zxid,z)); ordered(h,p,p+1); assert(false); }
+    |                                ^^^^^^
+    |
+   --> vstd/seq.rs:972:12
+    |
+    = note: recommendation not met
+
+verification results:: 13 verified, 1 errors
+error: aborting due to 1 previous error
+

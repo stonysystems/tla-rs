@@ -1,0 +1,23 @@
+note: verifying module TLAPSBench::zookeeper_receipt_sets
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /tmp/tlaps-manual-control-dxk78ez4/src/protocol/TLAPSBench/zookeeper_receipt_sets.rs:46:1
+   |
+46 | pub proof fn electing_update(q: Set<Electing>,c: Constants,i: int,zxid: Zxid,yes: bool)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-dxk78ez4/src/protocol/TLAPSBench/zookeeper_receipt_sets.rs:58:36
+   |
+58 |             assert forall |j: int| ids(u).contains(j) <==> ids(q).insert(i).contains(j) by {
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-dxk78ez4/src/protocol/TLAPSBench/zookeeper_receipt_sets.rs:59:36
+   |
+59 |                 if j == i { assert(u.contains(Electing { sid: i,zxid,quorum: yes })); }
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 5 verified, 1 errors
+error: aborting due to 2 previous errors
+

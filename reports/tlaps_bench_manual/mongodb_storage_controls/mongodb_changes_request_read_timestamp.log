@@ -1,0 +1,39 @@
+note: verifying module TLAPSBench::mongodb_read_time
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-645s89qy/src/protocol/TLAPSBench/mongodb_read_time.rs:37:99
+   |
+37 |     requires support::shape(s,c),safe(s,c),enabled(s,c,a),c.shards.contains(i),c.txns.contains(t),apply(s,c,a).shards[i].txns[t].req...
+   |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-645s89qy/src/protocol/TLAPSBench/mongodb_read_time.rs:37:99
+   |
+37 |     requires support::shape(s,c),safe(s,c),enabled(s,c,a),c.shards.contains(i),c.txns.contains(t),apply(s,c,a).shards[i].txns[t].req...
+   |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-645s89qy/src/protocol/TLAPSBench/mongodb_read_time.rs:38:13
+   |
+38 |       ensures request_ok(apply(s,c,a),c,i,t,e)
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+41 | /     if s.shards[i].txns[t].requests.contains(e) { assert(request_ok(s,c,i,t,e)); request_retained(s,c,a,i,t,e); }
+42 | |     else {
+43 | |         let j=choose |j: int| 0 <= j < u.shards[i].txns[t].requests.len() && u.shards[i].txns[t].requests[j] == e;
+44 | |         match a {
+...  |
+63 | |     }
+   | |_____- at the end of the function body
+
+verification results:: 6 verified, 1 errors
+error: aborting due to 1 previous error
+

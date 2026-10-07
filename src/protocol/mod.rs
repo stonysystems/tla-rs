@@ -22,3 +22,4 @@ pub mod Tiga;
 pub mod CausalMesh;
 pub mod VerticalPaxos;
 pub mod common;
+pub mod TLAPSBench;

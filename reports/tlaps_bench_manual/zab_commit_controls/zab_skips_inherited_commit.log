@@ -1,0 +1,21 @@
+note: verifying module TLAPSBench::zab_primary_barrier
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-m2is3cqb/src/protocol/TLAPSBench/zab_primary_barrier.rs:61:20
+   |
+61 |             assert(u.nodes[i].committed.index == u.nodes[i].history.len());
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-m2is3cqb/src/protocol/TLAPSBench/zab_primary_barrier.rs:39:84
+   |
+39 |     requires connections::safety_spec(b,c),time >= 0,c.servers.contains(i),barrier(b[time].nodes[i])
+   |                                                                                    ^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 4 verified, 1 errors
+error: aborting due to 1 previous error
+

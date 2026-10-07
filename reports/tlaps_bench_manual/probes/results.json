@@ -1,0 +1,248 @@
+[
+  {
+    "module": "mongodb",
+    "goal": "SnapshotIsolationCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "cahill",
+    "goal": "CahillSerializableCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "Leadership1",
+    "status": "solver_limit",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "Leadership2",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "PrefixConsistency",
+    "status": "solver_limit",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "Integrity",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "Agreement",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "TotalOrder",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "LocalPrimaryOrder",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "GlobalPrimaryOrder",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zab",
+    "goal": "PrimaryIntegrity",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "open_addressing",
+    "goal": "Consistent",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "open_addressing",
+    "goal": "Contains",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "open_addressing",
+    "goal": "Duplicates",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "flash",
+    "goal": "CacheDataCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "flash",
+    "goal": "MemDataCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "flash",
+    "goal": "Lemma_1_Correct",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "flash",
+    "goal": "Lemma_2_Correct",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "flash",
+    "goal": "Lemma_3_Correct",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "flash",
+    "goal": "Lemma_4_Correct",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "etcd",
+    "goal": "LogInv",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "etcd",
+    "goal": "CommittedIsDurable",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "etcd",
+    "goal": "ElectionSafety",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "etcd",
+    "goal": "LeaderCompleteness",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "etcd",
+    "goal": "LogMatching",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "etcd",
+    "goal": "MoreUpToDate",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "etcd",
+    "goal": "QuorumLog",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "hashicorp",
+    "goal": "LeaderCompletenessCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "hashicorp",
+    "goal": "StateMachineSafetyCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "hashicorp",
+    "goal": "CommittedEntriesPreservedCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "hashicorp",
+    "goal": "LogMatchingCorrect",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "hashicorp",
+    "goal": "ElectionSafetyCorrect",
+    "status": "solver_limit",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "Leadership1",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "Leadership2",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "PrefixConsistency",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "Integrity",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "Agreement",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "TotalOrder",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "LocalPrimaryOrder",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "GlobalPrimaryOrder",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  },
+  {
+    "module": "zookeeper",
+    "goal": "PrimaryIntegrity",
+    "status": "induction_not_closed",
+    "exit_code": 1
+  }
+]

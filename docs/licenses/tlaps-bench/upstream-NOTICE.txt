@@ -1,0 +1,405 @@
+tlaps-bench — third-party attributions
+======================================
+
+tlaps-bench itself is released under the MIT License (see LICENSE). The
+benchmark is built from TLA+ specifications written by third parties; this file
+records their provenance and the original copyright/license notices. Some
+generated benchmark tasks remove source comments and therefore may not carry the
+upstream in-file license headers. Third-party material remains under its
+applicable upstream license; the protocols and proof obligations are unchanged.
+
+Benchmark groups live under benchmark/proof-completion/ (proof completion) and
+benchmark/proof-from-scratch/ (proof from scratch).
+Where a benchmark copy names an upstream module-level assumption, the statement
+is upstream's and only the name is added. A proof has to cite an assumption to
+use it -- tlapm puts none of them in the context of an obligation -- and a name
+is the legible way to do so; repeating the statement verbatim in a BY clause
+works too.
+Full license texts for Apache-2.0 and BSD-2-Clause material are provided in
+LICENSES/Apache-2.0.txt and LICENSES/BSD-2-Clause.txt, respectively.
+
+
+== Benchmark specifications ==
+
+TLC disk state queue — benchmark group DiskStateQueue — MIT
+    DiskStateQueue.tla and DiskStateQueueWorkload.tla are copied unchanged
+    from tlaplus/tlaplus at commit
+    f959b37fb8dcd62a236abb6d0ca4c1cff7c96b55:
+    https://github.com/tlaplus/tlaplus/tree/f959b37fb8dcd62a236abb6d0ca4c1cff7c96b55/tlatools/org.lamport.tlatools/spec/queue
+    The upstream TLC exploration module and configuration are also preserved
+    in source/DiskStateQueue. Source paths and SHA-256 hashes are recorded in
+    source/DiskStateQueue/upstream.json.
+    Copyright (c) 199? HP Corporation
+    Copyright (c) 2003 Microsoft Corporation
+    Copyright (c) 2023 Linux Foundation
+    The upstream MIT license is preserved in LICENSES/tlaplus-MIT.txt.
+    DiskStateQueueProof.tla is a local wrapper stating one deadlock-freedom
+    theorem. No reference proof is supplied.
+
+Cahill serializable snapshot isolation — benchmark group CahillSSI
+    Specification by Chris Newcombe, written for HPTS 2011, imported from
+    pron/amazon-snapshot-spec at commit
+    9c60cb18151889d7b4c0a4ffd7de0b6fc2db0fb2:
+    https://github.com/pron/amazon-snapshot-spec
+    The original source text is preserved with a lossless Windows-1252 to
+    UTF-8 conversion. CahillSSIModel.tla is a documented TLAPS-compatible
+    rendering using recursive functions and scalar binders. The source,
+    hashes, and transformation rules are in source/CahillSSI.
+    No upstream license declaration is present; this import does not
+    relicense those materials under this repository's MIT license.
+
+MongoDB distributed transactions — benchmark group MongoDB
+    MultiShardTxn.tla, Storage.tla, ClientCentric.tla, and Util.tla are copied
+    unchanged from mongodb-labs/vldb25-dist-txns at commit
+    74526c1201109405172eb845413154f547a815ee:
+    https://github.com/mongodb-labs/vldb25-dist-txns/tree/74526c1201109405172eb845413154f547a815ee
+    Artifact for William Schultz and Murat Demirbas, "Design and Modular
+    Verification of Distributed Transactions in MongoDB" (PVLDB 2025).
+    No repository-wide license file is present at this revision; these
+    materials are not relicensed under this repository's MIT license.
+    ClientCentric.tla credits Tim Soethout and identifies its BSD-2-Clause
+    source as https://github.com/cwi-swat/tla-ci. Its license is preserved in
+    LICENSES/tla-ci-BSD-2-Clause.txt (Copyright 2020, ING Bank / CWI), copied
+    from tla-ci at da10d932270879f5e9d21eb3ed192b2d57d99109.
+    Util.tla credits Stephan Merz for PermSeqs, from "TLA+ Case Study:
+    A Resource Allocator" (2004).
+    MultiShardTxnSnapshot.tla is a local theorem wrapper that selects the
+    upstream snapshot settings. No reference proof is supplied.
+
+tlaplus/Examples  —  MIT, except where noted below  —  https://github.com/tlaplus/Examples
+    Every benchmark group whose name is prefixed `tlaplus_examples_` (including
+    tlaplus_examples_GermanProtocol, the German cache-coherence protocol).
+    The collection is Copyright (c) 2016 The TLA+ project and other contributors.
+    The following groups carry additional upstream attribution or file-level
+    license terms:
+      - tlaplus_examples_TencentPaxos: the TPaxos specification from
+        https://github.com/Starydark/Tencent-Paxos-TLA
+      - tlaplus_examples_byihive — Apache-2.0: Copyright (c) 2018 Backyard
+        Innovations Pte. Ltd., Singapore; authors Santhosh Raju
+        <santhosh@byisystems.com>, Cherry G. Mathew <cherry@byisystems.com>,
+        and Fransisca Andriani <sisca@byisystems.com>.
+      - tlaplus_examples_BlockingQueue — MIT: from
+        https://github.com/lemmy/BlockingQueue; Copyright (c) 2020
+        Markus A. Kuppe.
+      - tlaplus_examples_GermanProtocol — MIT: the benchmark models correspond
+        to GermanControl.tla and GermanData.tla at commit
+        91c22ea537853196ed1e03e9ad91693ec37642de:
+        https://github.com/tlaplus/Examples/tree/91c22ea537853196ed1e03e9ad91693ec37642de/specifications/GermanProtocol
+        They are adapted from the German cache-coherence protocol Murphi models in
+        https://github.com/dsethi/ProtocolDeadlockFiles, published as
+        supplementary material for Divjyot Sethi, Muralidhar Talupur, and
+        Sharad Malik, "Using Flow Specifications of Parameterized Cache
+        Coherence Protocols for Verifying Deadlock Freedom" (ATVA 2014). Those
+        models build on Ching-Tsun Chou, Phanindra K. Mannava, and Seungjoon
+        Park, "A Simple Method for Parameterized Verification of Cache
+        Coherence Protocols" (FMCAD 2004); the protocol is attributed to Steven
+        M. German. The upstream example asks redistributors to review the
+        external artifact's licensing and attribution requirements.
+      - tlaplus_examples_FlashProtocol — MIT: the benchmark model corresponds
+        to FlashWithMutex.tla at commit
+        a94afef81388fe268528781cfb7ce207fa8bcac1:
+        https://github.com/tlaplus/Examples/tree/a94afef81388fe268528781cfb7ce207fa8bcac1/specifications/FlashProtocol
+        It is a TLA+ translation (by Markus A. Kuppe; tlaplus/Examples PR #216)
+        of the FLASH directory-based cache-coherence protocol from the Murphi
+        model flashWithMutex.m, a companion to
+        tlaplus_examples_GermanProtocol one level up in protocol complexity.
+        Upstream PR #226 moved the Murphi model's CMP Other-node abstraction
+        into a separate FlashWithMutexCMP.tla, which the benchmark does not
+        include: the abstraction exists to make one node count stand for all of
+        them under model checking, and a TLAPS proof holds for every constant
+        value without it. The
+        Murphi source is from https://github.com/dsethi/ProtocolDeadlockFiles,
+        published as supplementary material for Divjyot Sethi, Muralidhar
+        Talupur, and Sharad Malik, "Using Flow Specifications of Parameterized
+        Cache Coherence Protocols for Verifying Deadlock Freedom" (ATVA 2014),
+        whose FLASH model derives from Ching-Tsun Chou, Phanindra K. Mannava,
+        and Seungjoon Park, "A Simple Method for Parameterized Verification of
+        Cache Coherence Protocols" (FMCAD 2004). Upstream discharges the
+        theorems by model checking (TLC/Apalache), not TLAPS; the benchmark
+        keeps all 17 stated theorems -- the safety invariants (TypeOK, the
+        Murphi safety invariants CacheStateProp/CacheDataProp/MemDataProp, and
+        Lemma_1..Lemma_5) and the eight liveness/progress (leads-to) properties
+        -- as proof-from-scratch targets graded by tlapm. The upstream example
+        asks redistributors to review the external artifact's licensing and
+        attribution requirements.
+      - tlaplus_examples_bosco — MIT: the benchmark model corresponds to
+        bosco.tla at commit 1ef5f158cc1743975441dd94c280e56c8fd06766:
+        https://github.com/tlaplus/Examples/tree/1ef5f158cc1743975441dd94c280e56c8fd06766/specifications/bosco
+        A TLA+ encoding by Igor Konnov, Thanh Hai Tran, and Josef Widder (2016)
+        of the one-step Byzantine asynchronous consensus algorithm from Yee Jiun
+        Song and Robbert van Renesse, "Bosco: One-Step Byzantine Asynchronous
+        Consensus" (DISC 2008). The upstream module states no theorems, so the
+        benchmark copy adds five: `Spec => []P` for each invariant P that the
+        upstream TLC configuration (bosco.cfg) checks -- TypeOK and the
+        agreement lemmas Lemma3_0, Lemma3_1, Lemma4_0, Lemma4_1. The upstream
+        OneStep0 and OneStep1 properties are not benchmark targets: they hold
+        only for more than 7*T processes, which the module's assumptions do not
+        state.
+      - tlaplus_examples_Disruptor — MIT: the benchmark models correspond to
+        Disruptor_MPMC.tla, Disruptor_SPMC.tla and RingBuffer.tla at commit
+        45c1cfd7ed40d9287b1c2ac51a05a7cb750e0521:
+        https://github.com/tlaplus/Examples/tree/45c1cfd7ed40d9287b1c2ac51a05a7cb750e0521/specifications/Disruptor
+        By Nicholas Schultz-Møller, modelling the Rust Disruptor implementation
+        in https://github.com/nicholassm/disruptor-rs; the Disruptor ring-buffer
+        data structure originates from LMAX Exchange. The upstream modules state
+        no theorems, so the benchmark copies add two per variant: `Spec => []P`
+        for each invariant P that the upstream TLC configurations check --
+        TypeOk and NoDataRaces. Upstream names the assumptions of all three
+        modules, states that Writers and Readers are disjoint, and EXTENDs
+        Naturals and FiniteSets in RingBuffer rather than instantiating them
+        LOCALly, and assumes in Disruptor_SPMC that Writers is a finite set of
+        cardinality one, without which two writers claim the same slot and both
+        of that module's goals are false. The benchmark copies therefore
+        deviate from upstream in the theorems alone. The upstream Liveliness property
+        is not a benchmark target: it lives in MCDisruptor_MPMC and
+        MCDisruptor_SPMC, where TLC checks it under the state constraint that
+        bounds the model, which is not sound evidence for a liveness property.
+      - tlaplus_examples_braf — MIT: the benchmark models correspond to
+        BufferedRandomAccessFile.tla at commit
+        c2ef32ad796245edc706de9dabe21391ff343296 (tlaplus/Examples#230):
+        https://github.com/tlaplus/Examples/tree/c2ef32ad796245edc706de9dabe21391ff343296/specifications/braf
+        Copyright (c) 2024, Oracle and/or its affiliates; by Calvin Loncaric. A
+        specification of tlc2.util.BufferedRandomAccessFile, the caching layer
+        TLC uses for filesystem access, copied from
+        https://github.com/tlaplus/tlaplus. Upstream holds all three modules
+        (BufferedRandomAccessFile, RandomAccessFile, Common) in one file, which
+        tlapm cannot load, so the benchmark copies split them into one file per
+        module -- a mechanical split with no change to the definitions. The
+        upstream proposal states five assumptions: BuffSz is a positive natural,
+        MaxOffset is a natural, Symbols is finite and non-empty, and
+        ArbitrarySymbol is not a Symbol. The benchmark copy adds fourteen
+        theorems -- one per invariant and property that the upstream TLC
+        configuration checks, including the refinement of RandomAccessFile.
+        Inv2 is not a benchmark target: upstream excludes it from the invariants
+        deliberately, treating it as an action precondition, and states
+        Inv2CanAlwaysBeRestored instead.
+      - tlaplus_examples_btree — MIT: the benchmark models correspond to
+        btree.tla and kvstore.tla at commit
+        f2f1f982a5c8c17dfbbd44c5b84032aeb021bb10:
+        https://github.com/tlaplus/Examples/tree/f2f1f982a5c8c17dfbbd44c5b84032aeb021bb10/specifications/btree
+        By Lorin Hochstein, from https://github.com/lorin/btree-tla. The
+        benchmark copy rewrites the recursive operator FindLeafNode as a
+        recursive function, which TLAPS supports and recursive operators are
+        not; TLC explores the same 2,820,091 states (374,727 distinct) under the
+        upstream MCbtree configuration before and after the rewrite. Upstream
+        states the assumptions the algorithm needs -- the control states are
+        ten distinct values, the keys are strictly totally ordered under <, the
+        branching factor is at least two, and the node pool is non-empty -- so
+        btree.tla deviates in five theorems alone, one per invariant the
+        upstream configuration checks except FreeNodesRemain, which is a
+        statement about the model's MaxNode rather than about the tree.
+        kvstore.tla additionally carries names for its two assumptions, which
+        are still anonymous upstream. The upstream Refinement property is
+        commented out of the configuration and is therefore not a target.
+      - tlaplus_examples_NanoBlockchain — MIT: the benchmark model corresponds
+        to Nano.tla at commit 0e018bcffe93c775c5c8ec30989065d9d4eabfc1:
+        https://github.com/tlaplus/Examples/tree/0e018bcffe93c775c5c8ec30989065d9d4eabfc1/specifications/NanoBlockchain
+        By Andrew Helwer, a specification of the Nano cryptocurrency protocol.
+        The benchmark copy rewrites the recursive operators PublicKeyOf,
+        BalanceAt, ValueOfSendBlock and SumBag as recursive functions, which
+        TLAPS supports and recursive operators are not; ValueOfSendBlock is
+        inlined so that the mutual recursion becomes a single function, and
+        SumBag sums each distinct element times its multiplicity rather than
+        removing one copy at a time. TLC explores the same state spaces under
+        the upstream configurations before and after the rewrite (6,083 states /
+        3,003 distinct for MCNanoSmall; 1,120,079 / 530,587 for MCNanoMedium).
+        The upstream Safety theorem is kept as the benchmark target.
+      - tlaplus_examples_dag-consensus — MIT: the benchmark models correspond to
+        Sailfish.tla, BlockDag.tla, Digraph.tla and Utils.tla at commit
+        ed3cc4c35f7001d7cec08a22dcd698dae7570dc3:
+        https://github.com/tlaplus/Examples/tree/ed3cc4c35f7001d7cec08a22dcd698dae7570dc3/specifications/dag-consensus
+        By Giuliano Losa, from https://github.com/nano-o/dag-consensus; a
+        specification of the Sailfish and Sailfish++ DAG-based consensus
+        algorithms. The benchmark copies rewrite the recursive operators
+        OrderSet, Linearize and Descendants as recursive functions, which TLAPS
+        supports and recursive operators are not; TLC explores the same 314,144
+        states (109,604 distinct) under TLCSailfish1 before and after the
+        rewrite. Upstream now states the constant and quorum-system assumptions
+        the algorithm relies on, including that the correct nodes form a quorum;
+        the TLC harnesses repeat them because TLC does not check assumptions from
+        an instantiated module. The benchmark copy adds three theorems -- one per
+        invariant the upstream TLC configurations check (TypeOK, Agreement, and
+        Liveness). The correct-nodes-quorum assumption excludes a model that
+        otherwise violates Liveness in eight states.
+
+OpenAddressing  —  MIT  —  benchmark group OpenAddressing
+    By Markus A. Kuppe, from the mku-OA branch of https://github.com/lemmy/Examples
+    (a fork of tlaplus/Examples). A linear-probing open-addressing hash table.
+
+TLAPS distribution examples  —  BSD-2-Clause  —  https://github.com/tlaplus/tlapm
+    Copyright (c) 2008 INRIA and Microsoft Corporation.
+    Copyright (c) 2023 Linux Foundation.
+    The examples/ directory of the TLAPS (tlapm) distribution, by Leslie
+    Lamport, Stephan Merz, Damien Doligez, and others. Benchmark groups:
+    Allocator, AtomicBakery, Bakery, BubbleSort, Cantor,
+    Consensus, Data, EWD840, Euclid, Paxos, Peterson, Record, SimpleMutex,
+    SumAndMax. (Euclid additionally includes a
+    spec from Leslie Lamport's TLA+ Hyperbook; SumAndMax is the VSTTE 2010
+    competition solution by Damien Doligez, Stephan Merz, and Leslie Lamport.)
+
+ZooKeeper / Zab  —  benchmark groups ZooKeeper, ZooKeeper_LowLevel
+    TLA+ specifications of ZooKeeper's Zab atomic-broadcast protocol and of the
+    apache/zookeeper v3.7.0 implementation, from the Remix paper
+    (arXiv:2409.14301, https://arxiv.org/abs/2409.14301). The Zab protocol is
+    described in Junqueira, Reed, and Serafini, "Zab: High-performance broadcast
+    for primary-backup systems" (DSN 2011); the modeled system is
+    https://github.com/apache/zookeeper (Apache-2.0).
+
+Ivy liveness examples  —  benchmark groups prefixed `ivy_examples_`
+    TLA+ translations of liveness examples from the Ivy verification system
+    (https://github.com/kenmcmil/ivy, examples/liveness/, MIT).
+    Copyright (c) Microsoft Corporation.
+
+two_thread_mutex  —  MIT  —  benchmark group two_thread_mutex
+    TLA+ model of src/tla_demo.rs from the Anvil repository
+    (https://github.com/anvil-verifier/anvil), a standalone two-thread
+    mutual-exclusion example included there to illustrate TLA+ usage. It is not
+    part of Anvil's verified Kubernetes-controller proofs.
+    Copyright 2022 VMware, Inc.
+
+apalache-examples (Konnov)  —  MIT, except where noted below  —
+benchmark groups prefixed `apalache_examples_`  —
+https://github.com/konnov/apalache-examples
+    Copyright (c) 2024 Igor Konnov. Imported at upstream commit
+    af360379b7cbcd1e16c1a801ff8ac64eb9aca038 (2026-07-10). The TLAPS proofs are
+    by Igor Konnov (written with AI assistance, as recorded in each upstream
+    module header). Benchmark groups:
+      - apalache_examples_ben-or83 — from the upstream `ben-or83/` directory: the
+        randomized asynchronous consensus protocol of Michael Ben-Or, "Another
+        advantage of free choice: Completely asynchronous agreement protocols"
+        (PODC 1983), with a machine-checked safety (Agreement) proof via an
+        inductive invariant. Imported modules: Ben_or83.tla (protocol),
+        Ben_or83_inductive.tla (TypeOK/IndInv), Ben_or83_proofs.tla (the TLAPS
+        proof), typedefs.tla, and Variants.tla. The model-checking
+        configurations (MC_*.tla) are not reachable from the proof module and
+        were not imported.
+      - apalache_examples_tendermint — from the upstream `tendermint/` directory:
+        the single-height safety fragment of the Tendermint consensus algorithm
+        (Buchman, Kwon, and Milosevic, "The latest gossip on BFT consensus",
+        arXiv:1807.04938), with a machine-checked Agreement proof via an
+        inductive invariant. Imported modules: tendermint_single_indinv.tla (the
+        spec, machine-generated upstream with Wunderspec v0.136.1 at release
+        commit 9d701c9fe08ffa018ae68cd01b5c24b66a9e2290,
+        https://github.com/wunderspec/wunderspec/tree/9d701c9fe08ffa018ae68cd01b5c24b66a9e2290),
+        and tendermint_single_indinv_proofs.tla (the TLAPS proof). The
+        model-checking instances (MCn4t1f*.tla) are not reachable from the proof
+        module and were not imported.
+        The matching generator input snapshot is
+        `examples/tendermint_single.py` plus `examples/tendermint_single_indinv.py`
+        at Wunderspec commit
+        dc50f44c3d9c85f06a51d80daddc65392ba33e46. The latter has SHA-256
+        6b40f0c3d0eb2d8144761764e5a3ed3592d21d9fff585fa7f71f5cff9451dd31,
+        matching the generated module header. That Wunderspec source snapshot
+        is licensed under FSL-1.1-ALv2, Copyright 2026 Igor Konnov and Thomas
+        Pani; see
+        https://github.com/wunderspec/wunderspec/blob/dc50f44c3d9c85f06a51d80daddc65392ba33e46/LICENSE.
+        This repository bundles the generated TLA+ module, not the Wunderspec
+        source or generator; this attribution records their provenance and does
+        not assert whether their license applies to generated output.
+        The Wunderspec inputs record that their first versions were translated
+        from CometBFT's `TendermintAcc_004_draft.tla` protocol and
+        `TendermintAccInv_004_draft.tla` invariant at commit
+        709fd12b4b18cf1442d43c5d34009392c7d674ed and then extended:
+        https://github.com/cometbft/cometbft/tree/709fd12b4b18cf1442d43c5d34009392c7d674ed/spec/light-client/accountability
+        Those modules credit Zarko Milosevic and Igor Konnov, Informal Systems,
+        2019-2020. CometBFT is Apache-2.0; the full license text is in
+        LICENSES/Apache-2.0.txt.
+    Not every upstream theorem yields a benchmark task. Of 341 generated
+    candidates, 22 were dropped by the triviality gate and 61 because their
+    upstream reference proof does not verify under the tlapm pinned by this
+    repository, leaving 258 tasks (ben-or83 210, tendermint 48). The protocols
+    and proof obligations are unchanged; see
+    docs/apalache_examples_unverifiable.json for the excluded tasks and why.
+
+    Variants.tla, bundled in the apalache_examples_ben-or83 group because tlapm
+    cannot otherwise resolve it, originates as src/tla/Variants.tla in Apalache
+    at commit 6d228bc8ab76dc5b2e99f75148d6e56612ab3e76:
+    https://github.com/apalache-mc/apalache/blob/6d228bc8ab76dc5b2e99f75148d6e56612ab3e76/src/tla/Variants.tla
+    The file credits Igor Konnov, Informal Systems. Apalache's upstream NOTICE
+    also credits Igor Konnov (TU Wien, INRIA Nancy, Interchain Foundation, and
+    Informal Systems), Jure Kukovec (TU Wien), Shon Feder (Informal Systems),
+    Andrey Kuprianov (Informal Systems), Thanh Hai Tran (TU Wien), and Viktor
+    Sergeev (University of Lorraine). Apalache is licensed under the Apache
+    License, Version 2.0
+    (http://www.apache.org/licenses/LICENSE-2.0), and the full text is in
+    LICENSES/Apache-2.0.txt.
+
+etcd / Specula  —  benchmark group etcd_raft
+    From the Specula etcd-raft reference model (https://github.com/specula-org),
+    derived from the raft TLA+ specification in etcd
+    (https://github.com/etcd-io/etcd). Copyright 2024 The etcd Authors;
+    licensed under the Apache License, Version 2.0
+    (http://www.apache.org/licenses/LICENSE-2.0).
+
+AbstractRaft  —  unvalidated proof exercise
+    Contributed by Stephan Merz and retained under
+    unvalidated-proof-exercises/proof-from-scratch/AbstractRaft as a standalone,
+    Raft-inspired TLA+ proof exercise. Its refinement relationship to Raft has
+    not been established. Raft is described by Diego Ongaro and John Ousterhout,
+    "In Search of an Understandable Consensus Algorithm", USENIX ATC 2014.
+
+
+LLVM libomp / Specula — benchmark group libomp
+    Repaired TLA+ barrier/tasking model adapted from the Specula case study:
+    https://github.com/specula-org/specula-case-studies/tree/8885d2c0687d1e197f261585919718a035ce4464/systems/libomp
+    The case study analyzed llvm/llvm-project at commit
+    5b1eed6278de1fffa195978b017039add70a94e3 (openmp/runtime/src).
+    LLVM implementation files are referenced for behavioral provenance and are
+    not bundled. Source pins and the benchmark's operational repairs are recorded
+    in source/libomp/upstream.json and source/libomp/README.md.
+
+HashiCorp Raft / Specula — benchmark group HashicorpRaft
+    Repaired TLA+ model adapted from the Specula case study:
+    https://github.com/specula-org/specula-case-studies/tree/8885d2c0687d1e197f261585919718a035ce4464/systems/hashicorp-raft
+    Implementation reference: specula-org/hashicorp-raft at
+    b8265ccdffa1d60b8355123c252a1f2889b0a9ac, derived from hashicorp/raft.
+    Implementation files are referenced, not bundled. Model changes, selected
+    safety properties, validation limits, and source hashes are documented in
+    source/HashicorpRaft/README.md and source/HashicorpRaft/upstream.json.
+
+WALs on S3 — benchmark groups SlateDBWAL, OSWALD, Walgit
+    From Jack Vanlightly's collection of WAL designs:
+    https://github.com/Vanlightly/s3-wal-collection/tree/06d5cc60990cf8e5995dc56f28e5d56128eca227
+    Copyright (c) 2026 Jack Vanlightly. Licensed under the MIT License;
+    see LICENSES/s3-wal-collection-MIT.txt.
+    These are the collection's simplified protocol models, not complete
+    implementations of the named systems. Source pins and local adaptations
+    are recorded in each group's upstream.json and docs/S3_WAL.md.
+
+Microsoft CCF Raft — benchmark group CCF
+    From microsoft/CCF at commit 6a2dc420f0166c93f92b773aa49c5203b0767750:
+    https://github.com/microsoft/CCF/tree/6a2dc420f0166c93f92b773aa49c5203b0767750/tla/consensus
+    ccfraft.tla: Copyright 2014 Diego Ongaro; modifications Copyright 2021
+    Microsoft. Licensed under Creative Commons Attribution 4.0 International;
+    see LICENSES/CC-BY-4.0.txt. The source credits Fritz Alder, Heidi Howard,
+    and Markus Alexander Kuppe for the CCF modifications and identifies the
+    Raft specifications on which it is based.
+    Network.tla and abs.tla are covered by CCF's Apache 2.0 license;
+    see LICENSES/CCF-Apache-2.0.txt.
+    ccfraft.tla and abs.tla are copied unchanged. Network.tla exports its helper
+    definitions for TLAPS by removing LOCAL qualifiers; operator bodies and
+    protocol behavior are unchanged. CCFProof.tla supplies explicit enum/network
+    premises and two safety goals. Generated benchmark contexts remove proofs,
+    unrelated definitions, and comments. Source hashes,
+    scope, and validation limits are recorded in source/CCF/upstream.json and
+    source/CCF/README.md.
+
+PirateShip consensus — benchmark group PirateShip — MIT
+    From PirateshipOrg/pirateship-tla at commit
+    19096c1de2f87c68a21311c9100a5bab423caa0e:
+    https://github.com/PirateshipOrg/pirateship-tla
+    Copyright (c) 2026 PirateshipOrg. The upstream TLA+ repository added its
+    MIT license at commit 0f647dbe8287a09ba123dca55781dee1b35153fe; the model
+    is byte-identical to the pinned source. The full license text is preserved
+    in LICENSES/pirateship-tla-MIT.txt. The original file, source and license
+    hashes, additional parameter premises, and recursive-function adaptation
+    are recorded in source/PirateShip.
+
+== Bundled libraries ==
+
+TLA+ CommunityModules  —  MIT  —  https://github.com/tlaplus/CommunityModules
+    Copyright (c) 2019 TLA+.
+    The etcd_raft group bundles copies of Folds, Functions, SequencesExt,
+    FiniteSetsExt, BagsExt, Relation, and their *Theorems variants. (The full
+    CommunityModules release and the TLA+ tools, tla2tools.jar, are downloaded
+    at setup time and are not redistributed in this repository.)

@@ -1,0 +1,33 @@
+note: verifying module TLAPSBench::etcd_vote_witness
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-df4v9dgc/src/protocol/TLAPSBench/etcd_vote_witness.rs:42:93
+   |
+42 |     ensures a == (Action::RequestVote { i: m.source,j: m.source }) && m.source == m.dest && s.nodes[m.source].role == Role::Candidate
+   |                                                                                             ^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-df4v9dgc/src/protocol/TLAPSBench/etcd_vote_witness.rs:50:16
+   |
+50 |           assert(packet.body is VoteRequest && packet.source == m.dest && packet.dest == m.source && packet.term == m.term
+   |  ________________^
+51 | |             && up_to_date(s.nodes[m.source],packet.body->VoteRequest_last_term,packet.body->VoteRequest_last_index));
+   | |___________________________________________________________________________________________________________________^ assertion failed
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-df4v9dgc/src/protocol/TLAPSBench/etcd_vote_witness.rs:51:27
+   |
+51 |             && up_to_date(s.nodes[m.source],packet.body->VoteRequest_last_term,packet.body->VoteRequest_last_index));
+   |                           ^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+verification results:: 6 verified, 1 errors
+error: aborting due to 1 previous error
+

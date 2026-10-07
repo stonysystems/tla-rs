@@ -1,0 +1,12 @@
+[
+  {
+    "control": "hashicorp_vote_without_persistence",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "hashicorp_double_vote",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

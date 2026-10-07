@@ -1,0 +1,70 @@
+note: verifying module TLAPSBench::hashicorp_config_commit
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-hlyic5cd/src/protocol/TLAPSBench/hashicorp_config_commit.rs:20:72
+   |
+20 |     requires configs::inductive(s,c),types::inductive(s,c),order::node(s.nodes[i]),node(s.nodes[i]),enabled(s,c,a),c.servers.contain...
+   |                                                                        ^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-hlyic5cd/src/protocol/TLAPSBench/hashicorp_config_commit.rs:20:89
+   |
+20 |     requires configs::inductive(s,c),types::inductive(s,c),order::node(s.nodes[i]),node(s.nodes[i]),enabled(s,c,a),c.servers.contain...
+   |                                                                                         ^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-hlyic5cd/src/protocol/TLAPSBench/hashicorp_config_commit.rs:23:29
+   |
+23 |     let n=s.nodes[i]; let u=apply(s,c,a).nodes[i]; assert(configs::node_inv(n)); configs::config_positions(n.log);
+   |                             ^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-hlyic5cd/src/protocol/TLAPSBench/hashicorp_config_commit.rs:27:17
+   |
+27 |         implies u.committed_config_index <= max(u.commit as int,k+1) by {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-hlyic5cd/src/protocol/TLAPSBench/hashicorp_config_commit.rs:48:13
+   |
+46 | pub proof fn commit_marks_config(b: Behavior<LState>,c: Constants,time: int,i: int)
+   | ----------------------------------------------------------------------------------- at the end of the function body
+47 |     requires configs::safety_spec(b,c),time >= 0,decision(b,c,time,i)
+48 |     ensures b[time+1].nodes[i].committed_config_index <= b[time+1].nodes[i].commit
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-hlyic5cd/src/protocol/TLAPSBench/hashicorp_config_commit.rs:50:77
+   |
+50 |     commits::decision_certificate(b,c,time,i); bounds_at(b,c,time,i); let n=b[time].nodes[i]; let index=b[time+1].nodes[i].commit as...
+   |                                                                             ^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-hlyic5cd/src/protocol/TLAPSBench/hashicorp_config_commit.rs:50:105
+   |
+50 |     commits::decision_certificate(b,c,time,i); bounds_at(b,c,time,i); let n=b[time].nodes[i]; let index=b[time+1].nodes[i].commit as...
+   |                                                                                                         ^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 6 verified, 2 errors
+error: aborting due to 2 previous errors
+

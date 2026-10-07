@@ -1,0 +1,12 @@
+[
+  {
+    "control": "zab_broadcast_before_sync",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "zab_follower_changes_value",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

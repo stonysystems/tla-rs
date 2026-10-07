@@ -1,0 +1,2136 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 125 and seed -6240007759589211585 with 1 worker on 64 cores with 962MB heap and 64MB offheap memory [pid: 3266273] (Linux 7.0.14-19-pve amd64, Debian 21.0.12.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/etcd_counterexample/CommitTerm.tla
+Parsing file /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/etcd_counterexample/etcd_raftDefs.tla
+Parsing file /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/etcd_counterexample/etcd_raftModel.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Integers.tla
+Parsing file /tmp/Bags.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /var/tmp/tlaps-bench-tools/CommunityModules/modules/SequencesExt.tla
+Parsing file /var/tmp/tlaps-bench-tools/CommunityModules/modules/FiniteSetsExt.tla
+Parsing file /var/tmp/tlaps-bench-tools/CommunityModules/modules/BagsExt.tla
+Parsing file /tmp/TLC.tla
+Parsing file /var/tmp/tlaps-bench-tools/CommunityModules/modules/Folds.tla
+Parsing file /var/tmp/tlaps-bench-tools/CommunityModules/modules/Functions.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module Folds
+Semantic processing of module Functions
+Semantic processing of module FiniteSetsExt
+Semantic processing of module SequencesExt
+Semantic processing of module BagsExt
+Semantic processing of module etcd_raftModel
+Semantic processing of module etcd_raftDefs
+Semantic processing of module CommitTerm
+Starting... (2026-10-04 10:44:43)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-10-04 10:44:44.
+Error: Invariant LeaderCompletenessInv is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<0, 0, 0>>
+/\ votedFor = <<Nil, Nil, Nil>>
+/\ pendingMessages = << >>
+/\ pc = 0
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Follower, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{}, {}, {}>>
+
+State 2: <Step line 12, col 6 to line 12, col 24 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 0>>
+/\ votedFor = <<1, Nil, Nil>>
+/\ pendingMessages = << >>
+/\ pc = 1
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{}, {}, {}>>
+
+State 3: <Step line 13, col 6 to line 13, col 30 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 0>>
+/\ votedFor = <<1, Nil, Nil>>
+/\ pendingMessages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ pc = 2
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{}, {}, {}>>
+
+State 4: <Step line 14, col 6 to line 14, col 30 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 0>>
+/\ votedFor = <<1, Nil, Nil>>
+/\ pendingMessages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ pc = 3
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{}, {}, {}>>
+
+State 5: <Step line 15, col 6 to line 15, col 22 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 0>>
+/\ votedFor = <<1, Nil, Nil>>
+/\ pendingMessages = << >>
+/\ pc = 4
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{}, {}, {}>>
+
+State 6: <Step line 16, col 6 to line 16, col 43 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 0>>
+/\ votedFor = <<1, Nil, Nil>>
+/\ pendingMessages = << >>
+/\ pc = 5
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{1}, {}, {}>>
+
+State 7: <Step line 17, col 6 to line 17, col 42 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 1>>
+/\ votedFor = <<1, Nil, Nil>>
+/\ pendingMessages = << >>
+/\ pc = 6
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 1,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{1}, {}, {}>>
+
+State 8: <Step line 18, col 6 to line 18, col 42 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 1>>
+/\ votedFor = <<1, Nil, 1>>
+/\ pendingMessages = ( [ msource |-> 3,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ pc = 7
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{1}, {}, {}>>
+
+State 9: <Step line 19, col 6 to line 19, col 22 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 1>>
+/\ votedFor = <<1, Nil, 1>>
+/\ pendingMessages = << >>
+/\ pc = 8
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = ( [ msource |-> 3,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 1,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{1}, {}, {}>>
+
+State 10: <Step line 20, col 6 to line 20, col 43 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 1>>
+/\ votedFor = <<1, Nil, 1>>
+/\ pendingMessages = << >>
+/\ pc = 9
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 11: <Step line 21, col 6 to line 21, col 29 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 1>>
+/\ votedFor = <<1, Nil, 1>>
+/\ pendingMessages = << >>
+/\ pc = 10
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 12: <Step line 22, col 6 to line 22, col 33 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 1>>
+/\ votedFor = <<1, Nil, 1>>
+/\ pendingMessages = << >>
+/\ pc = 11
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 13: <Step line 23, col 6 to line 23, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 0, 1>>
+/\ votedFor = <<1, Nil, 1>>
+/\ pendingMessages = << >>
+/\ pc = 12
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Follower, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 14: <Step line 24, col 6 to line 24, col 25 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 1, 1>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 13
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 15: <Step line 25, col 6 to line 25, col 25 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 1>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 14
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 16: <Step line 26, col 6 to line 26, col 31 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 1>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = ( [ msource |-> 2,
+    mdest |-> 2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ pc = 15
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 17: <Step line 27, col 6 to line 27, col 31 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 1>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = ( [ msource |-> 2,
+    mdest |-> 2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> 2,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 2,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ pc = 16
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 0,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> Nil,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 18: <Step line 28, col 6 to line 28, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 1>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 17
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = ( [ msource |-> 2,
+    mdest |-> 2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> 2,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 2,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {}, {}>>
+
+State 19: <Step line 29, col 6 to line 29, col 44 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 1>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 18
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = ( [ msource |-> 2,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 2,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {2}, {}>>
+
+State 20: <Step line 30, col 6 to line 30, col 43 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, Nil>>
+/\ pendingMessages = << >>
+/\ pc = 19
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = ( [ msource |-> 2,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 2,
+    mlastLogTerm |-> 0,
+    mlastLogIndex |-> 0 ] :>
+      1 )
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {2}, {}>>
+
+State 21: <Step line 31, col 6 to line 31, col 43 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = ( [ msource |-> 3,
+    mdest |-> 2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ pc = 20
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {2}, {}>>
+
+State 22: <Step line 32, col 6 to line 32, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 21
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = ( [ msource |-> 3,
+    mdest |-> 2,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 2,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {2}, {}>>
+
+State 23: <Step line 33, col 6 to line 33, col 44 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 22
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Candidate, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 24: <Step line 34, col 6 to line 34, col 30 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 23
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = <<<<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>, <<>>, <<>>>>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 25: <Step line 35, col 6 to line 35, col 33 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 24
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 26: <Step line 36, col 6 to line 36, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 25
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 27: <Step line 37, col 6 to line 37, col 36 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<1, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 26
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Follower, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 28: <Step line 38, col 6 to line 38, col 25 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<2, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 27
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{}, {2, 3}, {}>>
+
+State 29: <Step line 39, col 6 to line 39, col 25 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 28
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{}, {2, 3}, {}>>
+
+State 30: <Step line 40, col 6 to line 40, col 31 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 3,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ pc = 29
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{}, {2, 3}, {}>>
+
+State 31: <Step line 41, col 6 to line 41, col 31 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 3,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 3,
+    mlastLogTerm |-> 1,
+    mlastLogIndex |-> 1 ] :>
+      1 )
+/\ pc = 30
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 1,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{}, {2, 3}, {}>>
+
+State 32: <Step line 42, col 6 to line 42, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 31
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 3,
+    mvoteGranted |-> TRUE ] :>
+      1 @@
+  [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 3,
+    mlastLogTerm |-> 1,
+    mlastLogIndex |-> 1 ] :>
+      1 )
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{}, {2, 3}, {}>>
+
+State 33: <Step line 43, col 6 to line 43, col 44 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 2>>
+/\ votedFor = <<1, 2, 2>>
+/\ pendingMessages = << >>
+/\ pc = 32
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 3,
+    mlastLogTerm |-> 1,
+    mlastLogIndex |-> 1 ] :>
+      1 )
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1}, {2, 3}, {}>>
+
+State 34: <Step line 44, col 6 to line 44, col 43 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, Nil>>
+/\ pendingMessages = << >>
+/\ pc = 33
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> RequestVoteRequest,
+    mterm |-> 3,
+    mlastLogTerm |-> 1,
+    mlastLogIndex |-> 1 ] :>
+      1 )
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1}, {2, 3}, {}>>
+
+State 35: <Step line 45, col 6 to line 45, col 43 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = ( [ msource |-> 3,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 3,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ pc = 34
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1}, {2, 3}, {}>>
+
+State 36: <Step line 46, col 6 to line 46, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 35
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = ( [ msource |-> 3,
+    mdest |-> 1,
+    mtype |-> RequestVoteResponse,
+    mterm |-> 3,
+    mvoteGranted |-> TRUE ] :>
+      1 )
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1}, {2, 3}, {}>>
+
+State 37: <Step line 47, col 6 to line 47, col 44 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 36
+/\ matchIndex = <<<<0, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Candidate, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 38: <Step line 48, col 6 to line 48, col 30 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 37
+/\ matchIndex = <<<<1, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 39: <Step line 49, col 6 to line 49, col 33 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 38
+/\ matchIndex = <<<<1, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 40: <Step line 50, col 6 to line 50, col 37 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 3,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 2 ] :>
+      1 )
+/\ pc = 39
+/\ matchIndex = <<<<1, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 41: <Step line 51, col 6 to line 51, col 41 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 3,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 2 ] :>
+      1 @@
+  [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |->
+        << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+           [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ pc = 40
+/\ matchIndex = <<<<1, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 42: <Step line 52, col 6 to line 52, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 41
+/\ matchIndex = <<<<1, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 1,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 3,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 2 ] :>
+      1 @@
+  [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |->
+        << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+           [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 43: <Step line 53, col 6 to line 53, col 46 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 42
+/\ matchIndex = <<<<2, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |->
+        << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+           [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   <<>> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 44: <Step line 54, col 6 to line 54, col 45 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 43
+/\ matchIndex = <<<<2, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = ( [ msource |-> 1,
+    mdest |-> 3,
+    mtype |-> AppendEntriesRequest,
+    mterm |-> 3,
+    msubtype |-> "app",
+    mprevLogIndex |-> 0,
+    mprevLogTerm |-> 0,
+    mentries |->
+        << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+           [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+    mcommitIndex |-> 0 ] :>
+      1 )
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 45: <Step line 55, col 6 to line 55, col 50 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = ( [ msource |-> 3,
+    mdest |-> 1,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 3,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 2 ] :>
+      1 )
+/\ pc = 44
+/\ matchIndex = <<<<2, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 0,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |-> <<>> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 46: <Step line 56, col 6 to line 56, col 23 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 45
+/\ matchIndex = <<<<2, 0, 0>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = ( [ msource |-> 3,
+    mdest |-> 1,
+    mtype |-> AppendEntriesResponse,
+    mterm |-> 3,
+    msubtype |-> "app",
+    msuccess |-> TRUE,
+    mmatchIndex |-> 2 ] :>
+      1 )
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 47: <Step line 57, col 6 to line 57, col 46 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 46
+/\ matchIndex = <<<<2, 0, 2>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<0, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+State 48: <Step line 58, col 6 to line 58, col 36 of module CommitTerm>
+/\ config = << [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+   [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}] >>
+/\ votesResponded = <<{1, 3}, {2, 3}, {}>>
+/\ reconfigCount = 0
+/\ currentTerm = <<3, 2, 3>>
+/\ votedFor = <<1, 2, 1>>
+/\ pendingMessages = << >>
+/\ pc = 47
+/\ matchIndex = <<<<2, 0, 2>>, <<0, 0, 0>>, <<0, 0, 0>>>>
+/\ commitIndex = <<2, 0, 0>>
+/\ pendingConfChangeIndex = <<0, 0, 0>>
+/\ durableState = << [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ],
+   [ currentTerm |-> 2,
+     commitIndex |-> 0,
+     log |-> 1,
+     votedFor |-> 2,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>> ],
+   [ currentTerm |-> 3,
+     commitIndex |-> 0,
+     log |-> 2,
+     votedFor |-> 1,
+     config |-> [jointConfig |-> <<{1, 2, 3}, {}>>, learners |-> {}],
+     logEntries |->
+         << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+            [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> ] >>
+/\ state = <<Leader, Leader, Follower>>
+/\ messages = << >>
+/\ log = << << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >>,
+   <<[term |-> 2, type |-> ValueEntry, value |-> [val |-> 0]]>>,
+   << [term |-> 1, type |-> ValueEntry, value |-> [val |-> 0]],
+      [term |-> 3, type |-> ValueEntry, value |-> [val |-> 0]] >> >>
+/\ votesGranted = <<{1, 3}, {2, 3}, {}>>
+
+48 states generated, 48 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 48.
+The average outdegree of the complete state graph is 1 (minimum is 1, the maximum 1 and the 95th percentile is 1).
+Finished in 00s at (2026-10-04 10:44:44)

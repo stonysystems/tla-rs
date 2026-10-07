@@ -1,0 +1,17 @@
+[
+  {
+    "control": "invalidation_not_acknowledged",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "reply_not_consumed",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "directory_lock_not_released",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

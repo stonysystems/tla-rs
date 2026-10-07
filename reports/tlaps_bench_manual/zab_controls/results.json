@@ -1,0 +1,7 @@
+[
+  {
+    "control": "zab_shutdown_retains_messages",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

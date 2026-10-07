@@ -1,0 +1,41 @@
+note: verifying module TLAPSBench::zookeeper_leader_logs
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-is8ki2s0/src/protocol/TLAPSBench/zookeeper_leader_logs.rs:24:24
+   |
+24 |     ensures logs::same(s.election.nodes[i].history,sync_follower(s,i,j,peer).election.nodes[i].history)
+   |                        ^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-is8ki2s0/src/protocol/TLAPSBench/zookeeper_leader_logs.rs:26:44
+   |
+26 |     let u=sync_follower(s,i,j,peer); let h=s.election.nodes[i].history; let k=u.election.nodes[i].history;
+   |                                            ^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-is8ki2s0/src/protocol/TLAPSBench/zookeeper_leader_logs.rs:26:79
+   |
+26 |     let u=sync_follower(s,i,j,peer); let h=s.election.nodes[i].history; let k=u.election.nodes[i].history;
+   |                                                                               ^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-is8ki2s0/src/protocol/TLAPSBench/zookeeper_leader_logs.rs:27:64
+   |
+27 |     assert forall |p: int| 0 <= p < h.len() implies #[trigger] z::equal(h[p],k[p]) by {}
+   |                                                                ^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 6 verified, 1 errors
+error: aborting due to 1 previous error
+

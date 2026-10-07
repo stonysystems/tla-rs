@@ -1,0 +1,11 @@
+note: verifying module TLAPSBench::flash_coherence
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-klq3ab65/src/protocol/TLAPSBench/flash_coherence.rs:88:277
+   |
+88 | ...owns(u,c,o) ==> u.dir.dirty); assert(owns(u,c,o) && owns(u,c,p) ==> o == p); },
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 9 verified, 1 errors
+error: aborting due to 1 previous error
+

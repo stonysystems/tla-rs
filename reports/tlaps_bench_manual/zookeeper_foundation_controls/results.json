@@ -1,0 +1,12 @@
+[
+  {
+    "control": "zk_notification_forges_sender",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "zookeeper_receipt_changes_server_id",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

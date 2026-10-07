@@ -1,0 +1,20 @@
+note: verifying module TLAPSBench::etcd_acknowledgments
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-8ky6cyh7/src/protocol/TLAPSBench/etcd_acknowledgments.rs:113:13
+    |
+113 |       ensures delivered_bound(apply(s,c,a),m)
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+118 | /     if s.messages.count(m) > 0 {
+119 | |         assert(authority(s,c,m)); assert(delivered_bound(s,m)); assert(election::message_wf(m,c));
+120 | |         persistence::commit_monotone(s,c,a,m.source);
+121 | |         if success(m) && m.term == u.nodes[m.dest].disk.term { stable_disk_bound(s,c,a,m.term,m.dest); }
+...   |
+124 | |         if let Action::Ready(i) = a {} else { assert(false); }
+125 | |     }
+    | |_____- at the end of the function body
+
+verification results:: 10 verified, 1 errors
+error: aborting due to 1 previous error
+

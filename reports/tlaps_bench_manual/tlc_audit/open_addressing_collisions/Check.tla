@@ -1,0 +1,3 @@
+---- MODULE Check ----
+EXTENDS OpenAddressingDefs
+====

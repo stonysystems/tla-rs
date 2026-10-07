@@ -1,0 +1,12 @@
+[
+  {
+    "control": "zookeeper_omits_sync_mode_header",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "zookeeper_sync_rewrites_history",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,31 @@
+note: verifying module TLAPSBench::zab_proposal_records
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-qmqy9i4x/src/protocol/TLAPSBench/zab_proposal_records.rs:122:24
+    |
+122 |                 assert(u.proposals.contains(Proposal { source: i,epoch: n.current,zxid: t.zxid,value: t.value }));
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-qmqy9i4x/src/protocol/TLAPSBench/zab_proposal_records.rs:104:127
+    |
+104 | ...c.servers.contains(i),c.servers.contains(j),0 <= p < b[time+1].msgs[(i,j)].len()
+    |                                                         ^^^^^^^^^^^^^^^^^^^^^
+    |
+   --> vstd/map.rs:87:12
+    |
+    = note: recommendation not met
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-qmqy9i4x/src/protocol/TLAPSBench/zab_proposal_records.rs:107:86
+    |
+107 |     let a=super::zab_sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; let m=u.msgs[(i,j)][p]; logs::at(b,c,time); logs::fa...
+    |                                                                                      ^^^^^^^^^^^^^
+    |
+   --> vstd/map.rs:87:12
+    |
+    = note: recommendation not met
+
+verification results:: 9 verified, 1 errors
+error: aborting due to 1 previous error
+

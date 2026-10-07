@@ -1,0 +1,22 @@
+Handwritten Rust/Verus adaptations of TLAPS-Bench model specifications at
+ffa3e31da28f960b70d8c5d44f2735e75d6edcac.
+
+TLAPS-Bench: Copyright (c) 2026 The tlaps-bench Authors, MIT.
+FLASH: Markus A. Kuppe's TLA+ model in tlaplus/Examples, derived from
+flashWithMutex.m. The TLA+ project and other contributors, MIT.
+OpenAddressing: Markus A. Kuppe, lemmy/Examples mku-OA branch, MIT.
+Ivy TLB: Ivy liveness example, Copyright (c) Microsoft Corporation, MIT.
+etcd: Copyright 2024 The etcd Authors, Apache License 2.0.
+HashiCorp Raft: repaired Specula case-study model, as documented by TLAPS-Bench.
+Zab and low-level ZooKeeper: Remix TLA+ specifications of Zab and ZooKeeper 3.7.0.
+Cahill SSI: Chris Newcombe's HPTS 2011 specification, pron/amazon-snapshot-spec.
+MongoDB: William Schultz and Murat Demirbas, PVLDB 2025 distributed transactions
+artifact, mongodb-labs/vldb25-dist-txns. ClientCentric credits Tim Soethout,
+Copyright 2020 ING Bank / CWI, BSD-2-Clause; Util credits Stephan Merz.
+Cahill and MongoDB upstreams have no repository-wide license declarations;
+these adaptations do not relicense them under the repository's MIT license.
+
+These files change the model representation to handwritten Rust/Verus and add
+proofs. For detailed upstream provenance and retained notices, see
+../../../docs/licenses/tlaps-bench/upstream-NOTICE.txt. License texts are in the
+same directory. This notice does not relicense third-party material.

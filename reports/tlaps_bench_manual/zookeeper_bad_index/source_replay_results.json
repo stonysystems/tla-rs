@@ -1,0 +1,79 @@
+{
+  "benchmark_commit": "ffa3e31da28f960b70d8c5d44f2735e75d6edcac",
+  "source_sha256": {
+    "benchmark/proof-from-scratch-module/ZooKeeper_LowLevel/ZkV3_7_0Model.tla": "e7b3e1ca768c5ff1306672b1a964c217e2bf3b5f1ee18741785bb51c46eb5159",
+    "benchmark/proof-from-scratch-module/ZooKeeper_LowLevel/ZkV3_7_0Defs.tla": "10d0fba1024c6d6707bc4d2d5769bfca8f7c51e4e60aaabf2473d5b014eebeca",
+    "benchmark/proof-from-scratch-module/ZooKeeper_LowLevel/ZkV3_7_0/FastLeaderElection.tla": "a7c0a9dd611363cbc283431725f78a2957b790a22e048aafd3d14d006de63665"
+  },
+  "source_files_byte_identical": true,
+  "method": "Exact source replay and complete finite-state comparison; this script asserts no Verus result.",
+  "request_choice": 0,
+  "request_choice_note": "Value is used only by the fixed natural-number choice; instantiated to {0} for TLC. Actions and goal definitions are unchanged.",
+  "servers": 3,
+  "max_epoch": 4,
+  "transitions": 197,
+  "tlc_jar_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "audit_script_sha256": "111edb9ae7c83eb09e55c4669026b2cd315930d42e71ecbce0779e301f3fe176",
+  "replays": {
+    "FollowingBound": {
+      "failure_at_state": 197,
+      "states_compared": 198,
+      "invariant_violation_confirmed": true,
+      "evaluation_error_confirmed": false,
+      "log": "replay-FollowingBound.log.gz",
+      "exit_code": 12,
+      "violation_at_state": 197
+    },
+    "Integrity": {
+      "failure_at_state": 197,
+      "states_compared": 198,
+      "invariant_violation_confirmed": false,
+      "evaluation_error_confirmed": true,
+      "log": "replay-Integrity.log.gz",
+      "exit_code": 76
+    },
+    "GlobalPrimaryOrder": {
+      "failure_at_state": 191,
+      "states_compared": 192,
+      "invariant_violation_confirmed": false,
+      "evaluation_error_confirmed": true,
+      "log": "replay-GlobalPrimaryOrder.log.gz",
+      "exit_code": 76
+    },
+    "LocalPrimaryOrder": {
+      "failure_at_state": 191,
+      "states_compared": 192,
+      "invariant_violation_confirmed": false,
+      "evaluation_error_confirmed": true,
+      "log": "replay-LocalPrimaryOrder.log.gz",
+      "exit_code": 76
+    }
+  },
+  "sha256": {
+    "trace.json.gz": "6f684382f867093f728d98825c35b9ac1477b7d50a3906a879cf66604dcdef6f",
+    "BoundsReplay.tla": "1fb831474e65f048e9bd6a33124f31836fcc7042764b26a0ca5e4bf4fc1ffdef",
+    "BoundsReplay.cfg": "bd6734d256664069f7e3ef69338a9155795b6a36e704bda6b3bac98ed39f6200",
+    "BadIndex.tla": "381ef3ec63dcf8ccd49687fad056c038fef9b84b398235a0dcb7c1a4e3152d7f",
+    "BadIndexIntegrity.cfg": "7652998f33973fe641ebcd4ff84753bdc99a349edc911ba7bccfa25de0007532",
+    "BadIndexGlobalPrimaryOrder.cfg": "a2ce2ce470e79f0526294a26980f780115deb5e10220ca85ab5177f08516850a",
+    "BadIndexLocalPrimaryOrder.cfg": "1adca4728d63389bfe10eea4c91e2de1524a676714d3ae1ac47a5ff2a04c83f0",
+    "BadIndexFollowingBound.cfg": "3b5f4a575b0dde75e1267c045236075d6714a8f16673bea9fadc3e6d5c5c0872",
+    "TLAPS.tla": "2ba09b8cee542416d3b82ebb7ac571d0fa7eeff79cb1f4d7432730791c48bc3c",
+    "search-bounds.log.gz": "81bad6cae3be04e23c744ccb043da07f898678751373aead96a4ed1e577ee6ef",
+    "search-following.log.gz": "9d7e3ce845e13f39b9b98fa443e4ecdfcd5da1ef50dcc5a11076cc544a551583",
+    "search-integrity.log.gz": "1364ee80cbc998485fa0ea86c07af859eaed3d14f972763b02a96b4fdda8d92c",
+    "search-global.log.gz": "31cc2ed32cbe2ffc5a633bad3ed7b1ec415d206bde435b2cb34fdd6715f9d77e",
+    "search-local.log.gz": "541f15ef1a1d22abbf7a448d78fadf0c0b1e1dc32aab0c148f0895f13d74c897",
+    "actions.json": "e65f905d943ac8675d8f547416a690d56f7bcdc16493a0290fede202632f3192",
+    "Replay.tla": "3c263af71ef84f6dfa9f424fa0f367ec84cf6664f0afcd03d91c8bd56fb25a26",
+    "ReplayIntegrity.cfg": "1045b8dacd38bc4684d4af9fe7e98544cd772ebf19d9de78793e8fd58855c63e",
+    "ReplayGlobalPrimaryOrder.cfg": "403ea3eea3a0ee66284fe017670fce27883ab063db437979ecfccf40130bd567",
+    "ReplayLocalPrimaryOrder.cfg": "27b058812826736df73f95615634163ddf3dba28950120513829d1f0167d3cc5",
+    "ReplayFollowingBound.cfg": "6add877eff2f799cef8adfc1c8cda4dd14a70a83342c1286c39721afddb80803",
+    "replay-FollowingBound.log.gz": "b8a96fce881d4e54325a1d37480a0bced00701895972de7dbcb645bcec9c6c0a",
+    "replay-Integrity.log.gz": "41fc766dc0cd0a99cf74aac141a7e559f0b464854799617dfadf219f04cec096",
+    "replay-GlobalPrimaryOrder.log.gz": "02f2cd49a08ee967265732a1f3c232d9b8b716707e66da0a7bf0a6475f0fe228",
+    "replay-LocalPrimaryOrder.log.gz": "12fc770b35a9b06331205f1bcb718acd2ea4eb82d2f8051228e39c20aef21437",
+    "README.md": "e266ad2d27cda6c80be4c6aa499ad3966f85c834341025ef7bc28c7875ee6024"
+  }
+}

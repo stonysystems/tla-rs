@@ -1,0 +1,45 @@
+note: verifying root module
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+ --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_QuorumLog.rs:8:7
+  |
+8 | proof fn init(c:model::Constants)
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: postcondition not satisfied
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_QuorumLog.rs:10:13
+   |
+ 8 | proof fn init(c:model::Constants)
+   |       --------------------------- at the end of the function body
+ 9 |     requires model::valid_constants(c)
+10 |     ensures model::quorum_log(model::initial(c),c)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+note: function body check has been running for 2 seconds
+      reporting errors as they are discovered (they may not be in source order)
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_QuorumLog.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: function body check finished in 8 seconds
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_QuorumLog.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: function body check: Resource limit (rlimit) exceeded; consider rerunning with --profile for more details
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_QuorumLog.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /var/tmp/tla-rs-tlaps-bench/reports/tlaps_bench_manual/probes/etcd_QuorumLog.rs:12:7
+   |
+12 | proof fn preserve(s:model::LState,c:model::Constants,a:model::Action)
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+verification results:: 0 verified, 2 errors (partial verification with `--verify-*`)
+error: aborting due to 2 previous errors
+

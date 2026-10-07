@@ -1,0 +1,27 @@
+[
+  {
+    "control": "early_completion",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "unsorted_flush",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "undefined_writeback",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "nak_not_cleared",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "responder_ignores_pmap_lock",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,24 @@
+note: verifying module TLAPSBench::hashicorp_replication
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-sao3euqe/src/protocol/TLAPSBench/hashicorp_replication.rs:20:78
+   |
+20 |     ensures a == (Action::Receive { m: request,how: Receive::AcceptAppend }),response(request,m),s.messages.count(request) > 0,
+   |                                                                              ^^^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+32 |     assert(a is Receive); a->Receive_m
+   |                           ------------ at the end of the function body
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-sao3euqe/src/protocol/TLAPSBench/hashicorp_replication.rs:21:51
+   |
+21 | ...   apply(s,c,a).nodes[m.source].log == merge(s.nodes[m.source].log,request.body->AppendRequest_prev,request.body->AppendRequest_e...
+   |                                                 ^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 7 verified, 1 errors
+error: aborting due to 1 previous error
+

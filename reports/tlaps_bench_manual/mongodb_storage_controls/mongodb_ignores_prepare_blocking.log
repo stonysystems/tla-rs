@@ -1,0 +1,44 @@
+note: verifying module TLAPSBench::mongodb_prepare_barrier
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-6eviuh3n/src/protocol/TLAPSBench/mongodb_prepare_barrier.rs:46:73
+   |
+46 |     requires enabled(s,c,Action::Read(i,r,k)),c.txns.contains(w),w != r,s.shards[i].txns[w].snapshot.active,s.shards[i].txns[w].snap...
+   |                                                                         ^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-6eviuh3n/src/protocol/TLAPSBench/mongodb_prepare_barrier.rs:46:73
+   |
+46 |     requires enabled(s,c,Action::Read(i,r,k)),c.txns.contains(w),w != r,s.shards[i].txns[w].snapshot.active,s.shards[i].txns[w].snap...
+   |                                                                         ^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-6eviuh3n/src/protocol/TLAPSBench/mongodb_prepare_barrier.rs:46:109
+   |
+46 |     requires enabled(s,c,Action::Read(i,r,k)),c.txns.contains(w),w != r,s.shards[i].txns[w].snapshot.active,s.shards[i].txns[w].snap...
+   |                                                                                                             ^^^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-6eviuh3n/src/protocol/TLAPSBench/mongodb_prepare_barrier.rs:47:13
+   |
+47 | ...es s.shards[i].txns[w].snapshot.prepare_ts > s.shards[i].txns[r].snapshot.ts
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+48 | ...
+49 | ...l(enabled); if s.shards[i].txns[w].snapshot.prepare_ts <= s.shards[i].txns[r].snapshot.ts { assert(prepare_conflict(s.shards[i],c,r,k)); }
+   |                ------------------------------------------------------------------------------------------------------------------------------ at the end of the function body
+
+verification results:: 5 verified, 1 errors
+error: aborting due to 1 previous error
+

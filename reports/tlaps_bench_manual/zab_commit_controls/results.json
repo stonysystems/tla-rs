@@ -1,0 +1,12 @@
+[
+  {
+    "control": "zab_commit_names_missing_entry",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "zab_skips_inherited_commit",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

@@ -1,0 +1,34 @@
+note: verifying module TLAPSBench::zab_commit_delivery
+
+error: postcondition not satisfied
+  --> /tmp/tlaps-manual-control-k6e_yqli/src/protocol/TLAPSBench/zab_commit_delivery.rs:55:9
+   |
+51 | pub proof fn created(s: LState,c: Constants,a: Action,i: int,j: int,z: Zxid)
+   | ---------------------------------------------------------------------------- at the end of the function body
+...
+55 |         (s.nodes[i].phase == Phase::Synchronization && z == last(s.nodes[i].history)) || (s.nodes[i].phase == Phase::Broadcast && z == s.nodes[i].committed.zxid)
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-k6e_yqli/src/protocol/TLAPSBench/zab_commit_delivery.rs:53:81
+   |
+53 |         c.servers.contains(i),c.servers.contains(j),apply(s,c,a).msgs[(i,j)] == s.msgs[(i,j)].push(Message::CommitLd(z))
+   |                                                                                 ^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-k6e_yqli/src/protocol/TLAPSBench/zab_commit_delivery.rs:53:53
+   |
+53 |         c.servers.contains(i),c.servers.contains(j),apply(s,c,a).msgs[(i,j)] == s.msgs[(i,j)].push(Message::CommitLd(z))
+   |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+verification results:: 5 verified, 1 errors
+error: aborting due to 1 previous error
+

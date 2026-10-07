@@ -1,0 +1,43 @@
+note: verifying module TLAPSBench::mongodb_write_conflicts
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-nxekn3vr/src/protocol/TLAPSBench/mongodb_write_conflicts.rs:62:27
+   |
+62 |             else { assert(clear(n,t,k)); }
+   |                           ^^^^^^^^^^^^ assertion failed
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-nxekn3vr/src/protocol/TLAPSBench/mongodb_write_conflicts.rs:56:129
+   |
+56 | ...igger] d.txns[w].snapshot.writes.contains(k) implies t == w by {
+   |                                                         ^^^^^^ assertion failed
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /tmp/tlaps-manual-control-nxekn3vr/src/protocol/TLAPSBench/mongodb_write_conflicts.rs:46:1
+   |
+46 | pub proof fn preserve(s: LState,c: Constants,a: Action)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-nxekn3vr/src/protocol/TLAPSBench/mongodb_write_conflicts.rs:55:94
+   |
+55 | ...   assert forall |t: int,w: int,k: int| c.txns.contains(t) && c.txns.contains(w) && d.txns[t].snapshot.active && d.txns[w].snapsh...
+   |                                                                                        ^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-nxekn3vr/src/protocol/TLAPSBench/mongodb_write_conflicts.rs:60:61
+   |
+60 | ...   assert forall |t: int,k: int| c.txns.contains(t) && d.txns[t].snapshot.active && d.txns[t].snapshot.writes.contains(k) implies...
+   |                                                           ^^^^^^^^^
+   |
+  --> vstd/imap.rs:71:12
+   |
+   = note: recommendation not met
+
+verification results:: 3 verified, 1 errors
+error: aborting due to 2 previous errors
+

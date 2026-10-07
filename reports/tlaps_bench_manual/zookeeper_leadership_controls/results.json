@@ -1,0 +1,12 @@
+[
+  {
+    "control": "zookeeper_forgets_positive_epoch_receipt",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "zookeeper_records_wrong_leader",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

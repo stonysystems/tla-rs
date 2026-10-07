@@ -1,0 +1,16 @@
+note: verifying module TLAPSBench::zookeeper_commit_bounds
+
+note: verifying module TLAPSBench::zookeeper_commit_safety
+
+error: postcondition not satisfied
+  --> src/protocol/TLAPSBench/zookeeper_commit_bounds.rs:83:13
+   |
+81 | pub proof fn mode_node(s: LState,c: Constants,x: int,y: int,i: int)
+   | ------------------------------------------------------------------- at the end of the function body
+82 |     requires context(s,c),safe(s,c),enabled(s,c,Action::SyncMessage(x,y)),c.servers.contains(i)
+83 |     ensures node(apply(s,c,Action::SyncMessage(x,y)),i)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ failed this postcondition
+
+verification results:: 16 verified, 1 errors
+error: aborting due to 1 previous error
+

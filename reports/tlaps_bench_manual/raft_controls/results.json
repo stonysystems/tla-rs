@@ -1,0 +1,12 @@
+[
+  {
+    "control": "release_votes_without_persisting",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  },
+  {
+    "control": "overlapping_configuration_changes",
+    "rejected_by_proof": true,
+    "exit_code": 1
+  }
+]

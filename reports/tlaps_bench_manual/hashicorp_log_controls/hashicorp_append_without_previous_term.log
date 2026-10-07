@@ -1,0 +1,43 @@
+note: verifying module TLAPSBench::hashicorp_prefixes
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+  --> /tmp/tlaps-manual-control-lx_onkd_/src/protocol/TLAPSBench/hashicorp_prefixes.rs:47:1
+   |
+47 | pub proof fn prefix_origin(b: Behavior<LState>,c: Constants,horizon: int,bound: nat,time: int,i: int,k: int) -> (origin: (int,int))
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-lx_onkd_/src/protocol/TLAPSBench/hashicorp_prefixes.rs:49:18
+   |
+49 |         0 <= k < b[time].nodes[i].log.len(),b[time].nodes[i].log[k].term < bound
+   |                  ^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+note: recommendation not met
+  --> /tmp/tlaps-manual-control-lx_onkd_/src/protocol/TLAPSBench/hashicorp_prefixes.rs:49:45
+   |
+49 |         0 <= k < b[time].nodes[i].log.len(),b[time].nodes[i].log[k].term < bound
+   |                                             ^^^^^^^^^^^^^^^^
+   |
+  --> vstd/map.rs:87:12
+   |
+   = note: recommendation not met
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-lx_onkd_/src/protocol/TLAPSBench/hashicorp_prefixes.rs:73:24
+   |
+73 |                 assert(0 <= prev <= old.len()); let cut=merge_cut(old,prev,entries);
+   |                        ^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: assertion failed
+  --> /tmp/tlaps-manual-control-lx_onkd_/src/protocol/TLAPSBench/hashicorp_prefixes.rs:81:49
+   |
+81 |                         if cut == prev { assert(old[cut-1].term == source[cut-1].term); }
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 3 verified, 1 errors
+error: aborting due to 2 previous errors
+

@@ -1,0 +1,14 @@
+note: verifying module TLAPSBench::hashicorp_vote_witness
+
+error: postcondition not satisfied
+   --> /tmp/tlaps-manual-control-j13yc350/src/protocol/TLAPSBench/hashicorp_vote_witness.rs:129:30
+    |
+129 |     ensures w.release < time,evidence(b,c,v,w)
+    |                              ^^^^^^^^^^^^^^^^^ failed this postcondition
+...
+134 |         Action::Timeout(i) => Witness { release,check: release,request: None },
+    |         ------------------ at the end of the function body
+
+verification results:: 7 verified, 1 errors
+error: aborting due to 1 previous error
+

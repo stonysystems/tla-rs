@@ -1,0 +1,43 @@
+note: verifying module TLAPSBench::etcd_origins
+
+note: function body check: not all errors may have been reported; rerun with a higher value for --multiple-errors to find other potential errors in this function
+   --> /tmp/tlaps-manual-control-o_18tity/src/protocol/TLAPSBench/etcd_origins.rs:127:1
+    |
+127 | pub proof fn preserve_log(s: LState,c: Constants,a: Action,i: int,k: int,disk: bool)
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-o_18tity/src/protocol/TLAPSBench/etcd_origins.rs:129:28
+    |
+129 |         0 <= k < if disk { apply(s,c,a).nodes[i].disk.log.len() } else { apply(s,c,a).nodes[i].log.len() }
+    |                            ^^^^^^^^^^^^^^^^^^^^^
+    |
+   --> vstd/imap.rs:71:12
+    |
+    = note: recommendation not met
+
+note: recommendation not met
+   --> /tmp/tlaps-manual-control-o_18tity/src/protocol/TLAPSBench/etcd_origins.rs:129:74
+    |
+129 |         0 <= k < if disk { apply(s,c,a).nodes[i].disk.log.len() } else { apply(s,c,a).nodes[i].log.len() }
+    |                                                                          ^^^^^^^^^^^^^^^^^^^^^
+    |
+   --> vstd/imap.rs:71:12
+    |
+    = note: recommendation not met
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-o_18tity/src/protocol/TLAPSBench/etcd_origins.rs:145:28
+    |
+145 |                     assert(origin(s,c,entries[k-prev],k+1));
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+error: assertion failed
+   --> /tmp/tlaps-manual-control-o_18tity/src/protocol/TLAPSBench/etcd_origins.rs:149:16
+    |
+149 |         assert(origin(s,c,h[k],k+1)); preserve_origin(s,c,a,h[k],k+1);
+    |                ^^^^^^^^^^^^^^^^^^^^ assertion failed
+
+verification results:: 16 verified, 1 errors
+error: aborting due to 2 previous errors
+

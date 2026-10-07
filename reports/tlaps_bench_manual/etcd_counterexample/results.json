@@ -1,0 +1,62 @@
+{
+  "benchmark_commit": "ffa3e31da28f960b70d8c5d44f2735e75d6edcac",
+  "goal": "etcd_raft/LeaderCompleteness",
+  "status": "refuted_in_verus_and_pinned_tla_source",
+  "transitions": 47,
+  "distinct_replay_states": 48,
+  "source_modified": false,
+  "counterexample_check": {
+    "expected_exit_code": 12,
+    "observed_exit_code": 12,
+    "result": "Invariant LeaderCompletenessInv is violated"
+  },
+  "replay_check": {
+    "expected_exit_code": 0,
+    "observed_exit_code": 0,
+    "properties": [
+      "Spec",
+      "Reached"
+    ],
+    "invariant": "FinalWitness",
+    "result": "Model checking completed. No error has been found."
+  },
+  "command_template": "java -XX:+UseParallelGC -Xmx1g -DTLA-Library=/path/to/CommunityModules/modules -cp /path/to/tla2tools.jar tlc2.TLC -workers 1 -deadlock -config <Counterexample.cfg|Replay.cfg> CommitTerm",
+  "community_modules_commit": "c2f2c77b1a399e56875d52afd92f4ffd1acb43f2",
+  "tlc_jar_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "sha256": {
+    "CommitTerm.tla": "59ec217f9236335be06254b1b0f080c108b45b0f85e0c63a505e558945ce9f30",
+    "Counterexample.cfg": "12134be73c4cd93a07edb0fa96a2f5a2adc77ff3bbf07c4344ac105596a8d100",
+    "Replay.cfg": "3a4304515c9176c3fcde546d1d6da040a7ae7bcd86e4f83b235fdadc38b4a1b8",
+    "etcd_raftModel.tla": "6926d939c45b974edf00e6ce5200a06658a49bf0f23bde6ab65bdfcf29733c5f",
+    "etcd_raftDefs.tla": "e004ad865fdda63d058c842e43343f2dc6d932ab73f954ce1d6485c37b93e56d",
+    "counterexample.log": "b0b38295163184882aeeed09bc56359deaf31f350603e367c73d963d78f9112d",
+    "replay.log": "ae8077c5b69298124548d1f123832fbc0fc891df87c1d944ec5dad77c4850973"
+  },
+  "verus_certificate": {
+    "theorem": "etcd_counterexample::counterexample",
+    "infinite_behavior": true,
+    "stutter_after_index": 47,
+    "no_cheating": true,
+    "full_harness_verified_functions": 2074,
+    "full_harness_errors": 0,
+    "verus": "Verus\n  Version: 0.2026.08.30.b432e82\n  Profile: release\n  Platform: linux_x86_64\n  Toolchain: 1.97.1-x86_64-unknown-linux-gnu",
+    "command": [
+      "verus",
+      "--crate-type=lib",
+      "--no-cheating",
+      "--triggers-mode",
+      "silent",
+      "--rlimit",
+      "30",
+      "--num-threads",
+      "8",
+      "-V",
+      "spinoff-all",
+      "src/protocol/tlaps_bench_harness.rs"
+    ],
+    "verification_log": "../verification.log",
+    "verification_log_sha256": "2cf49a6889257ea9c9a83efeb07a8d03ce5fbcd59b637d49f923acb3ef1aaa7e",
+    "proof_sha256": "91e8ed4bad094d50ec0826d9247d67183d093e91d8edfa041e33eb86d9fcb61c",
+    "generator_sha256": "e771ba2bbb84c89c3fc7a17785f278f12d4343030a331044d352327fbd25f782"
+  }
+}

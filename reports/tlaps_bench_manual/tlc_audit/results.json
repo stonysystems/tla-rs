@@ -1,0 +1,46 @@
+{
+  "tlc_jar_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "tlc_download": "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar",
+  "command_template": "java -XX:+UseParallelGC -Xmx2g -cp /path/to/tla2tools.jar tlc2.TLC -workers 2 -deadlock -config <config> Check",
+  "benchmark_commit": "ffa3e31da28f960b70d8c5d44f2735e75d6edcac",
+  "runs": [
+    {
+      "case": "open_addressing_small",
+      "status": "finite_instance_passed",
+      "config": "Check.cfg",
+      "generated_states": 903,
+      "distinct_states": 491,
+      "unbounded_proof": false,
+      "source_modified": false,
+      "source_sha256": {
+        "OpenAddressingModel.tla": "e60718f90baab8f049c8f6c9ff3cfa3e193d11919d990309c6240156edf98059",
+        "OpenAddressingDefs.tla": "e1f388ee8cf385b6eab777ce039a876bc377841141175b625e7354d6f7e32d7b"
+      }
+    },
+    {
+      "case": "open_addressing_collisions",
+      "status": "finite_instance_passed",
+      "config": "Collisions.cfg",
+      "generated_states": 24927,
+      "distinct_states": 13689,
+      "unbounded_proof": false,
+      "source_modified": false,
+      "source_sha256": {
+        "OpenAddressingModel.tla": "e60718f90baab8f049c8f6c9ff3cfa3e193d11919d990309c6240156edf98059",
+        "OpenAddressingDefs.tla": "e1f388ee8cf385b6eab777ce039a876bc377841141175b625e7354d6f7e32d7b"
+      }
+    },
+    {
+      "case": "zab_bounded",
+      "status": "stopped_incomplete",
+      "unbounded_proof": false,
+      "source_modified": true,
+      "modifications": [
+        "Removed unused TLAPS proof-support import.",
+        "Instantiated the fixed CHOOSE v : TRUE request value with integer 1."
+      ],
+      "constraint": "accepted/current epochs <= 2, history length <= 3, channel length <= 2",
+      "conclusion": "No safety result is claimed from this unfinished exploration."
+    }
+  ]
+}
