@@ -39,6 +39,7 @@ pub proof fn initial_inductive(b: Behavior<LState>,c: Constants)
         implies #[trigger] before(b[0].msgs[(i,j)][p],b[0].msgs[(i,j)][r]) by { connections::channel_pair(c,i,j); }
 }
 #[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_order(b: Behavior<LState>,c: Constants,time: int,i: int,j: int,p: int,r: int)
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),c.servers.contains(j),0 <= p < r < b[time+1].msgs[(i,j)].len()
     ensures before(b[time+1].msgs[(i,j)][p],b[time+1].msgs[(i,j)][r])
@@ -51,7 +52,7 @@ pub proof fn preserve_order(b: Behavior<LState>,c: Constants,time: int,i: int,j:
     if r+1 < s.msgs[(i,j)].len() { assert(before(s.msgs[(i,j)][p+1],s.msgs[(i,j)][r+1])); }
 }
 #[verifier::spinoff_prover]
-#[verifier::rlimit(30)]
+#[verifier::rlimit(60)]
 pub proof fn preserve_awaiting(b: Behavior<LState>,c: Constants,time: int,i: int,j: int,k: int)
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),c.servers.contains(j),0 <= k < b[time+1].msgs[(i,j)].len()
     ensures awaiting(b[time+1].nodes[j],b[time+1].msgs[(i,j)][k])

@@ -44,13 +44,16 @@ pub proof fn crash_node(s: LState,c: Constants,x: int,i: int)
     requires channels::safe(s,c),safe(s,c),enabled(s,c,Action::Crash(x)),c.servers.contains(i)
     ensures node(apply(s,c,Action::Crash(x)),c,i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); channels::facts(s,c,i,x); assert(node(s,c,i)); assert(node(s,c,x));
     if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,x,y); assert(node(s,c,y)); disconnect(s.nodes[y],c,y,x); }
 }
+#[verifier::spinoff_prover]
 pub proof fn sync_node(s: LState,c: Constants,x: int,y: int,i: int)
     requires channels::safe(s,c),safe(s,c),enabled(s,c,Action::Sync(x,y)),c.servers.contains(i)
     ensures node(apply(s,c,Action::Sync(x,y)),c,i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); channels::facts(s,c,i,x); channels::facts(s,c,i,y); channels::facts(s,c,x,y); assert(node(s,c,i)); assert(node(s,c,x));
     let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     if x == y { assert(r.zxid == unset()); assert(false); }

@@ -64,6 +64,7 @@ pub proof fn other_quorum(s: LState,c: Constants,a: Action,i: int)
         apply(s,c,a).election.nodes[i].role == Role::Leading
     ensures s.election.nodes[i].role == Role::Leading,z::al_ids(apply(s,c,a).nodes[i].connecting) == z::al_ids(s.nodes[i].connecting)
 {
+    hide(floor_index);
     match a {
         Action::Crash(x) => { crash_quorum(s,c,x,i); },
         Action::Partition(x,y) => { partition_quorum(s,c,x,y,i); },

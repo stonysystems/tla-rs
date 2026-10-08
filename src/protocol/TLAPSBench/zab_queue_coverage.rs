@@ -27,6 +27,7 @@ pub proof fn preserve_pair(b: Behavior<LState>,c: Constants,time: int,i: int,j: 
         b[time+1].nodes[i].role == Role::Leading,b[time+1].nodes[i].phase != Phase::Discovery,ae_connected(b[time+1].nodes[i].ae).contains(j)
     ensures covered(b[time+1],i,j)
 {
+    hide(update_ack);
     let a=sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; bounds::at(b,c,time); bounds::preserve(s,c,a);
     logs::facts(s,c,i,j); logs::facts(u,c,i,j); projected::at(b,c,time+1,i,j); assert(bounds::node(u.nodes[i]));
     if u.nodes[i].sent > 0 {

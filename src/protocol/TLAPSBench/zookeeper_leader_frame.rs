@@ -22,11 +22,13 @@ pub proof fn election_step(s: LState,c: Constants,ea: fle::Action,i: int)
 {
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(Action::Election(ea)); channels::facts(s,c,i,x);
 }
+#[verifier::spinoff_prover]
 pub proof fn protocol_step(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),receipts::safe(s,c),enabled(s,c,a),c.servers.contains(i),s.election.nodes[i].role == Role::Leading,
         apply(s,c,a).election.nodes[i].role == Role::Leading,!(a is Election)
     ensures stable(s,apply(s,c,a),c,i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); let x=receiver(a); assert(receipts::node(s,c,i));
     if a != Action::Stutter { channels::facts(s,c,i,x); assert(receipts::node(s,c,x)); }
     match a {

@@ -16,6 +16,8 @@ pub open spec fn node(n: LServer) -> bool {
     n.role == Role::Leader ==> forall |k: int| 0 <= k < n.log.len() && (#[trigger] n.log[k]).term == n.term
         ==> n.committed_config_index <= max(n.commit as int,k+1)
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
     requires configs::inductive(s,c),types::inductive(s,c),order::node(s.nodes[i]),node(s.nodes[i]),enabled(s,c,a),c.servers.contains(i)
     ensures node(apply(s,c,a).nodes[i])

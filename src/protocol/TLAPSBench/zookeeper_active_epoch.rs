@@ -296,6 +296,7 @@ proof fn continuing_fields_ack(s: LState,c: Constants,a: Action,i: int)
     ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
         apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
 {
+    hide(floor_index);
     let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
     match a { Action::Ack(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
 }
@@ -307,6 +308,7 @@ proof fn continuing_fields_commit(s: LState,c: Constants,a: Action,i: int)
     ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
         apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
 {
+    hide(floor_index);
     let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
     match a { Action::Commit(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
 }

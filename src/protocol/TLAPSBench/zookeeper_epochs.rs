@@ -53,10 +53,13 @@ pub proof fn preserve_node_leader_info(s: LState,c: Constants,x: int,y: int,i: i
     assert(node(s,c,i)); assert(node(s,c,x)); assert(node(s,c,y));
     super::zab_collections::disconnect_ids(Set::empty(),Set::empty(),s.nodes[y].connecting,x);
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_node_protocol(s: LState,c: Constants,a: Action,i: int)
     requires connections::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),!(a is Crash),!(a is FollowerInfo),!(a is LeaderInfo)
     ensures node(apply(s,c,a),c,i),s.nodes[i].accepted <= apply(s,c,a).nodes[i].accepted,s.election.nodes[i].current <= apply(s,c,a).election.nodes[i].current
 {
+    hide(floor_index);
     let u=apply(s,c,a); reveal(enabled); reveal(apply); assert(node(s,c,i)); assert(connections::node(s,c,i));
     let x=receiver(a); if a != Action::Stutter { connections::facts(s,c,i,x); assert(node(s,c,x)); }
     match a {

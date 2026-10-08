@@ -35,10 +35,12 @@ pub proof fn fresh_ids(n: LServer,i: int)
     let r=CE { sid: i,connected: true,epoch: n.accepted };
     assert(lead(n,i).ce.contains(r)); assert(ce_ids(lead(n,i).ce).contains(i));
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i)
     ensures node(apply(s,c,a),c,i)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); receipts::facts(s,c,i,i); assert(node(s,c,i));
     above_grows(s,c,a,s.nodes[i].accepted); connections::preserve_node(s,c,a,i);
     let u=apply(s,c,a); let n=s.nodes[i]; let v=u.nodes[i];

@@ -26,6 +26,7 @@ pub proof fn environment_follower(s: LState,c: Constants,a: Action,i: int)
         apply(s,c,a).election.nodes[i].role == Role::Following,a is Crash || a is Partition || a is Recover || a is Start || a is Stutter
     ensures follower(s,apply(s,c,a),i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); let x=receiver(a); if a != Action::Stutter { channels::facts(s,c,i,x); }
     if a is Crash { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,x,y); } }
     if let Action::Partition(_,y)=a { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }

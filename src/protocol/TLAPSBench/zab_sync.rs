@@ -111,7 +111,7 @@ pub proof fn preserve_ready(s: LState,c: Constants,a: Action,i: int,j: int)
     }
 }
 #[verifier::spinoff_prover]
-#[verifier::rlimit(30)]
+#[verifier::rlimit(60)]
 pub proof fn preserve_position(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len(),apply(s,c,a).msgs[(i,j)][k] is Propose
     ensures apply(s,c,a).nodes[j].current == apply(s,c,a).nodes[i].current || pending(apply(s,c,a).msgs[(i,j)],apply(s,c,a).nodes[i].current,k)

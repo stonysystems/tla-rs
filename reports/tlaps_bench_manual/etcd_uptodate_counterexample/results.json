@@ -37,7 +37,7 @@
     "infinite_behavior": true,
     "stutter_after_index": 72,
     "no_cheating": true,
-    "full_harness_verified_functions": 2137,
+    "full_harness_verified_functions": 2180,
     "full_harness_errors": 0,
     "verus": "Verus\n  Version: 0.2026.08.30.b432e82\n  Profile: release\n  Platform: linux_x86_64\n  Toolchain: 1.97.1-x86_64-unknown-linux-gnu",
     "command": [
@@ -45,11 +45,11 @@
       "--crate-type=lib",
       "--no-cheating",
       "--num-threads",
-      "32",
+      "24",
       "src/protocol/tlaps_bench_harness.rs"
     ],
     "verification_log": "../verification.log",
-    "verification_log_sha256": "e9d3def0663a2315f80756460548256af0d598a3fd64ac4b3e2ddbb47dc354d5",
+    "verification_log_sha256": "2e270d76126de2b261ae4729b8a9db4af26350a0fd57b82da3c3f7cff21c68e9",
     "proof_sha256": "4bd5f32a1cfa43cb96ddf3516b1758df45a03ffe5dc49d51be50636410a003bb",
     "generator_sha256": "d04e6661e33ede196c2fe31e1ef4af688434320a7227a0ce2105c5f417eb467c"
   }

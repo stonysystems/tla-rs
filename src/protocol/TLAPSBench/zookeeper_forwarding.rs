@@ -63,6 +63,7 @@ pub proof fn retained(s: LState,c: Constants,a: Action,i: int,j: int)
     }
 }
 #[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn received_role(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i)
     ensures apply(s,c,a).nodes[i].received_leader ==> apply(s,c,a).election.nodes[i].role == Role::Following
@@ -183,6 +184,7 @@ proof fn first_activation_follower_info(s: LState,c: Constants,a: Action,i: int)
         a is FollowerInfo
     ensures node(apply(s,c,a),c,i)
 {
+    hide(floor_index);
     let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
 }
 
@@ -194,6 +196,7 @@ proof fn first_activation_leader_info(s: LState,c: Constants,a: Action,i: int)
         a is LeaderInfo
     ensures node(apply(s,c,a),c,i)
 {
+    hide(floor_index);
     let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
 }
 
@@ -272,6 +275,7 @@ proof fn first_activation_ack_ld(s: LState,c: Constants,a: Action,i: int)
         a is AckLd
     ensures node(apply(s,c,a),c,i)
 {
+    hide(floor_index);
     let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
 }
 
@@ -317,6 +321,7 @@ proof fn first_activation_ack(s: LState,c: Constants,a: Action,i: int)
         a is Ack
     ensures node(apply(s,c,a),c,i)
 {
+    hide(floor_index);
     let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
 }
 

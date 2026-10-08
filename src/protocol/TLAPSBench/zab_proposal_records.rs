@@ -73,6 +73,7 @@ pub proof fn preserve_entry(b: Behavior<LState>,c: Constants,time: int,i: int,k:
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),0 <= k < b[time+1].nodes[i].history.len()
     ensures entry(b,time+1,i,k)
 {
+    hide(update_ack);
     let a=super::zab_sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; logs::at(b,c,time); logs::preserve(s,c,a); monotone(s,c,a);
     logs::facts(s,c,i,i); logs::facts(u,c,i,i); reveal(enabled); reveal(apply);
     match a {

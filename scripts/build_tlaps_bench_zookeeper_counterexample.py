@@ -388,10 +388,12 @@ for k in range(len(actions)):
         helpers.append(f"pub proof fn request_{k}_enabled()\n    ensures enabled(state({k}),constants(),action({k}))\n{{\n{common}}}\n")
         fields = ["msgs", "partition", "epoch_leader", "proposals", "election.msgs", "nodes.dom()", "election.nodes.dom()"]
         conditions = ",".join(f"{actual}.{f} == {expected}.{f}" for f in fields)
-        helpers.append(f"pub proof fn request_{k}_maps()\n    ensures {conditions}\n{{\n{common}" + "".join(parts[common_end:maps_end]) + "}\n")
+        # The map and per-node checks conclude only facts about apply's result.
+        result_common = common.replace(" reveal(enabled);", "", 1)
+        helpers.append(f"pub proof fn request_{k}_maps()\n    ensures {conditions}\n{{\n{result_common}" + "".join(parts[common_end:maps_end]) + "}\n")
         for i, first, last in node_ranges:
             conditions = ",".join(f"{actual}.{f}[{sid(i)}] == {expected}.{f}[{sid(i)}]" for f in ["nodes", "election.nodes"])
-            helpers.append(f"pub proof fn request_{k}_{i}()\n    ensures {conditions}\n{{\n{common}" + "".join(parts[first:last]) + "}\n")
+            helpers.append(f"pub proof fn request_{k}_{i}()\n    ensures {conditions}\n{{\n{result_common}" + "".join(parts[first:last]) + "}\n")
         helpers.append(f'''pub proof fn edge_{k}()
     ensures enabled(state({k}),constants(),action({k})),{actual} == {expected}
 {{
@@ -508,9 +510,17 @@ else:
     # As in the index-failure certificate: every ground edge gets the same
     # effort limit, which changes the effort, never the obligation.
     proof = proof.replace("pub proof fn edge_", "#[verifier::rlimit(120)]\npub proof fn edge_")
-# Each edge checks one long ground transition; giving it its own solver
-# process keeps the other edges' facts out of its context.
-proof = proof.replace("pub proof fn edge_", "#[verifier::spinoff_prover]\npub proof fn edge_")
+# A few ground checks are heavier than the rest on current Verus releases;
+# like edge_161 above, they get their own effort limit.
+HEAVY = {"edge_163": 240, "edge_178": 240, "step_169_maps": 240, "step_169_c": 240} if INDEX_FAILURE else {"edge_160": 480, "edge_161": 240}
+for name, limit in HEAVY.items():
+    old = f"#[verifier::rlimit(120)]\npub proof fn {name}("
+    assert proof.count(old) == 1, name
+    proof = proof.replace(old, f"#[verifier::rlimit({limit})]\npub proof fn {name}(")
+# Each ground check gets its own solver process, keeping the other checks'
+# facts out of its context.
+for prefix in ["edge_", "step_", "request_"]:
+    proof = proof.replace(f"pub proof fn {prefix}", f"#[verifier::spinoff_prover]\npub proof fn {prefix}")
 (arguments.proof_output or ROOT / f"src/protocol/TLAPSBench/{CASE}.rs").write_text(proof)
 (REPORT / "actions.json").write_text(json.dumps({"source_trace_indices": trace_indices, "actions": actions}, indent=2) + "\n")
 source_names = {

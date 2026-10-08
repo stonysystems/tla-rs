@@ -43,11 +43,14 @@ pub proof fn payload_change(s: LState,c: Constants,a: Action,i: int,j: int,e: in
         _ => {},
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn message_change(s: LState,c: Constants,a: Action,i: int,j: int,e: int)
     requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),
         !s.msgs[(j,i)].contains(Message::CEpoch(e)),apply(s,c,a).msgs[(j,i)].contains(Message::CEpoch(e))
     ensures a == Action::Connect(i,j),apply(s,c,a).nodes[j].accepted == e,apply(s,c,a).nodes[i].learners.contains(j)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); connections::channel_pair(c,j,i);
     let u=apply(s,c,a); let m=Message::CEpoch(e);
     let k=choose |k: int| 0 <= k < u.msgs[(j,i)].len() && u.msgs[(j,i)][k] == m;

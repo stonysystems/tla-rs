@@ -283,6 +283,7 @@ proof fn protocol_origin_request(s: LState,c: Constants,a: Action,i: int,j: int)
     ensures origin(s,apply(s,c,a),a,i,j),s.election.nodes[i].role == Role::Leading && apply(s,c,a).election.nodes[i].role == Role::Leading
         && member(s.nodes[i].electing,j) ==> member(apply(s,c,a).nodes[i].electing,j)
 {
+    hide(floor_index);
     let x=receiver(a); reveal(enabled); reveal(apply); assert(receipts::node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(receipts::node(s,c,x)); }
 }
 
@@ -315,6 +316,7 @@ proof fn protocol_origin_commit(s: LState,c: Constants,a: Action,i: int,j: int)
     ensures origin(s,apply(s,c,a),a,i,j),s.election.nodes[i].role == Role::Leading && apply(s,c,a).election.nodes[i].role == Role::Leading
         && member(s.nodes[i].electing,j) ==> member(apply(s,c,a).nodes[i].electing,j)
 {
+    hide(floor_index);
     let x=receiver(a); reveal(enabled); reveal(apply); assert(receipts::node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(receipts::node(s,c,x)); }
     match a { Action::Commit(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); assert(receipts::node(s,c,y)); disconnect(s.nodes[x].electing,c,y,j); disconnect(s.nodes[y].electing,c,x,j);  }, _ => {} }
 }

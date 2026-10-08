@@ -143,11 +143,19 @@ pub proof fn advance_packet(b: Behavior<LState>,c: Constants,time: int,i: int,m:
         _ => {},
     }
 }
+/// The only per-node fact `advertised` needs from the log invariant;
+/// kept apart so the rest of `logs::facts` stays out of its query.
+proof fn advertised_shape(b: Behavior<LState>,c: Constants,time: int,i: int)
+    requires connections::safety_spec(b,c),time >= 0,c.servers.contains(i)
+    ensures logs::node(b[time].nodes[i])
+{
+    logs::at(b,c,time); logs::facts(b[time],c,i,i);
+}
 pub proof fn advertised(b: Behavior<LState>,c: Constants,time: int,i: int,z: Zxid,ld: bool)
     requires connections::safety_spec(b,c),time >= 0,c.servers.contains(i),node(b,c,time,i),b[time].nodes[i].committed.index > 0,b[time].nodes[i].committed.zxid == z
     ensures packet(b,c,time,i,if ld { Message::CommitLd(z) } else { Message::Commit(z) })
 {
-    logs::at(b,c,time); logs::facts(b[time],c,i,i); let n=b[time].nodes[i]; let k=n.committed.index-1;
+    advertised_shape(b,c,time,i); let n=b[time].nodes[i]; let k=n.committed.index-1;
     if z != boot() {
         assert(k != 0); let e=choose |e: int| 0 < e <= n.current && certified(b,c,time,e,n.history,k);
         assert(origin(b,c,time,e,z,(time,i,k))); assert(backed(b,c,time,e,z)); assert(justified(b,c,time,n.current,z));

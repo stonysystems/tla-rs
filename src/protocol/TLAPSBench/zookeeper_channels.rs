@@ -108,6 +108,7 @@ pub proof fn preserve_environment(s: LState,c: Constants,a: Action,i: int,j: int
     if let Action::Crash(_)=a { if let Some(y)=s.nodes[x].leader { facts(s,c,i,y); facts(s,c,j,y); facts(s,c,x,y); } }
     if let Action::Partition(_,y)=a { facts(s,c,i,y); facts(s,c,j,y); facts(s,c,x,y); }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_sync(s: LState,c: Constants,x: int,y: int,i: int,j: int)
     requires safe(s,c),enabled(s,c,Action::Sync(x,y)),c.servers.contains(i),c.servers.contains(j)
     ensures cell(apply(s,c,Action::Sync(x,y)),i,j)

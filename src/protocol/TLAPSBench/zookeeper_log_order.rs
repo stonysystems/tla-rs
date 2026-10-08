@@ -128,10 +128,12 @@ pub proof fn finish_node(s: LState,c: Constants,a: Action,i: int)
     if s.nodes[x].phase == Phase::Broadcast { assert(complete_history(s,x) =~= s.election.nodes[x].history); }
     assert(sequence(complete_history(s,x),s.nodes[x].accepted));
 }
+#[verifier::spinoff_prover]
 pub proof fn request_node(s: LState,c: Constants,x: int,i: int)
     requires context(s,c),safe(s,c),enabled(s,c,Action::Request(x)),c.servers.contains(i),c.servers.len() > 1
     ensures node(apply(s,c,Action::Request(x)),i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); channels::facts(s,c,i,x); assert(node(s,i)); assert(node(s,x)); assert(epochs::node(s,c,x)); assert(active::node(s,c,x)); assert(completion::node(s,c,x));
     let u=apply(s,c,Action::Request(x)); let h=u.election.nodes[x].history; let t=h[h.len()-1]; logs::request(s.election.nodes[x].history,s.nodes[x].accepted,t);
 }

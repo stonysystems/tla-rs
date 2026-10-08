@@ -43,12 +43,15 @@ pub proof fn payload_change(s: LState,c: Constants,a: Action,i: int,j: int,e: in
         _ => {},
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn message_change(s: LState,c: Constants,a: Action,i: int,j: int,e: int,h: Seq<Txn>)
     requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),
         !s.msgs[(j,i)].contains(Message::AckEpoch(e,h)),apply(s,c,a).msgs[(j,i)].contains(Message::AckEpoch(e,h))
     ensures a == Action::NewEpoch(j,i),apply(s,c,a).nodes[j].current == e && apply(s,c,a).nodes[j].history == h,apply(s,c,a).nodes[i].learners.contains(j),
         apply(s,c,a).nodes[j].accepted == apply(s,c,a).nodes[i].accepted,quorum(ce_ids(apply(s,c,a).nodes[i].ce),c)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); connections::channel_pair(c,j,i); receipts::facts(s,c,i,j); receipts::preserve(s,c,a);
     let u=apply(s,c,a); receipts::facts(u,c,i,j); let m=Message::AckEpoch(e,h);
     let k=choose |k: int| 0 <= k < u.msgs[(j,i)].len() && u.msgs[(j,i)][k] == m;

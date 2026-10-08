@@ -6,7 +6,7 @@ Pinned benchmark `ffa3e31da28f960b70d8c5d44f2735e75d6edcac`. 38/47 invariants an
 
 8/9 models have every goal either proved or refuted by a checked source counterexample.
 
-Baseline: 2137 verified functions, 0 errors, with `--no-cheating`.
+Baseline: 2180 verified functions, 0 errors, with `--no-cheating`.
 
 6 goals have checked counterexamples; 3 remain unresolved. Refuted goals do not count as proved.
 

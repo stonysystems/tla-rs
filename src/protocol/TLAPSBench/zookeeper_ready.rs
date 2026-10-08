@@ -117,11 +117,13 @@ pub proof fn pair_environment(s: LState,c: Constants,a: Action,i: int,j: int)
     }
 }
 #[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn pair_protocol(s: LState,c: Constants,a: Action,i: int,j: int)
     requires channels::safe(s,c),channels::safe(apply(s,c,a),c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),
         !(a is Election),!(a is Crash),!(a is Partition),!(a is Recover),!(a is Start)
     ensures pair(apply(s,c,a),c,i,j)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); let x=receiver(a); assert(pair(s,c,i,j)); assert(receipts::node(s,c,i)); channels::facts(s,c,i,j);
     if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); assert(receipts::node(s,c,x)); }
     match a {

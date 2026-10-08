@@ -47,10 +47,12 @@ pub proof fn preserve_node_crash(s: LState,c: Constants,x: int,i: int)
     reveal(enabled); reveal(apply); facts(s,c,i,x);
     if let Some(y)=s.nodes[x].leader { facts(s,c,i,y); facts(s,c,x,y); }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_node_protocol(s: LState,c: Constants,a: Action,i: int)
     requires safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),!(a is Crash)
     ensures node(apply(s,c,a),c,i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply);
     let x=receiver(a); if a != Action::Stutter { facts(s,c,i,x); }
     match a {

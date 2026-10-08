@@ -3573,6 +3573,7 @@ pub proof fn edge_34()
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_35_enabled()
     ensures enabled(state(35),constants(),action(35))
 {
@@ -3581,10 +3582,11 @@ pub proof fn request_35_enabled()
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_35_maps()
     ensures apply(state(35),constants(),action(35)).msgs == state(36).msgs,apply(state(35),constants(),action(35)).partition == state(36).partition,apply(state(35),constants(),action(35)).epoch_leader == state(36).epoch_leader,apply(state(35),constants(),action(35)).proposals == state(36).proposals,apply(state(35),constants(),action(35)).election.msgs == state(36).election.msgs,apply(state(35),constants(),action(35)).nodes.dom() == state(36).nodes.dom(),apply(state(35),constants(),action(35)).election.nodes.dom() == state(36).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(35); let u=apply(s,constants(),action(35)); let v=state(36);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.msgs[(ids::a(),ids::a())] =~= v.msgs[(ids::a(),ids::a())]);
@@ -3600,10 +3602,11 @@ pub proof fn request_35_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_35_a()
     ensures apply(state(35),constants(),action(35)).nodes[ids::a()] == state(36).nodes[ids::a()],apply(state(35),constants(),action(35)).election.nodes[ids::a()] == state(36).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(35); let u=apply(s,constants(),action(35)); let v=state(36);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::a()] == v.election.nodes[ids::a()] && u.nodes[ids::a()] == v.nodes[ids::a()]) by {
@@ -3627,10 +3630,11 @@ pub proof fn request_35_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_35_b()
     ensures apply(state(35),constants(),action(35)).nodes[ids::b()] == state(36).nodes[ids::b()],apply(state(35),constants(),action(35)).election.nodes[ids::b()] == state(36).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(35); let u=apply(s,constants(),action(35)); let v=state(36);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::b()] == v.election.nodes[ids::b()] && u.nodes[ids::b()] == v.nodes[ids::b()]) by {
@@ -3654,10 +3658,11 @@ pub proof fn request_35_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_35_c()
     ensures apply(state(35),constants(),action(35)).nodes[ids::c()] == state(36).nodes[ids::c()],apply(state(35),constants(),action(35)).election.nodes[ids::c()] == state(36).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_35); reveal(state_36); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(35); let u=apply(s,constants(),action(35)); let v=state(36);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::c()] == v.election.nodes[ids::c()] && u.nodes[ids::c()] == v.nodes[ids::c()]) by {
@@ -3691,6 +3696,7 @@ pub proof fn edge_35()
     assert(u.nodes =~= v.nodes); assert(u.election.nodes =~= v.election.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_36_enabled()
     ensures enabled(state(36),constants(),action(36))
 {
@@ -3699,10 +3705,11 @@ pub proof fn request_36_enabled()
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_36_maps()
     ensures apply(state(36),constants(),action(36)).msgs == state(37).msgs,apply(state(36),constants(),action(36)).partition == state(37).partition,apply(state(36),constants(),action(36)).epoch_leader == state(37).epoch_leader,apply(state(36),constants(),action(36)).proposals == state(37).proposals,apply(state(36),constants(),action(36)).election.msgs == state(37).election.msgs,apply(state(36),constants(),action(36)).nodes.dom() == state(37).nodes.dom(),apply(state(36),constants(),action(36)).election.nodes.dom() == state(37).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(36); let u=apply(s,constants(),action(36)); let v=state(37);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.msgs[(ids::a(),ids::a())] =~= v.msgs[(ids::a(),ids::a())]);
@@ -3718,10 +3725,11 @@ pub proof fn request_36_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_36_a()
     ensures apply(state(36),constants(),action(36)).nodes[ids::a()] == state(37).nodes[ids::a()],apply(state(36),constants(),action(36)).election.nodes[ids::a()] == state(37).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(36); let u=apply(s,constants(),action(36)); let v=state(37);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::a()] == v.election.nodes[ids::a()] && u.nodes[ids::a()] == v.nodes[ids::a()]) by {
@@ -3745,10 +3753,11 @@ pub proof fn request_36_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_36_b()
     ensures apply(state(36),constants(),action(36)).nodes[ids::b()] == state(37).nodes[ids::b()],apply(state(36),constants(),action(36)).election.nodes[ids::b()] == state(37).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(36); let u=apply(s,constants(),action(36)); let v=state(37);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::b()] == v.election.nodes[ids::b()] && u.nodes[ids::b()] == v.nodes[ids::b()]) by {
@@ -3772,10 +3781,11 @@ pub proof fn request_36_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_36_c()
     ensures apply(state(36),constants(),action(36)).nodes[ids::c()] == state(37).nodes[ids::c()],apply(state(36),constants(),action(36)).election.nodes[ids::c()] == state(37).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_36); reveal(state_37); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(36); let u=apply(s,constants(),action(36)); let v=state(37);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::c()] == v.election.nodes[ids::c()] && u.nodes[ids::c()] == v.nodes[ids::c()]) by {
@@ -3809,6 +3819,7 @@ pub proof fn edge_36()
     assert(u.nodes =~= v.nodes); assert(u.election.nodes =~= v.election.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_37_enabled()
     ensures enabled(state(37),constants(),action(37))
 {
@@ -3817,10 +3828,11 @@ pub proof fn request_37_enabled()
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_37_maps()
     ensures apply(state(37),constants(),action(37)).msgs == state(38).msgs,apply(state(37),constants(),action(37)).partition == state(38).partition,apply(state(37),constants(),action(37)).epoch_leader == state(38).epoch_leader,apply(state(37),constants(),action(37)).proposals == state(38).proposals,apply(state(37),constants(),action(37)).election.msgs == state(38).election.msgs,apply(state(37),constants(),action(37)).nodes.dom() == state(38).nodes.dom(),apply(state(37),constants(),action(37)).election.nodes.dom() == state(38).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(37); let u=apply(s,constants(),action(37)); let v=state(38);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.msgs[(ids::a(),ids::a())] =~= v.msgs[(ids::a(),ids::a())]);
@@ -3836,10 +3848,11 @@ pub proof fn request_37_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_37_a()
     ensures apply(state(37),constants(),action(37)).nodes[ids::a()] == state(38).nodes[ids::a()],apply(state(37),constants(),action(37)).election.nodes[ids::a()] == state(38).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(37); let u=apply(s,constants(),action(37)); let v=state(38);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::a()] == v.election.nodes[ids::a()] && u.nodes[ids::a()] == v.nodes[ids::a()]) by {
@@ -3863,10 +3876,11 @@ pub proof fn request_37_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_37_b()
     ensures apply(state(37),constants(),action(37)).nodes[ids::b()] == state(38).nodes[ids::b()],apply(state(37),constants(),action(37)).election.nodes[ids::b()] == state(38).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(37); let u=apply(s,constants(),action(37)); let v=state(38);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::b()] == v.election.nodes[ids::b()] && u.nodes[ids::b()] == v.nodes[ids::b()]) by {
@@ -3890,10 +3904,11 @@ pub proof fn request_37_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_37_c()
     ensures apply(state(37),constants(),action(37)).nodes[ids::c()] == state(38).nodes[ids::c()],apply(state(37),constants(),action(37)).election.nodes[ids::c()] == state(38).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_37); reveal(state_38); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(37); let u=apply(s,constants(),action(37)); let v=state(38);
     assert(s.nodes[ids::a()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::a()) =~= set![ids::b(),ids::c(),ids::a()]);
     assert(u.election.nodes[ids::c()] == v.election.nodes[ids::c()] && u.nodes[ids::c()] == v.nodes[ids::c()]) by {
@@ -10081,6 +10096,7 @@ pub proof fn edge_133()
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_134_enabled()
     ensures enabled(state(134),constants(),action(134))
 {
@@ -10089,10 +10105,11 @@ pub proof fn request_134_enabled()
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::c(),ids::b()]);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_134_maps()
     ensures apply(state(134),constants(),action(134)).msgs == state(135).msgs,apply(state(134),constants(),action(134)).partition == state(135).partition,apply(state(134),constants(),action(134)).epoch_leader == state(135).epoch_leader,apply(state(134),constants(),action(134)).proposals == state(135).proposals,apply(state(134),constants(),action(134)).election.msgs == state(135).election.msgs,apply(state(134),constants(),action(134)).nodes.dom() == state(135).nodes.dom(),apply(state(134),constants(),action(134)).election.nodes.dom() == state(135).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(134); let u=apply(s,constants(),action(134)); let v=state(135);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::c(),ids::b()]);
     assert(u.msgs[(ids::a(),ids::a())] =~= v.msgs[(ids::a(),ids::a())]);
@@ -10108,10 +10125,11 @@ pub proof fn request_134_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_134_a()
     ensures apply(state(134),constants(),action(134)).nodes[ids::a()] == state(135).nodes[ids::a()],apply(state(134),constants(),action(134)).election.nodes[ids::a()] == state(135).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(134); let u=apply(s,constants(),action(134)); let v=state(135);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::c(),ids::b()]);
     assert(u.election.nodes[ids::a()] == v.election.nodes[ids::a()] && u.nodes[ids::a()] == v.nodes[ids::a()]) by {
@@ -10135,10 +10153,11 @@ pub proof fn request_134_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_134_b()
     ensures apply(state(134),constants(),action(134)).nodes[ids::b()] == state(135).nodes[ids::b()],apply(state(134),constants(),action(134)).election.nodes[ids::b()] == state(135).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(134); let u=apply(s,constants(),action(134)); let v=state(135);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::c(),ids::b()]);
     assert(u.election.nodes[ids::b()] == v.election.nodes[ids::b()] && u.nodes[ids::b()] == v.nodes[ids::b()]) by {
@@ -10162,10 +10181,11 @@ pub proof fn request_134_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_134_c()
     ensures apply(state(134),constants(),action(134)).nodes[ids::c()] == state(135).nodes[ids::c()],apply(state(134),constants(),action(134)).election.nodes[ids::c()] == state(135).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_134); reveal(state_135); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(134); let u=apply(s,constants(),action(134)); let v=state(135);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::c(),ids::b()]);
     assert(u.election.nodes[ids::c()] == v.election.nodes[ids::c()] && u.nodes[ids::c()] == v.nodes[ids::c()]) by {
@@ -11921,6 +11941,7 @@ pub proof fn edge_161()
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_162_enabled()
     ensures enabled(state(162),constants(),action(162))
 {
@@ -11933,10 +11954,11 @@ pub proof fn step_162_enabled()
     assert(update_e(s.nodes[ids::b()].electing,ids::a(),Zxid { epoch: 1,counter: 3 },false) =~= set![Electing { sid: ids::a(),zxid: Zxid { epoch: 1,counter: 3 },quorum: false },Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true },Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true }]);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_162_maps()
     ensures apply(state(162),constants(),action(162)).msgs == state(163).msgs,apply(state(162),constants(),action(162)).partition == state(163).partition,apply(state(162),constants(),action(162)).epoch_leader == state(163).epoch_leader,apply(state(162),constants(),action(162)).proposals == state(163).proposals,apply(state(162),constants(),action(162)).election.msgs == state(163).election.msgs,apply(state(162),constants(),action(162)).nodes.dom() == state(163).nodes.dom(),apply(state(162),constants(),action(162)).election.nodes.dom() == state(163).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(162); let u=apply(s,constants(),action(162)); let v=state(163);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::c());
@@ -11956,10 +11978,11 @@ pub proof fn step_162_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_162_a()
     ensures apply(state(162),constants(),action(162)).nodes[ids::a()] == state(163).nodes[ids::a()],apply(state(162),constants(),action(162)).election.nodes[ids::a()] == state(163).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(162); let u=apply(s,constants(),action(162)); let v=state(163);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::c());
@@ -11987,10 +12010,11 @@ pub proof fn step_162_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_162_b()
     ensures apply(state(162),constants(),action(162)).nodes[ids::b()] == state(163).nodes[ids::b()],apply(state(162),constants(),action(162)).election.nodes[ids::b()] == state(163).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(162); let u=apply(s,constants(),action(162)); let v=state(163);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::c());
@@ -12018,10 +12042,11 @@ pub proof fn step_162_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_162_c()
     ensures apply(state(162),constants(),action(162)).nodes[ids::c()] == state(163).nodes[ids::c()],apply(state(162),constants(),action(162)).election.nodes[ids::c()] == state(163).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_162); reveal(state_163); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(162); let u=apply(s,constants(),action(162)); let v=state(163);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::c());
@@ -12058,7 +12083,7 @@ pub proof fn edge_162()
     let u=apply(state(162),constants(),action(162)); let v=state(163);
     assert(u.nodes =~= v.nodes); assert(u.election.nodes =~= v.election.nodes);
 }
-#[verifier::rlimit(120)]
+#[verifier::rlimit(240)]
 #[verifier::spinoff_prover]
 pub proof fn edge_163()
     ensures enabled(state(163),constants(),action(163)),apply(state(163),constants(),action(163)) == state(164)
@@ -12475,6 +12500,7 @@ pub proof fn edge_168()
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_169_enabled()
     ensures enabled(state(169),constants(),action(169))
 {
@@ -12490,11 +12516,12 @@ pub proof fn step_169_enabled()
     assert(s.nodes[ids::b()].electing.contains(Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); assert forall |r: Electing| #![trigger s.nodes[ids::b()].electing.contains(r)] s.nodes[ids::b()].electing.contains(r) && r.sid == ids::c() implies r == Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true } by {}
     assert(disconnect_e(s.nodes[ids::b()].electing,ids::c()) =~= set![Electing { sid: ids::a(),zxid: Zxid { epoch: -1,counter: -1 },quorum: false },Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true },Electing { sid: ids::c(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true }]);
 }
-#[verifier::rlimit(120)]
+#[verifier::rlimit(240)]
+#[verifier::spinoff_prover]
 pub proof fn step_169_maps()
     ensures apply(state(169),constants(),action(169)).msgs == state(170).msgs,apply(state(169),constants(),action(169)).partition == state(170).partition,apply(state(169),constants(),action(169)).epoch_leader == state(170).epoch_leader,apply(state(169),constants(),action(169)).proposals == state(170).proposals,apply(state(169),constants(),action(169)).election.msgs == state(170).election.msgs,apply(state(169),constants(),action(169)).nodes.dom() == state(170).nodes.dom(),apply(state(169),constants(),action(169)).election.nodes.dom() == state(170).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(169); let u=apply(s,constants(),action(169)); let v=state(170);
     assert(s.nodes[ids::b()].learners.remove(ids::c()) =~= set![ids::a(),ids::b()]); assert(z::quorum(s.nodes[ids::b()].learners.remove(ids::c()),constants()));
     assert(s.nodes[ids::b()].connecting.contains(AL { sid: ids::c(),connected: true })); s.nodes[ids::b()].connecting.lemma_map_contains(|r: AL| r.sid,ids::c());
@@ -12518,10 +12545,11 @@ pub proof fn step_169_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_169_a()
     ensures apply(state(169),constants(),action(169)).nodes[ids::a()] == state(170).nodes[ids::a()],apply(state(169),constants(),action(169)).election.nodes[ids::a()] == state(170).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(169); let u=apply(s,constants(),action(169)); let v=state(170);
     assert(s.nodes[ids::b()].learners.remove(ids::c()) =~= set![ids::a(),ids::b()]); assert(z::quorum(s.nodes[ids::b()].learners.remove(ids::c()),constants()));
     assert(s.nodes[ids::b()].connecting.contains(AL { sid: ids::c(),connected: true })); s.nodes[ids::b()].connecting.lemma_map_contains(|r: AL| r.sid,ids::c());
@@ -12553,10 +12581,11 @@ pub proof fn step_169_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_169_b()
     ensures apply(state(169),constants(),action(169)).nodes[ids::b()] == state(170).nodes[ids::b()],apply(state(169),constants(),action(169)).election.nodes[ids::b()] == state(170).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(169); let u=apply(s,constants(),action(169)); let v=state(170);
     assert(s.nodes[ids::b()].learners.remove(ids::c()) =~= set![ids::a(),ids::b()]); assert(z::quorum(s.nodes[ids::b()].learners.remove(ids::c()),constants()));
     assert(s.nodes[ids::b()].connecting.contains(AL { sid: ids::c(),connected: true })); s.nodes[ids::b()].connecting.lemma_map_contains(|r: AL| r.sid,ids::c());
@@ -12587,11 +12616,12 @@ pub proof fn step_169_b()
     assert(u.election.nodes[ids::b()] =~~= v.election.nodes[ids::b()]); assert(u.nodes[ids::b()] =~~= v.nodes[ids::b()]);
     }
 }
-#[verifier::rlimit(120)]
+#[verifier::rlimit(240)]
+#[verifier::spinoff_prover]
 pub proof fn step_169_c()
     ensures apply(state(169),constants(),action(169)).nodes[ids::c()] == state(170).nodes[ids::c()],apply(state(169),constants(),action(169)).election.nodes[ids::c()] == state(170).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_169); reveal(state_170); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(169); let u=apply(s,constants(),action(169)); let v=state(170);
     assert(s.nodes[ids::b()].learners.remove(ids::c()) =~= set![ids::a(),ids::b()]); assert(z::quorum(s.nodes[ids::b()].learners.remove(ids::c()),constants()));
     assert(s.nodes[ids::b()].connecting.contains(AL { sid: ids::c(),connected: true })); s.nodes[ids::b()].connecting.lemma_map_contains(|r: AL| r.sid,ids::c());
@@ -12633,6 +12663,7 @@ pub proof fn edge_169()
     assert(u.nodes =~= v.nodes); assert(u.election.nodes =~= v.election.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_170_enabled()
     ensures enabled(state(170),constants(),action(170))
 {
@@ -12641,10 +12672,11 @@ pub proof fn request_170_enabled()
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_170_maps()
     ensures apply(state(170),constants(),action(170)).msgs == state(171).msgs,apply(state(170),constants(),action(170)).partition == state(171).partition,apply(state(170),constants(),action(170)).epoch_leader == state(171).epoch_leader,apply(state(170),constants(),action(170)).proposals == state(171).proposals,apply(state(170),constants(),action(170)).election.msgs == state(171).election.msgs,apply(state(170),constants(),action(170)).nodes.dom() == state(171).nodes.dom(),apply(state(170),constants(),action(170)).election.nodes.dom() == state(171).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(170); let u=apply(s,constants(),action(170)); let v=state(171);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.msgs[(ids::a(),ids::a())] =~= v.msgs[(ids::a(),ids::a())]);
@@ -12660,10 +12692,11 @@ pub proof fn request_170_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_170_a()
     ensures apply(state(170),constants(),action(170)).nodes[ids::a()] == state(171).nodes[ids::a()],apply(state(170),constants(),action(170)).election.nodes[ids::a()] == state(171).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(170); let u=apply(s,constants(),action(170)); let v=state(171);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.election.nodes[ids::a()] == v.election.nodes[ids::a()] && u.nodes[ids::a()] == v.nodes[ids::a()]) by {
@@ -12687,10 +12720,11 @@ pub proof fn request_170_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_170_b()
     ensures apply(state(170),constants(),action(170)).nodes[ids::b()] == state(171).nodes[ids::b()],apply(state(170),constants(),action(170)).election.nodes[ids::b()] == state(171).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(170); let u=apply(s,constants(),action(170)); let v=state(171);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.election.nodes[ids::b()] == v.election.nodes[ids::b()] && u.nodes[ids::b()] == v.nodes[ids::b()]) by {
@@ -12714,10 +12748,11 @@ pub proof fn request_170_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_170_c()
     ensures apply(state(170),constants(),action(170)).nodes[ids::c()] == state(171).nodes[ids::c()],apply(state(170),constants(),action(170)).election.nodes[ids::c()] == state(171).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_170); reveal(state_171); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(170); let u=apply(s,constants(),action(170)); let v=state(171);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.election.nodes[ids::c()] == v.election.nodes[ids::c()] && u.nodes[ids::c()] == v.nodes[ids::c()]) by {
@@ -12941,6 +12976,7 @@ pub proof fn edge_173()
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_174_enabled()
     ensures enabled(state(174),constants(),action(174))
 {
@@ -12949,10 +12985,11 @@ pub proof fn request_174_enabled()
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_174_maps()
     ensures apply(state(174),constants(),action(174)).msgs == state(175).msgs,apply(state(174),constants(),action(174)).partition == state(175).partition,apply(state(174),constants(),action(174)).epoch_leader == state(175).epoch_leader,apply(state(174),constants(),action(174)).proposals == state(175).proposals,apply(state(174),constants(),action(174)).election.msgs == state(175).election.msgs,apply(state(174),constants(),action(174)).nodes.dom() == state(175).nodes.dom(),apply(state(174),constants(),action(174)).election.nodes.dom() == state(175).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(174); let u=apply(s,constants(),action(174)); let v=state(175);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.msgs[(ids::a(),ids::a())] =~= v.msgs[(ids::a(),ids::a())]);
@@ -12968,10 +13005,11 @@ pub proof fn request_174_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_174_a()
     ensures apply(state(174),constants(),action(174)).nodes[ids::a()] == state(175).nodes[ids::a()],apply(state(174),constants(),action(174)).election.nodes[ids::a()] == state(175).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(174); let u=apply(s,constants(),action(174)); let v=state(175);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.election.nodes[ids::a()] == v.election.nodes[ids::a()] && u.nodes[ids::a()] == v.nodes[ids::a()]) by {
@@ -12995,10 +13033,11 @@ pub proof fn request_174_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_174_b()
     ensures apply(state(174),constants(),action(174)).nodes[ids::b()] == state(175).nodes[ids::b()],apply(state(174),constants(),action(174)).election.nodes[ids::b()] == state(175).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(174); let u=apply(s,constants(),action(174)); let v=state(175);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.election.nodes[ids::b()] == v.election.nodes[ids::b()] && u.nodes[ids::b()] == v.nodes[ids::b()]) by {
@@ -13022,10 +13061,11 @@ pub proof fn request_174_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn request_174_c()
     ensures apply(state(174),constants(),action(174)).nodes[ids::c()] == state(175).nodes[ids::c()],apply(state(174),constants(),action(174)).election.nodes[ids::c()] == state(175).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_174); reveal(state_175); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(174); let u=apply(s,constants(),action(174)); let v=state(175);
     assert(s.nodes[ids::b()].forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(ids::b()) =~= set![ids::a(),ids::b()]);
     assert(u.election.nodes[ids::c()] == v.election.nodes[ids::c()] && u.nodes[ids::c()] == v.nodes[ids::c()]) by {
@@ -13245,7 +13285,7 @@ pub proof fn edge_177()
     assert(u.election.nodes[ids::c()] =~~= v.election.nodes[ids::c()]); assert(u.nodes[ids::c()] =~~= v.nodes[ids::c()]);
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
-#[verifier::rlimit(120)]
+#[verifier::rlimit(240)]
 #[verifier::spinoff_prover]
 pub proof fn edge_178()
     ensures enabled(state(178),constants(),action(178)),apply(state(178),constants(),action(178)) == state(179)
@@ -13852,6 +13892,7 @@ pub proof fn edge_186()
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_187_enabled()
     ensures enabled(state(187),constants(),action(187))
 {
@@ -13866,10 +13907,11 @@ pub proof fn step_187_enabled()
     assert forall |r: Electing| #![trigger s.nodes[ids::b()].electing.contains(r)] s.nodes[ids::b()].electing.contains(r) && r.sid == ids::c() && r.zxid != unset() implies r == Electing { sid: ids::c(),zxid: Zxid { epoch: 4,counter: 1 },quorum: true } by {}
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_187_maps()
     ensures apply(state(187),constants(),action(187)).msgs == state(188).msgs,apply(state(187),constants(),action(187)).partition == state(188).partition,apply(state(187),constants(),action(187)).epoch_leader == state(188).epoch_leader,apply(state(187),constants(),action(187)).proposals == state(188).proposals,apply(state(187),constants(),action(187)).election.msgs == state(188).election.msgs,apply(state(187),constants(),action(187)).nodes.dom() == state(188).nodes.dom(),apply(state(187),constants(),action(187)).election.nodes.dom() == state(188).election.nodes.dom()
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(187); let u=apply(s,constants(),action(187)); let v=state(188);
     reveal_with_fuel(packets,5);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());
@@ -13894,10 +13936,11 @@ pub proof fn step_187_maps()
     assert(u.election.msgs =~~= v.election.msgs);
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_187_a()
     ensures apply(state(187),constants(),action(187)).nodes[ids::a()] == state(188).nodes[ids::a()],apply(state(187),constants(),action(187)).election.nodes[ids::a()] == state(188).election.nodes[ids::a()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(187); let u=apply(s,constants(),action(187)); let v=state(188);
     reveal_with_fuel(packets,5);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());
@@ -13927,10 +13970,11 @@ pub proof fn step_187_a()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_187_b()
     ensures apply(state(187),constants(),action(187)).nodes[ids::b()] == state(188).nodes[ids::b()],apply(state(187),constants(),action(187)).election.nodes[ids::b()] == state(188).election.nodes[ids::b()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(187); let u=apply(s,constants(),action(187)); let v=state(188);
     reveal_with_fuel(packets,5);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());
@@ -13960,10 +14004,11 @@ pub proof fn step_187_b()
     }
 }
 #[verifier::rlimit(120)]
+#[verifier::spinoff_prover]
 pub proof fn step_187_c()
     ensures apply(state(187),constants(),action(187)).nodes[ids::c()] == state(188).nodes[ids::c()],apply(state(187),constants(),action(187)).election.nodes[ids::c()] == state(188).election.nodes[ids::c()]
 {
-    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(enabled); reveal(apply); reveal(fle::apply); reveal(z::maximum);
+    ids::geometry(); domains(); reveal(state); reveal(state_187); reveal(state_188); reveal(action); reveal(apply); reveal(fle::apply); reveal(z::maximum);
     let s=state(187); let u=apply(s,constants(),action(187)); let v=state(188);
     reveal_with_fuel(packets,5);
     assert(s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).contains(Electing { sid: ids::b(),zxid: Zxid { epoch: -1,counter: -1 },quorum: true })); s.nodes[ids::b()].electing.filter(|e: Electing| e.quorum).lemma_map_contains(|e: Electing| e.sid,ids::b());

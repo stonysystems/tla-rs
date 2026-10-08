@@ -61,10 +61,12 @@ pub proof fn lose_shape(s: LState,c: Constants,i: int,j: int)
         remove_shape(s,c,i,j); shut_follower_shape(remove_learner(s,i,j),c,j); clean_shape(shut_follower(remove_learner(s,i,j),c,j),c,i,j);
     } else { shut_leader_shape(s,c,i); }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve(s: LState,c: Constants,a: Action)
     requires shape(s,c),enabled(s,c,a)
     ensures shape(apply(s,c,a),c)
 {
+    hide(floor_index);
     let u=apply(s,c,a); let i=receiver(a); reveal(enabled); reveal(apply);
     if a != Action::Stutter { assert(node(s.nodes[i],c)); assert(election::node(s.election.nodes[i],c,i)); }
     match a {

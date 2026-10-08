@@ -9,9 +9,278 @@ use super::zab_sessions::{self as sessions,interval};
 use super::zab_ce_trace as ce;
 use super::temporal::Behavior;
 verus! {
-#[verifier::spinoff_prover]
 pub proof fn current_change(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
     requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    // Each Action variant is proved by its own helper lemma below, so
+    // `apply` unfolds for one variant per query.
+    match a {
+        Action::UpdateLeader(..) => current_change_update_leader(s,c,a,i),
+        Action::FollowLeader(..) => current_change_follow_leader(s,c,a,i),
+        Action::Timeout(..) => current_change_timeout(s,c,a,i),
+        Action::Restart(..) => current_change_restart(s,c,a,i),
+        Action::Connect(..) => current_change_connect(s,c,a,i),
+        Action::CEpoch(..) => current_change_c_epoch(s,c,a,i),
+        Action::NewEpoch(..) => current_change_new_epoch(s,c,a,i),
+        Action::AckEpoch(..) => current_change_ack_epoch(s,c,a,i),
+        Action::NewLeader(..) => current_change_new_leader(s,c,a,i),
+        Action::AckLd(..) => current_change_ack_ld(s,c,a,i),
+        Action::CommitLd(..) => current_change_commit_ld(s,c,a,i),
+        Action::Request(..) => current_change_request(s,c,a,i),
+        Action::Broadcast(..) => current_change_broadcast(s,c,a,i),
+        Action::Propose(..) => current_change_propose(s,c,a,i),
+        Action::Ack(..) => current_change_ack(s,c,a,i),
+        Action::Commit(..) => current_change_commit(s,c,a,i),
+        Action::Stutter => current_change_stutter(s,c,a,i),
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_update_leader(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is UpdateLeader
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_follow_leader(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is FollowLeader
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_timeout(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Timeout
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_restart(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Restart
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_connect(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Connect
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_c_epoch(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is CEpoch
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_new_epoch(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is NewEpoch
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_ack_epoch(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is AckEpoch
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_new_leader(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is NewLeader
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_ack_ld(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is AckLd
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_commit_ld(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is CommitLd
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_request(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Request
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_broadcast(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Broadcast
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_propose(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Propose
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_ack(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Ack
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_commit(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Commit
+    ensures c.servers.contains(leader),
+        (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
+        || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
+{
+    hide(update_ack);
+    reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
+    match a {
+        Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
+        _ => { assert(exists |j: int| a == Action::AckEpoch(i,j)); i },
+    }
+}
+#[verifier::spinoff_prover]
+proof fn current_change_stutter(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
+    requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current,
+        a is Stutter
     ensures c.servers.contains(leader),
         (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
         || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)

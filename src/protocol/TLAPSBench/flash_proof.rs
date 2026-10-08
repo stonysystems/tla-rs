@@ -23,6 +23,522 @@ pub proof fn preserve_typed(s: LState, c: Constants, a: Action)
     requires typed(s, c), enabled(s, c, a)
     ensures typed(apply(s, c, a), c)
 {
+    // Each Action variant is proved by its own helper lemma below, so
+    // `apply` unfolds for one variant per query.
+    match a {
+        Action::Store { .. } => preserve_typed_store(s,c,a),
+        Action::RemoteRequest { .. } => preserve_typed_remote_request(s,c,a),
+        Action::LocalForward { .. } => preserve_typed_local_forward(s,c,a),
+        Action::LocalGet => preserve_typed_local_get(s,c,a),
+        Action::LocalGetX => preserve_typed_local_get_x(s,c,a),
+        Action::RemoteWriteback { .. } => preserve_typed_remote_writeback(s,c,a),
+        Action::LocalWriteback => preserve_typed_local_writeback(s,c,a),
+        Action::RemoteReplace { .. } => preserve_typed_remote_replace(s,c,a),
+        Action::LocalReplace => preserve_typed_local_replace(s,c,a),
+        Action::ReceiveNak { .. } => preserve_typed_receive_nak(s,c,a),
+        Action::ClearNak => preserve_typed_clear_nak(s,c,a),
+        Action::LocalNak { .. } => preserve_typed_local_nak(s,c,a),
+        Action::LocalRelay { .. } => preserve_typed_local_relay(s,c,a),
+        Action::LocalGrant { .. } => preserve_typed_local_grant(s,c,a),
+        Action::RemoteNak { .. } => preserve_typed_remote_nak(s,c,a),
+        Action::RemoteGrant { .. } => preserve_typed_remote_grant(s,c,a),
+        Action::ReceivePut { .. } => preserve_typed_receive_put(s,c,a),
+        Action::ReceivePutX { .. } => preserve_typed_receive_put_x(s,c,a),
+        Action::Invalidate { .. } => preserve_typed_invalidate(s,c,a),
+        Action::InvalidateAck { .. } => preserve_typed_invalidate_ack(s,c,a),
+        Action::ReceiveWriteback => preserve_typed_receive_writeback(s,c,a),
+        Action::ReceiveForwardAck => preserve_typed_receive_forward_ack(s,c,a),
+        Action::ReceiveSharedWriteback => preserve_typed_receive_shared_writeback(s,c,a),
+        Action::ReceiveReplace { .. } => preserve_typed_receive_replace(s,c,a),
+        Action::Stutter => preserve_typed_stutter(s,c,a),
+    }
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_store(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is Store
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_remote_request(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is RemoteRequest
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_forward(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalForward
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_get(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalGet
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_get_x(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalGetX
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_remote_writeback(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is RemoteWriteback
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_writeback(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalWriteback
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_remote_replace(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is RemoteReplace
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_replace(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalReplace
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_receive_nak(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ReceiveNak
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_clear_nak(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ClearNak
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_nak(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalNak
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_relay(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalRelay
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_local_grant(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is LocalGrant
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_remote_nak(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is RemoteNak
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_remote_grant(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is RemoteGrant
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_receive_put(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ReceivePut
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_receive_put_x(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ReceivePutX
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_invalidate(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is Invalidate
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_invalidate_ack(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is InvalidateAck
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_receive_writeback(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ReceiveWriteback
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_receive_forward_ack(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ReceiveForwardAck
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_receive_shared_writeback(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ReceiveSharedWriteback
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_receive_replace(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is ReceiveReplace
+    ensures typed(apply(s, c, a), c)
+{
+    reveal(enabled);
+    reveal(apply);
+    let u = apply(s, c, a);
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+        assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
+    }
+    assert(u.procs.dom() =~= c.nodes);
+    assert(u.uni.dom() =~= c.nodes);
+    assert(u.inv.dom() =~= c.nodes);
+    assert(u.replace.dom() =~= c.nodes);
+    assert(u.dir.sharers.subset_of(c.nodes));
+    assert(u.dir.invalidating.subset_of(c.nodes));
+    assert(type_ok(u, c));
+}
+#[verifier::spinoff_prover]
+proof fn preserve_typed_stutter(s: LState, c: Constants, a: Action)
+    requires typed(s, c), enabled(s, c, a),
+        a is Stutter
+    ensures typed(apply(s, c, a), c)
+{
     reveal(enabled);
     reveal(apply);
     let u = apply(s, c, a);

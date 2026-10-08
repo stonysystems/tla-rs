@@ -32,6 +32,7 @@ pub proof fn bootstrap(c: Constants,i: int)
 pub proof fn monotonic(s: LState,c: Constants,a: Action)
     ensures s.proposals.subset_of(apply(s,c,a).proposals)
 {
+    hide(floor_index);
     reveal(apply);
 }
 pub proof fn retained(s: LState,u: LState,zxid: Zxid,value: int)

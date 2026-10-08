@@ -30,6 +30,7 @@ pub proof fn protocol_node(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),online::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election)
     ensures node(apply(s,c,a),i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); let x=receiver(a); assert(node(s,i)); assert(online::node(s,i));
     if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,x)); assert(online::node(s,x)); }
     match a {

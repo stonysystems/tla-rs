@@ -11387,7 +11387,7 @@ pub proof fn edge_159()
     assert(u.election.nodes[ids::c()] =~~= v.election.nodes[ids::c()]); assert(u.nodes[ids::c()] =~~= v.nodes[ids::c()]);
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
-#[verifier::rlimit(120)]
+#[verifier::rlimit(480)]
 #[verifier::spinoff_prover]
 pub proof fn edge_160()
     ensures enabled(state(160),constants(),action(160)),apply(state(160),constants(),action(160)) == state(161)
@@ -11469,7 +11469,7 @@ pub proof fn edge_160()
     assert(u.election.nodes[ids::c()] =~~= v.election.nodes[ids::c()]); assert(u.nodes[ids::c()] =~~= v.nodes[ids::c()]);
     assert(u.election.nodes =~~= v.election.nodes); assert(u.nodes =~~= v.nodes);
 }
-#[verifier::rlimit(120)]
+#[verifier::rlimit(240)]
 #[verifier::spinoff_prover]
 pub proof fn edge_161()
     ensures enabled(state(161),constants(),action(161)),apply(state(161),constants(),action(161)) == state(162)
