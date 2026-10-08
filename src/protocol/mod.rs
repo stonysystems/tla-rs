@@ -22,4 +22,11 @@ pub mod Tiga;
 pub mod CausalMesh;
 pub mod VerticalPaxos;
 pub mod common;
-pub mod TLAPSBench;
+// TLAPSBench is not part of this crate yet. It is verified as its own crate
+// root, src/protocol/tlaps_bench_harness.rs, by
+// scripts/verify_tlaps_bench_manual.sh in separate CI jobs, to this crate's
+// standard (default rlimit, zero trigger notes). Its proofs sit close to the
+// solver's limits and have flipped between Verus releases and z3 builds, and
+// this crate is also run by verus-lang's verita against Verus main; it
+// rejoins once the nightly TLAPS-Bench job has stayed green on rolling
+// releases for a while.
