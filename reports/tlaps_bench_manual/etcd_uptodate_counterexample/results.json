@@ -37,7 +37,7 @@
     "infinite_behavior": true,
     "stutter_after_index": 72,
     "no_cheating": true,
-    "full_harness_verified_functions": 2180,
+    "full_harness_verified_functions": 2201,
     "full_harness_errors": 0,
     "verus": "Verus\n  Version: 0.2026.10.08.f265bb5\n  Profile: release\n  Platform: linux_x86_64\n  Toolchain: 1.98.1-x86_64-unknown-linux-gnu (overridden by environment variable RUSTUP_TOOLCHAIN)",
     "command": [
@@ -49,7 +49,7 @@
       "src/protocol/tlaps_bench_harness.rs"
     ],
     "verification_log": "../verification.log",
-    "verification_log_sha256": "2e270d76126de2b261ae4729b8a9db4af26350a0fd57b82da3c3f7cff21c68e9",
+    "verification_log_sha256": "6e15bc6b663ce7fd76d852d0939de42c9e00d718f11e1d70e90fdd5439a12c32",
     "proof_sha256": "4bd5f32a1cfa43cb96ddf3516b1758df45a03ffe5dc49d51be50636410a003bb",
     "generator_sha256": "d04e6661e33ede196c2fe31e1ef4af688434320a7227a0ce2105c5f417eb467c"
   }

@@ -84,13 +84,562 @@ pub proof fn sync_cell(s: LState,c: Constants,x: int,y: int,i: int,j: int,k: int
     let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     follow_cell(s,x,y,r.zxid,i,j,k);
 }
-#[verifier::spinoff_prover]
 pub proof fn other_cell(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync)
     ensures cell(apply(s,c,a),i,j,k)
 {
-    // Sync is excluded here, so its recursive history search is irrelevant.
-    hide(floor_index);
+    // Each Action variant is proved by its own helper lemma below, so
+    // `apply` unfolds for one variant per query.
+    match a {
+        Action::Election(..) => other_cell_election(s,c,a,i,j,k),
+        Action::Partition(..) => other_cell_partition(s,c,a,i,j,k),
+        Action::Recover(..) => other_cell_recover(s,c,a,i,j,k),
+        Action::Crash(..) => other_cell_crash(s,c,a,i,j,k),
+        Action::Start(..) => other_cell_start(s,c,a,i,j,k),
+        Action::Connect(..) => other_cell_connect(s,c,a,i,j,k),
+        Action::FollowerInfo(..) => other_cell_follower_info(s,c,a,i,j,k),
+        Action::LeaderInfo(..) => other_cell_leader_info(s,c,a,i,j,k),
+        Action::AckEpoch(..) => other_cell_ack_epoch(s,c,a,i,j,k),
+        Action::Sync(..) => other_cell_sync(s,c,a,i,j,k),
+        Action::SyncMessage(..) => other_cell_sync_message(s,c,a,i,j,k),
+        Action::ProposalSync(..) => other_cell_proposal_sync(s,c,a,i,j,k),
+        Action::CommitSync(..) => other_cell_commit_sync(s,c,a,i,j,k),
+        Action::NewLeader(..) => other_cell_new_leader(s,c,a,i,j,k),
+        Action::AckLd(..) => other_cell_ack_ld(s,c,a,i,j,k),
+        Action::UpToDate(..) => other_cell_up_to_date(s,c,a,i,j,k),
+        Action::Request(..) => other_cell_request(s,c,a,i,j,k),
+        Action::Proposal(..) => other_cell_proposal(s,c,a,i,j,k),
+        Action::Ack(..) => other_cell_ack(s,c,a,i,j,k),
+        Action::Commit(..) => other_cell_commit(s,c,a,i,j,k),
+        Action::Stutter => other_cell_stutter(s,c,a,i,j,k),
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_election(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Election
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_partition(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Partition
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_recover(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Recover
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_crash(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Crash
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_start(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Start
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_connect(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Connect
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_follower_info(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is FollowerInfo
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_leader_info(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is LeaderInfo
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_ack_epoch(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is AckEpoch
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_sync(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Sync
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_sync_message(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is SyncMessage
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_proposal_sync(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is ProposalSync
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_commit_sync(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is CommitSync
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_new_leader(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is NewLeader
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_ack_ld(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is AckLd
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_up_to_date(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is UpToDate
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_request(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Request
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_proposal(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Proposal
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_ack(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Ack
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_commit(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Commit
+    ensures cell(apply(s,c,a),i,j,k)
+{
+    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
+    if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
+    match a {
+        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y); } },
+        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
+            channels::facts(s,c,i,y); channels::facts(s,c,j,y); channels::facts(s,c,x,y);
+        },_ => {},
+    }
+    let q=s.msgs[(i,j)]; let u=apply(s,c,a); let r=u.msgs[(i,j)];
+    if 0 <= k < r.len() && mode(r[k]) {
+        if 0 <= k < q.len() && mode(q[k]) { facts(s,c,i,j,k); if k > 0 { assert(handshake(q[0])); } }
+        if 0 <= k+1 < q.len() && mode(q[k+1]) { facts(s,c,i,j,k+1); assert(handshake(q[0])); }
+        assert(0 <= k < q.len() && mode(q[k]) || 0 <= k+1 < q.len() && mode(q[k+1]));
+        assert(buffers::clean(u.nodes[j])); assert(u.nodes[j].phase == Phase::Synchronization);
+        assert forall |p: int| 0 <= p < k implies #[trigger] handshake(r[p]) by {
+            if 0 <= k < q.len() && mode(q[k]) { assert(handshake(q[p])); }
+            if 0 <= k+1 < q.len() && mode(q[k+1]) { assert(handshake(q[p+1])); }
+        }
+    }
+}
+#[verifier::spinoff_prover]
+proof fn other_cell_stutter(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
+    requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync),
+        a is Stutter
+    ensures cell(apply(s,c,a),i,j,k)
+{
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
     if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
     match a {

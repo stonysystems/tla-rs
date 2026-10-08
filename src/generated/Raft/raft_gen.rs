@@ -418,10 +418,12 @@ ensures
                 (((s.log.len() as u64) + 1) as u64)
             }
         } else {
-            if ((*ae_leader_commit) <= (s.log.len() as u64)) {
+            if ((*ae_leader_commit) <= (*ae_prev_index)) {
                 (*ae_leader_commit)
+            } else if ((*ae_prev_index) > s.commit_index) {
+                (*ae_prev_index)
             } else {
-                (s.log.len() as u64)
+                s.commit_index.clone()
             }
         }
     } else {

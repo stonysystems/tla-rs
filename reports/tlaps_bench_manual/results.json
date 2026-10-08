@@ -1,6 +1,6 @@
 {
   "benchmark_commit": "ffa3e31da28f960b70d8c5d44f2735e75d6edcac",
-  "recorded_utc": "2026-10-08T20:02:13.374023+00:00",
+  "recorded_utc": "2026-10-08T20:37:52.206331+00:00",
   "method": "handwritten tla-rs spec/proof modules; manual source correspondence; no TLA+ transpilation",
   "verus": "Verus\n  Version: 0.2026.10.08.f265bb5\n  Profile: release\n  Platform: linux_x86_64\n  Toolchain: 1.98.1-x86_64-unknown-linux-gnu (overridden by environment variable RUSTUP_TOOLCHAIN)",
   "command": [
@@ -12,7 +12,7 @@
     "src/protocol/tlaps_bench_harness.rs"
   ],
   "verification_passed": true,
-  "verified_functions": 2180,
+  "verified_functions": 2201,
   "counts": {
     "models": 9,
     "ported_models": 9,
@@ -250,7 +250,7 @@
     "src/protocol/TLAPSBench/zookeeper_log_order.rs": "53d052ea9a60723f1f0aa6ccff5f668f81549f9cc311eae16ab57e9165efe322",
     "src/protocol/TLAPSBench/zookeeper_log_records.rs": "2d57a4ec3f8d2deff46453977db4e8b145b9ef3caf423d72071640dd84808c56",
     "src/protocol/TLAPSBench/zookeeper_message_frames.rs": "8a9e9f635c613e4308bd5b04761f536d59e56679e7dba79f0900821014c339ac",
-    "src/protocol/TLAPSBench/zookeeper_mode_fifo.rs": "3e578de4590a58f15b52af36a510d6e22691c4b4053000d1ed79c1d189569437",
+    "src/protocol/TLAPSBench/zookeeper_mode_fifo.rs": "7c2b8420e9f3c16642abeed5f942244ebe4aeba383678a5ecb28f3b083ed1ba8",
     "src/protocol/TLAPSBench/zookeeper_online.rs": "2c4c9213e7d68bdcde8ae1ebbcfe9cb1b3514aab6dd47c8d9fd37a5030cd6507",
     "src/protocol/TLAPSBench/zookeeper_pending_mode.rs": "c3aa635b4b069705ade63c2609472fe550af20ae0475244408cf77b6ca0995fe",
     "src/protocol/TLAPSBench/zookeeper_proof.rs": "373bd3545882053199b87ee8b47f263ead87754a158e1484a1ddc0d3167089af",
