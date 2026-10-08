@@ -20,13 +20,13 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
     coverage::preserve(s,c,a); let u=apply(s,c,a); reveal(enabled); reveal(apply);
     if let Action::Writer { p,pick } = a {
         assert forall |r: int,q: int| 0 <= r < q < c.limit && cell(u,c,q) is Value implies cell(u,c,r) is Value by { shifting::preserve_prefix(s,c,p,pick,r,q); }
-        assert forall |i: int,j: int| 1 <= i < j <= c.k && coverage::visible(u,c,i) && coverage::visible(u,c,j)
+        assert forall |i: int,j: int| #![trigger coverage::visible(u,c,i), coverage::visible(u,c,j)] 1 <= i < j <= c.k && coverage::visible(u,c,i) && coverage::visible(u,c,j)
             && u.table[i] is Value && u.table[j] is Value implies abs(value(u.table[i])) != abs(value(u.table[j])) by { shifting::preserve_pair(s,c,p,pick,i,j); }
         assert forall |i: int| 1 <= i <= c.k implies #[trigger] fresh(u.table[i],u) by { marking::preserve_fresh(s,c,p,pick,i); }
         assert forall |q: int| c.writers.contains(q) implies #[trigger] temporary(u,c,q) by {
             if shape::moving(u.threads[q].pc) {
                 marking::preserve_temporary_fresh(s,c,p,pick,q);
-                assert forall |i: int| 1 <= i <= c.k && coverage::visible(u,c,i) && u.threads[q].lo is Value && u.table[i] is Value
+                assert forall |i: int| #![trigger coverage::visible(u,c,i)] 1 <= i <= c.k && coverage::visible(u,c,i) && u.threads[q].lo is Value && u.table[i] is Value
                     implies abs(value(u.threads[q].lo)) != abs(value(u.table[i])) by { shifting::preserve_temporary_value(s,c,p,pick,q,i); }
             }
         }
@@ -36,11 +36,11 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
 pub proof fn no_eviction(s: LState,c: Constants)
     requires inductive(s,c),!s.evict
     ensures s.newexternal.len() == 0,forall |i: int| #[trigger] coverage::visible(s,c,i),
-        forall |p: int| c.writers.contains(p) ==> !shape::moving(s.threads[p].pc)
+        forall |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) ==> !shape::moving(s.threads[p].pc)
 {
-    assert forall |p: int| c.writers.contains(p) implies !shape::moving(s.threads[p].pc) && s.threads[p].pc != Pc::Flush by { assert(lock::local(s,p)); }
+    assert forall |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) implies !shape::moving(s.threads[p].pc) && s.threads[p].pc != Pc::Flush by { assert(lock::local(s,p)); }
     if s.newexternal.len() > 0 {
-        let p=choose |p: int| c.writers.contains(p) && s.threads[p].pc == Pc::Flush;
+        let p=choose |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && s.threads[p].pc == Pc::Flush;
         assert(lock::local(s,p));
     }
 }
@@ -51,9 +51,9 @@ pub proof fn goals(s: LState,c: Constants)
     coverage::goal(s,c);
     if !s.evict {
         no_eviction(s,c);
-        assert forall |i: int,j: int| 1 <= i < j <= c.k && s.table[i] is Value && s.table[j] is Value
+        assert forall |i: int,j: int| #![trigger s.table[i], s.table[j]] 1 <= i < j <= c.k && s.table[i] is Value && s.table[j] is Value
             implies abs(value(s.table[i])) != abs(value(s.table[j])) by { different_values(s,c,i,j); }
-        assert forall |f: int| s.history.contains(f) implies
+        assert forall |f: int| #![trigger s.external.contains(f)] s.history.contains(f) implies
             (contained_in_table(s,c,f) ==> !s.external.contains(f))
             && (contained_in_table(s,c,-f) ==> s.external.contains(f))
             && (!contained_in_table(s,c,f) ==> s.external.contains(f)) by {
@@ -67,7 +67,7 @@ pub proof fn goals(s: LState,c: Constants)
                 contents::idx_range(c,abs(-f),r); assert(external::accounted(s.table[idx(c,abs(-f),r)],s.external,s.newexternal));
             }
             if !s.external.contains(f) {
-                let i=choose |i: int| 1 <= i <= c.k && coverage::visible(s,c,i) && matches(s.table[i],f);
+                let i=choose |i: int| #![trigger coverage::visible(s,c,i)] 1 <= i <= c.k && coverage::visible(s,c,i) && matches(s.table[i],f);
                 assert(external::accounted(s.table[i],s.external,s.newexternal));
                 assert(s.table[i] == Cell::Value(f)); assert(shape::in_block(c,i));
                 let r=if i == c.k { 0 } else { i }; hash::collapsed_slot(c,f,r);

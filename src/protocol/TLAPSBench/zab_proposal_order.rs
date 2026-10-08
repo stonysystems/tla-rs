@@ -23,7 +23,7 @@ pub proof fn origin(b: Behavior<LState>,c: Constants,time: int,p: Proposal) -> (
             Action::AckEpoch(i,j) => {
                 logs::facts(s,c,i,j); logs::facts(u,c,i,j); let n=u.nodes[i];
                 assert(records(i,n.current,n.history).contains(p));
-                let k=choose |k: int| 0 <= k < n.history.len() && p == (Proposal { source: i,epoch: n.current,zxid: n.history[k].zxid,value: n.history[k].value });
+                let k=choose |k: int| #![trigger n.history[k]] 0 <= k < n.history.len() && p == (Proposal { source: i,epoch: n.current,zxid: n.history[k].zxid,value: n.history[k].value });
                 (time,k)
             },
             Action::Broadcast(i) => {
@@ -91,7 +91,7 @@ pub proof fn at(b: Behavior<LState>,c: Constants,time: int)
 {
     let s=b[time];
     assert forall |i: int,e: int,j: int| c.servers.contains(i) && c.servers.contains(j) && 1 <= e <= s.nodes[i].current implies #[trigger] local_at(s,i,e,j) by {
-        assert forall |p: Proposal,q: Proposal| s.proposals.contains(p) && s.proposals.contains(q) && p.source == i && q.source == i && p.epoch == e && q.epoch == e && (p.zxid != q.zxid || p.value != q.value)
+        assert forall |p: Proposal,q: Proposal| #![trigger s.proposals.contains(p), s.proposals.contains(q)] s.proposals.contains(p) && s.proposals.contains(q) && p.source == i && q.source == i && p.epoch == e && q.epoch == e && (p.zxid != q.zxid || p.value != q.value)
             implies {
                 let a=if newer(p.zxid,q.zxid) { q } else { p }; let d=if newer(p.zxid,q.zxid) { p } else { q };
                 let ta=Txn { zxid: a.zxid,value: a.value,ack: Set::empty(),epoch: 0 }; let td=Txn { zxid: d.zxid,value: d.value,ack: Set::empty(),epoch: 0 };

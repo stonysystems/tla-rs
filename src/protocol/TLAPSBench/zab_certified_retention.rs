@@ -40,10 +40,10 @@ pub proof fn selected(b: Behavior<LState>,c: Constants,until: int,e: int,h: Seq<
     activation::activation_step(b,c,time,i); logs::at(b,c,time+1); let u=b[time+1]; logs::facts(u,c,i,i);
     let epoch=u.nodes[i].current; let reports=u.nodes[i].ae;
     let owner=choose |owner: int| c.servers.contains(owner) && exists |q: Set<int>| quorum(q,c)
-        && forall |j: int| q.contains(j) ==> acks::certificate(b,c,until,owner,e,h,k,j);
-    let q=choose |q: Set<int>| quorum(q,c) && forall |j: int| q.contains(j) ==> acks::certificate(b,c,until,owner,e,h,k,j);
+        && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,until,owner,e,h,k,j);
+    let q=choose |q: Set<int>| quorum(q,c) && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,until,owner,e,h,k,j);
     let voter=collections::intersect_quorums(q,ae_ids(reports),c);
-    let r=choose |r: AE| reports.contains(r) && r.sid == voter;
+    let r=choose |r: AE| #![trigger reports.contains(r)] reports.contains(r) && r.sid == voter;
     let report=discovery::report_witness(b,c,time,i,r);
     assert(acks::certificate(b,c,until,owner,e,h,k,voter));
     let stored=choose |stored: int| acks::witness(b,until,owner,e,h,k,voter,stored);
@@ -67,11 +67,14 @@ pub proof fn initial_inductive(b: Behavior<LState>,c: Constants,epoch: int,h: Se
     assert forall |i: int,j: int,p: int| c.servers.contains(i) && c.servers.contains(j) && 0 <= p < b[0].msgs[(i,j)].len()
         implies #[trigger] packet(b[0].msgs[(i,j)][p],epoch,h,k) by { connections::channel_pair(c,i,j); }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_node(b: Behavior<LState>,c: Constants,until: int,e: int,h: Seq<Txn>,k: int,epoch: int,time: int,i: int)
     requires connections::safety_spec(b,c),until >= 0,certified(b,c,until,e,h,k),0 < e < epoch,lower(b,c,e,h,k,epoch),
         time >= 0,c.servers.contains(i),inductive(b,c,time,epoch,h,k)
     ensures node(b[time+1].nodes[i],epoch,h,k)
 {
+    hide(update_ack);
     let a=sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; logs::at(b,c,time); logs::preserve(s,c,a);
     logs::facts(s,c,i,i); logs::facts(u,c,i,i); assert(node(s.nodes[i],epoch,h,k));
     if u.nodes[i].current == epoch {
@@ -97,6 +100,7 @@ pub proof fn preserve_packet(b: Behavior<LState>,c: Constants,until: int,e: int,
         time >= 0,c.servers.contains(i),c.servers.contains(j),inductive(b,c,time,epoch,h,k),0 <= p < b[time+1].msgs[(i,j)].len()
     ensures packet(b[time+1].msgs[(i,j)][p],epoch,h,k)
 {
+    hide(update_ack);
     let a=sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; logs::at(b,c,time);
     logs::facts(s,c,i,j); connections::channel_pair(c,i,j); reveal(enabled); reveal(apply);
     if let Action::AckEpoch(x,y)=a {

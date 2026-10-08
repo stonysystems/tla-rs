@@ -81,7 +81,7 @@ pub proof fn sync_cell(s: LState,c: Constants,x: int,y: int,i: int,j: int,k: int
     ensures cell(apply(s,c,Action::Sync(x,y)),i,j,k)
 {
     reveal(enabled); reveal(apply); assert(cell(s,i,j,k)); before_sync(s,c,x,y); buffers::before_sync(s,c,x,y);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     follow_cell(s,x,y,r.zxid,i,j,k);
 }
 pub proof fn other_cell(s: LState,c: Constants,a: Action,i: int,j: int,k: int)

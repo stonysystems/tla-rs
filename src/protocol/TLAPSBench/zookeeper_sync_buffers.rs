@@ -40,10 +40,12 @@ pub proof fn election_node(s: LState,c: Constants,ea: fle::Action,i: int)
 {
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(Action::Election(ea)); channels::facts(s,c,i,x); assert(node(s,i));
 }
+#[verifier::spinoff_prover]
 pub proof fn other_node(s: LState,c: Constants,a: Action,i: int)
     requires context(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),!(a is SyncMessage),!(a is CommitSync)
     ensures node(apply(s,c,a),i)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); let x=receiver(a); assert(node(s,i)); assert(online::node(s,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,x)); assert(online::node(s,x)); }
     match a {
         Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,x,y); } },

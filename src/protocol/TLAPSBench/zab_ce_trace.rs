@@ -8,21 +8,21 @@ use super::zab_sessions::{self as sessions,interval};
 use super::temporal::Behavior;
 verus! {
 pub open spec fn payload(q: Set<CE>,j: int,e: int) -> bool {
-    exists |r: CE| q.contains(r) && r.sid == j && r.epoch == e
+    exists |r: CE| #![trigger q.contains(r)] q.contains(r) && r.sid == j && r.epoch == e
 }
 pub proof fn disconnect_payload(q: Set<CE>,who: int,j: int,e: int)
     ensures payload(q,j,e) == payload(disconnect_ce(q,who),j,e)
 {
     let u=disconnect_ce(q,who);
     if ce_ids(q).contains(who) {
-        let old=choose |r: CE| q.contains(r) && r.sid == who; assert(q.contains(old) && old.sid == who);
+        let old=choose |r: CE| #![trigger q.contains(r)] q.contains(r) && r.sid == who; assert(q.contains(old) && old.sid == who);
         let new=CE { connected: false,..old }; assert(u.contains(new));
         if payload(q,j,e) {
-            let r=choose |r: CE| q.contains(r) && r.sid == j && r.epoch == e;
+            let r=choose |r: CE| #![trigger q.contains(r)] q.contains(r) && r.sid == j && r.epoch == e;
             if r != old { assert(u.contains(r)); } else { assert(new.sid == j && new.epoch == e); }
         }
         if payload(u,j,e) {
-            let r=choose |r: CE| u.contains(r) && r.sid == j && r.epoch == e;
+            let r=choose |r: CE| #![trigger u.contains(r)] u.contains(r) && r.sid == j && r.epoch == e;
             if r != new { assert(q.contains(r)); } else { assert(old.sid == j && old.epoch == e); }
         }
     }
@@ -92,7 +92,7 @@ pub proof fn proposal(b: Behavior<LState>,c: Constants,since: int,time: int,i: i
     requires connections::safety_spec(b,c),c.servers.contains(i),c.servers.len() > 1,since > 0,interval(b,i,since,time),b[since-1].nodes[i].role != Role::Leading,
         quorum(ce_ids(b[time].nodes[i].ce),c)
     ensures since < at <= time,quorum(ce_ids(b[at].nodes[i].ce),c),
-        forall |r: CE| b[at].nodes[i].ce.contains(r) ==> r.epoch < b[time].nodes[i].accepted
+        forall |r: CE| #![trigger b[at].nodes[i].ce.contains(r)] b[at].nodes[i].ce.contains(r) ==> r.epoch < b[time].nodes[i].accepted
     decreases time-since
 {
     if time == since {
@@ -116,7 +116,7 @@ pub proof fn proposal(b: Behavior<LState>,c: Constants,since: int,time: int,i: i
             let j=choose |j: int| a == Action::CEpoch(i,j);
             receipts::facts(s,c,i,j);
             collections::maximum_correct(u.nodes[i].ce.map(|r: CE| r.epoch));
-            assert forall |r: CE| u.nodes[i].ce.contains(r) implies r.epoch < u.nodes[i].accepted by {
+            assert forall |r: CE| #![trigger u.nodes[i].ce.contains(r)] u.nodes[i].ce.contains(r) implies r.epoch < u.nodes[i].accepted by {
                 assert(u.nodes[i].ce.map(|r: CE| r.epoch).contains(r.epoch));
             }
             time

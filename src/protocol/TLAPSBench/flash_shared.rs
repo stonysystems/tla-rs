@@ -231,7 +231,7 @@ pub proof fn cache_data_from_inductive(s: LState,c: Constants)
     requires inductive(s,c)
     ensures cache_data(s,c)
 {
-    assert forall |p: int| c.nodes.contains(p) implies
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies
         (s.procs[p].cache == Cache::E ==> s.procs[p].data == s.current)
         && (s.procs[p].cache == Cache::S ==> s.procs[p].data == if s.collecting { s.previous } else { s.current }) by { expose(s,c,p); }
 }

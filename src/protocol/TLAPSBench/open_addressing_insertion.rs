@@ -16,7 +16,7 @@ pub open spec fn active(pc: Pc) -> bool {
 }
 pub open spec fn inserting(pc: Pc) -> bool { pc == Pc::Insrt || pc == Pc::IsMth || pc == Pc::Cas }
 pub open spec fn passed(s: LState,c: Constants,f: int,n: int) -> bool {
-    forall |r: int| 0 <= r < n ==> shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(f)
+    forall |r: int| #![trigger cell(s,c,r)] 0 <= r < n ==> shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(f)
 }
 pub open spec fn before(s: LState,c: Constants,n: int) -> bool {
     forall |r: int| 0 <= r < n ==> #[trigger] shape::positive(cell(s,c,r))
@@ -31,12 +31,12 @@ pub open spec fn fresh(x: Cell,s: LState) -> bool {
     shape::positive(x) ==> !s.external.contains(value(x)) && !s.newexternal.contains(value(x))
 }
 pub open spec fn unique(s: LState,c: Constants) -> bool {
-    forall |i: int,j: int| 1 <= i < j <= c.k && coverage::visible(s,c,i) && coverage::visible(s,c,j)
+    forall |i: int,j: int| #![trigger coverage::visible(s,c,i), coverage::visible(s,c,j)] 1 <= i < j <= c.k && coverage::visible(s,c,i) && coverage::visible(s,c,j)
         && s.table[i] is Value && s.table[j] is Value ==> abs(value(s.table[i])) != abs(value(s.table[j]))
 }
 pub open spec fn temporary(s: LState,c: Constants,p: int) -> bool {
     let t=s.threads[p];
-    shape::moving(t.pc) ==> fresh(t.lo,s) && (forall |i: int| 1 <= i <= c.k && coverage::visible(s,c,i)
+    shape::moving(t.pc) ==> fresh(t.lo,s) && (forall |i: int| #![trigger coverage::visible(s,c,i)] 1 <= i <= c.k && coverage::visible(s,c,i)
         && t.lo is Value && s.table[i] is Value ==> abs(value(t.lo)) != abs(value(s.table[i])))
 }
 pub open spec fn local(s: LState,c: Constants,p: int) -> bool {
@@ -66,7 +66,7 @@ pub proof fn no_pending_flush(s: LState,c: Constants,p: int)
     ensures s.newexternal.len() == 0
 {
     if s.newexternal.len() > 0 {
-        let q=choose |q: int| c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
+        let q=choose |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
         assert(lock::pair(s,q,p));
     }
 }

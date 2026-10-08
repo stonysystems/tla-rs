@@ -31,7 +31,7 @@ pub proof fn at(b: Behavior<LState>,c: Constants,time: int,i: int,j: int)
     if s.nodes[j].current == n.current {
         current::at(b,c,time,j); current::aligned(b,c,time,j,i); queue::replay_prefix(s.nodes[j].history,n.history,n.current,q);
     } else {
-        let p=choose |p: int| 0 <= p < q.len() && sync::leader_message(q[p],n.current);
+        let p=choose |p: int| #![trigger q[p]] 0 <= p < q.len() && sync::leader_message(q[p],n.current);
         assert(queue::fits(n.history,n.current,q[p]));
         if let Message::NewLeader(e,h)=q[p] {
             queue::snapshot(s.nodes[j].history,q,p,e,h); queue::suffix(n.history,n.current,q,p+1);

@@ -44,7 +44,7 @@ pub proof fn disconnect_histories(q: Set<AE>,i: int)
     requires ae_histories(q)
     ensures ae_histories(disconnect_ae(q,i))
 {
-    if ae_ids(q).contains(i) { let old=choose |r: AE| q.contains(r) && r.sid == i; assert(q.contains(old)); }
+    if ae_ids(q).contains(i) { let old=choose |r: AE| #![trigger q.contains(r)] q.contains(r) && r.sid == i; assert(q.contains(old)); }
     assert forall |r: AE| (#[trigger] disconnect_ae(q,i).contains(r)) implies shape(r.history) && bounded(r.history,r.epoch) by {}
 }
 pub proof fn update_histories(q: Set<AE>,i: int,e: int,h: Seq<Txn>)
@@ -95,10 +95,13 @@ pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
         _ => {},
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_packet(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len()
     ensures packet(apply(s,c,a),i,apply(s,c,a).msgs[(i,j)][k])
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); facts(s,c,i,j); connections::channel_pair(c,i,j);
     preserve_node(s,c,a,i); preserve_node(s,c,a,j); receipts::preserve(s,c,a);
     let u=apply(s,c,a);

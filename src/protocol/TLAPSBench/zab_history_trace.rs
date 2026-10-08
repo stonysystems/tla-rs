@@ -8,21 +8,21 @@ use super::zab_sessions::{self as sessions,interval};
 use super::temporal::Behavior;
 verus! {
 pub open spec fn payload(q: Set<AE>,j: int,e: int,h: Seq<Txn>) -> bool {
-    exists |r: AE| q.contains(r) && r.sid == j && r.epoch == e && r.history == h
+    exists |r: AE| #![trigger q.contains(r)] q.contains(r) && r.sid == j && r.epoch == e && r.history == h
 }
 pub proof fn disconnect_payload(q: Set<AE>,who: int,j: int,e: int,h: Seq<Txn>)
     ensures payload(q,j,e,h) == payload(disconnect_ae(q,who),j,e,h)
 {
     let u=disconnect_ae(q,who);
     if ae_ids(q).contains(who) {
-        let old=choose |r: AE| q.contains(r) && r.sid == who; assert(q.contains(old) && old.sid == who);
+        let old=choose |r: AE| #![trigger q.contains(r)] q.contains(r) && r.sid == who; assert(q.contains(old) && old.sid == who);
         let new=AE { connected: false,..old }; assert(u.contains(new));
         if payload(q,j,e,h) {
-            let r=choose |r: AE| q.contains(r) && r.sid == j && r.epoch == e && r.history == h;
+            let r=choose |r: AE| #![trigger q.contains(r)] q.contains(r) && r.sid == j && r.epoch == e && r.history == h;
             if r != old { assert(u.contains(r)); } else { assert(new.sid == j && new.epoch == e && new.history == h); }
         }
         if payload(u,j,e,h) {
-            let r=choose |r: AE| u.contains(r) && r.sid == j && r.epoch == e && r.history == h;
+            let r=choose |r: AE| #![trigger u.contains(r)] u.contains(r) && r.sid == j && r.epoch == e && r.history == h;
             if r != new { assert(q.contains(r)); } else { assert(old.sid == j && old.epoch == e && old.history == h); }
         }
     }

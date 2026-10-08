@@ -99,7 +99,7 @@ pub proof fn active_finishes(b: Behavior<LState>, c: Constants, p: int, q: int, 
     }
 }
 pub open spec fn quiet_tail(b: Behavior<LState>, q: int, m: int, start: int) -> bool {
-    forall |k: int| k >= start ==> !b[k].procs[q].active || b[k].procs[q].userpmap != m
+    forall |k: int| #![trigger b[k]] k >= start ==> !b[k].procs[q].active || b[k].procs[q].userpmap != m
 }
 pub proof fn target_quiet(b: Behavior<LState>, c: Constants, p: int, q: int, m: int, start: int)
     requires fair_spec(b, c), c.processors.contains(p), c.processors.contains(q), p != q, start >= 0,
@@ -107,7 +107,7 @@ pub proof fn target_quiet(b: Behavior<LState>, c: Constants, p: int, q: int, m: 
     ensures exists |end: int| end >= start && #[trigger] quiet_tail(b, q, m, end)
 {
     if b[start].procs[q].userpmap != m {
-        assert forall |k: int| k >= start implies b[k].procs[q].userpmap != m by {
+        assert forall |k: int| #![trigger b[k]] k >= start implies b[k].procs[q].userpmap != m by {
             target_until(b, c, p, q, m, start, k);
         }
         assert(quiet_tail(b, q, m, start));
@@ -116,12 +116,12 @@ pub proof fn target_quiet(b: Behavior<LState>, c: Constants, p: int, q: int, m: 
         if quiet_tail(b, q, m, inactive) {
             assert(exists |end: int| end >= start && #[trigger] quiet_tail(b, q, m, end));
         } else {
-            let awake = choose |k: int| k >= inactive && b[k].procs[q].active && b[k].procs[q].userpmap == m;
+            let awake = choose |k: int| #![trigger b[k]] k >= inactive && b[k].procs[q].active && b[k].procs[q].userpmap == m;
             safety_at(b, c, inactive);
             assert(safety::local_inv(b[inactive], c, q));
             target_until(b, c, p, q, m, inactive, awake);
             let stopped = active_finishes(b, c, p, q, m, awake);
-            assert forall |k: int| k >= stopped implies !b[k].procs[q].active by {
+            assert forall |k: int| #![trigger b[k]] k >= stopped implies !b[k].procs[q].active by {
                 target_until(b, c, p, q, m, stopped, k);
                 safety_at(b, c, k);
                 assert(safety::local_inv(b[k], c, q));

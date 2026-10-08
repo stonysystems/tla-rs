@@ -101,7 +101,7 @@ pub proof fn step_rank(s: LState,c: Constants,a: Action,n: int)
 }
 pub proof fn rank_until(b: Behavior<LState>,c: Constants,n: int,start: int,end: int)
     requires safety_spec(b,c),c.nodes.contains(n),0 <= start <= end,
-        forall |j: int| start <= j <= end ==> pending(b[j],Group::Uni(n))
+        forall |j: int| #![trigger b[j]] start <= j <= end ==> pending(b[j],Group::Uni(n))
     ensures rank(b[end],n) <= rank(b[start],n),!b[start].replace[n] ==> !b[end].replace[n]
     decreases end-start
 {
@@ -119,7 +119,7 @@ pub proof fn progress_at(b: Behavior<LState>,c: Constants,n: int,start: int)
 {
     if !clear_after(b,Group::Uni(n),start) {
         super::flash_liveness::progress_at(b,c,Group::Replace(n),start);
-        let j=choose |j: int| j >= start && !pending(b[j],Group::Replace(n));
+        let j=choose |j: int| #![trigger b[j]] j >= start && !pending(b[j],Group::Replace(n));
         assert(weak_fair(b,c,Group::Uni(n)));
         assert(fair_after(b,c,Group::Uni(n),j));
         let k=choose |k: int| k >= j && #[trigger] fair_event(b,c,Group::Uni(n),k);
@@ -130,12 +130,12 @@ pub proof fn progress_at(b: Behavior<LState>,c: Constants,n: int,start: int)
         let a=choose |a: Action| handles(Group::Uni(n),a) && #[trigger] enabled(b[k],c,a) && b[k+1] == apply(b[k],c,a);
         step_rank(b[k],c,a,n);
         progress_at(b,c,n,k+1);
-        let q=choose |q: int| q >= k+1 && !pending(b[q],Group::Uni(n));
+        let q=choose |q: int| #![trigger b[q]] q >= k+1 && !pending(b[q],Group::Uni(n));
         assert(q >= start && !pending(b[q],Group::Uni(n)));
     }
 }
 pub open spec fn request_clear_after(b: Behavior<LState>,n: int,start: int) -> bool {
-    exists |k: int| k >= start && b[k].procs[n].cmd == Req::None
+    exists |k: int| #![trigger b[k]] k >= start && b[k].procs[n].cmd == Req::None
 }
 pub proof fn request_progress_correct(b: Behavior<LState>,c: Constants)
     requires fair_spec(b,c)
@@ -148,7 +148,7 @@ pub proof fn request_progress_correct(b: Behavior<LState>,c: Constants)
     assert forall |n: int,start: int| c.nodes.contains(n) && start >= 0 implies
         #[trigger] request_clear_after(b,n,start) by {
         progress_at(b,c,n,start);
-        let k=choose |k: int| k >= start && !pending(b[k],Group::Uni(n));
+        let k=choose |k: int| #![trigger b[k]] k >= start && !pending(b[k],Group::Uni(n));
         safety_at(b,c,k); shared::expose(b[k],c,n);
         assert(b[k].procs[n].cmd == Req::None);
     }

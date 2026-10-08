@@ -20,6 +20,7 @@ pub proof fn election_follower(s: LState,c: Constants,ea: fle::Action,i: int)
 {
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(Action::Election(ea)); channels::facts(s,c,i,x);
 }
+#[verifier::spinoff_prover]
 pub proof fn environment_follower(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),enabled(s,c,a),c.servers.contains(i),s.election.nodes[i].role == Role::Following,
         apply(s,c,a).election.nodes[i].role == Role::Following,a is Crash || a is Partition || a is Recover || a is Start || a is Stutter

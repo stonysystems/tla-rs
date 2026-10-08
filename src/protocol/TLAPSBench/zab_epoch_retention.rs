@@ -10,10 +10,12 @@ use super::zab_sync_prefixes as sync;
 use super::zab_sessions as sessions;
 use super::temporal::Behavior;
 verus! {
+#[verifier::spinoff_prover]
 pub proof fn step(b: Behavior<LState>,c: Constants,time: int,i: int)
     requires connections::safety_spec(b,c),time >= 0,c.servers.contains(i),b[time].nodes[i].current == b[time+1].nodes[i].current
     ensures prefix(b[time].nodes[i].history,b[time+1].nodes[i].history)
 {
+    hide(update_ack);
     let a=sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; logs::at(b,c,time); sync::at(b,c,time);
     logs::preserve(s,c,a); logs::facts(s,c,i,i); logs::facts(u,c,i,i); reveal(enabled); reveal(apply);
     match a {

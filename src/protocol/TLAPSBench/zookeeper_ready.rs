@@ -116,6 +116,7 @@ pub proof fn pair_environment(s: LState,c: Constants,a: Action,i: int,j: int)
         assert(ready(s,c,i,j)); retained(s,c,a,i,j);
     }
 }
+#[verifier::spinoff_prover]
 pub proof fn pair_protocol(s: LState,c: Constants,a: Action,i: int,j: int)
     requires channels::safe(s,c),channels::safe(apply(s,c,a),c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),
         !(a is Election),!(a is Crash),!(a is Partition),!(a is Recover),!(a is Start)
@@ -135,7 +136,7 @@ pub proof fn pair_protocol(s: LState,c: Constants,a: Action,i: int,j: int)
             }
             if a is AckLd { head(s,c,y,x); links::update_ackld(s.nodes[x].ackld,y,j); }
             if a is Sync {
-                let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+                let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
                 links::clear_electing(s.nodes[x].electing,r,j); assert(links::electing(s.nodes[x].electing,y)); assert(pair(s,c,x,y));
             }
         },_ => {},
@@ -161,7 +162,7 @@ pub proof fn fresh_sync(s: LState,c: Constants,x: int,y: int,i: int,j: int,m: Me
     ensures packet(apply(s,c,Action::Sync(x,y)),c,i,j,m)
 {
     reveal(enabled); reveal(apply); channels::facts(s,c,x,y);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     if x == y { assert(r.zxid == unset()); assert(false); }
     assert(links::electing(s.nodes[x].electing,y)); assert(pair(s,c,x,y));
     let n=s.nodes[x]; let e=s.election.nodes[x]; let min=n.snapshot.index+1;

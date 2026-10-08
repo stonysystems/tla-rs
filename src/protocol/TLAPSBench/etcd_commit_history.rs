@@ -17,7 +17,7 @@ pub open spec fn record(s: LState,c: Constants,i: int,k: nat) -> Decision {
         quorum: c.voters.filter(|j: int| s.nodes[i].matched[j] >= k) }
 }
 pub open spec fn has_commit(g: ProofState,t: nat,k: nat) -> bool {
-    k == 0 || exists |d: Decision| g.decisions.contains(d) && d.term <= t && d.log.len() >= k
+    k == 0 || exists |d: Decision| #![trigger g.decisions.contains(d)] g.decisions.contains(d) && d.term <= t && d.log.len() >= k
 }
 pub open spec fn decision_valid(g: ProofState,c: Constants,d: Decision) -> bool {
     d.log.len() > 0 && d.log.last() == d.term && d.term > 0 && quorum(d.quorum,c)
@@ -61,7 +61,7 @@ pub proof fn commit_monotone(g: ProofState,u: ProofState,t: nat,k: nat,t2: nat,k
     ensures has_commit(u,t2,k2)
 {
     if k2 > 0 {
-        let d=choose |d: Decision| g.decisions.contains(d) && d.term <= t && d.log.len() >= k;
+        let d=choose |d: Decision| #![trigger g.decisions.contains(d)] g.decisions.contains(d) && d.term <= t && d.log.len() >= k;
         assert(u.decisions.contains(d));
     }
 }

@@ -20,7 +20,7 @@ pub proof fn access_bounds(h: Seq<Event>,e: Event)
 }
 pub proof fn snapshot(s: LState,t: int,k: int)
     requires lifecycle::valid(s.history),all(s.history).contains(t),!s.txns[t].xlocks.contains(k),!version(s,t,k).is_empty()
-    ensures exists |v: int| version(s,t,k) == set![v] && committed(s.history).contains(v) && s.history.contains(Event { txn: v,op: Op::Write(k) })
+    ensures exists |v: int| #![trigger set![v]] version(s,t,k) == set![v] && committed(s.history).contains(v) && s.history.contains(Event { txn: v,op: Op::Write(k) })
         && position(s.history,Event { txn: v,op: Op::Commit }) < start(s.history,t)
 {
     let h=s.history; lifecycle::start_position(h,t); let first=start(h,t); let d=sub(h,1,first);
@@ -55,7 +55,7 @@ pub proof fn committed_newer(s: LState,t: int,k: int,w: int)
     ensures newer_versions(s,t,k).contains(w)
 {
     snapshot(s,t,k); let h=s.history;
-    let v=choose |v: int| version(s,t,k) == set![v] && committed(h).contains(v) && h.contains(Event { txn: v,op: Op::Write(k) })
+    let v=choose |v: int| #![trigger set![v]] version(s,t,k) == set![v] && committed(h).contains(v) && h.contains(Event { txn: v,op: Op::Write(k) })
         && position(h,Event { txn: v,op: Op::Commit }) < start(h,t);
     let ev=Event { txn: v,op: Op::Write(k) }; let ew=Event { txn: w,op: Op::Write(k) };
     positions::found(h,ev); keys_math::member(h,v,false,k); assert(keys(h,v,false).contains(k));

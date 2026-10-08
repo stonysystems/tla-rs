@@ -9,11 +9,11 @@ use super::temporal::Behavior;
 verus! {
 pub open spec fn receipt(s: LState,c: Constants,i: int,j: int) -> bool {
     let n=s.nodes[i]; let peer=s.nodes[j];
-    &&& (forall |r: CE| n.ce.contains(r) && r.sid == j ==> r.epoch <= peer.accepted
+    &&& (forall |r: CE| #![trigger n.ce.contains(r)] n.ce.contains(r) && r.sid == j ==> r.epoch <= peer.accepted
         && (n.role == Role::Leading && r.connected ==> n.learners.contains(j)))
-    &&& (forall |r: AE| n.ae.contains(r) && r.sid == j ==> r.epoch <= peer.current
+    &&& (forall |r: AE| #![trigger n.ae.contains(r)] n.ae.contains(r) && r.sid == j ==> r.epoch <= peer.current
         && (n.role == Role::Leading && r.connected ==> n.learners.contains(j) && peer.accepted == n.accepted))
-    &&& (forall |r: AL| n.al.contains(r) && r.sid == j && n.role == Role::Leading && r.connected ==>
+    &&& (forall |r: AL| #![trigger n.al.contains(r)] n.al.contains(r) && r.sid == j && n.role == Role::Leading && r.connected ==>
         n.learners.contains(j) && peer.accepted == n.accepted && peer.current == n.current)
 }
 pub open spec fn packet(s: LState,c: Constants,i: int,j: int,m: Message) -> bool {
@@ -45,10 +45,13 @@ pub proof fn facts(s: LState,c: Constants,i: int,j: int)
 {
     phases::facts(s,c,i,j);
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_receipt(s: LState,c: Constants,a: Action,i: int,j: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j)
     ensures receipt(apply(s,c,a),c,i,j)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); facts(s,c,i,j);
     collections::record_ids(s.nodes[i]); collections::record_ids(apply(s,c,a).nodes[i]);
     epochs::preserve_node(s,c,a,i); epochs::preserve_node(s,c,a,j);
@@ -74,10 +77,13 @@ pub proof fn preserve_receipt(s: LState,c: Constants,a: Action,i: int,j: int)
         _ => {},
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_packet(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len()
     ensures packet(apply(s,c,a),c,i,j,apply(s,c,a).msgs[(i,j)][k])
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); facts(s,c,i,j); connections::channel_pair(c,i,j);
     epochs::preserve_node(s,c,a,i); epochs::preserve_node(s,c,a,j);
     preserve_receipt(s,c,a,i,j);

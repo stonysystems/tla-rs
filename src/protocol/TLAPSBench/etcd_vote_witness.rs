@@ -40,7 +40,7 @@ pub proof fn persisted_candidate_interval(b: Behavior<LState>,c: Constants,i: in
 pub proof fn positive_creation(s: LState,c: Constants,a: Action,m: Message)
     requires enabled(s,c,a),s.pending.count(m) == 0,apply(s,c,a).pending.count(m) > 0,positive(m)
     ensures a == (Action::RequestVote { i: m.source,j: m.source }) && m.source == m.dest && s.nodes[m.source].role == Role::Candidate
-        || exists |packet: Message| a == (Action::Receive { m: packet,how: Receive::VoteRequest })
+        || exists |packet: Message| #![trigger up_to_date(s.nodes[m.source],packet.body->VoteRequest_last_term,packet.body->VoteRequest_last_index)] a == (Action::Receive { m: packet,how: Receive::VoteRequest })
             && packet.body is VoteRequest && packet.source == m.dest && packet.dest == m.source && packet.term == m.term
             && up_to_date(s.nodes[m.source],packet.body->VoteRequest_last_term,packet.body->VoteRequest_last_index)
 {
@@ -75,7 +75,7 @@ pub proof fn grant_comparison(b: Behavior<LState>,c: Constants,k: int,v: Ballot,
         }
         candidate_interval(b,c,v.candidate,v.term,j,r);
     } else {
-        let packet=choose |packet: Message| a == (Action::Receive { m: packet,how: Receive::VoteRequest })
+        let packet=choose |packet: Message| #![trigger up_to_date(b[j].nodes[m.source],packet.body->VoteRequest_last_term,packet.body->VoteRequest_last_index)] a == (Action::Receive { m: packet,how: Receive::VoteRequest })
             && packet.body is VoteRequest && packet.source == m.dest && packet.dest == m.source && packet.term == m.term
             && up_to_date(b[j].nodes[m.source],packet.body->VoteRequest_last_term,packet.body->VoteRequest_last_index);
         reveal(enabled); reveal(receive_enabled); assert(b[j].messages.count(packet) > 0);

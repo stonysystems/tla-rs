@@ -16,7 +16,7 @@ pub proof fn pending_push(q: Seq<Message>,e: int,limit: int,m: Message)
         leader_message(m,e) ==> pending(q.push(m),e,q.len() as int+1)
 {
     if pending(q,e,limit) {
-        let k=choose |k: int| 0 <= k < limit && leader_message(q[k],e);
+        let k=choose |k: int| #![trigger q[k]] 0 <= k < limit && leader_message(q[k],e);
         assert(leader_message(q.push(m)[k],e));
     }
     if leader_message(m,e) { assert(leader_message(q.push(m)[q.len() as int],e)); }
@@ -25,7 +25,7 @@ pub proof fn pending_tail(q: Seq<Message>,e: int,limit: int)
     requires pending(q,e,limit),!leader_message(q[0],e)
     ensures pending(q.drop_first(),e,limit-1)
 {
-    let k=choose |k: int| 0 <= k < limit && leader_message(q[k],e);
+    let k=choose |k: int| #![trigger q[k]] 0 <= k < limit && leader_message(q[k],e);
     assert(k > 0); assert(leader_message(q.drop_first()[k-1],e));
 }
 pub open spec fn ready(s: LState,c: Constants,i: int,j: int) -> bool {
@@ -53,26 +53,29 @@ pub proof fn connected_ae(s: LState,c: Constants,i: int,j: int)
     ensures s.nodes[i].learners.contains(j),s.nodes[j].accepted == s.nodes[i].accepted
 {
     receipts::facts(s,c,i,j);
-    let r=choose |r: AE| s.nodes[i].ae.contains(r) && r.connected && r.sid == j;
+    let r=choose |r: AE| #![trigger s.nodes[i].ae.contains(r)] s.nodes[i].ae.contains(r) && r.connected && r.sid == j;
     assert(s.nodes[i].ae.contains(r) && r.connected && r.sid == j);
 }
 pub proof fn connected_change(q: Set<AE>,who: int,e: int,h: Seq<Txn>)
     ensures ae_connected(disconnect_ae(q,who)).subset_of(ae_connected(q)),
         ae_connected(update_ae(q,who,e,h)).subset_of(ae_connected(q).insert(who))
 {
-    assert forall |j: int| ae_connected(disconnect_ae(q,who)).contains(j) implies ae_connected(q).contains(j) by {
-        let r=choose |r: AE| disconnect_ae(q,who).contains(r) && r.connected && r.sid == j;
+    assert forall |j: int| #![trigger ae_connected(q).contains(j)] ae_connected(disconnect_ae(q,who)).contains(j) implies ae_connected(q).contains(j) by {
+        let r=choose |r: AE| #![trigger disconnect_ae(q,who).contains(r)] disconnect_ae(q,who).contains(r) && r.connected && r.sid == j;
         assert(q.contains(r) && r.connected); assert(q.filter(|x: AE| x.connected).contains(r));
     }
-    assert forall |j: int| ae_connected(update_ae(q,who,e,h)).contains(j) implies ae_connected(q).insert(who).contains(j) by {
-        let r=choose |r: AE| update_ae(q,who,e,h).contains(r) && r.connected && r.sid == j;
+    assert forall |j: int| #![trigger ae_connected(q).insert(who).contains(j)] ae_connected(update_ae(q,who,e,h)).contains(j) implies ae_connected(q).insert(who).contains(j) by {
+        let r=choose |r: AE| #![trigger update_ae(q,who,e,h).contains(r)] update_ae(q,who,e,h).contains(r) && r.connected && r.sid == j;
         if j != who { assert(q.contains(r) && r.connected); assert(q.filter(|x: AE| x.connected).contains(r)); }
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_ready(s: LState,c: Constants,a: Action,i: int,j: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j)
     ensures ready(apply(s,c,a),c,i,j)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); receipts::facts(s,c,i,j); connections::channel_pair(c,i,j);
     assert(ready(s,c,i,j));
     receipts::preserve(s,c,a); let u=apply(s,c,a);
@@ -89,7 +92,7 @@ pub proof fn preserve_ready(s: LState,c: Constants,a: Action,i: int,j: int)
         _ => {},
     }
     if pending(s.msgs[(i,j)],s.nodes[i].current,s.msgs[(i,j)].len() as int) {
-        let k=choose |k: int| 0 <= k < s.msgs[(i,j)].len() && leader_message(s.msgs[(i,j)][k],s.nodes[i].current);
+        let k=choose |k: int| #![trigger s.msgs[(i,j)][k]] 0 <= k < s.msgs[(i,j)].len() && leader_message(s.msgs[(i,j)][k],s.nodes[i].current);
         assert(phases::packet(s,c,i,j,s.msgs[(i,j)][k])); assert(epochs::packet(s,c,i,j,s.msgs[(i,j)][k]));
         if k > 0 { assert(leader_message(s.msgs[(i,j)].drop_first()[k-1],s.nodes[i].current)); }
         if k < u.msgs[(i,j)].len() && leader_message(u.msgs[(i,j)][k],u.nodes[i].current) {
@@ -107,10 +110,13 @@ pub proof fn preserve_ready(s: LState,c: Constants,a: Action,i: int,j: int)
         assert(pending(u.msgs[(i,j)],u.nodes[i].current,u.msgs[(i,j)].len() as int));
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_position(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len(),apply(s,c,a).msgs[(i,j)][k] is Propose
     ensures apply(s,c,a).nodes[j].current == apply(s,c,a).nodes[i].current || pending(apply(s,c,a).msgs[(i,j)],apply(s,c,a).nodes[i].current,k)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); receipts::facts(s,c,i,j); connections::channel_pair(c,i,j);
     assert(ready(s,c,i,j) && fifo(s,c,i,j));
     receipts::preserve(s,c,a); let u=apply(s,c,a);
@@ -126,9 +132,9 @@ pub proof fn preserve_position(s: LState,c: Constants,a: Action,i: int,j: int,k:
     let q=s.msgs[(i,j)]; let e=s.nodes[i].current;
     if k < q.len() && q[k] is Propose { assert(phases::packet(s,c,i,j,q[k])); assert(s.nodes[j].current == e || pending(q,e,k)); }
     if k+1 < q.len() && q[k+1] is Propose { assert(phases::packet(s,c,i,j,q[k+1])); assert(s.nodes[j].current == e || pending(q,e,k+1)); }
-    if pending(q,e,k) { let p=choose |p: int| 0 <= p < k && leader_message(q[p],e); assert(leader_message(q.push(u.msgs[(i,j)].last())[p],e)); }
+    if pending(q,e,k) { let p=choose |p: int| #![trigger q[p]] 0 <= p < k && leader_message(q[p],e); assert(leader_message(q.push(u.msgs[(i,j)].last())[p],e)); }
     if pending(q,e,k+1) && !leader_message(q[0],e) { pending_tail(q,e,k+1); }
-    if pending(q,e,q.len() as int) { let p=choose |p: int| 0 <= p < q.len() && leader_message(q[p],e); assert(leader_message(q.push(u.msgs[(i,j)].last())[p],e)); }
+    if pending(q,e,q.len() as int) { let p=choose |p: int| #![trigger q[p]] 0 <= p < q.len() && leader_message(q[p],e); assert(leader_message(q.push(u.msgs[(i,j)].last())[p],e)); }
 }
 pub proof fn preserve(s: LState,c: Constants,a: Action)
     requires inductive(s,c),enabled(s,c,a)

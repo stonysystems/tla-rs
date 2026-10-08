@@ -117,7 +117,7 @@ pub proof fn prior_decision(g: ProofState,c: Constants,i: int) -> (d: history::D
     let k=maximum(agreed); let q=c.voters.filter(|j: int| n.matched[j] >= k);
     assert(quorum(q,c)); assert(!q.is_empty()); let j=q.choose(); assert(c.servers.contains(j));
     assert(n.matched[j] <= n.disk.log.len() || has_commit(g,n.term,n.matched[j]));
-    choose |d: history::Decision| g.decisions.contains(d) && d.term <= n.term && d.log.len() >= n.matched[j]
+    choose |d: history::Decision| #![trigger g.decisions.contains(d)] g.decisions.contains(d) && d.term <= n.term && d.log.len() >= n.matched[j]
 }
 pub proof fn safety_at(b: Behavior<LState>,c: Constants,k: int) -> (g: ProofState)
     requires election::safety_spec(b,c),k >= 0

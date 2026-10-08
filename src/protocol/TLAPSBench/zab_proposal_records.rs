@@ -33,7 +33,7 @@ pub proof fn proposed_copy(s: LState,u: LState,a: Txn,d: Txn)
     requires s.proposals.subset_of(u.proposals),proposed(s,a),equal(a,d)
     ensures proposed(u,d)
 {
-    let p=choose |p: Proposal| s.proposals.contains(p) && p.zxid == a.zxid && p.value == a.value; assert(u.proposals.contains(p));
+    let p=choose |p: Proposal| #![trigger s.proposals.contains(p)] s.proposals.contains(p) && p.zxid == a.zxid && p.value == a.value; assert(u.proposals.contains(p));
 }
 pub proof fn records_entry(s: LState,i: int,e: int,h: Seq<Txn>,k: int)
     requires 0 <= k < h.len(),records(i,e,h).subset_of(s.proposals)
@@ -68,6 +68,7 @@ pub proof fn advance_entry(b: Behavior<LState>,time: int,i: int,k: int)
     if proposed(b[time],n.history[k]) { proposed_copy(b[time],b[time+1],n.history[k],d.history[k]); }
     else { let read=choose |read: int| owned(b,time,i,n.current,read); assert(owned(b,time+1,i,d.current,read)); }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_entry(b: Behavior<LState>,c: Constants,time: int,i: int,k: int)
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),0 <= k < b[time+1].nodes[i].history.len()
     ensures entry(b,time+1,i,k)

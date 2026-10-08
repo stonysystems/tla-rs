@@ -16,14 +16,14 @@ pub open spec fn merged_prefix(a: Seq<int>,b: Seq<int>) -> bool {
 pub open spec fn inductive(s: LState,c: Constants) -> bool {
     contents::inductive(s,c) && lock::inductive(s,c)
     && merged_prefix(s.external,s.newexternal)
-    && (s.newexternal.len() > 0 ==> exists |p: int| c.writers.contains(p) && s.threads[p].pc == Pc::Flush)
+    && (s.newexternal.len() > 0 ==> exists |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && s.threads[p].pc == Pc::Flush)
     && (forall |i: int| 1 <= i <= c.k ==> #[trigger] accounted(s.table[i],s.external,s.newexternal))
     && (forall |p: int| c.writers.contains(p) && shape::moving(s.threads[p].pc) ==> #[trigger] accounted(s.threads[p].lo,s.external,s.newexternal))
 }
 pub proof fn accumulate(a: Seq<int>,b: Seq<int>,z: int)
     requires merged_prefix(a,b),z > largest(b)
     ensures merged_prefix(a,(b+smaller(a,b,z)).push(z)),
-        forall |x: int| b.contains(x) ==> (b+smaller(a,b,z)).push(z).contains(x)
+        forall |x: int| #![trigger b.contains(x)] b.contains(x) ==> (b+smaller(a,b,z)).push(z).contains(x)
 {
     broadcast use vstd::seq_lib::group_seq_properties;
     broadcast use vstd::seq_lib::group_filter_ensures;
@@ -37,11 +37,11 @@ pub proof fn accumulate(a: Seq<int>,b: Seq<int>,z: int)
 }
 pub proof fn finish(a: Seq<int>,b: Seq<int>)
     requires merged_prefix(a,b)
-    ensures forall |x: int| a.contains(x) || b.contains(x) ==> (b+larger(a,b)).contains(x)
+    ensures forall |x: int| #![trigger a.contains(x)] #![trigger b.contains(x)] a.contains(x) || b.contains(x) ==> (b+larger(a,b)).contains(x)
 {
     broadcast use vstd::seq_lib::group_seq_properties;
     broadcast use vstd::seq_lib::group_filter_ensures;
-    assert forall |x: int| a.contains(x) || b.contains(x) implies (b+larger(a,b)).contains(x) by {
+    assert forall |x: int| #![trigger a.contains(x)] #![trigger b.contains(x)] a.contains(x) || b.contains(x) implies (b+larger(a,b)).contains(x) by {
         if a.contains(x) && x > largest(b) && b.len() > 0 {
             let i=choose |i: int| 0 <= i < a.len() && a[i] == x;
             a.lemma_filter_contains(|v: int| largest(b) < v,i);
@@ -54,8 +54,8 @@ pub proof fn initial_inductive(c: Constants)
 pub proof fn sequence_step(s: LState,c: Constants,p: int,pick: int)
     requires valid_constants(c),inductive(s,c),enabled(s,c,Action::Writer { p,pick })
     ensures merged_prefix(apply(s,c,Action::Writer { p,pick }).external,apply(s,c,Action::Writer { p,pick }).newexternal),
-        forall |x: int| s.external.contains(x) ==> apply(s,c,Action::Writer { p,pick }).external.contains(x),
-        forall |x: int| s.external.contains(x) || s.newexternal.contains(x) ==>
+        forall |x: int| #![trigger s.external.contains(x)] s.external.contains(x) ==> apply(s,c,Action::Writer { p,pick }).external.contains(x),
+        forall |x: int| #![trigger s.external.contains(x)] #![trigger s.newexternal.contains(x)] s.external.contains(x) || s.newexternal.contains(x) ==>
             apply(s,c,Action::Writer { p,pick }).external.contains(x) || apply(s,c,Action::Writer { p,pick }).newexternal.contains(x)
 {
     reveal(apply); reveal(enabled); let t=s.threads[p]; contents::expose(s,c,p);
@@ -107,7 +107,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
         assert forall |q: int| c.writers.contains(q) && shape::moving(u.threads[q].pc) implies #[trigger] accounted(u.threads[q].lo,u.external,u.newexternal) by { temporary_step(s,c,p,pick,q); }
         if u.newexternal.len() > 0 {
             if s.newexternal.len() > 0 {
-                let q=choose |q: int| c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
+                let q=choose |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
                 assert(u.threads[q].pc == Pc::Flush);
             } else { assert(u.threads[p].pc == Pc::Flush); }
         }
@@ -118,7 +118,7 @@ pub proof fn insertion_has_no_pending_flush(s: LState,c: Constants,p: int)
     ensures s.newexternal.len() == 0
 {
     if s.newexternal.len() > 0 {
-        let q=choose |q: int| c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
+        let q=choose |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
         assert(lock::pair(s,q,p));
     }
 }
@@ -127,7 +127,7 @@ pub proof fn moving_has_no_pending_flush(s: LState,c: Constants,p: int)
     ensures s.newexternal.len() == 0
 {
     if s.newexternal.len() > 0 {
-        let q=choose |q: int| c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
+        let q=choose |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && s.threads[q].pc == Pc::Flush;
         assert(lock::pair(s,q,p));
     }
 }

@@ -21,6 +21,7 @@ pub proof fn initial_inductive(b: Behavior<LState>,c: Constants)
     requires connections::safety_spec(b,c)
     ensures inductive(b,c,0)
 {}
+#[verifier::spinoff_prover]
 pub proof fn preserve_pair(b: Behavior<LState>,c: Constants,time: int,i: int,j: int)
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),c.servers.contains(j),i != j,
         b[time+1].nodes[i].role == Role::Leading,b[time+1].nodes[i].phase != Phase::Discovery,ae_connected(b[time+1].nodes[i].ae).contains(j)

@@ -187,7 +187,7 @@ pub proof fn sync_payload(s: LState,c: Constants,x: int,y: int,i: int,j: int,m: 
     ensures payload(m,apply(s,c,Action::Sync(x,y)).nodes[i].accepted),i == x,j == y
 {
     reveal(enabled); reveal(apply); assert(node(s,x)); assert(bounds::node(s,x));
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     let n=s.nodes[x]; let e=s.election.nodes[x]; let min=n.snapshot.index+1;
     let max=if n.phase == Phase::Broadcast { n.committed.index } else { e.history.len() as int };
     let lo=if min > max { e.processed.zxid } else { e.history[min-1].zxid };

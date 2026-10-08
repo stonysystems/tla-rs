@@ -45,12 +45,14 @@ pub proof fn head(s: LState,c: Constants,i: int,j: int)
 {
     assert(s.msgs[(i,j)].contains(s.msgs[(i,j)][0])); assert(cell(s,i,j,s.msgs[(i,j)][0]));
 }
+#[verifier::spinoff_prover]
 pub proof fn retained(s: LState,c: Constants,a: Action,i: int,j: int)
     requires channels::safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),i != j,
         s.election.nodes[i].role == Role::Leading,s.nodes[i].forwarding.contains(j),
         apply(s,c,a).election.nodes[i].role == Role::Leading,apply(s,c,a).election.nodes[j].role == Role::Following
     ensures apply(s,c,a).nodes[i].forwarding.contains(j)
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channels::facts(s,c,i,j);
     if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
     match a {
@@ -60,10 +62,12 @@ pub proof fn retained(s: LState,c: Constants,a: Action,i: int,j: int)
         },_ => {},
     }
 }
+#[verifier::spinoff_prover]
 pub proof fn received_role(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i)
     ensures apply(s,c,a).nodes[i].received_leader ==> apply(s,c,a).election.nodes[i].role == Role::Following
 {
+    hide(floor_index);
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); assert(node(s,c,i));
     if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
     if a is Crash { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,x,y); } }
@@ -78,13 +82,265 @@ pub proof fn first_activation(s: LState,c: Constants,a: Action,i: int)
         !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast))
     ensures node(apply(s,c,a),c,i)
 {
-    reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
-    assert(a is NewLeader || a is UpToDate);
+    // Each Action variant is proved by its own helper lemma below, so
+    // `apply` unfolds for one variant per query.
     match a {
-        Action::NewLeader(x,y) | Action::UpToDate(x,y) => {
-            channels::facts(s,c,x,y); head(s,c,y,x); ready::head(s,c,y,x); retained(s,c,a,y,x);
-        },_ => {},
+        Action::Election(_) => first_activation_election(s,c,a,i),
+        Action::Partition(_,_) => first_activation_partition(s,c,a,i),
+        Action::Recover(_,_) => first_activation_recover(s,c,a,i),
+        Action::Crash(_) => first_activation_crash(s,c,a,i),
+        Action::Start(_) => first_activation_start(s,c,a,i),
+        Action::Connect(_,_) => first_activation_connect(s,c,a,i),
+        Action::FollowerInfo(_,_) => first_activation_follower_info(s,c,a,i),
+        Action::LeaderInfo(_,_) => first_activation_leader_info(s,c,a,i),
+        Action::AckEpoch(_,_) => first_activation_ack_epoch(s,c,a,i),
+        Action::Sync(_,_) => first_activation_sync(s,c,a,i),
+        Action::SyncMessage(_,_) => first_activation_sync_message(s,c,a,i),
+        Action::ProposalSync(_,_) => first_activation_proposal_sync(s,c,a,i),
+        Action::CommitSync(_,_) => first_activation_commit_sync(s,c,a,i),
+        Action::NewLeader(_,_) => first_activation_new_leader(s,c,a,i),
+        Action::AckLd(_,_) => first_activation_ack_ld(s,c,a,i),
+        Action::UpToDate(_,_) => first_activation_up_to_date(s,c,a,i),
+        Action::Request(_) => first_activation_request(s,c,a,i),
+        Action::Proposal(_,_) => first_activation_proposal(s,c,a,i),
+        Action::Ack(_,_) => first_activation_ack(s,c,a,i),
+        Action::Commit(_,_) => first_activation_commit(s,c,a,i),
+        Action::Stutter => first_activation_stutter(s,c,a,i),
     }
+}
+#[verifier::spinoff_prover]
+proof fn first_activation_election(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Election
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_partition(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Partition
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_recover(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Recover
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_crash(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Crash
+    ensures node(apply(s,c,a),c,i)
+{
+    hide(floor_index);
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_start(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Start
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_connect(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Connect
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_follower_info(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is FollowerInfo
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_leader_info(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is LeaderInfo
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_ack_epoch(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is AckEpoch
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_sync(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Sync
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_sync_message(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is SyncMessage
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_proposal_sync(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is ProposalSync
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_commit_sync(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is CommitSync
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_new_leader(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is NewLeader
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+    match a { Action::NewLeader(_,y) => { channels::facts(s,c,x,y); head(s,c,y,x); ready::head(s,c,y,x); retained(s,c,a,y,x); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_ack_ld(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is AckLd
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_up_to_date(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is UpToDate
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+    match a { Action::UpToDate(_,y) => { channels::facts(s,c,x,y); head(s,c,y,x); ready::head(s,c,y,x); retained(s,c,a,y,x); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_request(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Request
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_proposal(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Proposal
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_ack(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Ack
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_commit(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Commit
+    ensures node(apply(s,c,a),c,i)
+{
+    hide(floor_index);
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
+}
+
+#[verifier::spinoff_prover]
+proof fn first_activation_stutter(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),
+        apply(s,c,a).election.nodes[i].role == Role::Following,apply(s,c,a).nodes[i].received_leader || apply(s,c,a).nodes[i].phase == Phase::Broadcast,
+        !(s.election.nodes[i].role == Role::Following && (s.nodes[i].received_leader || s.nodes[i].phase == Phase::Broadcast)),
+        a is Stutter
+    ensures node(apply(s,c,a),c,i)
+{
+    let x=receiver(a); reveal(enabled); reveal(apply); reveal(fle::apply); assert(node(s,c,i)); if a != Action::Stutter { channels::facts(s,c,i,x); assert(node(s,c,x)); }
 }
 pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i)
@@ -98,6 +354,8 @@ pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
         } else { first_activation(s,c,a,i); }
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_pair(s: LState,c: Constants,a: Action,i: int,j: int)
     requires channels::safe(s,c),channels::safe(apply(s,c,a),c),receipts::safe(s,c),ready::safe(s,c),ready::safe(apply(s,c,a),c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j)
     ensures pair(apply(s,c,a),i,j)
@@ -122,7 +380,7 @@ pub proof fn fresh_sync(s: LState,c: Constants,x: int,y: int,i: int,j: int,m: Me
     ensures packet(apply(s,c,Action::Sync(x,y)),i,j,m)
 {
     reveal(enabled); reveal(apply);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     let n=s.nodes[x]; let e=s.election.nodes[x]; let min=n.snapshot.index+1;
     let max=if n.phase == Phase::Broadcast { n.committed.index } else { e.history.len() as int };
     let lo=if min > max { e.processed.zxid } else { e.history[min-1].zxid };

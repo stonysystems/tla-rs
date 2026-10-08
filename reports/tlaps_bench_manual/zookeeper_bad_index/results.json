@@ -15,28 +15,22 @@
     "infinite_behavior": true,
     "stutter_after_index": 197,
     "no_cheating": true,
-    "full_harness_verified_functions": 2074,
+    "full_harness_verified_functions": 2137,
     "full_harness_errors": 0,
-    "verus": "Verus\n  Version: 0.2026.08.30.b432e82\n  Profile: release\n  Platform: linux_x86_64\n  Toolchain: 1.97.1-x86_64-unknown-linux-gnu",
+    "verus": "Verus\n  Version: 0.2026.08.02.b677dd5\n  Profile: release\n  Platform: linux_x86_64\n  Toolchain: 1.97.1-x86_64-unknown-linux-gnu",
     "command": [
       "verus",
       "--crate-type=lib",
       "--no-cheating",
-      "--triggers-mode",
-      "silent",
-      "--rlimit",
-      "30",
       "--num-threads",
-      "8",
-      "-V",
-      "spinoff-all",
+      "32",
       "src/protocol/tlaps_bench_harness.rs"
     ],
     "verification_log": "../verification.log",
-    "verification_log_sha256": "2cf49a6889257ea9c9a83efeb07a8d03ce5fbcd59b637d49f923acb3ef1aaa7e",
-    "proof_sha256": "279430ae9a353349cfecb7c639910680733cc1d16e66e12f7425a587ed0cc664",
+    "verification_log_sha256": "e9d3def0663a2315f80756460548256af0d598a3fd64ac4b3e2ddbb47dc354d5",
+    "proof_sha256": "84059d19bfd344822e22f3fd3d03b02f32ea965c7b232f1d8de7b52d1eb1b177",
     "identifier_proof_sha256": "9ff30d19badf8f18fd29c1305095be2e1f432e6479b0c7d6b19501a617a0557c",
-    "generator_sha256": "fec0472dd0224bd8b316ecd5c7d6bdccc49d9a193d5e4e93ed08d835255b580e"
+    "generator_sha256": "5e9fe1ab6d900eb048dc85aced868b70768da2d557aec299c52fdcfbdacc9a98"
   },
   "scope": "Verus certifies the reachable invalid committed range. The three original source goals fail to evaluate; their negations are not claimed as Verus theorems."
 }

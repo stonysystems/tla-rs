@@ -24,14 +24,14 @@ pub open spec fn valid_constants(c: Constants) -> bool {
 }
 pub open spec fn type_ok(s: LState, c: Constants) -> bool {
     s.procs.dom() == c.processors && s.plock.dom() == c.pmaps && s.pentry.dom() == c.pmaps
-    && (forall |p: int| c.processors.contains(p) ==> c.pmaps.contains(s.procs[p].userpmap)
+    && (forall |p: int| #![trigger s.procs[p]] c.processors.contains(p) ==> c.pmaps.contains(s.procs[p].userpmap)
         && c.pmaps.contains(s.procs[p].writepmap) && c.processors.contains(s.procs[p].currentcpu)
         && c.entries.contains(s.procs[p].tlb) && s.procs[p].todo.subset_of(c.processors))
-    && forall |m: int| c.pmaps.contains(m) ==> c.entries.contains(s.pentry[m])
+    && forall |m: int| #![trigger c.pmaps.contains(m)] c.pmaps.contains(m) ==> c.entries.contains(s.pentry[m])
 }
 pub open spec fn init(s: LState, c: Constants) -> bool {
     type_ok(s, c) && !s.error
-    && (forall |p: int| c.processors.contains(p) ==> s.procs[p].pc == Pc::Boot
+    && (forall |p: int| #![trigger c.processors.contains(p)] c.processors.contains(p) ==> s.procs[p].pc == Pc::Boot
         && !s.procs[p].actionlock && !s.procs[p].actionneeded && s.procs[p].active
         && !s.procs[p].interrupt && s.procs[p].todo.is_empty())
     && forall |m: int| c.pmaps.contains(m) ==> !s.plock[m]

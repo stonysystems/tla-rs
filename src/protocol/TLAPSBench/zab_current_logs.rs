@@ -74,7 +74,7 @@ pub proof fn preserve_node(b: Behavior<LState>,c: Constants,time: int,i: int)
                         assert(n.current == s.nodes[y].current && n.current > 0);
                         aligned(b,c,time,i,y);
                         assert(proposals::packet(s.nodes[y].history,s.nodes[y].current,s.msgs[(y,x)][0]));
-                        let p=choose |p: int| 0 <= p < s.nodes[y].history.len() && s.nodes[y].history[p].zxid == z && s.nodes[y].history[p].value == v;
+                        let p=choose |p: int| #![trigger s.nodes[y].history[p]] 0 <= p < s.nodes[y].history.len() && s.nodes[y].history[p].zxid == z && s.nodes[y].history[p].value == v;
                         let t=Txn { zxid: z,value: v,ack: Set::empty(),epoch: n.current };
                         leader::append_prefix(n.history,s.nodes[y].history,n.current,p,t);
                         assert(witness(b,c,time+1,n.history.push(t),n.current,(time,y)));

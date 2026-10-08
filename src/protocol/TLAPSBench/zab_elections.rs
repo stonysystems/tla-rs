@@ -19,7 +19,7 @@ pub proof fn ordered_sessions(b: Behavior<LState>,c: Constants,si: int,ti: int,i
     phases::at(b,c,tj); phases::facts(b[tj],c,j,j);
     let proposal=ce::proposal(b,c,sj,tj,j);
     let voter=collections::intersect_quorums(ae_ids(b[ti].nodes[i].ae),ce_ids(b[proposal].nodes[j].ce),c);
-    let r=choose |r: CE| b[proposal].nodes[j].ce.contains(r) && r.sid == voter;
+    let r=choose |r: CE| #![trigger b[proposal].nodes[j].ce.contains(r)] b[proposal].nodes[j].ce.contains(r) && r.sid == voter;
     assert(r.epoch < b[tj].nodes[j].accepted); assert(ce::payload(b[proposal].nodes[j].ce,voter,r.epoch));
     let read=ce::receipt_origin(b,c,sj,proposal,j,voter,r.epoch);
     let accepted=ae::accepted_witness(b,c,si,ti,i,voter);
@@ -49,7 +49,7 @@ pub proof fn leadership1_at(b: Behavior<LState>,c: Constants,time: int)
     requires connections::safety_spec(b,c),time >= 0
     ensures leadership1(b[time],c)
 {
-    assert forall |i: int,j: int| c.servers.contains(i) && c.servers.contains(j) && b[time].nodes[i].role == Role::Leading && b[time].nodes[j].role == Role::Leading
+    assert forall |i: int,j: int| #![trigger c.servers.contains(i), c.servers.contains(j)] c.servers.contains(i) && c.servers.contains(j) && b[time].nodes[i].role == Role::Leading && b[time].nodes[j].role == Role::Leading
         && (b[time].nodes[i].phase == Phase::Synchronization || b[time].nodes[i].phase == Phase::Broadcast)
         && (b[time].nodes[j].phase == Phase::Synchronization || b[time].nodes[j].phase == Phase::Broadcast)
         && b[time].nodes[i].current == b[time].nodes[j].current implies i == j by { unique(b,c,time,i,time,j); }

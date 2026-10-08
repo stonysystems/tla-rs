@@ -102,7 +102,7 @@ pub proof fn disconnect(b: Behavior<LState>,c: Constants,time: int,q: Set<AE>,i:
     requires ae_images(b,c,time,q)
     ensures ae_images(b,c,time,disconnect_ae(q,i))
 {
-    if ae_ids(q).contains(i) { let old=choose |r: AE| q.contains(r) && r.sid == i; assert(q.contains(old)); }
+    if ae_ids(q).contains(i) { let old=choose |r: AE| #![trigger q.contains(r)] q.contains(r) && r.sid == i; assert(q.contains(old)); }
     assert forall |r: AE| (#[trigger] disconnect_ae(q,i).contains(r)) implies images(b,c,time,r.history) by {}
 }
 pub proof fn update(b: Behavior<LState>,c: Constants,time: int,q: Set<AE>,i: int,e: int,h: Seq<Txn>)
@@ -116,10 +116,12 @@ pub proof fn initial_inductive(b: Behavior<LState>,c: Constants)
     assert forall |i: int| c.servers.contains(i) implies #[trigger] node(b,c,0,b[0].nodes[i]) by {}
     assert forall |i: int,j: int,k: int| c.servers.contains(i) && c.servers.contains(j) && 0 <= k < b[0].msgs[(i,j)].len() implies #[trigger] packet(b,c,0,b[0].msgs[(i,j)][k]) by { connections::channel_pair(c,i,j); }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_node(b: Behavior<LState>,c: Constants,time: int,i: int)
     requires connections::safety_spec(b,c),time >= 0,c.servers.contains(i),inductive(b,c,time)
     ensures node(b,c,time+1,b[time+1].nodes[i])
 {
+    hide(update_ack);
     let a=sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; proposals::at(b,c,time); logs::preserve(s,c,a);
     logs::facts(s,c,i,i); logs::facts(u,c,i,i); facts(b,c,time,i,i); advance_node(b,c,time,s.nodes[i]);
     reveal(enabled); reveal(apply);
@@ -151,7 +153,7 @@ pub proof fn preserve_node(b: Behavior<LState>,c: Constants,time: int,i: int)
                         assert(n.current == s.nodes[y].current && n.current > 0);
                         current::at(b,c,time,x); current::aligned(b,c,time,x,y);
                         assert(proposals::packet(s.nodes[y].history,s.nodes[y].current,s.msgs[(y,x)][0]));
-                        let p=choose |p: int| 0 <= p < s.nodes[y].history.len() && s.nodes[y].history[p].zxid == z && s.nodes[y].history[p].value == v;
+                        let p=choose |p: int| #![trigger s.nodes[y].history[p]] 0 <= p < s.nodes[y].history.len() && s.nodes[y].history[p].zxid == z && s.nodes[y].history[p].value == v;
                         let t=Txn { zxid: z,value: v,ack: Set::empty(),epoch: n.current };
                         leader::append_prefix(n.history,s.nodes[y].history,n.current,p,t);
                         assert(origin(b,c,time+1,n.history.push(t),n.history.len() as int,(time,y)));

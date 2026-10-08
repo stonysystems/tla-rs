@@ -41,7 +41,7 @@ pub proof fn owner_done(b: Behavior<LState>, c: Constants, p: int, start: int) -
 }
 pub proof fn pmap_released(b: Behavior<LState>, c: Constants, m: int, start: int)
     requires fair_spec(b, c), c.pmaps.contains(m), start >= 0
-    ensures exists |k: int| k >= start && !b[k].plock[m]
+    ensures exists |k: int| #![trigger b[k]] k >= start && !b[k].plock[m]
 {
     reveal(pmap_ownership);
     if b[start].plock[m] {
@@ -81,7 +81,7 @@ pub proof fn blocked_progress(b: Behavior<LState>, c: Constants, p: int, start: 
         assert forall |i: int| i >= 0 implies #[trigger] enabled_after(b, c, g, i) by {
             let tail = if i >= start { i } else { start };
             pmap_released(b, c, m, tail);
-            let free = choose |j: int| j >= tail && !b[j].plock[m];
+            let free = choose |j: int| #![trigger b[j]] j >= tail && !b[j].plock[m];
             quiet_interval(b, c, p, start, free);
             safety_at(b, c, free);
             blocked_enabled(b[free], c, p, m);

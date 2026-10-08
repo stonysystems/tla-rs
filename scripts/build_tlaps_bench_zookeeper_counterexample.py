@@ -222,7 +222,7 @@ pub proof fn domains()
 {
     ids::geometry();
     let q=set![(ids::a(),ids::a()),(ids::a(),ids::b()),(ids::a(),ids::c()),(ids::b(),ids::a()),(ids::b(),ids::b()),(ids::b(),ids::c()),(ids::c(),ids::a()),(ids::c(),ids::b()),(ids::c(),ids::c())];
-    assert(z::channels(constants()) =~= q) by { assert forall |p: (int,int)| z::channels(constants()).contains(p) <==> q.contains(p) by { super::zab_connections::channel_pair(constants(),p.0,p.1); } }
+    assert(z::channels(constants()) =~= q) by { assert forall |p: (int,int)| #![trigger q.contains(p)] z::channels(constants()).contains(p) <==> q.contains(p) by { super::zab_connections::channel_pair(constants(),p.0,p.1); } }
 }
 ''', *DEFS]
 parts += [f"#[verifier::opaque]\npub open spec fn state_{k}() -> LState {{ {s} }}\n" for k, s in enumerate(rendered)]
@@ -331,7 +331,7 @@ for k in range(len(actions)):
             assert len(choices) == 1
             r = choices[0]
             parts += [f"    assert(s.nodes[{sid(who)}].electing.contains({electing(r)}));\n"]
-            parts += [f"    assert forall |r: Electing| s.nodes[{sid(who)}].electing.contains(r) && r.sid == {sid(peer)} && r.zxid != unset() implies r == {electing(r)} by {{}}\n"]
+            parts += [f"    assert forall |r: Electing| #![trigger s.nodes[{sid(who)}].electing.contains(r)] s.nodes[{sid(who)}].electing.contains(r) && r.sid == {sid(peer)} && r.zxid != unset() implies r == {electing(r)} by {{}}\n"]
     if INDEX_FAILURE and k == 169:
         leader = states[k]["connectInfo"][who]["sid"]
         remaining = [i for i in states[k]["learners"][leader]["set"] if i != who]
@@ -342,11 +342,11 @@ for k in range(len(actions)):
             old = next(r for r in entries if r["sid"] == who)
             updated = [{**r, "connected": False} if r["sid"] == who else r for r in entries]
             parts += [f"    assert({q}.contains({al(old)})); {q}.lemma_map_contains(|r: AL| r.sid,{sid(who)});\n"]
-            parts += [f"    assert forall |r: AL| {q}.contains(r) && r.sid == {sid(who)} implies r == {al(old)} by {{}}\n"]
+            parts += [f"    assert forall |r: AL| #![trigger {q}.contains(r)] {q}.contains(r) && r.sid == {sid(who)} implies r == {al(old)} by {{}}\n"]
             parts += [f"    assert(z::disconnect_al({q},{sid(who)}) =~= {aset({'set':updated},al)});\n"]
         q = f"s.nodes[{sid(leader)}].electing"
         old = next(r for r in states[k]["electing"][leader]["set"] if r["sid"] == who)
-        parts += [f"    assert({q}.contains({electing(old)})); assert forall |r: Electing| {q}.contains(r) && r.sid == {sid(who)} implies r == {electing(old)} by {{}}\n"]
+        parts += [f"    assert({q}.contains({electing(old)})); assert forall |r: Electing| #![trigger {q}.contains(r)] {q}.contains(r) && r.sid == {sid(who)} implies r == {electing(old)} by {{}}\n"]
         parts += [f"    assert(disconnect_e({q},{sid(who)}) =~= {aset(states[k+1]['electing'][leader],electing)});\n"]
     common_end = len(parts)
     for src in IDS:
@@ -355,7 +355,7 @@ for k in range(len(actions)):
                 if m["mtype"] == "SNAP":
                     field = f"msgs[({sid(src)},{sid(dst)})][{pos}]"
                     parts += [f"    assert(u.{field} is Snap);\n"]
-                    parts += [f"    assert forall |p: int| 0 <= p < (v.{field}->Snap_1).len() implies (u.{field}->Snap_1)[p].ack =~= (v.{field}->Snap_1)[p].ack by {{}}\n"]
+                    parts += [f"    assert forall |p: int| #![trigger (u.{field}->Snap_1)[p]] #![trigger (v.{field}->Snap_1)[p]] 0 <= p < (v.{field}->Snap_1).len() implies (u.{field}->Snap_1)[p].ack =~= (v.{field}->Snap_1)[p].ack by {{}}\n"]
                     parts += [f"    assert((u.{field}->Snap_1) =~= (v.{field}->Snap_1)); assert(u.{field} == v.{field});\n"]
     if split_edge:
         for src in IDS:
@@ -371,7 +371,7 @@ for k in range(len(actions)):
         en = f"election.nodes[{sid(i)}]"
         nd = f"nodes[{sid(i)}]"
         for field in [f"{en}.history", f"{nd}.initial", f"{nd}.pending"]:
-            parts += [f"    assert forall |p: int| 0 <= p < v.{field}.len() implies u.{field}[p].ack =~= v.{field}[p].ack by {{}}\n"]
+            parts += [f"    assert forall |p: int| #![trigger u.{field}[p]] #![trigger v.{field}[p]] 0 <= p < v.{field}.len() implies u.{field}[p].ack =~= v.{field}[p].ack by {{}}\n"]
             parts += [f"    assert(u.{field} =~= v.{field});\n"]
         for field in [f"{en}.received", f"{en}.outside", f"{en}.queue", f"{en}.leading", *[f"{nd}.{f}" for f in ["learners", "connecting", "electing", "ackld", "forwarding", "commits"]]]:
             parts += [f"    assert(u.{field} =~~= v.{field});\n"]
@@ -419,7 +419,7 @@ for i in IDS:
     en = f"election.nodes[{sid(i)}]"
     nd = f"nodes[{sid(i)}]"
     for field in [f"{en}.history", f"{nd}.initial", f"{nd}.pending"]:
-        parts += [f"    assert forall |p: int| 0 <= p < v.{field}.len() implies u.{field}[p].ack =~= v.{field}[p].ack by {{}}\n"]
+        parts += [f"    assert forall |p: int| #![trigger u.{field}[p]] #![trigger v.{field}[p]] 0 <= p < v.{field}.len() implies u.{field}[p].ack =~= v.{field}[p].ack by {{}}\n"]
         parts += [f"    assert(u.{field} =~= v.{field});\n"]
     for field in [f"{en}.received", f"{en}.outside", f"{en}.queue", f"{en}.leading", *[f"{nd}.{f}" for f in ["learners", "connecting", "electing", "ackld", "forwarding", "commits"]]]:
         parts += [f"    assert(u.{field} =~~= v.{field});\n"]
@@ -505,7 +505,12 @@ pub proof fn counterexample() -> (b: Behavior<LState>)
     proof = proof.replace("pub proof fn request_", "#[verifier::rlimit(120)]\npub proof fn request_")
     proof = proof.replace("pub proof fn step_", "#[verifier::rlimit(120)]\npub proof fn step_")
 else:
-    proof = proof.replace("pub proof fn edge_161()", "#[verifier::rlimit(120)]\npub proof fn edge_161()")
+    # As in the index-failure certificate: every ground edge gets the same
+    # effort limit, which changes the effort, never the obligation.
+    proof = proof.replace("pub proof fn edge_", "#[verifier::rlimit(120)]\npub proof fn edge_")
+# Each edge checks one long ground transition; giving it its own solver
+# process keeps the other edges' facts out of its context.
+proof = proof.replace("pub proof fn edge_", "#[verifier::spinoff_prover]\npub proof fn edge_")
 (arguments.proof_output or ROOT / f"src/protocol/TLAPSBench/{CASE}.rs").write_text(proof)
 (REPORT / "actions.json").write_text(json.dumps({"source_trace_indices": trace_indices, "actions": actions}, indent=2) + "\n")
 source_names = {

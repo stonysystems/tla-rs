@@ -38,20 +38,25 @@ pub proof fn initial_inductive(b: Behavior<LState>,c: Constants)
     assert forall |i: int,j: int,p: int,r: int| c.servers.contains(i) && c.servers.contains(j) && 0 <= p < r < b[0].msgs[(i,j)].len()
         implies #[trigger] before(b[0].msgs[(i,j)][p],b[0].msgs[(i,j)][r]) by { connections::channel_pair(c,i,j); }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_order(b: Behavior<LState>,c: Constants,time: int,i: int,j: int,p: int,r: int)
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),c.servers.contains(j),0 <= p < r < b[time+1].msgs[(i,j)].len()
     ensures before(b[time+1].msgs[(i,j)][p],b[time+1].msgs[(i,j)][r])
 {
+    hide(update_ack);
     let a=sessions::step(b,c,time); proposals::at(b,c,time); let s=b[time]; let u=b[time+1];
     proposals::preserve(s,c,a); connections::channel_pair(c,i,j); logs::facts(s,c,i,j); reveal(enabled); reveal(apply);
     assert(proposals::packet(u.nodes[i].history,u.nodes[i].current,u.msgs[(i,j)][p]));
     if r < s.msgs[(i,j)].len() { assert(before(s.msgs[(i,j)][p],s.msgs[(i,j)][r])); }
     if r+1 < s.msgs[(i,j)].len() { assert(before(s.msgs[(i,j)][p+1],s.msgs[(i,j)][r+1])); }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_awaiting(b: Behavior<LState>,c: Constants,time: int,i: int,j: int,k: int)
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),c.servers.contains(j),0 <= k < b[time+1].msgs[(i,j)].len()
     ensures awaiting(b[time+1].nodes[j],b[time+1].msgs[(i,j)][k])
 {
+    hide(update_ack);
     let a=sessions::step(b,c,time); proposals::at(b,c,time); let s=b[time]; let u=b[time+1];
     proposals::preserve(s,c,a); connections::channel_pair(c,i,j); logs::facts(s,c,i,j); logs::facts(u,c,i,j); reveal(enabled); reveal(apply);
     if let Message::NewLeader(e,h)=u.msgs[(i,j)][k] {
@@ -80,7 +85,7 @@ pub proof fn preserve_awaiting(b: Behavior<LState>,c: Constants,time: int,i: int
                 if next_zxid(last(n.history),z) {
                     assert(!super::zab_sync::pending(s.msgs[(i,j)],s.nodes[i].current,0)); assert(n.current == s.nodes[i].current);
                     assert(logs::packet(s,i,s.msgs[(i,j)][k+1])); assert(super::zab_epochs::packet(s,c,i,j,s.msgs[(i,j)][k+1]));
-                    let p=choose |p: int| 0 <= p < h.len() && h[p].zxid == z && h[p].value == v;
+                    let p=choose |p: int| #![trigger h[p]] 0 <= p < h.len() && h[p].zxid == z && h[p].value == v;
                     leader::append_prefix(n.history,h,e,p,Txn { zxid: z,value: v,ack: Set::empty(),epoch: n.current });
                 }
             }

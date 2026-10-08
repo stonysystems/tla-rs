@@ -7,6 +7,8 @@ use super::zab_sync as sync;
 use super::zab_queue_math as queue;
 use super::zab_queue_prefix::future;
 verus! {
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve(s: LState,c: Constants,a: Action,i: int,j: int)
     requires logs::inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),i != j,
         s.nodes[i].role == Role::Leading,s.nodes[i].phase == Phase::Broadcast,ae_connected(s.nodes[i].ae).contains(j),
@@ -14,6 +16,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action,i: int,j: int)
         a != Action::Broadcast(i),a != Action::AckEpoch(i,j)
     ensures future(apply(s,c,a),i,j) == future(s,i,j)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); logs::facts(s,c,i,j); connections::channel_pair(c,i,j); logs::preserve(s,c,a);
     let u=apply(s,c,a); logs::facts(u,c,i,j); sync::connected_ae(s,c,i,j); sync::connected_ae(u,c,i,j);
     match a {

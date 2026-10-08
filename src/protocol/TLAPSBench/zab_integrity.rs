@@ -25,8 +25,8 @@ pub proof fn certificate_proposed(b: Behavior<LState>,c: Constants,time: int,e: 
     ensures proposed(b[time],h[x])
 {
     let i=choose |i: int| c.servers.contains(i) && exists |q: Set<int>| quorum(q,c)
-        && forall |j: int| q.contains(j) ==> acks::certificate(b,c,time,i,e,h,k,j);
-    let q=choose |q: Set<int>| quorum(q,c) && forall |j: int| q.contains(j) ==> acks::certificate(b,c,time,i,e,h,k,j);
+        && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,time,i,e,h,k,j);
+    let q=choose |q: Set<int>| quorum(q,c) && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,time,i,e,h,k,j);
     assert(!q.is_empty()); let first=choose |j: int| q.contains(j); assert(acks::certificate(b,c,time,i,e,h,k,first));
     let observed=choose |read: int| acks::witness(b,time,i,e,h,k,first,read); logs::at(b,c,observed); logs::facts(b[observed],c,i,i);
     assert(c.servers.len() > 1);

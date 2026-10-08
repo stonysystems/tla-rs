@@ -15,8 +15,8 @@ pub proof fn same_visibility(s: LState,c: Constants,p: int,pick: int,i: int)
 {
     reveal(apply);
     let u=apply(s,c,Action::Writer { p,pick });
-    assert forall |q: int| c.writers.contains(q) && shape::moving(u.threads[q].pc) implies shape::moving(s.threads[q].pc) && shape::hole(u.threads[q],c) == shape::hole(s.threads[q],c) by {}
-    assert forall |q: int| c.writers.contains(q) && shape::moving(s.threads[q].pc) implies shape::moving(u.threads[q].pc) && shape::hole(u.threads[q],c) == shape::hole(s.threads[q],c) by {}
+    assert forall |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && shape::moving(u.threads[q].pc) implies shape::moving(s.threads[q].pc) && shape::hole(u.threads[q],c) == shape::hole(s.threads[q],c) by {}
+    assert forall |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && shape::moving(s.threads[q].pc) implies shape::moving(u.threads[q].pc) && shape::hole(u.threads[q],c) == shape::hole(s.threads[q],c) by {}
 }
 pub proof fn occupancy(s: LState,c: Constants,p: int,pick: int,i: int)
     requires valid_constants(c),c.limit > 0,shape::inductive(s,c),enabled(s,c,Action::Writer { p,pick }),s.threads[p].pc != Pc::Cas,1 <= i <= c.k

@@ -120,7 +120,7 @@ pub proof fn domain(b: Behavior<LState>,c: Constants,time: int,i: int,k: int)
     ensures b[time].nodes[i].history[k].ack.subset_of(c.servers)
 {
     at(b,c,time);
-    assert forall |j: int| b[time].nodes[i].history[k].ack.contains(j) implies c.servers.contains(j) by {
+    assert forall |j: int| #![trigger c.servers.contains(j)] b[time].nodes[i].history[k].ack.contains(j) implies c.servers.contains(j) by {
         assert(certificate(b,c,time,i,b[time].nodes[i].current,b[time].nodes[i].history,k,j));
     }
 }

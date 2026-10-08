@@ -128,11 +128,11 @@ pub proof fn no_spurious(s: LState,c: Constants,f: int)
     requires valid_constants(c),inductive(s,c),c.fps.contains(f),contains(s,c,f)
     ensures s.history.contains(f)
 {
-    if exists |i: int| 0 <= i <= c.limit && matches(s.table[idx(c,f,i)],f) {
-        let i=choose |i: int| 0 <= i <= c.limit && matches(s.table[idx(c,f,i)],f);
+    if exists |i: int| #![trigger idx(c,f,i)] 0 <= i <= c.limit && matches(s.table[idx(c,f,i)],f) {
+        let i=choose |i: int| #![trigger idx(c,f,i)] 0 <= i <= c.limit && matches(s.table[idx(c,f,i)],f);
         idx_range(c,f,i); assert(known(s.table[idx(c,f,i)],s.history));
     } else if !s.external.contains(f) {
-        let p=choose |p: int| c.writers.contains(p) && s.threads[p].lo == Cell::Value(f);
+        let p=choose |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && s.threads[p].lo == Cell::Value(f);
         assert(writer_known(s.threads[p],s.history));
     }
 }

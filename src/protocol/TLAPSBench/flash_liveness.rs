@@ -48,7 +48,7 @@ pub open spec fn safety_spec(b: Behavior<LState>, c: Constants) -> bool {
 pub open spec fn fair_spec(b: Behavior<LState>, c: Constants) -> bool {
     safety_spec(b, c)
     && weak_fair(b, c, Group::Nakc) && weak_fair(b, c, Group::Wb) && weak_fair(b, c, Group::ShWb)
-    && forall |n: int| c.nodes.contains(n) ==> weak_fair(b, c, Group::Uni(n))
+    && forall |n: int| #![trigger c.nodes.contains(n)] c.nodes.contains(n) ==> weak_fair(b, c, Group::Uni(n))
         && weak_fair(b, c, Group::Inv(n)) && weak_fair(b, c, Group::Replace(n))
 }
 pub open spec fn pending(s: LState, g: Group) -> bool {
@@ -85,30 +85,30 @@ pub proof fn handler_clears(s: LState, u: LState, c: Constants, g: Group)
 pub proof fn progress_at(b: Behavior<LState>, c: Constants, g: Group, start: int)
     requires simple_group(g, c), weak_fair(b, c, g), start >= 0,
         forall |k: int| k >= 0 ==> b.dom().contains(k)
-    ensures exists |k: int| k >= start && !pending(b[k], g)
+    ensures exists |k: int| #![trigger b[k]] k >= start && !pending(b[k], g)
 {
-    if !(exists |k: int| k >= start && !pending(b[k], g)) {
+    if !(exists |k: int| #![trigger b[k]] k >= start && !pending(b[k], g)) {
         assert(fair_after(b, c, g, start));
         let k = choose |k: int| k >= start && #[trigger] fair_event(b, c, g, k);
         assert(k >= start);
         assert(pending(b[k], g));
         pending_enabled(b[k], c, g);
         handler_clears(b[k], b[k+1], c, g);
-        assert(exists |j: int| j >= start && !pending(b[j], g)) by { assert(!pending(b[k+1], g)); }
+        assert(exists |j: int| #![trigger b[j]] j >= start && !pending(b[j], g)) by { assert(!pending(b[k+1], g)); }
     }
 }
 pub open spec fn progress(b: Behavior<LState>, g: Group) -> bool {
     forall |start: int| start >= 0 && pending(b[start], g) ==> #[trigger] clear_after(b, g, start)
 }
 pub open spec fn clear_after(b: Behavior<LState>, g: Group, start: int) -> bool {
-    exists |k: int| k >= start && !pending(b[k], g)
+    exists |k: int| #![trigger b[k]] k >= start && !pending(b[k], g)
 }
 // FlashWithMutex_{Rp,Wb,ShWb,Nakc}ProgressCorrect. These are infinite-behavior
 // leads-to proofs under the source weak fairness, not bounded progress tests.
 pub proof fn benchmark_progress(b: Behavior<LState>, c: Constants)
     requires fair_spec(b, c)
     ensures progress(b, Group::Nakc), progress(b, Group::Wb), progress(b, Group::ShWb),
-        forall |n: int| c.nodes.contains(n) ==> progress(b, Group::Replace(n))
+        forall |n: int| #![trigger c.nodes.contains(n)] c.nodes.contains(n) ==> progress(b, Group::Replace(n))
 {
     assert forall |g: Group, start: int| simple_group(g, c) && start >= 0
         implies #[trigger] clear_after(b, g, start) by {

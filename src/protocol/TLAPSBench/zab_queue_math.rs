@@ -69,7 +69,7 @@ pub proof fn effect_prefix(h: Seq<Txn>,reference: Seq<Txn>,e: int,m: Message)
 {
     if let Message::Propose(z,v)=m {
         if next_zxid(last(h),z) {
-            let p=choose |p: int| 0 <= p < reference.len() && reference[p].zxid == z && reference[p].value == v;
+            let p=choose |p: int| #![trigger reference[p]] 0 <= p < reference.len() && reference[p].zxid == z && reference[p].value == v;
             let t=Txn { zxid: z,value: v,ack: Set::empty(),epoch: z.epoch };
             leader::append_prefix(h,reference,e,p,t); math::append(h,t);
         }

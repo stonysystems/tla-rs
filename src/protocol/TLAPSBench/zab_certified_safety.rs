@@ -27,11 +27,11 @@ pub proof fn quorum_safety(b: Behavior<LState>,c: Constants,ta: int,ea: int,a: S
     ensures agree(a,ka,d,kd)
 {
     let ia=choose |i: int| c.servers.contains(i) && exists |q: Set<int>| quorum(q,c)
-        && forall |j: int| q.contains(j) ==> acks::certificate(b,c,ta,i,ea,a,ka,j);
-    let qa=choose |q: Set<int>| quorum(q,c) && forall |j: int| q.contains(j) ==> acks::certificate(b,c,ta,ia,ea,a,ka,j);
+        && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,ta,i,ea,a,ka,j);
+    let qa=choose |q: Set<int>| quorum(q,c) && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,ta,ia,ea,a,ka,j);
     let id=choose |i: int| c.servers.contains(i) && exists |q: Set<int>| quorum(q,c)
-        && forall |j: int| q.contains(j) ==> acks::certificate(b,c,td,i,ed,d,kd,j);
-    let qd=choose |q: Set<int>| quorum(q,c) && forall |j: int| q.contains(j) ==> acks::certificate(b,c,td,id,ed,d,kd,j);
+        && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,td,i,ed,d,kd,j);
+    let qd=choose |q: Set<int>| quorum(q,c) && forall |j: int| #![trigger q.contains(j)] q.contains(j) ==> acks::certificate(b,c,td,id,ed,d,kd,j);
     let voter=collections::intersect_quorums(qa,qd,c);
     assert(acks::certificate(b,c,ta,ia,ea,a,ka,voter)); assert(acks::certificate(b,c,td,id,ed,d,kd,voter));
     let sa=choose |read: int| acks::witness(b,ta,ia,ea,a,ka,voter,read);

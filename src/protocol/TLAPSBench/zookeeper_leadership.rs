@@ -59,7 +59,7 @@ pub proof fn leadership1_at(b: Behavior<LState>,c: Constants,time: int)
     ensures leadership1(b[time],c)
 {
     super::zookeeper_completion::at(b,c,time); support::at(b,c,time); let s=b[time];
-    assert forall |i: int,j: int| c.servers.contains(i) && c.servers.contains(j) && s.election.nodes[i].role == Role::Leading && s.election.nodes[j].role == Role::Leading
+    assert forall |i: int,j: int| #![trigger c.servers.contains(i), c.servers.contains(j)] c.servers.contains(i) && c.servers.contains(j) && s.election.nodes[i].role == Role::Leading && s.election.nodes[j].role == Role::Leading
         && (s.nodes[i].phase == Phase::Synchronization || s.nodes[i].phase == Phase::Broadcast) && (s.nodes[j].phase == Phase::Synchronization || s.nodes[j].phase == Phase::Broadcast)
         && s.nodes[i].accepted == s.nodes[j].accepted implies i == j by {
         assert(super::zookeeper_completion::node(s,c,i)); assert(super::zookeeper_completion::node(s,c,j)); completed_unique(b,c,time,time,i,j);

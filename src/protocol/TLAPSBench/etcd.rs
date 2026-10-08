@@ -216,7 +216,7 @@ pub open spec fn log_inv(s: LState, c: Constants) -> bool {
     forall |i: int, j: int| c.servers.contains(i) && c.servers.contains(j) ==> prefix(committed(s.nodes[i]), committed(s.nodes[j])) || prefix(committed(s.nodes[j]), committed(s.nodes[i]))
 }
 pub open spec fn more_than_one_leader(s: LState, c: Constants) -> bool {
-    forall |i: int, j: int| c.servers.contains(i) && c.servers.contains(j) && s.nodes[i].role == Role::Leader && s.nodes[j].role == Role::Leader && s.nodes[i].term == s.nodes[j].term ==> i == j
+    forall |i: int, j: int| #![trigger c.servers.contains(i), c.servers.contains(j)] c.servers.contains(i) && c.servers.contains(j) && s.nodes[i].role == Role::Leader && s.nodes[j].role == Role::Leader && s.nodes[i].term == s.nodes[j].term ==> i == j
 }
 pub open spec fn term_positions(n: LServer, term: nat) -> Set<int> {
     Set::<int>::range(1, n.log.len() as int + 1).filter(|k: int| n.log[k-1] == term)
@@ -229,20 +229,20 @@ pub open spec fn election_safety(s: LState, c: Constants) -> bool {
     forall |i: int, j: int| c.servers.contains(i) && c.servers.contains(j) && s.nodes[i].role == Role::Leader ==> max_term_index(s.nodes[i], s.nodes[i].term) >= max_term_index(s.nodes[j], s.nodes[i].term)
 }
 pub open spec fn log_matching(s: LState, c: Constants) -> bool {
-    forall |i: int, j: int, k: int| c.servers.contains(i) && c.servers.contains(j) && 1 <= k <= s.nodes[i].log.len() && k <= s.nodes[j].log.len()
+    forall |i: int, j: int, k: int| #![trigger c.servers.contains(i), sub(s.nodes[j].log, 1, k)] #![trigger c.servers.contains(j), sub(s.nodes[i].log, 1, k)] c.servers.contains(i) && c.servers.contains(j) && 1 <= k <= s.nodes[i].log.len() && k <= s.nodes[j].log.len()
         && s.nodes[i].log[k-1] == s.nodes[j].log[k-1] ==> sub(s.nodes[i].log, 1, k) == sub(s.nodes[j].log, 1, k)
 }
 pub open spec fn quorum_log(s: LState, c: Constants) -> bool {
-    forall |i: int, q: Set<int>| c.servers.contains(i) && quorum(q, c) ==> exists |j: int| q.contains(j) && prefix(committed(s.nodes[i]), s.nodes[j].log)
+    forall |i: int, q: Set<int>| c.servers.contains(i) && quorum(q, c) ==> exists |j: int| #![trigger q.contains(j)] q.contains(j) && prefix(committed(s.nodes[i]), s.nodes[j].log)
 }
 pub open spec fn more_up_to_date(s: LState, c: Constants) -> bool {
-    forall |i: int, j: int| c.servers.contains(i) && c.servers.contains(j) && up_to_date(s.nodes[j], last_term(s.nodes[i].log), s.nodes[i].log.len()) ==> prefix(committed(s.nodes[j]), s.nodes[i].log)
+    forall |i: int, j: int| #![trigger prefix(committed(s.nodes[j]), s.nodes[i].log)] c.servers.contains(i) && c.servers.contains(j) && up_to_date(s.nodes[j], last_term(s.nodes[i].log), s.nodes[i].log.len()) ==> prefix(committed(s.nodes[j]), s.nodes[i].log)
 }
 pub open spec fn leader_completeness(s: LState, c: Constants) -> bool {
     forall |i: int, l: int, k: int| c.servers.contains(i) && c.servers.contains(l) && 0 <= k < s.nodes[i].commit
         && s.nodes[l].role == Role::Leader && s.nodes[l].term > (#[trigger] s.nodes[i].log[k]) ==> (#[trigger] s.nodes[l].log[k]) == s.nodes[i].log[k]
 }
 pub open spec fn committed_is_durable(s: LState, c: Constants) -> bool {
-    forall |i: int| c.servers.contains(i) && s.nodes[i].role == Role::Leader ==> s.nodes[i].commit <= s.nodes[i].disk.log.len()
+    forall |i: int| #![trigger c.servers.contains(i)] c.servers.contains(i) && s.nodes[i].role == Role::Leader ==> s.nodes[i].commit <= s.nodes[i].disk.log.len()
 }
 } // verus!

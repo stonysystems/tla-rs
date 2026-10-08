@@ -97,6 +97,7 @@ pub proof fn preserve_ownership(s: LState,c: Constants,a: Action,o: Owner,p: Own
         Action::Stutter => { assert(owns(u,c,o) ==> u.dir.dirty); assert(owns(u,c,o) && owns(u,c,p) ==> o == p); },
     }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_owner_data(s: LState,c: Constants,a: Action,o: Owner)
     requires inductive(s,c),enabled(s,c,a)
     ensures owns(apply(s,c,a),c,o) ==> owner_data(apply(s,c,a),o) == apply(s,c,a).current
@@ -166,14 +167,14 @@ pub proof fn exclusion_from_inductive(s: LState,c: Constants)
     requires inductive(s,c)
     ensures lemma_1(s,c)
 {
-    assert forall |p: int| c.nodes.contains(p) && s.procs[p].cache == Cache::E implies
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) && s.procs[p].cache == Cache::E implies
         s.dir.dirty && !s.wb.pending && s.shwb.cmd != Shared::ShWb && s.uni[s.home].cmd != Uni::Put
-        && (forall |q: int| c.nodes.contains(q) ==> (q != p ==> s.procs[q].cache != Cache::E) && s.uni[q].cmd != Uni::PutX) by {
+        && (forall |q: int| #![trigger c.nodes.contains(q)] c.nodes.contains(q) ==> (q != p ==> s.procs[q].cache != Cache::E) && s.uni[q].cmd != Uni::PutX) by {
         assert(owns(s,c,Owner::Cache(p)));
         assert(owns(s,c,Owner::Writeback) ==> Owner::Cache(p) == Owner::Writeback);
         assert(owns(s,c,Owner::SharedWriteback) ==> Owner::Cache(p) == Owner::SharedWriteback);
         assert(owns(s,c,Owner::HomePut) ==> Owner::Cache(p) == Owner::HomePut);
-        assert forall |q: int| c.nodes.contains(q) implies (q != p ==> s.procs[q].cache != Cache::E) && s.uni[q].cmd != Uni::PutX by {
+        assert forall |q: int| #![trigger c.nodes.contains(q)] c.nodes.contains(q) implies (q != p ==> s.procs[q].cache != Cache::E) && s.uni[q].cmd != Uni::PutX by {
             assert(owns(s,c,Owner::Cache(q)) ==> Owner::Cache(p) == Owner::Cache(q));
             assert(owns(s,c,Owner::Grant(q)) ==> Owner::Cache(p) == Owner::Grant(q));
         }

@@ -28,7 +28,7 @@ pub proof fn read_safe(s: LState,c: Constants,t: int,k: int)
         implies !(#[trigger] u.txns[r].incoming && u.txns[r].outgoing) by {
         assert(support::node(s,c,r));
         if newer_versions(s,t,k).contains(r) && s.txns[r].outgoing {
-            assert(exists |w: int| newer_versions(s,t,k).contains(w) && committed(s.history).contains(w) && s.txns[w].outgoing);
+            assert(exists |w: int| #![trigger committed(s.history).contains(w)] newer_versions(s,t,k).contains(w) && committed(s.history).contains(w) && s.txns[w].outgoing);
         }
     }
 }
@@ -42,7 +42,7 @@ pub proof fn acquire_safe(s: LState,c: Constants,t: int,k: int)
     assert forall |r: int| c.txns.contains(r) && committed(u.history).contains(r)
         implies !(#[trigger] u.txns[r].incoming && u.txns[r].outgoing) by {
         if concurrent_readers(s,c,t,k).contains(r) {
-            assert(exists |r: int| concurrent_readers(s,c,t,k).contains(r) && (committed(s.history).contains(r) || s.txns[r].incoming));
+            assert(exists |r: int| #![trigger committed(s.history).contains(r)] concurrent_readers(s,c,t,k).contains(r) && (committed(s.history).contains(r) || s.txns[r].incoming));
         }
     }
 }

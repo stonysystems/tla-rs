@@ -221,25 +221,25 @@ pub proof fn goals_from_inductive(s: LState,c: Constants)
     requires inductive(s,c)
     ensures lemma_2_3(s,c,false),lemma_2_3(s,c,true),lemma_4(s,c)
 {
-    assert forall |src: int,dst: int| c.nodes.contains(src) && c.nodes.contains(dst) && src != dst && dst != s.home
+    assert forall |src: int,dst: int| #![trigger c.nodes.contains(src), c.nodes.contains(dst)] c.nodes.contains(src) && c.nodes.contains(dst) && src != dst && dst != s.home
         && s.uni[src].cmd == Uni::Get && s.uni[src].node == dst implies
         s.dir.pending && !s.dir.local && s.pending_src == src && s.forward_cmd == Uni::Get by {
         expose_node(s,c,src); assert(work(s,c,Work::Forward(src)));
     }
-    assert forall |src: int,dst: int| c.nodes.contains(src) && c.nodes.contains(dst) && src != dst && dst != s.home
+    assert forall |src: int,dst: int| #![trigger c.nodes.contains(src), c.nodes.contains(dst)] c.nodes.contains(src) && c.nodes.contains(dst) && src != dst && dst != s.home
         && s.uni[src].cmd == Uni::GetX && s.uni[src].node == dst implies
         s.dir.pending && !s.dir.local && s.pending_src == src && s.forward_cmd == Uni::GetX by {
         expose_node(s,c,src); assert(work(s,c,Work::Forward(src)));
     }
     expose_work(s,c,Work::Invalidating); expose_work(s,c,Work::Nak); expose_work(s,c,Work::Shared);
-    assert forall |p: int| c.nodes.contains(p) && p != s.home && s.inv[p] == Inv::Ack implies
+    assert forall |p: int| #![trigger s.inv[p]] c.nodes.contains(p) && p != s.home && s.inv[p] == Inv::Ack implies
         s.dir.pending && s.collecting && !s.nakc && s.shwb.cmd == Shared::None
-        && (forall |q: int| c.nodes.contains(q) ==>
+        && (forall |q: int| #![trigger c.nodes.contains(q)] c.nodes.contains(q) ==>
             ((s.uni[q].cmd == Uni::Get || s.uni[q].cmd == Uni::GetX) ==> s.uni[q].node == s.home)
             && (s.uni[q].cmd == Uni::PutX ==> s.uni[q].node == s.home && s.pending_src == q)) by {
         expose_node(s,c,p);
         assert(work(s,c,Work::Invalidating));
-        assert forall |q: int| c.nodes.contains(q) implies
+        assert forall |q: int| #![trigger c.nodes.contains(q)] c.nodes.contains(q) implies
             ((s.uni[q].cmd == Uni::Get || s.uni[q].cmd == Uni::GetX) ==> s.uni[q].node == s.home)
             && (s.uni[q].cmd == Uni::PutX ==> s.uni[q].node == s.home && s.pending_src == q) by {
             expose_node(s,c,q);

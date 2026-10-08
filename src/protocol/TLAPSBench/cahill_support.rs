@@ -26,7 +26,7 @@ pub proof fn finite_losers(s: LState,c: Constants,t: int)
         losers(s,c,t).to_iset() =~= loser_set(s,c,t),losers(s,c,t).subset_of(active(s.history)),public(s,t) ==> !losers(s,c,t).contains(t)
 {
     let a=active(s.history).to_iset();
-    assert(waiting_set(s,c).subset_of(a)) by { assert forall |r: int| waiting_set(s,c).contains(r) implies a.contains(r) by { assert(node(s,c,r)); } }
+    assert(waiting_set(s,c).subset_of(a)) by { assert forall |r: int| #![trigger a.contains(r)] waiting_set(s,c).contains(r) implies a.contains(r) by { assert(node(s,c,r)); } }
     vstd::iset_lib::lemma_iset_subset_finite(a,waiting_set(s,c));
     assert(loser_set(s,c,t).subset_of(waiting_set(s,c))); vstd::iset_lib::lemma_iset_subset_finite(waiting_set(s,c),loser_set(s,c,t));
 }

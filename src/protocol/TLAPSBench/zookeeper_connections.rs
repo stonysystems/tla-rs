@@ -71,6 +71,7 @@ pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
         _ => { preserve_node_protocol(s,c,a,i); },
     }
 }
+#[verifier::spinoff_prover]
 pub proof fn preserve_link(s: LState,c: Constants,a: Action,i: int,j: int)
     requires safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j)
     ensures link(apply(s,c,a),c,i,j)

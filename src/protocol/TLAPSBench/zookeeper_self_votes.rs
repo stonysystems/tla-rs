@@ -58,6 +58,7 @@ pub proof fn leader_info_quorum(s: LState,c: Constants,x: int,y: int,i: int)
     reveal(enabled); reveal(apply); channels::facts(s,c,i,x); channels::facts(s,c,i,y); channels::facts(s,c,x,y);
     assert(receipts::node(s,c,y)); sets::al_disconnect(s.nodes[y].connecting,c,x);
 }
+#[verifier::spinoff_prover]
 pub proof fn other_quorum(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),receipts::safe(s,c),epochs::safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),!(a is FollowerInfo),
         apply(s,c,a).election.nodes[i].role == Role::Leading

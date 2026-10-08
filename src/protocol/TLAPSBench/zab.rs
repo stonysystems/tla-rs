@@ -70,27 +70,27 @@ pub open spec fn ce_connected(q: Set<CE>) -> Set<int> { ce_ids(q.filter(|x: CE| 
 pub open spec fn ae_connected(q: Set<AE>) -> Set<int> { ae_ids(q.filter(|x: AE| x.connected)) }
 pub open spec fn al_connected(q: Set<AL>) -> Set<int> { al_ids(q.filter(|x: AL| x.connected)) }
 pub open spec fn update_ce(q: Set<CE>,i: int,e: int) -> Set<CE> {
-    let old=choose |r: CE| q.contains(r) && r.sid == i;
+    let old=choose |r: CE| #![trigger q.contains(r)] q.contains(r) && r.sid == i;
     (if ce_ids(q).contains(i) { q.remove(old) } else { q }).insert(CE { sid: i,connected: true,epoch: e })
 }
 pub open spec fn update_ae(q: Set<AE>,i: int,e: int,h: Seq<Txn>) -> Set<AE> {
-    let old=choose |r: AE| q.contains(r) && r.sid == i;
+    let old=choose |r: AE| #![trigger q.contains(r)] q.contains(r) && r.sid == i;
     (if ae_ids(q).contains(i) { q.remove(old) } else { q }).insert(AE { sid: i,connected: true,epoch: e,history: h })
 }
 pub open spec fn update_al(q: Set<AL>,i: int) -> Set<AL> {
-    let old=choose |r: AL| q.contains(r) && r.sid == i;
+    let old=choose |r: AL| #![trigger q.contains(r)] q.contains(r) && r.sid == i;
     (if al_ids(q).contains(i) { q.remove(old) } else { q }).insert(AL { sid: i,connected: true })
 }
 pub open spec fn disconnect_ce(q: Set<CE>,i: int) -> Set<CE> {
-    let old=choose |r: CE| q.contains(r) && r.sid == i;
+    let old=choose |r: CE| #![trigger q.contains(r)] q.contains(r) && r.sid == i;
     if ce_ids(q).contains(i) { q.remove(old).insert(CE { connected: false,..old }) } else { q }
 }
 pub open spec fn disconnect_ae(q: Set<AE>,i: int) -> Set<AE> {
-    let old=choose |r: AE| q.contains(r) && r.sid == i;
+    let old=choose |r: AE| #![trigger q.contains(r)] q.contains(r) && r.sid == i;
     if ae_ids(q).contains(i) { q.remove(old).insert(AE { connected: false,..old }) } else { q }
 }
 pub open spec fn disconnect_al(q: Set<AL>,i: int) -> Set<AL> {
-    let old=choose |r: AL| q.contains(r) && r.sid == i;
+    let old=choose |r: AL| #![trigger q.contains(r)] q.contains(r) && r.sid == i;
     if al_ids(q).contains(i) { q.remove(old).insert(AL { connected: false,..old }) } else { q }
 }
 pub open spec fn remove_learner(s: LState,i: int,j: int) -> LState {
@@ -117,13 +117,13 @@ pub open spec fn records(i: int,e: int,h: Seq<Txn>) -> Set<Proposal> {
 pub struct Summary { pub sid: int, pub epoch: int, pub zxid: Zxid }
 pub open spec fn select_history(q: Set<AE>) -> Seq<Txn> {
     let summaries=q.map(|a: AE| Summary { sid: a.sid,epoch: a.epoch,zxid: last(a.history) });
-    let selected=choose |a: Summary| summaries.contains(a) && forall |b: Summary| summaries.contains(b) && b != a ==> a.epoch > b.epoch || a.epoch == b.epoch && !newer(b.zxid,a.zxid);
-    let info=choose |a: AE| q.contains(a) && a.sid == selected.sid;
+    let selected=choose |a: Summary| summaries.contains(a) && forall |b: Summary| #![trigger summaries.contains(b)] summaries.contains(b) && b != a ==> a.epoch > b.epoch || a.epoch == b.epoch && !newer(b.zxid,a.zxid);
+    let info=choose |a: AE| #![trigger q.contains(a)] q.contains(a) && a.sid == selected.sid;
     info.history
 }
 pub open spec fn init_ack(h: Seq<Txn>,i: int) -> Seq<Txn> { Seq::new(h.len(),|k: int| Txn { ack: set![i],..h[k] }) }
 pub open spec fn update_ack(h: Seq<Txn>,i: int,z: Zxid) -> Seq<Txn> {
-    let b=choose |b: int| 0 <= b <= h.len() && (forall |k: int| 0 <= k < b ==> !newer(h[k].zxid,z)) && (b < h.len() ==> newer(h[b].zxid,z));
+    let b=choose |b: int| #![trigger h[b]] 0 <= b <= h.len() && (forall |k: int| #![trigger h[k]] 0 <= k < b ==> !newer(h[k].zxid,z)) && (b < h.len() ==> newer(h[b].zxid,z));
     Seq::new(h.len(),|k: int| if k < b { Txn { ack: h[k].ack.insert(i),..h[k] } } else { h[k] })
 }
 pub open spec fn index(h: Seq<Txn>,z: Zxid) -> int {
@@ -262,13 +262,13 @@ pub open spec fn apply(s: LState,c: Constants,a: Action) -> LState {
 #[verifier::opaque]
 pub open spec fn next(s: LState,t: LState,c: Constants) -> bool { exists |a: Action| #[trigger] enabled(s,c,a) && t == apply(s,c,a) }
 pub open spec fn leadership1(s: LState,c: Constants) -> bool {
-    forall |i: int,j: int| c.servers.contains(i) && c.servers.contains(j) && s.nodes[i].role == Role::Leading && s.nodes[j].role == Role::Leading
+    forall |i: int,j: int| #![trigger c.servers.contains(i), c.servers.contains(j)] c.servers.contains(i) && c.servers.contains(j) && s.nodes[i].role == Role::Leading && s.nodes[j].role == Role::Leading
     && (s.nodes[i].phase == Phase::Synchronization || s.nodes[i].phase == Phase::Broadcast) && (s.nodes[j].phase == Phase::Synchronization || s.nodes[j].phase == Phase::Broadcast)
     && s.nodes[i].current == s.nodes[j].current ==> i == j
 }
 pub open spec fn leadership2(s: LState,c: Constants) -> bool { forall |e: int| 1 <= e <= c.max_epoch ==> #[trigger] s.epoch_leader[e].len() <= 1 }
 pub open spec fn prefix_consistency(s: LState,c: Constants) -> bool {
-    (forall |i: int| c.servers.contains(i) ==> s.nodes[i].committed.index >= 0)
+    (forall |i: int| #![trigger c.servers.contains(i)] c.servers.contains(i) ==> s.nodes[i].committed.index >= 0)
     && forall |i: int,j: int,k: int| c.servers.contains(i) && c.servers.contains(j) && 1 <= k <= s.nodes[i].committed.index && k <= s.nodes[j].committed.index ==> #[trigger] equal(s.nodes[i].history[k-1],s.nodes[j].history[k-1])
 }
 pub open spec fn proposed(s: LState,t: Txn) -> bool { exists |p: Proposal| #[trigger] s.proposals.contains(p) && p.zxid == t.zxid && p.value == t.value }
@@ -287,7 +287,7 @@ pub open spec fn total_order(s: LState,c: Constants) -> bool {
         #[trigger] before(s.nodes[j],s.nodes[i].history[x-1],s.nodes[i].history[y-1])
 }
 pub open spec fn local_at(s: LState,i: int,e: int,j: int) -> bool {
-    forall |p: Proposal,q: Proposal| s.proposals.contains(p) && s.proposals.contains(q) && p.source == i && q.source == i && p.epoch == e && q.epoch == e && (p.zxid != q.zxid || p.value != q.value) ==>
+    forall |p: Proposal,q: Proposal| #![trigger s.proposals.contains(p), s.proposals.contains(q)] s.proposals.contains(p) && s.proposals.contains(q) && p.source == i && q.source == i && p.epoch == e && q.epoch == e && (p.zxid != q.zxid || p.value != q.value) ==>
     {
         let a=if newer(p.zxid,q.zxid) { q } else { p }; let b=if newer(p.zxid,q.zxid) { p } else { q };
         let ta=Txn { zxid: a.zxid,value: a.value,ack: Set::empty(),epoch: 0 }; let tb=Txn { zxid: b.zxid,value: b.value,ack: Set::empty(),epoch: 0 };

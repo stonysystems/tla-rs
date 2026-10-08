@@ -104,7 +104,7 @@ pub proof fn owner_step(s: LState, c: Constants, a: Action, p: int, q: int)
 pub proof fn owner_until(b: Behavior<LState>, c: Constants, p: int, q: int, start: int, end: int)
     requires fair_spec(b, c), c.processors.contains(p), c.processors.contains(q), 0 <= start <= end,
         safety::owns_action(b[start].procs[p], p, q),
-        forall |k: int| start <= k <= end ==> b[k].procs[q].actionlock
+        forall |k: int| #![trigger b[k]] start <= k <= end ==> b[k].procs[q].actionlock
     ensures safety::owns_action(b[end].procs[p], p, q), owner_rank(b[end].procs[p]) <= owner_rank(b[start].procs[p])
     decreases end-start
 {
@@ -119,7 +119,7 @@ pub proof fn owner_until(b: Behavior<LState>, c: Constants, p: int, q: int, star
 pub proof fn cannot_hold_action_forever(b: Behavior<LState>, c: Constants, p: int, q: int, start: int)
     requires fair_spec(b, c), c.processors.contains(p), c.processors.contains(q), start >= 0,
         safety::owns_action(b[start].procs[p], p, q),
-        forall |k: int| k >= start ==> b[k].procs[q].actionlock
+        forall |k: int| #![trigger b[k]] k >= start ==> b[k].procs[q].actionlock
     ensures false
     decreases owner_rank(b[start].procs[p])
 {
@@ -135,12 +135,12 @@ pub proof fn cannot_hold_action_forever(b: Behavior<LState>, c: Constants, p: in
 }
 pub proof fn action_released(b: Behavior<LState>, c: Constants, q: int, start: int)
     requires fair_spec(b, c), c.processors.contains(q), start >= 0
-    ensures exists |k: int| k >= start && !b[k].procs[q].actionlock
+    ensures exists |k: int| #![trigger b[k]] k >= start && !b[k].procs[q].actionlock
 {
     reveal(safety::action_ownership);
-    if !(exists |k: int| k >= start && !b[k].procs[q].actionlock) {
+    if !(exists |k: int| #![trigger b[k]] k >= start && !b[k].procs[q].actionlock) {
         safety_at(b, c, start);
-        let p = choose |p: int| c.processors.contains(p) && safety::owns_action(b[start].procs[p], p, q);
+        let p = choose |p: int| #![trigger c.processors.contains(p)] c.processors.contains(p) && safety::owns_action(b[start].procs[p], p, q);
         cannot_hold_action_forever(b, c, p, q, start);
     }
 }
@@ -165,7 +165,7 @@ pub proof fn waiting_lock_free_step(s: LState, c: Constants, a: Action, p: int)
 pub proof fn waiting_lock_free_until(b: Behavior<LState>, c: Constants, p: int, start: int, end: int)
     requires fair_spec(b, c), c.processors.contains(p), 0 <= start <= end,
         !b[start].procs[b[start].procs[p].currentcpu].actionlock,
-        forall |k: int| start <= k <= end ==> b[k].procs[p].pc == Pc::InitiatorLockAction
+        forall |k: int| #![trigger b[k]] start <= k <= end ==> b[k].procs[p].pc == Pc::InitiatorLockAction
     ensures !b[end].procs[b[end].procs[p].currentcpu].actionlock
     decreases end-start
 {
@@ -184,13 +184,13 @@ pub proof fn waiting_lock_progress(b: Behavior<LState>, c: Constants, p: int, st
         group_taken(b[k], b[k+1], c, Group::Processor(p))
 {
     if !taken_after(b, c, Group::Processor(p), start) {
-        assert forall |i: int| i >= start implies b[i].procs[p].pc == Pc::InitiatorLockAction by {
+        assert forall |i: int| #![trigger b[i]] i >= start implies b[i].procs[p].pc == Pc::InitiatorLockAction by {
             quiet_interval(b, c, p, start, i);
         }
         safety_at(b, c, start);
         let q = b[start].procs[p].currentcpu;
         action_released(b, c, q, start);
-        let free = choose |i: int| i >= start && !b[i].procs[q].actionlock;
+        let free = choose |i: int| #![trigger b[i]] i >= start && !b[i].procs[q].actionlock;
         quiet_interval(b, c, p, start, free);
         weak_fairness(b, c, p);
         assert(fair_after(b, c, Group::Processor(p), free));

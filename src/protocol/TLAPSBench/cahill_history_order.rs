@@ -38,7 +38,7 @@ pub proof fn commit_member(h: Seq<Event>,t: int)
     ensures committed(h).contains(t) <==> h.contains(Event { txn: t,op: Op::Commit })
 {
     if committed(h).contains(t) {
-        let e=choose |e: Event| h.to_set().contains(e) && e.op == Op::Commit && e.txn == t;
+        let e=choose |e: Event| #![trigger h.to_set().contains(e)] h.to_set().contains(e) && e.op == Op::Commit && e.txn == t;
         assert(e == (Event { txn: t,op: Op::Commit }));
     } else if h.contains(Event { txn: t,op: Op::Commit }) {
         assert(h.to_set().filter(|e: Event| e.op == Op::Commit).contains(Event { txn: t,op: Op::Commit }));
@@ -51,7 +51,7 @@ pub proof fn disjoint(h: Seq<Event>)
     assert forall |t: int| committed(h).contains(t) implies !aborted(h).contains(t) by {
         if aborted(h).contains(t) {
             commit_member(h,t); let e=Event { txn: t,op: Op::Commit };
-            let d=choose |d: Event| h.to_set().contains(d) && d.op is Abort && d.txn == t;
+            let d=choose |d: Event| #![trigger h.to_set().contains(d)] h.to_set().contains(d) && d.op is Abort && d.txn == t;
             let i=choose |i: int| 0 <= i < h.len() && h[i] == e;
             let j=choose |j: int| 0 <= j < h.len() && h[j] == d;
             if i < j { ordered(h,i,j); } else if j < i { ordered(h,j,i); }

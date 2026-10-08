@@ -42,6 +42,8 @@ pub open spec fn covered(b: Behavior<LState>,c: Constants,time: int,i: int,at: i
     0 <= at < time && decision(b,c,at,j) && c.servers.contains(j) && b[at].nodes[j].term <= b[time].nodes[i].term
     && prefix(sub(b[time].nodes[i].log,1,b[time].nodes[i].commit as int),decided(b,at,j))
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(60)]
 pub proof fn coverage_at(b: Behavior<LState>,c: Constants,horizon: int,bound: nat,time: int,i: int) -> (origin: (int,int))
     requires configs::safety_spec(b,c),prefixes::unique_below(b,c,horizon,bound),complete_below(b,c,horizon,bound),
         0 <= time <= horizon,c.servers.contains(i),b[time].nodes[i].term < bound

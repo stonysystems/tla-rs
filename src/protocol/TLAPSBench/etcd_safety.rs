@@ -70,7 +70,7 @@ pub proof fn safety_at(b: Behavior<LState>,c: Constants,time: int)
         let h=committed(s.nodes[i]); let v=committed(s.nodes[j]); covered_compatible(b,c,time,h,v,s.nodes[i].term,s.nodes[j].term);
         if logs::prefix_of(h,v) { prefix_definition(h,v); } else { prefix_definition(v,h); }
     }
-    assert forall |i: int,q: Set<int>| c.servers.contains(i) && quorum(q,c) implies exists |j: int| q.contains(j) && prefix(committed(s.nodes[i]),s.nodes[j].log) by {
+    assert forall |i: int,q: Set<int>| c.servers.contains(i) && quorum(q,c) implies exists |j: int| #![trigger q.contains(j)] q.contains(j) && prefix(committed(s.nodes[i]),s.nodes[j].log) by {
         assert(committed_proof::node(g,i)); covered_quorum(b,c,time,committed(s.nodes[i]),s.nodes[i].term,q);
     }
 }

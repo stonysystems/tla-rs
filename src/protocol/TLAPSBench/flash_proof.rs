@@ -11,7 +11,7 @@ pub open spec fn uni_typed(m: UniMsg, c: Constants) -> bool {
 }
 pub open spec fn typed(s: LState, c: Constants) -> bool {
     type_ok(s, c)
-    && (forall |p: int| c.nodes.contains(p) ==> proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c))
+    && (forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) ==> proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c))
     && (s.wb.pending ==> c.data.contains(s.wb.data))
     && (s.shwb.cmd == Shared::ShWb ==> c.data.contains(s.shwb.data) && c.nodes.contains(s.shwb.node))
 }
@@ -26,7 +26,7 @@ pub proof fn preserve_typed(s: LState, c: Constants, a: Action)
     reveal(enabled);
     reveal(apply);
     let u = apply(s, c, a);
-    assert forall |p: int| c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
+    assert forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) implies proc_typed(u.procs[p], c) && uni_typed(u.uni[p], c) by {
         assert(proc_typed(s.procs[p], c) && uni_typed(s.uni[p], c));
     }
     assert(u.procs.dom() =~= c.nodes);

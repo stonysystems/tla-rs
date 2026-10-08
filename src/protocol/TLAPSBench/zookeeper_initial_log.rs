@@ -28,6 +28,7 @@ pub proof fn election_node(s: LState,c: Constants,ea: fle::Action,i: int)
 {
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(Action::Election(ea)); channels::facts(s,c,i,x); assert(node(s,i));
 }
+#[verifier::spinoff_prover]
 pub proof fn protocol_node(s: LState,c: Constants,a: Action,i: int)
     requires context(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election)
     ensures node(apply(s,c,a),i)

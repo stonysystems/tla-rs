@@ -7,20 +7,20 @@ pub proof fn concat(a: Seq<Event>,d: Seq<Event>)
     ensures all(a+d) =~= all(a).union(all(d)),committed(a+d) =~= committed(a).union(committed(d)),aborted(a+d) =~= aborted(a).union(aborted(d))
 {
     assert((a+d).to_set() =~= a.to_set().union(d.to_set()));
-    assert forall |t: int| all(a+d).contains(t) <==> all(a).union(all(d)).contains(t) by {
-        if all(a+d).contains(t) { let e=choose |e: Event| (a+d).to_set().contains(e) && e.txn == t; }
-        if all(a).contains(t) { let e=choose |e: Event| a.to_set().contains(e) && e.txn == t; assert((a+d).to_set().contains(e)); }
-        if all(d).contains(t) { let e=choose |e: Event| d.to_set().contains(e) && e.txn == t; assert((a+d).to_set().contains(e)); }
+    assert forall |t: int| #![trigger all(a+d).contains(t)] all(a+d).contains(t) <==> all(a).union(all(d)).contains(t) by {
+        if all(a+d).contains(t) { let e=choose |e: Event| #![trigger (a+d).to_set().contains(e)] (a+d).to_set().contains(e) && e.txn == t; }
+        if all(a).contains(t) { let e=choose |e: Event| #![trigger a.to_set().contains(e)] a.to_set().contains(e) && e.txn == t; assert((a+d).to_set().contains(e)); }
+        if all(d).contains(t) { let e=choose |e: Event| #![trigger d.to_set().contains(e)] d.to_set().contains(e) && e.txn == t; assert((a+d).to_set().contains(e)); }
     }
-    assert forall |t: int| committed(a+d).contains(t) <==> committed(a).union(committed(d)).contains(t) by {
-        if committed(a+d).contains(t) { let e=choose |e: Event| (a+d).to_set().contains(e) && e.op == Op::Commit && e.txn == t; if a.to_set().contains(e) { assert(a.to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); } else { assert(d.to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); } }
-        if committed(a).contains(t) { let e=choose |e: Event| a.to_set().contains(e) && e.op == Op::Commit && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); }
-        if committed(d).contains(t) { let e=choose |e: Event| d.to_set().contains(e) && e.op == Op::Commit && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); }
+    assert forall |t: int| #![trigger committed(a+d).contains(t)] committed(a+d).contains(t) <==> committed(a).union(committed(d)).contains(t) by {
+        if committed(a+d).contains(t) { let e=choose |e: Event| #![trigger (a+d).to_set().contains(e)] (a+d).to_set().contains(e) && e.op == Op::Commit && e.txn == t; if a.to_set().contains(e) { assert(a.to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); } else { assert(d.to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); } }
+        if committed(a).contains(t) { let e=choose |e: Event| #![trigger a.to_set().contains(e)] a.to_set().contains(e) && e.op == Op::Commit && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); }
+        if committed(d).contains(t) { let e=choose |e: Event| #![trigger d.to_set().contains(e)] d.to_set().contains(e) && e.op == Op::Commit && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op == Op::Commit).contains(e)); }
     }
-    assert forall |t: int| aborted(a+d).contains(t) <==> aborted(a).union(aborted(d)).contains(t) by {
-        if aborted(a+d).contains(t) { let e=choose |e: Event| (a+d).to_set().contains(e) && e.op is Abort && e.txn == t; if a.to_set().contains(e) { assert(a.to_set().filter(|e: Event| e.op is Abort).contains(e)); } else { assert(d.to_set().filter(|e: Event| e.op is Abort).contains(e)); } }
-        if aborted(a).contains(t) { let e=choose |e: Event| a.to_set().contains(e) && e.op is Abort && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op is Abort).contains(e)); }
-        if aborted(d).contains(t) { let e=choose |e: Event| d.to_set().contains(e) && e.op is Abort && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op is Abort).contains(e)); }
+    assert forall |t: int| #![trigger aborted(a+d).contains(t)] aborted(a+d).contains(t) <==> aborted(a).union(aborted(d)).contains(t) by {
+        if aborted(a+d).contains(t) { let e=choose |e: Event| #![trigger (a+d).to_set().contains(e)] (a+d).to_set().contains(e) && e.op is Abort && e.txn == t; if a.to_set().contains(e) { assert(a.to_set().filter(|e: Event| e.op is Abort).contains(e)); } else { assert(d.to_set().filter(|e: Event| e.op is Abort).contains(e)); } }
+        if aborted(a).contains(t) { let e=choose |e: Event| #![trigger a.to_set().contains(e)] a.to_set().contains(e) && e.op is Abort && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op is Abort).contains(e)); }
+        if aborted(d).contains(t) { let e=choose |e: Event| #![trigger d.to_set().contains(e)] d.to_set().contains(e) && e.op is Abort && e.txn == t; assert((a+d).to_set().filter(|e: Event| e.op is Abort).contains(e)); }
     }
 }
 pub proof fn singleton(e: Event)

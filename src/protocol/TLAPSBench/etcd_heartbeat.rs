@@ -42,7 +42,7 @@ pub proof fn prefix_or_counter(b: Behavior<LState>,c: Constants,time: int,create
     if a == Action::SelfAppend(m.source) {
         leaders::continuous(b,c,m.source,create,time); prefixes::shorten(s.nodes[m.source].log,b[time].nodes[m.dest].log,k);
     } else {
-        let p=choose |p: Message| a == (Action::Receive { m: p,how: Receive::AppendDone })
+        let p=choose |p: Message| #![trigger p.body->AppendRequest_entries.len()] a == (Action::Receive { m: p,how: Receive::AppendDone })
             && p.body is AppendRequest && p.source == m.dest && p.dest == m.source && p.term == m.term
             && m.body->AppendResponse_mode == p.body->AppendRequest_mode
             && m.body->AppendResponse_matched == if p.body->AppendRequest_mode == Mode::Heartbeat || p.body->AppendRequest_prev+1 > s.nodes[m.source].commit {

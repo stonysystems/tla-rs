@@ -50,12 +50,12 @@ pub open spec fn shut_leader(s: LState,c: Constants,i: int) -> LState {
         msgs: Map::new(z::channels(c),|p: (int,int)| if q.contains(p.1) { Seq::empty() } else { s.msgs[p] }),..s }
 }
 pub open spec fn disconnect_e(q: Set<Electing>,j: int) -> Set<Electing> {
-    let old=choose |e: Electing| q.contains(e) && e.sid == j;
-    if exists |e: Electing| q.contains(e) && e.sid == j { q.remove(old).insert(Electing { zxid: unset(),..old }) } else { q }
+    let old=choose |e: Electing| #![trigger q.contains(e)] q.contains(e) && e.sid == j;
+    if exists |e: Electing| #![trigger q.contains(e)] q.contains(e) && e.sid == j { q.remove(old).insert(Electing { zxid: unset(),..old }) } else { q }
 }
 pub open spec fn update_e(q: Set<Electing>,j: int,zxid: Zxid,yes: bool) -> Set<Electing> {
-    let old=choose |e: Electing| q.contains(e) && e.sid == j;
-    if exists |e: Electing| q.contains(e) && e.sid == j { q.remove(old).insert(Electing { sid: j,zxid,quorum: yes || old.quorum }) }
+    let old=choose |e: Electing| #![trigger q.contains(e)] q.contains(e) && e.sid == j;
+    if exists |e: Electing| #![trigger q.contains(e)] q.contains(e) && e.sid == j { q.remove(old).insert(Electing { sid: j,zxid,quorum: yes || old.quorum }) }
     else { q.insert(Electing { sid: j,zxid,quorum: yes }) }
 }
 pub open spec fn remove_learner(s: LState,i: int,j: int) -> LState {
@@ -157,7 +157,7 @@ pub open spec fn enabled(s: LState,c: Constants,a: Action) -> bool {
         Action::Recover(_,j) => c.servers.contains(j) && s.nodes[j].online && fle::id_greater(c,i,j) && s.partition[(i,j)] && s.partition[(j,i)],
         Action::Connect(_,j) => c.servers.contains(j) && s.nodes[j].online && e.role == Role::Leading && !n.learners.contains(j) && s.election.nodes[j].role == Role::Following && s.nodes[j].leader == None && s.election.nodes[j].vote.leader == Some(i),
         Action::Request(_) => e.role == Role::Leading && n.phase == Phase::Broadcast && z::quorum(n.forwarding.filter(|j: int| s.nodes[j].phase == Phase::Broadcast).insert(i),c),
-        Action::Sync(_,j) => c.servers.contains(j) && e.role == Role::Leading && election_finished(s,c,i) && exists |x: Electing| n.electing.contains(x) && x.sid == j && x.zxid != unset() && n.learners.contains(j),
+        Action::Sync(_,j) => c.servers.contains(j) && e.role == Role::Leading && election_finished(s,c,i) && exists |x: Electing| #![trigger n.electing.contains(x)] n.electing.contains(x) && x.sid == j && x.zxid != unset() && n.learners.contains(j),
         Action::FollowerInfo(_,j) | Action::AckEpoch(_,j) | Action::AckLd(_,j) | Action::Ack(_,j) => c.servers.contains(j) && e.role == Role::Leading && n.learners.contains(j) && s.msgs[(j,i)].len() > 0 && match a {
             Action::FollowerInfo(_,_) => s.msgs[(j,i)][0] is FollowerInfo,
             Action::AckEpoch(_,_) => match s.msgs[(j,i)][0] { Message::AckEpoch(_,epoch) => election_finished(s,c,i) || epoch >= -1,_ => false },
@@ -223,7 +223,7 @@ pub open spec fn apply(s: LState,c: Constants,a: Action) -> LState {
             }
         }, _ => s },
         Action::Sync(_,j) => {
-            let chosen=choose |x: Electing| n.electing.contains(x) && x.sid == j && x.zxid != unset() && n.learners.contains(j);
+            let chosen=choose |x: Electing| #![trigger n.electing.contains(x)] n.electing.contains(x) && x.sid == j && x.zxid != unset() && n.learners.contains(j);
             let u=sync_follower(s,i,j,chosen.zxid); replace(u,i,LServer { electing: n.electing.remove(chosen).insert(Electing { zxid: unset(),..chosen }),..u.nodes[i] })
         },
         Action::SyncMessage(_,j) => {

@@ -210,13 +210,13 @@ pub open spec fn apply(s: LState, c: Constants, a: Action) -> LState {
 #[verifier::opaque]
 pub open spec fn next(s: LState,u: LState,c: Constants) -> bool { exists |a: Action| #[trigger] enabled(s,c,a) && u == apply(s,c,a) }
 pub open spec fn prefix(a: Seq<Entry>,b: Seq<Entry>) -> bool { a.len() <= b.len() && a == sub(b,1,a.len() as int) }
-pub open spec fn election_safety(s: LState) -> bool { forall |a: Event,b: Event| s.elections.contains(a) && s.elections.contains(b) && a.term == b.term ==> a.server == b.server }
+pub open spec fn election_safety(s: LState) -> bool { forall |a: Event,b: Event| #![trigger s.elections.contains(a), s.elections.contains(b)] s.elections.contains(a) && s.elections.contains(b) && a.term == b.term ==> a.server == b.server }
 pub open spec fn state_machine_safety(s: LState) -> bool { forall |a: Event,b: Event| s.commits.contains(a) && s.commits.contains(b) ==> prefix(a.entries,b.entries) || prefix(b.entries,a.entries) }
-pub open spec fn committed_preserved(s: LState) -> bool { forall |a: Event| s.commits.contains(a) ==> prefix(a.entries,s.nodes[a.server].log) }
-pub open spec fn log_matching(s: LState,c: Constants) -> bool { forall |a: int,b: int,k: int| c.servers.contains(a) && c.servers.contains(b) && 1 <= k <= s.nodes[a].log.len() && k <= s.nodes[b].log.len()
+pub open spec fn committed_preserved(s: LState) -> bool { forall |a: Event| #![trigger s.commits.contains(a)] s.commits.contains(a) ==> prefix(a.entries,s.nodes[a.server].log) }
+pub open spec fn log_matching(s: LState,c: Constants) -> bool { forall |a: int,b: int,k: int| #![trigger c.servers.contains(a), sub(s.nodes[b].log,1,k)] #![trigger c.servers.contains(b), sub(s.nodes[a].log,1,k)] c.servers.contains(a) && c.servers.contains(b) && 1 <= k <= s.nodes[a].log.len() && k <= s.nodes[b].log.len()
     && s.nodes[a].log[k-1].term == s.nodes[b].log[k-1].term ==> sub(s.nodes[a].log,1,k) == sub(s.nodes[b].log,1,k) }
 pub open spec fn leader_completeness(s: LState) -> bool { forall |c: Event,e: Event,k: int| s.commits.contains(c) && s.elections.contains(e) && 1 <= k <= c.entries.len() && c.term < e.term
     ==> k <= e.entries.len() && (#[trigger] e.entries[k-1]) == (#[trigger] c.entries[k-1]) }
 pub open spec fn pending_configs(n: LServer) -> Set<int> { Set::<int>::range(max(n.commit as int,n.committed_config_index as int)+1,n.log.len() as int+1).filter(|k: int| n.log[k-1].kind == EntryKind::Config) }
-pub open spec fn configuration_safety(s: LState,c: Constants) -> bool { forall |i: int| c.servers.contains(i) && s.nodes[i].role == Role::Leader ==> pending_configs(s.nodes[i]).len() <= 1 }
+pub open spec fn configuration_safety(s: LState,c: Constants) -> bool { forall |i: int| #![trigger c.servers.contains(i)] c.servers.contains(i) && s.nodes[i].role == Role::Leader ==> pending_configs(s.nodes[i]).len() <= 1 }
 } // verus!

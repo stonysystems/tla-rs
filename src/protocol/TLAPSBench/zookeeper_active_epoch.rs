@@ -26,8 +26,8 @@ pub proof fn ids_bounded(s: LState,c: Constants,i: int)
     ensures quorum::ids(s.nodes[i].electing).subset_of(c.servers)
 {
     assert(receipts::node(s,c,i));
-    assert forall |j: int| quorum::ids(s.nodes[i].electing).contains(j) implies c.servers.contains(j) by {
-        quorum::membership(s.nodes[i].electing,j); let r=choose |r: Electing| s.nodes[i].electing.contains(r) && r.sid == j && r.quorum;
+    assert forall |j: int| #![trigger c.servers.contains(j)] quorum::ids(s.nodes[i].electing).contains(j) implies c.servers.contains(j) by {
+        quorum::membership(s.nodes[i].electing,j); let r=choose |r: Electing| #![trigger s.nodes[i].electing.contains(r)] s.nodes[i].electing.contains(r) && r.sid == j && r.quorum;
         s.nodes[i].electing.lemma_map_contains(|r: Electing| r.sid,j);
     }
 }
@@ -64,15 +64,263 @@ pub proof fn continuing_fields(s: LState,c: Constants,a: Action,i: int)
     ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
         apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
 {
-    assert(node(s,c,i)); reveal(enabled); reveal(apply); let x=receiver(a);
-    if a != Action::Stutter { channels::facts(s,c,i,x); }
+    // Each Action variant is proved by its own helper lemma below, so
+    // `apply` unfolds for one variant per query.
     match a {
-        Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,x,y); } },
-        Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::Sync(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
-            channels::facts(s,c,i,y); channels::facts(s,c,x,y);
-        },_ => {},
+        Action::Election(_) => continuing_fields_election(s,c,a,i),
+        Action::Partition(_,_) => continuing_fields_partition(s,c,a,i),
+        Action::Recover(_,_) => continuing_fields_recover(s,c,a,i),
+        Action::Crash(_) => continuing_fields_crash(s,c,a,i),
+        Action::Start(_) => continuing_fields_start(s,c,a,i),
+        Action::Connect(_,_) => continuing_fields_connect(s,c,a,i),
+        Action::FollowerInfo(_,_) => continuing_fields_follower_info(s,c,a,i),
+        Action::LeaderInfo(_,_) => continuing_fields_leader_info(s,c,a,i),
+        Action::AckEpoch(_,_) => continuing_fields_ack_epoch(s,c,a,i),
+        Action::Sync(_,_) => continuing_fields_sync(s,c,a,i),
+        Action::SyncMessage(_,_) => continuing_fields_sync_message(s,c,a,i),
+        Action::ProposalSync(_,_) => continuing_fields_proposal_sync(s,c,a,i),
+        Action::CommitSync(_,_) => continuing_fields_commit_sync(s,c,a,i),
+        Action::NewLeader(_,_) => continuing_fields_new_leader(s,c,a,i),
+        Action::AckLd(_,_) => continuing_fields_ack_ld(s,c,a,i),
+        Action::UpToDate(_,_) => continuing_fields_up_to_date(s,c,a,i),
+        Action::Request(_) => continuing_fields_request(s,c,a,i),
+        Action::Proposal(_,_) => continuing_fields_proposal(s,c,a,i),
+        Action::Ack(_,_) => continuing_fields_ack(s,c,a,i),
+        Action::Commit(_,_) => continuing_fields_commit(s,c,a,i),
+        Action::Stutter => continuing_fields_stutter(s,c,a,i),
     }
 }
+#[verifier::spinoff_prover]
+proof fn continuing_fields_election(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Election
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_partition(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Partition
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Partition(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_recover(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Recover
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Recover(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_crash(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Crash
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Crash(_) => { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,x,y); } }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_start(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Start
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_connect(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Connect
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Connect(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_follower_info(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is FollowerInfo
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::FollowerInfo(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_leader_info(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is LeaderInfo
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::LeaderInfo(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_ack_epoch(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is AckEpoch
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::AckEpoch(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_sync(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Sync
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Sync(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_sync_message(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is SyncMessage
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::SyncMessage(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_proposal_sync(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is ProposalSync
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::ProposalSync(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_commit_sync(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is CommitSync
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::CommitSync(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_new_leader(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is NewLeader
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::NewLeader(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_ack_ld(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is AckLd
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    // floor_index is irrelevant to these fields; its choose/forall
+    // otherwise dominates the query.
+    hide(floor_index);
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::AckLd(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_up_to_date(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is UpToDate
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::UpToDate(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_request(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Request
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    hide(floor_index);
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_proposal(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Proposal
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Proposal(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_ack(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Ack
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Ack(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_commit(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Commit
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+    match a { Action::Commit(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); }, _ => {} }
+}
+
+#[verifier::spinoff_prover]
+proof fn continuing_fields_stutter(s: LState,c: Constants,a: Action,i: int)
+    requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i),
+        a is Stutter
+    ensures apply(s,c,a).election.nodes[i].current == s.election.nodes[i].current,
+        apply(s,c,a).nodes[i].phase == Phase::Synchronization || apply(s,c,a).nodes[i].phase == Phase::Broadcast
+{
+    let x=receiver(a); assert(node(s,c,i)); reveal(enabled); reveal(apply); if a != Action::Stutter { channels::facts(s,c,i,x); }
+}
+
 pub proof fn continuing_protocol(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),active(s,c,i),active(apply(s,c,a),c,i)
     ensures node(apply(s,c,a),c,i)

@@ -26,7 +26,7 @@ pub open spec fn temporary(s: LState,c: Constants,p: int) -> bool {
 }
 pub open spec fn inductive(s: LState,c: Constants) -> bool {
     contents::inductive(s,c) && lock::inductive(s,c)
-    && (forall |i: int| 1 <= i <= c.k && s.table[i] is Value ==> in_block(c,i))
+    && (forall |i: int| #![trigger in_block(c,i)] 1 <= i <= c.k && s.table[i] is Value ==> in_block(c,i))
     && (forall |p: int| c.writers.contains(p) ==> #[trigger] bounds(s.threads[p],c))
     && (forall |p: int| c.writers.contains(p) ==> #[trigger] temporary(s,c,p))
 }
@@ -83,7 +83,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
     if let Action::Writer { p,pick } = a {
         assert forall |q: int| c.writers.contains(q) implies #[trigger] bounds(u.threads[q],c) by { preserve_bounds(s,c,p,pick,q); }
         assert forall |q: int| c.writers.contains(q) implies #[trigger] temporary(u,c,q) by { preserve_temporary(s,c,p,pick,q); }
-        assert forall |i: int| 1 <= i <= c.k && u.table[i] is Value implies in_block(c,i) by { preserve_block(s,c,p,pick,i); }
+        assert forall |i: int| #![trigger in_block(c,i)] 1 <= i <= c.k && u.table[i] is Value implies in_block(c,i) by { preserve_block(s,c,p,pick,i); }
     }
 }
 pub proof fn safety_at(b: Behavior<LState>,c: Constants,k: int)

@@ -76,8 +76,8 @@ pub open spec fn inductive(s: LState, c: Constants) -> bool {
 }
 #[verifier::opaque]
 pub open spec fn action_ownership(s: LState, c: Constants) -> bool {
-    forall |q: int| c.processors.contains(q) && s.procs[q].actionlock ==>
-        exists |p: int| c.processors.contains(p) && owns_action(s.procs[p], p, q)
+    forall |q: int| #![trigger c.processors.contains(q)] c.processors.contains(q) && s.procs[q].actionlock ==>
+        exists |p: int| #![trigger c.processors.contains(p)] c.processors.contains(p) && owns_action(s.procs[p], p, q)
 }
 pub proof fn initial_inductive(s: LState, c: Constants)
     requires init(s, c)
@@ -170,7 +170,7 @@ pub proof fn preserve_error(s: LState, c: Constants, p: int, a: Step)
     reveal(enabled_step); reveal(step);
     assert(local_inv(s, c, p));
     if a == Step::AcquireResponderLock && s.procs[p].actionlock {
-        let owner = choose |owner: int| c.processors.contains(owner) && owns_action(s.procs[owner], owner, p);
+        let owner = choose |owner: int| #![trigger c.processors.contains(owner)] c.processors.contains(owner) && owns_action(s.procs[owner], owner, p);
         assert(local_inv(s, c, owner));
         assert(false);
     }
@@ -193,13 +193,13 @@ pub proof fn preserve_ownership(s: LState, c: Constants, p: int, a: Step)
     reveal(enabled_step); reveal(step);
     let u = step(s, c, p, a);
     assert(local_inv(s, c, p));
-    assert forall |q: int| c.processors.contains(q) && u.procs[q].actionlock implies
-        exists |owner: int| c.processors.contains(owner) && owns_action(u.procs[owner], owner, q) by {
+    assert forall |q: int| #![trigger c.processors.contains(q)] c.processors.contains(q) && u.procs[q].actionlock implies
+        exists |owner: int| #![trigger c.processors.contains(owner)] c.processors.contains(owner) && owns_action(u.procs[owner], owner, q) by {
         if a == Step::AcquireResponderLock && q == p || a == Step::AcquireActionLock && q == s.procs[p].currentcpu {
             assert(owns_action(u.procs[p], p, q));
         } else {
             assert(s.procs[q].actionlock);
-            let owner = choose |owner: int| c.processors.contains(owner) && owns_action(s.procs[owner], owner, q);
+            let owner = choose |owner: int| #![trigger c.processors.contains(owner)] c.processors.contains(owner) && owns_action(s.procs[owner], owner, q);
             assert(local_inv(s, c, owner));
             assert(pair_inv(s, c, p, owner));
             assert(owns_action(u.procs[owner], owner, q));

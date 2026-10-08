@@ -128,7 +128,7 @@ pub proof fn safety_at(b: Behavior<LState>,c: Constants,k: int)
     }
 }
 pub open spec fn clear_after(b: Behavior<LState>,start: int) -> bool {
-    exists |k: int| k >= start && !b[k].dir.pending
+    exists |k: int| #![trigger b[k]] k >= start && !b[k].dir.pending
 }
 pub proof fn collecting_step(s: LState,c: Constants,a: Action)
     requires inductive(s,c),enabled(s,c,a),s.collecting,apply(s,c,a).dir.pending
@@ -141,7 +141,7 @@ pub proof fn collecting_step(s: LState,c: Constants,a: Action)
 }
 pub proof fn collecting_until(b: Behavior<LState>,c: Constants,start: int,end: int)
     requires safety_spec(b,c),0 <= start <= end,b[start].collecting,
-        forall |j: int| start <= j <= end ==> b[j].dir.pending
+        forall |j: int| #![trigger b[j]] start <= j <= end ==> b[j].dir.pending
     ensures b[end].collecting,b[end].dir.invalidating.subset_of(b[start].dir.invalidating)
     decreases end-start
 {
@@ -161,7 +161,7 @@ pub proof fn collecting_progress(b: Behavior<LState>,c: Constants,start: int)
         safety_at(b,c,start);
         let p=choose |p: int| b[start].dir.invalidating.contains(p);
         super::flash_invalidation::progress_at(b,c,p,start);
-        let k=choose |k: int| k >= start && !pending(b[k],Group::Inv(p));
+        let k=choose |k: int| #![trigger b[k]] k >= start && !pending(b[k],Group::Inv(p));
         collecting_until(b,c,start,k); safety_at(b,c,k);
         assert(outstanding(b[k],p));
         b[k].dir.invalidating.lemma_subset_not_in_lt(b[start].dir.invalidating,p);
@@ -194,7 +194,7 @@ pub proof fn terminal_step(s: LState,c: Constants,a: Action,w: Work)
 }
 pub proof fn terminal_until(b: Behavior<LState>,c: Constants,w: Work,start: int,end: int)
     requires safety_spec(b,c),terminal(w),0 <= start <= end,work(b[start],c,w),
-        forall |j: int| start <= j <= end ==> b[j].dir.pending
+        forall |j: int| #![trigger b[j]] start <= j <= end ==> b[j].dir.pending
     ensures work(b[end],c,w)
     decreases end-start
 {
@@ -214,7 +214,7 @@ pub proof fn terminal_progress(b: Behavior<LState>,c: Constants,w: Work,start: i
         if w == Work::HomeReply {
             safety_at(b,c,start); requests::progress_at(b,c,b[start].home,start);
         } else { super::flash_liveness::progress_at(b,c,g,start); }
-        let k=choose |k: int| k >= start && !pending(b[k],g);
+        let k=choose |k: int| #![trigger b[k]] k >= start && !pending(b[k],g);
         terminal_until(b,c,w,start,k);
         // Home is a fixed field of every protocol step.
         safety_at(b,c,k);
@@ -234,7 +234,7 @@ pub proof fn forward_step(s: LState,c: Constants,a: Action,p: int)
 }
 pub proof fn forward_until(b: Behavior<LState>,c: Constants,p: int,start: int,end: int)
     requires safety_spec(b,c),0 <= start <= end,work(b[start],c,Work::Forward(p)),
-        forall |j: int| start <= j <= end ==> b[j].dir.pending && !has_terminal(b[j],c)
+        forall |j: int| #![trigger b[j]] start <= j <= end ==> b[j].dir.pending && !has_terminal(b[j],c)
     ensures work(b[end],c,Work::Forward(p))
     decreases end-start
 {
@@ -256,12 +256,12 @@ pub proof fn progress_at(b: Behavior<LState>,c: Constants,start: int)
             Work::Invalidating => { collecting_progress(b,c,start); },
             Work::Forward(p) => {
                 requests::progress_at(b,c,p,start);
-                let k=choose |k: int| k >= start && !pending(b[k],Group::Uni(p));
-                if !(exists |j: int| start <= j <= k && has_terminal(b[j],c)) {
+                let k=choose |k: int| #![trigger b[k]] k >= start && !pending(b[k],Group::Uni(p));
+                if !(exists |j: int| #![trigger b[j]] start <= j <= k && has_terminal(b[j],c)) {
                     forward_until(b,c,p,start,k);
                     assert(false);
                 }
-                let j=choose |j: int| start <= j <= k && has_terminal(b[j],c);
+                let j=choose |j: int| #![trigger b[j]] start <= j <= k && has_terminal(b[j],c);
                 let t=choose |t: Work| terminal(t) && #[trigger] work(b[j],c,t);
                 terminal_progress(b,c,t,j);
             },

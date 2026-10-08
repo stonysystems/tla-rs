@@ -36,11 +36,11 @@ pub proof fn facts(q: Seq<Message>)
     assert forall |m: Message| #[trigger] count(q.push(m)) == count(q)+bit(is_ack(m)) by { q.lemma_filter_len_push(predicate(),m); }
 }
 pub proof fn absent(q: Seq<Message>)
-    requires forall |m: Message| q.contains(m) ==> !is_ack(m)
+    requires forall |m: Message| #![trigger is_ack(m)] q.contains(m) ==> !is_ack(m)
     ensures count(q) == 0
 {
     assert(q.all(|m: Message| !is_ack(m))) by {
-        assert forall |k: int| 0 <= k < q.len() implies !is_ack(q[k]) by { assert(q.contains(q[k])); }
+        assert forall |k: int| #![trigger q[k]] 0 <= k < q.len() implies !is_ack(q[k]) by { assert(q.contains(q[k])); }
     }
     q.lemma_all_neg_filter_empty(predicate());
 }
@@ -48,7 +48,7 @@ pub proof fn ack_batch(h: Seq<z::Txn>)
     ensures count(ack_messages(h)) == 0
 {
     let q=ack_messages(h);
-    assert forall |m: Message| q.contains(m) implies !is_ack(m) by { let k=choose |k: int| 0 <= k < q.len() && q[k] == m; }
+    assert forall |m: Message| #![trigger is_ack(m)] q.contains(m) implies !is_ack(m) by { let k=choose |k: int| 0 <= k < q.len() && q[k] == m; }
     absent(q);
 }
 pub proof fn sync_send_count(s: LState,x: int,y: int,zxid: z::Zxid,k: int,mode: Mode,i: int,j: int)
@@ -65,7 +65,7 @@ pub proof fn sync_count(s: LState,c: Constants,x: int,y: int,i: int,j: int)
     ensures count(apply(s,c,Action::Sync(x,y)).msgs[(i,j)]) == count(s.msgs[(i,j)])
 {
     reveal(apply);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     let n=s.nodes[x]; let e=s.election.nodes[x]; let min=n.snapshot.index+1;
     let max=if n.phase == Phase::Broadcast { n.committed.index } else { e.history.len() as int };
     let lo=if min > max { e.processed.zxid } else { e.history[min-1].zxid };

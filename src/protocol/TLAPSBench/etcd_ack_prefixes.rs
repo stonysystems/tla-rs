@@ -20,7 +20,7 @@ pub proof fn success_creation(s: LState,c: Constants,a: Action,m: Message)
     ensures c.servers.contains(m.source),c.servers.contains(m.dest),m.term == s.nodes[m.source].term,
         s.nodes[m.source].log == apply(s,c,a).nodes[m.source].log,
         a == Action::SelfAppend(m.source) && m.source == m.dest && s.nodes[m.source].role == Role::Leader && m.body->AppendResponse_matched == s.nodes[m.source].log.len()
-        || exists |packet: Message| a == (Action::Receive { m: packet,how: Receive::AppendDone })
+        || exists |packet: Message| #![trigger packet.body->AppendRequest_entries.len()] a == (Action::Receive { m: packet,how: Receive::AppendDone })
             && packet.body is AppendRequest && packet.source == m.dest && packet.dest == m.source && packet.term == m.term
             && m.body->AppendResponse_mode == packet.body->AppendRequest_mode
             && m.body->AppendResponse_matched == if packet.body->AppendRequest_mode == Mode::Heartbeat || packet.body->AppendRequest_prev+1 > s.nodes[m.source].commit {
@@ -66,7 +66,7 @@ pub proof fn fallback_lower(b: Behavior<LState>,c: Constants,time: int,create: i
     ensures trace::at(b,c,time).decisions.contains(d),d.term < m.term,d.log.len() >= k
 {
     trace::valid(b,c,create); trace::valid(b,c,time); trace::monotone(b,c,create,time);
-    let d=choose |d: Decision| trace::at(b,c,create).decisions.contains(d) && d.term <= m.term && d.log.len() >= k;
+    let d=choose |d: Decision| #![trigger trace::at(b,c,create).decisions.contains(d)] trace::at(b,c,create).decisions.contains(d) && d.term <= m.term && d.log.len() >= k;
     let g=trace::at(b,c,time); assert(g.decisions.contains(d)); assert(history::decision_valid(g,c,d));
     if d.term == m.term {
         origins::leader_persisted(b[time],c,m.dest); origins::unique_certificate(b[time],c,m.term,m.dest,d.leader);
@@ -80,14 +80,14 @@ pub proof fn created_prefix_or_prior(b: Behavior<LState>,c: Constants,time: int,
         b[time].nodes[m.dest].commit < k <= b[time].nodes[m.dest].log.len(),k > 0,
         acks::success(m),m.body->AppendResponse_matched >= k,b[create].pending.count(m) == 0,b[create+1].pending.count(m) > 0
     ensures logs::prefix_of(sub(b[time].nodes[m.dest].log,1,k),b[create].nodes[m.source].log)
-        || exists |d: Decision| trace::at(b,c,time).decisions.contains(d) && d.term < m.term && d.log.len() >= k
+        || exists |d: Decision| #![trigger trace::at(b,c,time).decisions.contains(d)] trace::at(b,c,time).decisions.contains(d) && d.term < m.term && d.log.len() >= k
 {
     events::step_valid(b,c,create); let a=events::step(b,c,create); let s=b[create];
     trace::valid(b,c,create); success_creation(s,c,a,m); let g=trace::at(b,c,create);
     if a == Action::SelfAppend(m.source) {
         reveal(enabled); leaders::continuous(b,c,m.source,create,time); shorten(s.nodes[m.source].log,b[time].nodes[m.dest].log,k);
     } else {
-        let packet=choose |packet: Message| a == (Action::Receive { m: packet,how: Receive::AppendDone })
+        let packet=choose |packet: Message| #![trigger packet.body->AppendRequest_entries.len()] a == (Action::Receive { m: packet,how: Receive::AppendDone })
             && packet.body is AppendRequest && packet.source == m.dest && packet.dest == m.source && packet.term == m.term
             && m.body->AppendResponse_mode == packet.body->AppendRequest_mode
             && m.body->AppendResponse_matched == if packet.body->AppendRequest_mode == Mode::Heartbeat || packet.body->AppendRequest_prev+1 > s.nodes[m.source].commit {
@@ -129,7 +129,7 @@ pub proof fn acknowledgment_prefix(b: Behavior<LState>,c: Constants,time: int,i:
     let w=matches::acknowledgment_origin(b,c,time,i,j,k); assert(b[w.0+1].pending.count(w.3) > 0);
     created_prefix_or_prior(b,c,time,w.0,w.3,k);
     if !logs::prefix_of(sub(b[time].nodes[i].log,1,k),b[w.0].nodes[j].log) {
-        let d=choose |d: Decision| trace::at(b,c,time).decisions.contains(d) && d.term < w.3.term && d.log.len() >= k;
+        let d=choose |d: Decision| #![trigger trace::at(b,c,time).decisions.contains(d)] trace::at(b,c,time).decisions.contains(d) && d.term < w.3.term && d.log.len() >= k;
         trace::valid(b,c,time); assert(history::decision_valid(trace::at(b,c,time),c,d));
         assert(logs::prefix_of(d.log,b[time].nodes[i].log)); assert(d.log[k-1] == b[time].nodes[i].log[k-1]);
         assert(d.log[k-1] <= d.term); assert(false);

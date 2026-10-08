@@ -27,6 +27,8 @@ pub proof fn initial_inductive(c: Constants)
     assert forall |i: int,j: int,p: int| c.servers.contains(i) && c.servers.contains(j) && 0 <= p < initial(c).msgs[(i,j)].len()
         implies #[trigger] position(initial(c),i,j,p) by { connections::channel_pair(c,i,j); }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn transport(s: LState,c: Constants,a: Action,i: int,j: int,p: int)
     requires logs::inductive(s,c),links::inductive(s,c),logs::inductive(apply(s,c,a),c),links::inductive(apply(s,c,a),c),enabled(s,c,a),
         c.servers.contains(i),c.servers.contains(j),0 <= p < apply(s,c,a).msgs[(i,j)].len(),apply(s,c,a).msgs[(i,j)][p] is CommitLd
@@ -35,6 +37,7 @@ pub proof fn transport(s: LState,c: Constants,a: Action,i: int,j: int,p: int)
         (r == q && d == h) || (q.len() > 0 && r == q.drop_first() && d == queue::effect(h,q[0])) || (r == q.push(r.last()) && d == h)
     },
 {
+    hide(update_ack);
     let u=apply(s,c,a); logs::facts(s,c,i,j); logs::facts(u,c,i,j); links::facts(s,c,i,j); links::facts(u,c,i,j); connections::channel_pair(c,i,j);
     assert(super::zab_phases::packet(u,c,i,j,u.msgs[(i,j)][p])); assert(links::packet(u,i,j,u.msgs[(i,j)][p])); links::connected_al(u,c,i,j);
         reveal(enabled); reveal(apply);
@@ -48,12 +51,14 @@ pub proof fn transport(s: LState,c: Constants,a: Action,i: int,j: int,p: int)
             _ => {},
         }
 }
+#[verifier::spinoff_prover]
 pub proof fn created(s: LState,c: Constants,a: Action,i: int,j: int,z: Zxid)
     requires logs::inductive(s,c),links::inductive(s,c),logs::inductive(apply(s,c,a),c),links::inductive(apply(s,c,a),c),enabled(s,c,a),
         c.servers.contains(i),c.servers.contains(j),apply(s,c,a).msgs[(i,j)] == s.msgs[(i,j)].push(Message::CommitLd(z))
     ensures i != j,ae_connected(s.nodes[i].ae).contains(j),s.nodes[i].role == Role::Leading,
         (s.nodes[i].phase == Phase::Synchronization && z == last(s.nodes[i].history)) || (s.nodes[i].phase == Phase::Broadcast && z == s.nodes[i].committed.zxid)
 {
+    hide(update_ack);
     let u=apply(s,c,a); logs::facts(s,c,i,j); logs::facts(u,c,i,j); links::facts(s,c,i,j); connections::channel_pair(c,i,j); reveal(enabled); reveal(apply);
     assert(u.msgs[(i,j)].len() == s.msgs[(i,j)].len()+1); assert(u.msgs[(i,j)].last() == Message::CommitLd(z));
     assert(links::packet(u,i,j,u.msgs[(i,j)][u.msgs[(i,j)].len() as int-1]));

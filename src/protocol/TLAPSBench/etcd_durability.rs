@@ -18,7 +18,7 @@ pub proof fn leader_commit_bound(b: Behavior<LState>,c: Constants,time: int,i: i
 {
     trace::valid(b,c,time); let g=trace::at(b,c,time); let n=b[time].nodes[i]; assert(history::node(g,i));
     if n.commit > 0 {
-        let d=choose |d: Decision| g.decisions.contains(d) && d.term <= n.term && d.log.len() >= n.commit;
+        let d=choose |d: Decision| #![trigger g.decisions.contains(d)] g.decisions.contains(d) && d.term <= n.term && d.log.len() >= n.commit;
         trace::decision_log(b,c,time,d); assert(history::decision_valid(g,c,d));
         if d.term < n.term { completeness::historical_completeness(b,c,time,time,i,d); }
         else { prefixes::old_term_prefix(g.logs,c,i,d.log); }
@@ -50,7 +50,7 @@ pub proof fn safety_at(b: Behavior<LState>,c: Constants,time: int)
 {
     if time > 0 {
         safety_at(b,c,time-1);
-        assert forall |i: int| c.servers.contains(i) && b[time].nodes[i].role == Role::Leader implies b[time].nodes[i].commit <= b[time].nodes[i].disk.log.len() by {
+        assert forall |i: int| #![trigger c.servers.contains(i)] c.servers.contains(i) && b[time].nodes[i].role == Role::Leader implies b[time].nodes[i].commit <= b[time].nodes[i].disk.log.len() by {
             preserve(b,c,time-1,i);
         }
     }

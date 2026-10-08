@@ -27,7 +27,7 @@ pub proof fn prefix_at(b: Behavior<LState>,c: Constants,time: int)
     ensures prefix_consistency(b[time],c)
 {
     prefixes::at(b,c,time); let s=b[time];
-    assert forall |i: int| c.servers.contains(i) implies s.nodes[i].committed.index >= 0 by { assert(prefixes::node(b,c,time,i)); }
+    assert forall |i: int| #![trigger c.servers.contains(i)] c.servers.contains(i) implies s.nodes[i].committed.index >= 0 by { assert(prefixes::node(b,c,time,i)); }
     assert forall |i: int,j: int,k: int| c.servers.contains(i) && c.servers.contains(j) && 1 <= k <= s.nodes[i].committed.index && k <= s.nodes[j].committed.index
         implies #[trigger] equal(s.nodes[i].history[k-1],s.nodes[j].history[k-1]) by { prefix_point(b,c,time,i,j,k); }
 }

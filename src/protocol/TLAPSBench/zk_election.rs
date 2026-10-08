@@ -73,7 +73,7 @@ pub enum Action { Receive(int,int),Timeout(int),Handle(int),Wait(int) }
 pub open spec fn enabled(s: LState,c: Constants,a: Action) -> bool {
     match a {
         Action::Receive(i,j) => c.servers.contains(i) && c.servers.contains(j) && s.msgs[(j,i)].len() > 0,
-        Action::Timeout(i) => c.servers.contains(i) && s.nodes[i].role == Role::Looking && s.nodes[i].queue.len() == 0 && forall |j: int| c.servers.contains(j) ==> s.msgs[(j,i)].len() == 0,
+        Action::Timeout(i) => c.servers.contains(i) && s.nodes[i].role == Role::Looking && s.nodes[i].queue.len() == 0 && forall |j: int| #![trigger c.servers.contains(j)] c.servers.contains(j) ==> s.msgs[(j,i)].len() == 0,
         Action::Handle(i) => c.servers.contains(i) && s.nodes[i].role == Role::Looking && !s.nodes[i].waiting && s.nodes[i].queue.len() > 0,
         Action::Wait(i) => c.servers.contains(i) && s.nodes[i].role == Role::Looking && s.nodes[i].waiting,
     }

@@ -14,7 +14,7 @@ pub proof fn can_timeout(c: Constants,i: int)
     ensures enabled(initial(c),c,Action::Election(fle::Action::Timeout(i)))
 {
     reveal(enabled);
-    assert forall |j: int| c.servers.contains(j) implies initial(c).election.msgs[(j,i)].len() == 0 by {
+    assert forall |j: int| #![trigger c.servers.contains(j)] c.servers.contains(j) implies initial(c).election.msgs[(j,i)].len() == 0 by {
         let row=c.servers.map(|k: int| (j,k));
         c.servers.lemma_map_contains(|k: int| (j,k),(j,i));
         c.servers.lemma_map_contains(|k: int| c.servers.map(|l: int| (k,l)),row);

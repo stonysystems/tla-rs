@@ -10,12 +10,12 @@ use super::open_addressing_external as external;
 use super::temporal::Behavior;
 verus! {
 pub open spec fn visible(s: LState,c: Constants,i: int) -> bool {
-    forall |p: int| c.writers.contains(p) && shape::moving(s.threads[p].pc) ==> shape::hole(s.threads[p],c) != i
+    forall |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && shape::moving(s.threads[p].pc) ==> shape::hole(s.threads[p],c) != i
 }
 pub open spec fn represented(s: LState,c: Constants,f: int) -> bool {
     s.external.contains(f)
-    || (exists |i: int| 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f))
-    || (exists |p: int| c.writers.contains(p) && shape::moving(s.threads[p].pc) && s.threads[p].lo == Cell::Value(f))
+    || (exists |i: int| #![trigger visible(s,c,i)] 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f))
+    || (exists |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && shape::moving(s.threads[p].pc) && s.threads[p].lo == Cell::Value(f))
 }
 pub open spec fn inductive(s: LState,c: Constants) -> bool {
     shape::inductive(s,c) && external::inductive(s,c)
@@ -29,7 +29,7 @@ pub proof fn visibility(s: LState,c: Constants,p: int,i: int)
     requires lock::inductive(s,c),c.writers.contains(p),!lock::dormant(s.threads[p].pc)
     ensures visible(s,c,i) <==> (!shape::moving(s.threads[p].pc) || shape::hole(s.threads[p],c) != i)
 {
-    assert forall |q: int| c.writers.contains(q) && shape::moving(s.threads[q].pc) implies q == p by { assert(lock::pair(s,q,p)); }
+    assert forall |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && shape::moving(s.threads[q].pc) implies q == p by { assert(lock::pair(s,q,p)); }
 }
 pub proof fn preserve_carried(s: LState,c: Constants,p: int,pick: int,q: int,f: int)
     requires valid_constants(c),c.limit > 0,hash::collapsed(c),inductive(s,c),enabled(s,c,Action::Writer { p,pick }),
@@ -81,7 +81,7 @@ pub proof fn preserve_cell(s: LState,c: Constants,p: int,pick: int,i: int,f: int
             assert(largest(s.newexternal) >= 0);
         }
         assert(matches(u.table[i],f));
-        assert forall |q: int| c.writers.contains(q) && shape::moving(u.threads[q].pc) implies shape::hole(u.threads[q],c) != i by {
+        assert forall |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && shape::moving(u.threads[q].pc) implies shape::hole(u.threads[q],c) != i by {
             if q != p { assert(shape::hole(s.threads[q],c) != i); }
         }
         assert(visible(u,c,i));
@@ -98,11 +98,11 @@ pub proof fn preserve_fingerprint(s: LState,c: Constants,p: int,pick: int,f: int
     if s.history.contains(f) {
         assert(represented(s,c,f)); assert(c.fps.contains(f));
         if !s.external.contains(f) {
-            if exists |i: int| 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f) {
-                let i=choose |i: int| 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f);
+            if exists |i: int| #![trigger visible(s,c,i)] 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f) {
+                let i=choose |i: int| #![trigger visible(s,c,i)] 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f);
                 preserve_cell(s,c,p,pick,i,f);
             } else {
-                let q=choose |q: int| c.writers.contains(q) && shape::moving(s.threads[q].pc) && s.threads[q].lo == Cell::Value(f);
+                let q=choose |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && shape::moving(s.threads[q].pc) && s.threads[q].lo == Cell::Value(f);
                 preserve_carried(s,c,p,pick,q,f);
             }
         }
@@ -126,20 +126,20 @@ pub proof fn goal(s: LState,c: Constants)
     requires valid_constants(c),c.limit > 0,hash::collapsed(c),inductive(s,c)
     ensures contains_goal(s,c)
 {
-    assert forall |f: int| s.history.contains(f) implies contains(s,c,f) by {
+    assert forall |f: int| #![trigger contains(s,c,f)] s.history.contains(f) implies contains(s,c,f) by {
         assert(represented(s,c,f)); assert(c.fps.contains(f));
         if !s.external.contains(f) {
-            if exists |i: int| 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f) {
-                let i=choose |i: int| 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f);
+            if exists |i: int| #![trigger visible(s,c,i)] 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f) {
+                let i=choose |i: int| #![trigger visible(s,c,i)] 1 <= i <= c.k && visible(s,c,i) && matches(s.table[i],f);
                 assert(shape::in_block(c,i)); let probe=if i == c.k { 0 } else { i };
                 hash::collapsed_slot(c,f,probe); assert(matches(s.table[idx(c,f,probe)],f));
             } else {
-                let p=choose |p: int| c.writers.contains(p) && shape::moving(s.threads[p].pc) && s.threads[p].lo == Cell::Value(f);
+                let p=choose |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && shape::moving(s.threads[p].pc) && s.threads[p].lo == Cell::Value(f);
                 assert(lock::local(s,p));
             }
         }
     }
-    assert forall |f: int| c.fps.contains(f) && !s.history.contains(f) implies !contains(s,c,f) by {
+    assert forall |f: int| #![trigger contains(s,c,f)] c.fps.contains(f) && !s.history.contains(f) implies !contains(s,c,f) by {
         if contains(s,c,f) { contents::no_spurious(s,c,f); }
     }
 }

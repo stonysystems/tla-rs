@@ -28,7 +28,7 @@ pub proof fn active_finite(s: LState,c: Constants,i: int)
     let values=n.active.map(|t: int| n.txns[t].snapshot.ts).insert(0).to_iset();
     assert(q.subset_of(values)) by {
         assert forall |v: int| q.contains(v) implies values.contains(v) by {
-            let t=choose |t: int| c.txns.contains(t) && (if n.txns[t].snapshot.active { n.txns[t].snapshot.ts } else { 0 }) == v;
+            let t=choose |t: int| #![trigger c.txns.contains(t)] c.txns.contains(t) && (if n.txns[t].snapshot.active { n.txns[t].snapshot.ts } else { 0 }) == v;
             if n.txns[t].snapshot.active { assert(n.active.contains(t)); assert(n.active.map(|t: int| n.txns[t].snapshot.ts).contains(v)); }
         }
     }

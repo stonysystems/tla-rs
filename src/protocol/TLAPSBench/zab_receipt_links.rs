@@ -8,58 +8,58 @@ verus! {
 pub proof fn updates(ae: Set<AE>,al: Set<AL>,i: int,e: int,h: Seq<Txn>)
     ensures ae_connected(update_ae(ae,i,e,h)) =~= ae_connected(ae).insert(i),al_connected(update_al(al,i)) =~= al_connected(al).insert(i)
 {
-    if ae_ids(ae).contains(i) { let old=choose |r: AE| ae.contains(r) && r.sid == i; assert(ae.contains(old) && old.sid == i); }
-    if al_ids(al).contains(i) { let old=choose |r: AL| al.contains(r) && r.sid == i; assert(al.contains(old) && old.sid == i); }
-    assert forall |j: int| ae_connected(update_ae(ae,i,e,h)).contains(j) <==> ae_connected(ae).insert(i).contains(j) by {
+    if ae_ids(ae).contains(i) { let old=choose |r: AE| #![trigger ae.contains(r)] ae.contains(r) && r.sid == i; assert(ae.contains(old) && old.sid == i); }
+    if al_ids(al).contains(i) { let old=choose |r: AL| #![trigger al.contains(r)] al.contains(r) && r.sid == i; assert(al.contains(old) && old.sid == i); }
+    assert forall |j: int| #![trigger ae_connected(ae).insert(i).contains(j)] ae_connected(update_ae(ae,i,e,h)).contains(j) <==> ae_connected(ae).insert(i).contains(j) by {
         if j == i { let r=AE { sid: i,connected: true,epoch: e,history: h }; assert(update_ae(ae,i,e,h).filter(|r: AE| r.connected).contains(r)); }
         else if ae_connected(ae).contains(j) {
-            let r=choose |r: AE| ae.contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AE| #![trigger ae.contains(r)] ae.contains(r) && r.connected && r.sid == j;
             assert(update_ae(ae,i,e,h).filter(|r: AE| r.connected).contains(r));
         }
         if ae_connected(update_ae(ae,i,e,h)).contains(j) && j != i {
-            let r=choose |r: AE| update_ae(ae,i,e,h).contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AE| #![trigger update_ae(ae,i,e,h).contains(r)] update_ae(ae,i,e,h).contains(r) && r.connected && r.sid == j;
             assert(ae.filter(|r: AE| r.connected).contains(r));
         }
     }
     assert forall |j: int| al_connected(update_al(al,i)).contains(j) <==> al_connected(al).insert(i).contains(j) by {
         if j == i { let r=AL { sid: i,connected: true }; assert(update_al(al,i).filter(|r: AL| r.connected).contains(r)); }
         else if al_connected(al).contains(j) {
-            let r=choose |r: AL| al.contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AL| #![trigger al.contains(r)] al.contains(r) && r.connected && r.sid == j;
             assert(update_al(al,i).filter(|r: AL| r.connected).contains(r));
         }
         if al_connected(update_al(al,i)).contains(j) && j != i {
-            let r=choose |r: AL| update_al(al,i).contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AL| #![trigger update_al(al,i).contains(r)] update_al(al,i).contains(r) && r.connected && r.sid == j;
             assert(al.filter(|r: AL| r.connected).contains(r));
         }
     }
 }
 pub proof fn disconnect(ae: Set<AE>,al: Set<AL>,i: int)
-    requires forall |r: AE,t: AE| ae.contains(r) && ae.contains(t) && r.sid == t.sid ==> r == t,
-        forall |r: AL,t: AL| al.contains(r) && al.contains(t) && r.sid == t.sid ==> r == t
+    requires forall |r: AE,t: AE| #![trigger ae.contains(r), ae.contains(t)] ae.contains(r) && ae.contains(t) && r.sid == t.sid ==> r == t,
+        forall |r: AL,t: AL| #![trigger al.contains(r), al.contains(t)] al.contains(r) && al.contains(t) && r.sid == t.sid ==> r == t
     ensures ae_connected(disconnect_ae(ae,i)) =~= ae_connected(ae).remove(i),al_connected(disconnect_al(al,i)) =~= al_connected(al).remove(i)
 {
-    if ae_ids(ae).contains(i) { let old=choose |r: AE| ae.contains(r) && r.sid == i; assert(ae.contains(old) && old.sid == i); }
-    if al_ids(al).contains(i) { let old=choose |r: AL| al.contains(r) && r.sid == i; assert(al.contains(old) && old.sid == i); }
+    if ae_ids(ae).contains(i) { let old=choose |r: AE| #![trigger ae.contains(r)] ae.contains(r) && r.sid == i; assert(ae.contains(old) && old.sid == i); }
+    if al_ids(al).contains(i) { let old=choose |r: AL| #![trigger al.contains(r)] al.contains(r) && r.sid == i; assert(al.contains(old) && old.sid == i); }
     assert forall |j: int| ae_connected(disconnect_ae(ae,i)).contains(j) <==> ae_connected(ae).remove(i).contains(j) by {
         if j != i && ae_connected(ae).contains(j) {
-            let r=choose |r: AE| ae.contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AE| #![trigger ae.contains(r)] ae.contains(r) && r.connected && r.sid == j;
             assert(disconnect_ae(ae,i).filter(|r: AE| r.connected).contains(r));
         }
         if ae_connected(disconnect_ae(ae,i)).contains(j) {
-            let r=choose |r: AE| disconnect_ae(ae,i).contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AE| #![trigger disconnect_ae(ae,i).contains(r)] disconnect_ae(ae,i).contains(r) && r.connected && r.sid == j;
             assert(ae.filter(|r: AE| r.connected).contains(r));
-            if j == i { let old=choose |r: AE| ae.contains(r) && r.sid == i; assert(r == old); assert(false); }
+            if j == i { let old=choose |r: AE| #![trigger ae.contains(r)] ae.contains(r) && r.sid == i; assert(r == old); assert(false); }
         }
     }
     assert forall |j: int| al_connected(disconnect_al(al,i)).contains(j) <==> al_connected(al).remove(i).contains(j) by {
         if j != i && al_connected(al).contains(j) {
-            let r=choose |r: AL| al.contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AL| #![trigger al.contains(r)] al.contains(r) && r.connected && r.sid == j;
             assert(disconnect_al(al,i).filter(|r: AL| r.connected).contains(r));
         }
         if al_connected(disconnect_al(al,i)).contains(j) {
-            let r=choose |r: AL| disconnect_al(al,i).contains(r) && r.connected && r.sid == j;
+            let r=choose |r: AL| #![trigger disconnect_al(al,i).contains(r)] disconnect_al(al,i).contains(r) && r.connected && r.sid == j;
             assert(al.filter(|r: AL| r.connected).contains(r));
-            if j == i { let old=choose |r: AL| al.contains(r) && r.sid == i; assert(r == old); assert(false); }
+            if j == i { let old=choose |r: AL| #![trigger al.contains(r)] al.contains(r) && r.sid == i; assert(r == old); assert(false); }
         }
     }
 }
@@ -98,10 +98,12 @@ pub proof fn facts(s: LState,c: Constants,i: int,j: int)
     ensures relation(s,i,j),relation(s,j,i),
         s.msgs[(i,j)].len() > 0 ==> packet(s,i,j,s.msgs[(i,j)][0]),s.msgs[(j,i)].len() > 0 ==> packet(s,j,i,s.msgs[(j,i)][0])
 {}
+#[verifier::spinoff_prover]
 pub proof fn preserve_relation(s: LState,c: Constants,a: Action,i: int,j: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j)
     ensures relation(apply(s,c,a),i,j)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); receipts::facts(s,c,i,j); facts(s,c,i,j);
     match a {
         Action::Timeout(x,y) | Action::Connect(x,y) | Action::CEpoch(x,y) | Action::NewEpoch(x,y) | Action::AckEpoch(x,y) | Action::NewLeader(x,y) | Action::AckLd(x,y) | Action::CommitLd(x,y) | Action::Propose(x,y) | Action::Ack(x,y) | Action::Commit(x,y) => {
@@ -115,10 +117,13 @@ pub proof fn preserve_relation(s: LState,c: Constants,a: Action,i: int,j: int)
         _ => {},
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_packet(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len()
     ensures packet(apply(s,c,a),i,j,apply(s,c,a).msgs[(i,j)][k])
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); receipts::facts(s,c,i,j); facts(s,c,i,j); connections::channel_pair(c,i,j);
     match a {
         Action::Timeout(x,y) | Action::Connect(x,y) | Action::CEpoch(x,y) | Action::NewEpoch(x,y) | Action::AckEpoch(x,y) | Action::NewLeader(x,y) | Action::AckLd(x,y) | Action::CommitLd(x,y) | Action::Propose(x,y) | Action::Ack(x,y) | Action::Commit(x,y) => {
@@ -157,6 +162,6 @@ pub proof fn connected_al(s: LState,c: Constants,i: int,j: int)
     ensures ae_connected(s.nodes[i].ae).contains(j),s.nodes[i].learners.contains(j),s.nodes[j].current == s.nodes[i].current,s.nodes[j].accepted == s.nodes[i].accepted
 {
     receipts::facts(s,c,i,j); facts(s,c,i,j);
-    let r=choose |r: AL| s.nodes[i].al.contains(r) && r.connected && r.sid == j; assert(s.nodes[i].al.contains(r) && r.connected && r.sid == j);
+    let r=choose |r: AL| #![trigger s.nodes[i].al.contains(r)] s.nodes[i].al.contains(r) && r.connected && r.sid == j; assert(s.nodes[i].al.contains(r) && r.connected && r.sid == j);
 }
 } // verus!

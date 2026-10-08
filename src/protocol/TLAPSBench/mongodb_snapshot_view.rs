@@ -10,7 +10,7 @@ use super::temporal::Behavior;
 verus! {
 broadcast use { vstd::imap::group_imap_lemmas, vstd::iset_lib::group_iset_lib_default, vstd::set_lib::group_set_lib_default, vstd::seq_lib::group_seq_properties };
 pub open spec fn refresh(n: LShard,c: Constants,t: int,k: int) -> bool {
-    exists |other: int,p: int,m: int| c.txns.contains(other) && other != t && 0 <= p < n.log.len() && 0 <= m < n.log.len()
+    exists |other: int,p: int,m: int| #![trigger c.txns.contains(other), n.log[p], n.log[m]] c.txns.contains(other) && other != t && 0 <= p < n.log.len() && 0 <= m < n.log.len()
         && n.log[p].prepare && n.log[p].txn == other && !n.log[m].prepare && n.log[m].txn == other && n.log[m].ts <= n.txns[t].snapshot.ts
         && n.log[m].data.dom().contains(k) && !n.txns[t].snapshot.writes.contains(k)
 }
@@ -31,7 +31,7 @@ pub proof fn refresh_retained(n: LShard,d: LShard,c: Constants,t: int,k: int)
     requires n.log.is_prefix_of(d.log),n.txns[t].snapshot.ts == d.txns[t].snapshot.ts,!d.txns[t].snapshot.writes.contains(k),refresh(n,c,t,k)
     ensures refresh(d,c,t,k)
 {
-    let (other,p,m)=choose |other: int,p: int,m: int| c.txns.contains(other) && other != t && 0 <= p < n.log.len() && 0 <= m < n.log.len()
+    let (other,p,m)=choose |other: int,p: int,m: int| #![trigger c.txns.contains(other), n.log[p], n.log[m]] c.txns.contains(other) && other != t && 0 <= p < n.log.len() && 0 <= m < n.log.len()
         && n.log[p].prepare && n.log[p].txn == other && !n.log[m].prepare && n.log[m].txn == other && n.log[m].ts <= n.txns[t].snapshot.ts
         && n.log[m].data.dom().contains(k) && !n.txns[t].snapshot.writes.contains(k);
     assert(d.log[p] == n.log[p]); assert(d.log[m] == n.log[m]);

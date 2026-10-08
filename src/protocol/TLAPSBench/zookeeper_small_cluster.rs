@@ -43,7 +43,7 @@ pub proof fn protocol_node(s: LState,c: Constants,a: Action,i: int)
         Action::Partition(_,y) | Action::Recover(_,y) | Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::Sync(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
             channels::facts(s,c,i,y); channels::facts(s,c,x,y); same_server(c,x,y);
             if a is Sync {
-                let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y); assert(r.zxid == unset()); assert(false);
+                let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y); assert(r.zxid == unset()); assert(false);
             }
         },_ => {},
     }

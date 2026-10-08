@@ -42,7 +42,7 @@ pub proof fn step_rank(s: LState,c: Constants,a: Action,n: int)
 }
 pub proof fn rank_until(s: Behavior<LState>,c: Constants,n: int,start: int,end: int)
     requires safety_spec(s,c),c.nodes.contains(n),0 <= start <= end,
-        forall |j: int| start <= j <= end ==> pending(s[j],Group::Inv(n))
+        forall |j: int| #![trigger s[j]] start <= j <= end ==> pending(s[j],Group::Inv(n))
     ensures rank(s[end],n) <= rank(s[start],n)
     decreases end-start
 {
@@ -70,7 +70,7 @@ pub proof fn progress_at(b: Behavior<LState>,c: Constants,n: int,start: int)
         let a=choose |a: Action| handles(Group::Inv(n),a) && #[trigger] enabled(b[k],c,a) && b[k+1] == apply(b[k],c,a);
         step_rank(b[k],c,a,n);
         progress_at(b,c,n,k+1);
-        let j=choose |j: int| j >= k+1 && !pending(b[j],Group::Inv(n));
+        let j=choose |j: int| #![trigger b[j]] j >= k+1 && !pending(b[j],Group::Inv(n));
         assert(j >= start && !pending(b[j],Group::Inv(n)));
     }
 }

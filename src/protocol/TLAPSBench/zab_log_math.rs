@@ -115,10 +115,10 @@ pub proof fn ack_prefix(h: Seq<Txn>,i: int,p: int)
         (if k <= p { h[k].ack.insert(i) } else { h[k].ack })
 {
     let z=h[p].zxid;
-    assert forall |k: int| 0 <= k < p+1 implies !newer(h[k].zxid,z) by { ordered(h,k,p); }
+    assert forall |k: int| #![trigger h[k]] 0 <= k < p+1 implies !newer(h[k].zxid,z) by { ordered(h,k,p); }
     if p+1 < h.len() { ordered(h,p,p+1); }
-    assert(exists |b: int| 0 <= b <= h.len() && (forall |k: int| 0 <= k < b ==> !newer(h[k].zxid,z)) && (b < h.len() ==> newer(h[b].zxid,z)));
-    let b=choose |b: int| 0 <= b <= h.len() && (forall |k: int| 0 <= k < b ==> !newer(h[k].zxid,z)) && (b < h.len() ==> newer(h[b].zxid,z));
+    assert(exists |b: int| #![trigger h[b]] 0 <= b <= h.len() && (forall |k: int| #![trigger h[k]] 0 <= k < b ==> !newer(h[k].zxid,z)) && (b < h.len() ==> newer(h[b].zxid,z)));
+    let b=choose |b: int| #![trigger h[b]] 0 <= b <= h.len() && (forall |k: int| #![trigger h[k]] 0 <= k < b ==> !newer(h[k].zxid,z)) && (b < h.len() ==> newer(h[b].zxid,z));
     if b <= p { ordered(h,b,p); assert(false); }
     if b > p+1 { assert(!newer(h[p+1].zxid,z)); ordered(h,p,p+1); assert(false); }
     assert(b == p+1);

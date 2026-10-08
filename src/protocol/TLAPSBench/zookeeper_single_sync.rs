@@ -30,7 +30,7 @@ pub proof fn no_acks(s: LState,c: Constants,i: int,j: int)
     ensures counts::count(s.msgs[(j,i)]) == 0
 {
     let q=s.msgs[(j,i)];
-    assert forall |m: Message| q.contains(m) implies !counts::is_ack(m) by { assert(ready::cell(s,c,j,i,m)); }
+    assert forall |m: Message| #![trigger counts::is_ack(m)] q.contains(m) implies !counts::is_ack(m) by { assert(ready::cell(s,c,j,i,m)); }
     counts::absent(q);
 }
 pub proof fn flags_nonincrease(s: LState,c: Constants,a: Action,i: int,j: int)
@@ -94,7 +94,7 @@ pub proof fn sync_pair(s: LState,c: Constants,x: int,y: int,i: int,j: int)
 {
     reveal(enabled); reveal(apply); channels::facts(s,c,i,x); channels::facts(s,c,j,x); channels::facts(s,c,x,y); assert(receipts::node(s,c,x)); assert(pair(s,i,j));
     counts::sync_count(s,c,x,y,j,i);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     if x == y { assert(r.zxid == unset()); assert(false); }
     links::clear_electing(s.nodes[x].electing,r,j); links::clear_current(s.nodes[x].electing,c,r);
     if i == x && j == y { assert(links::electing(s.nodes[x].electing,y)); assert(counts::count(s.msgs[(j,i)]) == 0); assert(!s.nodes[i].forwarding.contains(j)); }
@@ -133,7 +133,7 @@ pub proof fn before_sync(s: LState,c: Constants,i: int,j: int)
     requires channels::safe(s,c),safe(s,c),enabled(s,c,Action::Sync(i,j))
     ensures !s.nodes[i].forwarding.contains(j),counts::count(s.msgs[(j,i)]) == 0
 {
-    reveal(enabled); channels::facts(s,c,i,j); let r=choose |r: Electing| s.nodes[i].electing.contains(r) && r.sid == j && r.zxid != unset() && s.nodes[i].learners.contains(j);
+    reveal(enabled); channels::facts(s,c,i,j); let r=choose |r: Electing| #![trigger s.nodes[i].electing.contains(r)] s.nodes[i].electing.contains(r) && r.sid == j && r.zxid != unset() && s.nodes[i].learners.contains(j);
     if i == j { assert(r.zxid == unset()); assert(false); }
     assert(links::electing(s.nodes[i].electing,j)); assert(pair(s,i,j));
 }

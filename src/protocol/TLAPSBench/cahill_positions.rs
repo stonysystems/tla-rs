@@ -68,7 +68,7 @@ pub proof fn filtered_keys(h: Seq<Event>,p: spec_fn(Event) -> bool,t: int,read: 
     requires forall |e: Event| e.txn == t ==> p(e)
     ensures keys(h.filter(p),t,read) =~= keys(h,t,read)
 {
-    assert forall |k: int| keys(h.filter(p),t,read).contains(k) <==> keys(h,t,read).contains(k) by {
+    assert forall |k: int| #![trigger keys(h,t,read).contains(k)] keys(h.filter(p),t,read).contains(k) <==> keys(h,t,read).contains(k) by {
         super::cahill_keys::member(h,t,read,k); super::cahill_keys::member(h.filter(p),t,read,k);
         if keys(h,t,read).contains(k) {
             let i=choose |i: int| 0 <= i < h.len() && super::cahill_keys::access(#[trigger] h[i],t,read) && super::cahill_keys::key(h[i]) == k;

@@ -25,7 +25,7 @@ pub open spec fn inductive(s: LState,c: Constants) -> bool {
     && s.wait_count == waiters(s,c).len()
     && (forall |p: int| c.writers.contains(p) ==> #[trigger] local(s,p))
     && (forall |p: int,q: int| c.writers.contains(p) && c.writers.contains(q) ==> #[trigger] pair(s,p,q))
-    && (s.evict ==> exists |p: int| c.writers.contains(p) && owner(s.threads[p].pc))
+    && (s.evict ==> exists |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && owner(s.threads[p].pc))
 }
 pub proof fn initial_inductive(c: Constants)
     ensures inductive(initial(c),c)
@@ -87,7 +87,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
         if u.evict {
             reveal(thread_step); assert(local(s,p));
             if s.evict {
-                let q=choose |q: int| c.writers.contains(q) && owner(s.threads[q].pc);
+                let q=choose |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && owner(s.threads[q].pc);
                 assert(local(s,q)); assert(pair(s,p,q)); assert(owner(u.threads[q].pc));
             } else { assert(owner(u.threads[p].pc)); }
         }

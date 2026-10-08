@@ -25,6 +25,7 @@ pub proof fn initial_safe(c: Constants)
 {
     assert forall |i: int| c.servers.contains(i) implies #[trigger] node(initial(c),c,i) by {}
 }
+#[verifier::spinoff_prover]
 pub proof fn mode_role(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i)
     ensures apply(s,c,a).nodes[i].mode != Mode::None ==> apply(s,c,a).election.nodes[i].role == Role::Following
@@ -34,6 +35,7 @@ pub proof fn mode_role(s: LState,c: Constants,a: Action,i: int)
     if a is Crash { if let Some(y)=s.nodes[x].leader { channels::facts(s,c,i,y); channels::facts(s,c,x,y); } }
     match a { Action::Partition(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) => { channels::facts(s,c,i,y); channels::facts(s,c,x,y); },_ => {}, }
 }
+#[verifier::spinoff_prover]
 pub proof fn first_use_protocol(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),channels::safe(apply(s,c,a),c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),!(a is Election),
         apply(s,c,a).election.nodes[i].role == Role::Following,used(apply(s,c,a).nodes[i]),!(s.election.nodes[i].role == Role::Following && used(s.nodes[i]))
@@ -96,7 +98,7 @@ pub proof fn before_sync(s: LState,c: Constants,i: int,j: int)
     ensures clean(s.nodes[j]),s.nodes[j].phase == Phase::Synchronization
 {
     single::before_sync(s,c,i,j); reveal(enabled); channels::facts(s,c,i,j); assert(node(s,c,j));
-    let r=choose |r: Electing| s.nodes[i].electing.contains(r) && r.sid == j && r.zxid != unset() && s.nodes[i].learners.contains(j);
+    let r=choose |r: Electing| #![trigger s.nodes[i].electing.contains(r)] s.nodes[i].electing.contains(r) && r.sid == j && r.zxid != unset() && s.nodes[i].learners.contains(j);
     assert(super::zookeeper_receipt_links::electing(s.nodes[i].electing,j)); assert(ready::pair(s,c,i,j));
 }
 pub proof fn discovery_clean(s: LState,c: Constants,i: int)

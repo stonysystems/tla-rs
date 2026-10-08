@@ -58,7 +58,7 @@ pub proof fn sync_origin(s: LState,c: Constants,x: int,y: int,i: int,j: int,m: M
     ensures packet(apply(s,c,Action::Sync(x,y)),c,i,j,m)
 {
     reveal(enabled); reveal(apply);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     let n=s.nodes[x]; let e=s.election.nodes[x]; let min=n.snapshot.index+1;
     let max=if n.phase == Phase::Broadcast { n.committed.index } else { e.history.len() as int };
     let lo=if min > max { e.processed.zxid } else { e.history[min-1].zxid };
@@ -102,10 +102,12 @@ pub proof fn preserve_packet(s: LState,c: Constants,a: Action,i: int,j: int,m: M
         else { other_origin(s,c,a,i,j,m); }
     }
 }
+#[verifier::spinoff_prover]
 pub proof fn phase_origin(s: LState,c: Constants,a: Action,i: int)
     requires channels::safe(s,c),receipts::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i)
     ensures node(apply(s,c,a),c,i)
 {
+    hide(floor_index);
     let u=apply(s,c,a);
     if u.election.nodes[i].role == Role::Leading && (u.nodes[i].phase == Phase::Synchronization || u.nodes[i].phase == Phase::Broadcast) {
         if s.election.nodes[i].role == Role::Leading && (s.nodes[i].phase == Phase::Synchronization || s.nodes[i].phase == Phase::Broadcast) {

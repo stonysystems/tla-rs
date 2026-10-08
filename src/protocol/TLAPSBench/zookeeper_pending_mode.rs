@@ -31,7 +31,7 @@ pub proof fn send_pair(s: LState,x: int,y: int,zxid: z::Zxid,at: int,how: Mode,i
     let u=sync_send(s,x,y,zxid,at,how);
     if u.election.nodes[i].role == Role::Leading && i != j && u.nodes[i].forwarding.contains(j) && u.nodes[j].mode == Mode::None && !u.nodes[j].received_leader {
         if i == x && j == y { let k=s.msgs[(x,y)].len() as int; assert(fifo::mode(u.msgs[(i,j)][k])); }
-        else { let k=choose |k: int| 0 <= k < s.msgs[(i,j)].len() && fifo::mode(s.msgs[(i,j)][k]); assert(fifo::mode(u.msgs[(i,j)][k])); }
+        else { let k=choose |k: int| #![trigger s.msgs[(i,j)][k]] 0 <= k < s.msgs[(i,j)].len() && fifo::mode(s.msgs[(i,j)][k]); assert(fifo::mode(u.msgs[(i,j)][k])); }
     }
 }
 pub proof fn follow_pair(s: LState,x: int,y: int,peer: z::Zxid,i: int,j: int)
@@ -55,7 +55,7 @@ pub proof fn sync_pair(s: LState,c: Constants,x: int,y: int,i: int,j: int)
     ensures pair(apply(s,c,Action::Sync(x,y)),i,j)
 {
     reveal(apply); assert(pair(s,i,j));
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     follow_pair(s,x,y,r.zxid,i,j);
 }
 pub proof fn other_pair(s: LState,c: Constants,a: Action,i: int,j: int)
@@ -73,7 +73,7 @@ pub proof fn other_pair(s: LState,c: Constants,a: Action,i: int,j: int)
     let u=apply(s,c,a);
     if u.election.nodes[i].role == Role::Leading && i != j && u.nodes[i].forwarding.contains(j) && u.nodes[j].mode == Mode::None && !u.nodes[j].received_leader {
         assert(pending(s.msgs[(i,j)]));
-        let k=choose |k: int| 0 <= k < s.msgs[(i,j)].len() && fifo::mode(s.msgs[(i,j)][k]); fifo::facts(s,c,i,j,k);
+        let k=choose |k: int| #![trigger s.msgs[(i,j)][k]] 0 <= k < s.msgs[(i,j)].len() && fifo::mode(s.msgs[(i,j)][k]); fifo::facts(s,c,i,j,k);
         if k > 0 { assert(fifo::handshake(s.msgs[(i,j)][0])); }
         assert(0 <= k < u.msgs[(i,j)].len() && fifo::mode(u.msgs[(i,j)][k]) || 0 <= k-1 < u.msgs[(i,j)].len() && fifo::mode(u.msgs[(i,j)][k-1]));
     }
@@ -101,7 +101,7 @@ pub proof fn receive_data(s: LState,c: Constants,i: int,j: int)
 {
     reveal(enabled); ready::head(s,c,j,i); forwarding::head(s,c,j,i); assert(pair(s,j,i));
     if s.nodes[i].mode == Mode::None && !s.nodes[i].received_leader {
-        let k=choose |k: int| 0 <= k < s.msgs[(j,i)].len() && fifo::mode(s.msgs[(j,i)][k]); assert(fifo::cell(s,j,i,k));
+        let k=choose |k: int| #![trigger s.msgs[(j,i)][k]] 0 <= k < s.msgs[(j,i)].len() && fifo::mode(s.msgs[(j,i)][k]); assert(fifo::cell(s,j,i,k));
         if k > 0 { assert(fifo::handshake(s.msgs[(j,i)][0])); }
         assert(false);
     }

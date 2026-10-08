@@ -88,7 +88,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
                 assert(node(s,c,i,t)); let e=s.shards[i].txns[t].requests[0]; assert(s.shards[i].txns[t].requests.contains(e)); assert(request(s,c,t,e));
                 if let Request::Coordinate { participants,.. }=e {
                     let images=participants.to_set().map(|p: int| Prepare { shard: p,txn: t,coordinator: i }); assert(images.contains(m));
-                    let j=choose |j: int| participants.to_set().contains(j) && Prepare { shard: j,txn: t,coordinator: i } == m;
+                    let j=choose |j: int| #![trigger participants.to_set().contains(j)] participants.to_set().contains(j) && Prepare { shard: j,txn: t,coordinator: i } == m;
                     assert(participants.contains(j)); let p=choose |p: int| 0 <= p < participants.len() && participants[p] == j;
                     retained(s,c,a,t); let r=parts::owner(s,c,t); assert(time::selected(s,c,r,t)); assert(parts::router(s,c,r,t));
                     assert(c.shards.contains(parts::txn(s,c,t).participants[p].shard));

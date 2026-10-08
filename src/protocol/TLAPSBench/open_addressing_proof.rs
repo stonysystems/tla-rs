@@ -6,15 +6,15 @@ verus! {
 
 pub open spec fn writer_inv(t: LWriter, c: Constants) -> bool {
     (t.pc != Pc::Pick && t.pc != Pc::Done ==> c.fps.contains(t.fp))
-    && (forall |i: int| 0 <= i < t.stack.len() ==> t.stack[i].pc == Pc::EndEv)
+    && (forall |i: int| #![trigger t.stack[i]] 0 <= i < t.stack.len() ==> t.stack[i].pc == Pc::EndEv)
     && (t.pc == Pc::Rtrn ==> t.stack.len() > 0)
 }
 pub open spec fn completion_inv(s: LState, c: Constants) -> bool {
     s.threads.dom() == c.writers && s.history.subset_of(c.fps)
-    && (forall |p: int| c.writers.contains(p) ==> writer_inv(s.threads[p], c))
+    && (forall |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) ==> writer_inv(s.threads[p], c))
     && complete_as_safety(s, c)
     // The call stack is nonempty throughout the eviction subroutine.
-    && (forall |p: int| c.writers.contains(p) && in_evict(s.threads[p].pc) ==> s.threads[p].stack.len() > 0)
+    && (forall |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && in_evict(s.threads[p].pc) ==> s.threads[p].stack.len() > 0)
 }
 pub open spec fn in_evict(pc: Pc) -> bool {
     pc == Pc::StrIns || pc == Pc::NestedIns || pc == Pc::Set || pc == Pc::Flush || pc == Pc::Rtrn
@@ -36,7 +36,7 @@ pub proof fn writer_preservation(s: LState, c: Constants, p: int, pick: int)
     reveal(thread_step);
     let t = s.threads[p];
     let t2 = thread_step(s, c, p, pick);
-    assert forall |i: int| 0 <= i < t2.stack.len() implies t2.stack[i].pc == Pc::EndEv by {
+    assert forall |i: int| #![trigger t2.stack[i]] 0 <= i < t2.stack.len() implies t2.stack[i].pc == Pc::EndEv by {
         if t.pc == Pc::WaitIns && i > 0 { assert(t.stack[i - 1].pc == Pc::EndEv); }
         if t.pc == Pc::Rtrn { assert(t.stack[i + 1].pc == Pc::EndEv); }
     }
@@ -71,14 +71,14 @@ pub proof fn preserve_completion(s: LState, c: Constants, a: Action)
                     if !s.history.contains(f) { assert(t.pc == Pc::Cas); assert(c.fps.contains(t.fp)); }
                 }
             }
-            assert forall |q: int| c.writers.contains(q) implies writer_inv(u.threads[q], c) by {
+            assert forall |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) implies writer_inv(u.threads[q], c) by {
                 if q != p { assert(writer_inv(s.threads[q], c)); }
             }
-            assert forall |q: int| c.writers.contains(q) && in_evict(u.threads[q].pc)
+            assert forall |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && in_evict(u.threads[q].pc)
                 implies u.threads[q].stack.len() > 0 by {
                 if q != p { assert(s.threads[q].stack.len() > 0); }
             }
-            assert forall |q: int| c.writers.contains(q) && u.threads[q].pc == Pc::Done
+            assert forall |q: int| #![trigger c.writers.contains(q)] c.writers.contains(q) && u.threads[q].pc == Pc::Done
                 implies u.history == c.fps by {
                 if q != p { assert(s.threads[q].pc == Pc::Done); }
                 assert(s.history == c.fps);

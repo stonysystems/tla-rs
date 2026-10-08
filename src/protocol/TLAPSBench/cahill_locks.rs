@@ -60,7 +60,7 @@ pub proof fn owner_exists(s: LState,c: Constants,k: int)
     requires support::inductive(s,c),locked(s,c,k)
     ensures owner(s,k) is Some
 {
-    let t=choose |t: int| c.txns.contains(t) && s.txns[t].xlocks.contains(k); assert(support::node(s,c,t));
+    let t=choose |t: int| #![trigger c.txns.contains(t)] c.txns.contains(t) && s.txns[t].xlocks.contains(k); assert(support::node(s,c,t));
     assert(active(s.history).filter(|r: int| s.txns[r].xlocks.contains(k)).contains(t));
 }
 } // verus!

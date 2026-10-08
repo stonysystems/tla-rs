@@ -13,7 +13,7 @@ pub open spec fn node(s: LState,c: Constants,i: int) -> bool {
     let n=s.nodes[i];
     n.forwarding.subset_of(n.learners)
     && (s.election.nodes[i].role != Role::Leading ==> n.forwarding.is_empty())
-    && (s.election.nodes[i].role == Role::Leading ==> forall |r: Electing| n.electing.contains(r) && r.sid == i ==> r.zxid == unset())
+    && (s.election.nodes[i].role == Role::Leading ==> forall |r: Electing| #![trigger n.electing.contains(r)] n.electing.contains(r) && r.sid == i ==> r.zxid == unset())
 }
 pub open spec fn linked(s: LState,i: int,j: int) -> bool {
     i != j && (s.election.nodes[i].role == Role::Leading && s.nodes[i].learners.contains(j) || s.election.nodes[j].role == Role::Leading && s.nodes[j].learners.contains(i))
@@ -55,7 +55,7 @@ pub proof fn preserve_node_sync(s: LState,c: Constants,x: int,y: int,i: int)
     ensures node(apply(s,c,Action::Sync(x,y)),c,i)
 {
     reveal(enabled); reveal(apply); facts(s,c,i,x); facts(s,c,i,y); facts(s,c,x,y);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     if x == y { assert(r.zxid == unset()); assert(false); }
 }
 pub proof fn preserve_node_ackepoch(s: LState,c: Constants,x: int,y: int,i: int)
@@ -81,7 +81,7 @@ pub proof fn preserve_node_protocol(s: LState,c: Constants,a: Action,i: int)
     assert(u.election.nodes[i].role != Role::Leading ==> u.nodes[i].forwarding.is_empty());
     if u.election.nodes[i].role == Role::Leading {
         assert(s.election.nodes[i].role == Role::Leading);
-        assert forall |r: Electing| u.nodes[i].electing.contains(r) && r.sid == i implies r.zxid == unset() by {
+        assert forall |r: Electing| #![trigger u.nodes[i].electing.contains(r)] u.nodes[i].electing.contains(r) && r.sid == i implies r.zxid == unset() by {
             if s.nodes[i].electing.contains(r) { assert(r.zxid == unset()); }
             else { assert(r.zxid == unset()); }
         }
@@ -113,7 +113,7 @@ pub proof fn preserve_sync(s: LState,c: Constants,x: int,y: int,i: int,j: int)
     ensures cell(apply(s,c,Action::Sync(x,y)),i,j)
 {
     reveal(enabled); reveal(apply); channel_pair(c,i,j); facts(s,c,i,j); facts(s,c,i,x); facts(s,c,j,x); facts(s,c,i,y); facts(s,c,j,y); facts(s,c,x,y);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     if x == y { assert(r.zxid == unset()); assert(false); }
 }
 pub proof fn preserve_protocol(s: LState,c: Constants,a: Action,i: int,j: int)
@@ -125,7 +125,7 @@ pub proof fn preserve_protocol(s: LState,c: Constants,a: Action,i: int,j: int)
         Action::Connect(_,y) | Action::FollowerInfo(_,y) | Action::LeaderInfo(_,y) | Action::AckEpoch(_,y) | Action::Sync(_,y) | Action::SyncMessage(_,y) | Action::ProposalSync(_,y) | Action::CommitSync(_,y) | Action::NewLeader(_,y) | Action::AckLd(_,y) | Action::UpToDate(_,y) | Action::Proposal(_,y) | Action::Ack(_,y) | Action::Commit(_,y) => {
             facts(s,c,i,y); facts(s,c,j,y); facts(s,c,x,y);
             if a is Sync {
-                let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+                let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
                 if x == y { assert(r.zxid == unset()); assert(false); }
             }
         },

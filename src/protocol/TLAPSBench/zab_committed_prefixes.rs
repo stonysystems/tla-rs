@@ -153,10 +153,13 @@ pub proof fn advertised(b: Behavior<LState>,c: Constants,time: int,i: int,z: Zxi
         assert(origin(b,c,time,e,z,(time,i,k))); assert(backed(b,c,time,e,z)); assert(justified(b,c,time,n.current,z));
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_packet(b: Behavior<LState>,c: Constants,time: int,i: int,j: int,p: int)
     requires connections::safety_spec(b,c),time >= 0,inductive(b,c,time),c.servers.contains(i),c.servers.contains(j),0 <= p < b[time+1].msgs[(i,j)].len()
     ensures packet(b,c,time+1,i,b[time+1].msgs[(i,j)][p])
 {
+    hide(update_ack);
     let a=super::zab_sessions::step(b,c,time); let s=b[time]; let u=b[time+1]; let m=u.msgs[(i,j)][p];
     logs::at(b,c,time); logs::preserve(s,c,a); logs::facts(s,c,i,j); logs::facts(u,c,i,j); connections::channel_pair(c,i,j);
     if p < s.msgs[(i,j)].len() { advance_packet(b,c,time,i,s.msgs[(i,j)][p]); }

@@ -22,7 +22,7 @@ pub open spec fn row(s: LState,c: Constants,i: int) -> bool {
 pub open spec fn safe(s: LState,c: Constants) -> bool { forall |i: int| c.shards.contains(i) ==> #[trigger] row(s,c,i) }
 pub proof fn checked(s: LState,c: Constants,i: int,t: int,k: int)
     requires support::shape(s,c),lifecycle::safe(s,c),c.shards.contains(i),c.txns.contains(t),s.shards[i].txns[t].snapshot.active,!write_conflict(s.shards[i],c,t,k)
-    ensures clear(s.shards[i],t,k),forall |w: int| c.txns.contains(w) && s.shards[i].txns[w].snapshot.active && s.shards[i].txns[w].snapshot.writes.contains(k) ==> w == t
+    ensures clear(s.shards[i],t,k),forall |w: int| #![trigger c.txns.contains(w)] c.txns.contains(w) && s.shards[i].txns[w].snapshot.active && s.shards[i].txns[w].snapshot.writes.contains(k) ==> w == t
 {
     let n=s.shards[i]; assert(lifecycle::row(s,c,i)); assert(lifecycle::node(n,t));
     assert forall |p: int| 0 <= p < n.log.len() && !(#[trigger] n.log[p]).prepare && n.log[p].data.dom().contains(k) implies n.log[p].ts <= n.txns[t].snapshot.ts by {
@@ -33,7 +33,7 @@ pub proof fn checked(s: LState,c: Constants,i: int,t: int,k: int)
             assert(write_conflict(n,c,t,k)); assert(false);
         }
     }
-    assert forall |w: int| c.txns.contains(w) && n.txns[w].snapshot.active && n.txns[w].snapshot.writes.contains(k) implies w == t by {
+    assert forall |w: int| #![trigger c.txns.contains(w)] c.txns.contains(w) && n.txns[w].snapshot.active && n.txns[w].snapshot.writes.contains(k) implies w == t by {
         if w != t { assert(write_conflict(n,c,t,k)); }
     }
 }

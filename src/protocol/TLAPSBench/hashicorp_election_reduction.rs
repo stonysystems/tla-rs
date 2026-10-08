@@ -56,7 +56,7 @@ pub proof fn log_matching_from_election_safety(b: Behavior<LState>,c: Constants,
     requires configs::safety_spec(b,c),time >= 0,election_safety(b[time])
     ensures log_matching(b[time],c)
 {
-    assert forall |i: int,j: int,k: int| c.servers.contains(i) && c.servers.contains(j)
+    assert forall |i: int,j: int,k: int| #![trigger c.servers.contains(i), sub(b[time].nodes[j].log,1,k)] #![trigger c.servers.contains(j), sub(b[time].nodes[i].log,1,k)] c.servers.contains(i) && c.servers.contains(j)
         && 1 <= k <= b[time].nodes[i].log.len() && k <= b[time].nodes[j].log.len()
         && b[time].nodes[i].log[k-1].term == b[time].nodes[j].log[k-1].term implies
         sub(b[time].nodes[i].log,1,k) == sub(b[time].nodes[j].log,1,k) by {

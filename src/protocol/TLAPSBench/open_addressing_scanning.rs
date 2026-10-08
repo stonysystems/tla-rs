@@ -23,10 +23,10 @@ pub proof fn same_table(s: LState,u: LState,c: Constants,f: int,n: int)
         }
     }
     if passed(s,c,f,n) {
-        assert forall |r: int| 0 <= r < n implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(f) by { assert(shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(f)); }
+        assert forall |r: int| #![trigger cell(u,c,r)] 0 <= r < n implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(f) by { assert(shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(f)); }
     }
     if passed(u,c,f,n) {
-        assert forall |r: int| 0 <= r < n implies shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(f) by { assert(shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(f)); }
+        assert forall |r: int| #![trigger cell(s,c,r)] 0 <= r < n implies shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(f) by { assert(shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(f)); }
     }
     if placement(s,c,f,n) {
         assert forall |r: int| 0 <= r < n && cell(u,c,r) == Cell::Value(f) implies #[trigger] before(u,c,r) by { assert(before(s,c,r)); }
@@ -40,7 +40,7 @@ pub proof fn passed_other(s: LState,c: Constants,p: int,pick: int,q: int,f: int,
         c.writers.contains(q),active(s.threads[q].pc),p != q,0 <= n <= c.limit,passed(s,c,f,n)
     ensures passed(apply(s,c,Action::Writer { p,pick }),c,f,n)
 {
-    assert forall |r: int| 0 <= r < n implies shape::positive(cell(apply(s,c,Action::Writer { p,pick }),c,r)) && cell(apply(s,c,Action::Writer { p,pick }),c,r) != Cell::Value(f) by {
+    assert forall |r: int| #![trigger cell(apply(s,c,Action::Writer { p,pick }),c,r)] 0 <= r < n implies shape::positive(cell(apply(s,c,Action::Writer { p,pick }),c,r)) && cell(apply(s,c,Action::Writer { p,pick }),c,r) != Cell::Value(f) by {
         active_other_step(s,c,p,pick,q,r); assert(shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(f));
     }
 }
@@ -106,12 +106,12 @@ pub proof fn own_local(s: LState,c: Constants,p: int,pick: int)
                     else if q > t.index { assert(cell(s,c,t.index) is Value); }
                     assert forall |r: int| 0 <= r < q implies #[trigger] shape::positive(cell(u,c,r)) by { assert(shape::positive(cell(s,c,r))); }
                 }
-                assert forall |r: int| 0 <= r < value(v.expected) implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(t.fp) by {
+                assert forall |r: int| #![trigger cell(u,c,r)] 0 <= r < value(v.expected) implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(t.fp) by {
                     assert(shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(t.fp));
                 }
             } else if !matches(cell(s,c,t.index),t.fp) {
                 let n2=if v.index < value(v.expected) { v.index } else { value(v.expected) };
-                assert forall |r: int| 0 <= r < n2 implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(t.fp) by {
+                assert forall |r: int| #![trigger cell(u,c,r)] 0 <= r < n2 implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(t.fp) by {
                     if r < n { assert(shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(t.fp)); }
                 }
                 assert forall |r: int| 0 <= r < v.index && cell(u,c,r) == Cell::Value(t.fp) implies #[trigger] before(u,c,r) by {
@@ -134,7 +134,7 @@ pub proof fn own_local(s: LState,c: Constants,p: int,pick: int)
     if t.pc == Pc::IsMth {
         hash::collapsed_slot(c,t.fp,t.index);
         if !matches(cell(s,c,t.index),t.fp) {
-            assert forall |r: int| 0 <= r < t.index+1 implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(t.fp) by {
+            assert forall |r: int| #![trigger cell(u,c,r)] 0 <= r < t.index+1 implies shape::positive(cell(u,c,r)) && cell(u,c,r) != Cell::Value(t.fp) by {
                 if r < t.index { assert(shape::positive(cell(s,c,r)) && cell(s,c,r) != Cell::Value(t.fp)); }
             }
         }

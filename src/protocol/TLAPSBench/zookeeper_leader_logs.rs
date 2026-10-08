@@ -37,7 +37,7 @@ pub proof fn sync_step(s: LState,c: Constants,x: int,y: int,i: int)
     ensures prefix(s.election.nodes[i].history,apply(s,c,Action::Sync(x,y)).election.nodes[i].history)
 {
     reveal(enabled); reveal(apply); channels::facts(s,c,i,x); channels::facts(s,c,x,y);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     if x == y { assert(r.zxid == unset()); assert(false); }
     sync_history(s,x,y,r.zxid);
 }

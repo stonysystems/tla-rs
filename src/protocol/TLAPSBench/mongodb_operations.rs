@@ -8,7 +8,7 @@ pub proof fn write_member(ops: Seq<Operation>,k: int)
 {
     let q=ops.to_set().filter(|o: Operation| o.kind == Kind::Write); q.lemma_map_contains(|o: Operation| o.key,k);
     if write_keys(ops).contains(k) {
-        let o=choose |o: Operation| q.contains(o) && o.key == k; assert(ops.to_set().contains(o));
+        let o=choose |o: Operation| #![trigger q.contains(o)] q.contains(o) && o.key == k; assert(ops.to_set().contains(o));
         let i=choose |i: int| 0 <= i < ops.len() && ops[i] == o;
     }
     if exists |i: int| 0 <= i < ops.len() && (#[trigger] ops[i]).kind == Kind::Write && ops[i].key == k {
@@ -19,7 +19,7 @@ pub proof fn write_member(ops: Seq<Operation>,k: int)
 pub proof fn writes_concat(a: Seq<Operation>,d: Seq<Operation>)
     ensures write_keys(a+d) =~= write_keys(a).union(write_keys(d))
 {
-    assert forall |k: int| write_keys(a+d).contains(k) <==> write_keys(a).union(write_keys(d)).contains(k) by {
+    assert forall |k: int| #![trigger write_keys(a+d).contains(k)] write_keys(a+d).contains(k) <==> write_keys(a).union(write_keys(d)).contains(k) by {
         write_member(a+d,k); write_member(a,k); write_member(d,k);
         if write_keys(a+d).contains(k) {
             let i=choose |i: int| 0 <= i < (a+d).len() && (#[trigger] (a+d)[i]).kind == Kind::Write && (a+d)[i].key == k;

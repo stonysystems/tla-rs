@@ -62,6 +62,8 @@ pub proof fn preserve_node(s: LState,c: Constants,a: Action,i: int)
         _ => {},
     }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_packet(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len()
     ensures packet(apply(s,c,a),i,j,apply(s,c,a).msgs[(i,j)][k])

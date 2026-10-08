@@ -22,7 +22,7 @@ pub struct Constants { pub keys: ISet<int>,pub txns: ISet<int>,pub routers: ISet
 pub struct LState { pub catalog: IMap<int,int>,pub routers: IMap<int,IMap<int,RTransaction>>,pub shards: IMap<int,LShard>,pub ops: IMap<int,Seq<Operation>>,
     pub prepares: Set<Prepare>,pub votes: Set<Vote>,pub commits: Set<Commit> }
 pub open spec fn valid_constants(c: Constants) -> bool { !c.txns.contains(c.no_value) && forall |ts: int| c.timestamps.contains(ts) ==> ts >= 0 }
-pub open spec fn valid_catalog(c: Constants,catalog: IMap<int,int>) -> bool { catalog.dom() == c.keys && forall |k: int| c.keys.contains(k) ==> c.shards.contains(catalog[k]) }
+pub open spec fn valid_catalog(c: Constants,catalog: IMap<int,int>) -> bool { catalog.dom() == c.keys && forall |k: int| #![trigger c.keys.contains(k)] c.keys.contains(k) ==> c.shards.contains(catalog[k]) }
 pub open spec fn empty_snapshot(c: Constants) -> Snapshot { Snapshot { active: false,committed: false,aborted: false,prepared: false,prepare_ts: 0,ts: 0,
     data: IMap::new(|k: int| c.keys.contains(k),|k: int| c.no_value),reads: Set::empty(),writes: Set::empty() } }
 pub open spec fn initial(c: Constants,catalog: IMap<int,int>) -> LState {
@@ -38,7 +38,7 @@ pub open spec fn active_read_ts(n: LShard,c: Constants) -> ISet<int> { c.txns.ma
 pub open spec fn log_ts(n: LShard) -> ISet<int> { n.log.to_set().map(|e: LogEntry| e.ts).to_iset() }
 pub open spec fn next_ts(n: LShard,c: Constants) -> int { maximum(log_ts(n).union(active_read_ts(n,c)))+1 }
 pub open spec fn all_durable(n: LShard,c: Constants) -> int {
-    if exists |t: int| c.txns.contains(t) && n.txns[t].snapshot.committed {
+    if exists |t: int| #![trigger c.txns.contains(t)] c.txns.contains(t) && n.txns[t].snapshot.committed {
         maximum(n.log.to_set().filter(|e: LogEntry| !e.prepare).map(|e: LogEntry| e.ts).to_iset())
     } else { 0 }
 }
@@ -50,16 +50,16 @@ pub open spec fn new_snapshot(n: LShard,c: Constants,ts: int) -> Snapshot {
     Snapshot { active: true,ts,data: IMap::new(|k: int| c.keys.contains(k),|k: int| snapshot_read(n,c,k,ts)),..empty_snapshot(c) }
 }
 pub open spec fn write_conflict(n: LShard,c: Constants,t: int,k: int) -> bool {
-    exists |other: int| c.txns.contains(other) && other != t && (
+    exists |other: int| #![trigger c.txns.contains(other)] c.txns.contains(other) && other != t && (
         n.txns[t].snapshot.active && n.txns[other].snapshot.active && n.txns[other].snapshot.writes.contains(k)
         || exists |i: int| 0 <= i < n.log.len() && !(#[trigger] n.log[i]).prepare && n.log[i].ts > n.txns[t].snapshot.ts && n.log[i].data.dom().contains(k))
 }
 pub open spec fn prepare_conflict(n: LShard,c: Constants,t: int,k: int) -> bool {
-    exists |other: int| c.txns.contains(other) && other != t && n.txns[other].snapshot.active && n.txns[other].snapshot.prepared
+    exists |other: int| #![trigger c.txns.contains(other)] c.txns.contains(other) && other != t && n.txns[other].snapshot.active && n.txns[other].snapshot.prepared
         && n.txns[other].snapshot.writes.contains(k) && n.txns[other].snapshot.prepare_ts <= n.txns[t].snapshot.ts
 }
 pub open spec fn txn_read(n: LShard,c: Constants,t: int,k: int) -> int {
-    if exists |other: int,p: int,m: int| c.txns.contains(other) && other != t && 0 <= p < n.log.len() && 0 <= m < n.log.len()
+    if exists |other: int,p: int,m: int| #![trigger c.txns.contains(other), n.log[p], n.log[m]] c.txns.contains(other) && other != t && 0 <= p < n.log.len() && 0 <= m < n.log.len()
         && n.log[p].prepare && n.log[p].txn == other && !n.log[m].prepare && n.log[m].txn == other && n.log[m].ts <= n.txns[t].snapshot.ts
         && n.log[m].data.dom().contains(k) && !n.txns[t].snapshot.writes.contains(k) {
         snapshot_read(n,c,k,n.txns[t].snapshot.ts)
@@ -82,7 +82,7 @@ pub open spec fn update_participants(q: Seq<Participant>,i: int,op: Kind) -> Seq
     if participant_shards(q).contains(i) { Seq::new(q.len(),|k: int| if q[k].shard == i { Participant { kinds: q[k].kinds.insert(op),..q[k] } } else { q[k] }) }
     else { q.push(Participant { shard: i,kinds: set![op] }) }
 }
-pub open spec fn any_aborted(s: LState,c: Constants,t: int) -> bool { exists |i: int| c.shards.contains(i) && s.shards[i].txns[t].aborted }
+pub open spec fn any_aborted(s: LState,c: Constants,t: int) -> bool { exists |i: int| #![trigger c.shards.contains(i)] c.shards.contains(i) && s.shards[i].txns[t].aborted }
 pub open spec fn commit_messages(q: Seq<int>,t: int,ts: int) -> Set<Commit> { q.to_set().map(|i: int| Commit { shard: i,txn: t,ts }) }
 pub enum Action { RouterStart { r: int,t: int,ts: int },RouterOp { r: int,i: int,t: int,k: int,op: Kind },
     RouterCoordinate { r: int,i: int,t: int },RouterReadOnly { r: int,i: int,t: int },RouterSingle { r: int,i: int,t: int },
@@ -91,7 +91,7 @@ pub enum Action { RouterStart { r: int,t: int,ts: int },RouterOp { r: int,i: int
 pub open spec fn enabled(s: LState,c: Constants,a: Action) -> bool {
     match a {
         Action::Stutter => true,
-        Action::RouterStart { r,t,ts } => c.routers.contains(r) && c.txns.contains(t) && c.timestamps.contains(ts) && forall |other: int| c.routers.contains(other) ==> s.routers[other][t].read_ts == c.no_value,
+        Action::RouterStart { r,t,ts } => c.routers.contains(r) && c.txns.contains(t) && c.timestamps.contains(ts) && forall |other: int| #![trigger c.routers.contains(other)] c.routers.contains(other) ==> s.routers[other][t].read_ts == c.no_value,
         Action::RouterOp { r,i,t,k,op } => c.routers.contains(r) && c.shards.contains(i) && c.txns.contains(t) && c.keys.contains(k)
             && !any_aborted(s,c,t) && !s.routers[r][t].committing && s.routers[r][t].read_ts != c.no_value && s.catalog[k] == i && s.shards[i].txns[t].requests.len() == 0,
         Action::RouterCoordinate { r,i,t } => c.routers.contains(r) && c.shards.contains(i) && c.txns.contains(t) && s.shards[i].txns[t].requests.len() == 0

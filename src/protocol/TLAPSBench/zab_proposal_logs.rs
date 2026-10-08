@@ -25,7 +25,7 @@ pub proof fn grow(a: Seq<Txn>,b: Seq<Txn>,e: int,m: Message)
     match m {
         Message::NewLeader(_,h) => { leader::epoch_transitive(h,a,b,e); },
         Message::Propose(z,v) => {
-            let p=choose |p: int| 0 <= p < a.len() && a[p].zxid == z && a[p].value == v;
+            let p=choose |p: int| #![trigger a[p]] 0 <= p < a.len() && a[p].zxid == z && a[p].value == v;
             assert(equal(a[p],b[p])); assert(b[p].zxid == z && b[p].value == v);
         },
         _ => {},
@@ -43,10 +43,13 @@ pub proof fn initial_inductive(c: Constants)
     assert forall |i: int,j: int,k: int| c.servers.contains(i) && c.servers.contains(j) && 0 <= k < initial(c).msgs[(i,j)].len()
         implies #[trigger] packet(initial(c).nodes[i].history,initial(c).nodes[i].current,initial(c).msgs[(i,j)][k]) by { connections::channel_pair(c,i,j); }
 }
+#[verifier::spinoff_prover]
+#[verifier::rlimit(30)]
 pub proof fn preserve_packet(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),0 <= k < apply(s,c,a).msgs[(i,j)].len()
     ensures packet(apply(s,c,a).nodes[i].history,apply(s,c,a).nodes[i].current,apply(s,c,a).msgs[(i,j)][k])
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); logs::facts(s,c,i,j); connections::channel_pair(c,i,j);
     logs::preserve(s,c,a); let u=apply(s,c,a); logs::facts(u,c,i,j);
     assert(phases::packet(u,c,i,j,u.msgs[(i,j)][k]));

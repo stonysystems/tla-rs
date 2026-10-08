@@ -16,11 +16,11 @@ pub open spec fn thread(s: LState,c: Constants,p: int) -> bool {
     && (t.pc == Pc::IsMth ==> s.table[idx(c,t.fp,0)] == Cell::Value(t.fp))
 }
 pub open spec fn homes(s: LState,c: Constants) -> bool {
-    forall |i: int| 1 <= i <= c.k && s.table[i] is Value ==>
+    forall |i: int| #![trigger s.table[i]] 1 <= i <= c.k && s.table[i] is Value ==>
         c.fps.contains(value(s.table[i])) && idx(c,value(s.table[i]),0) == i
 }
 pub open spec fn membership(s: LState,c: Constants) -> bool {
-    forall |f: int| c.fps.contains(f) ==> (s.history.contains(f) <==> s.table[idx(c,f,0)] == Cell::Value(f))
+    forall |f: int| #![trigger c.fps.contains(f)] #![trigger s.history.contains(f)] c.fps.contains(f) ==> (s.history.contains(f) <==> s.table[idx(c,f,0)] == Cell::Value(f))
 }
 pub open spec fn inductive(s: LState,c: Constants) -> bool {
     base::completion_inv(s,c) && s.table.dom() == ISet::new(|i: int| 1 <= i <= c.k)
@@ -33,7 +33,7 @@ pub proof fn initial_inductive(c: Constants)
     ensures inductive(initial(c),c)
 {
     base::initial_completion(c);
-    assert forall |f: int| c.fps.contains(f) implies (initial(c).history.contains(f) <==> initial(c).table[idx(c,f,0)] == Cell::Value(f)) by {
+    assert forall |f: int| #![trigger c.fps.contains(f)] c.fps.contains(f) implies (initial(c).history.contains(f) <==> initial(c).table[idx(c,f,0)] == Cell::Value(f)) by {
         contents::idx_range(c,f,0);
     }
 }
@@ -80,20 +80,20 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
         assert(thread(s,c,p)); contents::idx_range(c,s.threads[p].fp,0);
         assert(u.table.dom() =~= s.table.dom());
         assert forall |q: int| c.writers.contains(q) implies #[trigger] thread(u,c,q) by { preserve_thread(s,c,p,pick,q); }
-        assert forall |i: int| 1 <= i <= c.k && u.table[i] is Value implies c.fps.contains(value(u.table[i])) && idx(c,value(u.table[i]),0) == i by { preserve_home(s,c,p,pick,i); }
-        assert forall |f: int| c.fps.contains(f) implies (u.history.contains(f) <==> u.table[idx(c,f,0)] == Cell::Value(f)) by { preserve_membership(s,c,p,pick,f); }
+        assert forall |i: int| #![trigger u.table[i]] 1 <= i <= c.k && u.table[i] is Value implies c.fps.contains(value(u.table[i])) && idx(c,value(u.table[i]),0) == i by { preserve_home(s,c,p,pick,i); }
+        assert forall |f: int| #![trigger c.fps.contains(f)] #![trigger u.history.contains(f)] c.fps.contains(f) implies (u.history.contains(f) <==> u.table[idx(c,f,0)] == Cell::Value(f)) by { preserve_membership(s,c,p,pick,f); }
     }
 }
 pub proof fn goals(s: LState,c: Constants)
     requires valid_constants(c),inductive(s,c)
     ensures consistent(s,c),contains_goal(s,c),duplicates(s,c)
 {
-    assert forall |f: int| s.history.contains(f) implies contains(s,c,f) && contained_in_table(s,c,f) by {
+    assert forall |f: int| #![trigger contains(s,c,f)] #![trigger contained_in_table(s,c,f)] s.history.contains(f) implies contains(s,c,f) && contained_in_table(s,c,f) by {
         assert(c.fps.contains(f)); assert(s.table[idx(c,f,0)] == Cell::Value(f));
     }
-    assert forall |f: int| c.fps.contains(f) && !s.history.contains(f) implies !contains(s,c,f) by {
+    assert forall |f: int| #![trigger contains(s,c,f)] c.fps.contains(f) && !s.history.contains(f) implies !contains(s,c,f) by {
         if contains(s,c,f) {
-            let p=choose |p: int| 0 <= p <= c.limit && matches(s.table[idx(c,f,p)],f);
+            let p=choose |p: int| #![trigger idx(c,f,p)] 0 <= p <= c.limit && matches(s.table[idx(c,f,p)],f);
             contents::idx_range(c,f,p); let x=s.table[idx(c,f,p)];
             assert(c.fps.contains(value(x))); assert(value(x) > 0); assert(value(x) == f);
             assert(idx(c,f,0) == idx(c,f,p));
@@ -105,7 +105,7 @@ pub proof fn goals(s: LState,c: Constants)
             contents::idx_range(c,abs(-f),p); assert(c.fps.contains(-f));
         }
     }
-    assert forall |i: int,j: int| 1 <= i < j <= c.k && s.table[i] is Value && s.table[j] is Value
+    assert forall |i: int,j: int| #![trigger s.table[i], s.table[j]] 1 <= i < j <= c.k && s.table[i] is Value && s.table[j] is Value
         implies abs(value(s.table[i])) != abs(value(s.table[j])) by {
         assert(c.fps.contains(value(s.table[i]))); assert(c.fps.contains(value(s.table[j])));
         assert(value(s.table[i]) > 0 && value(s.table[j]) > 0);

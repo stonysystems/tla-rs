@@ -24,7 +24,7 @@ pub proof fn read_safe(s: LState,c: Constants,t: int,k: int)
     let v=choose |v: int| version(s,t,k).contains(v); let e=Event { txn: t,op: Op::Read { key: k,version: v } }; let fail=Event { txn: t,op: Op::Abort(Reason::ReadConflict) };
     history::append(s.history,e); history::append(s.history,fail); lifecycle::append(s.history,e); lifecycle::append(s.history,fail);
     assert(s.history.is_prefix_of(u.history));
-    let rejected=exists |w: int| newer_versions(s,t,k).contains(w) && committed(s.history).contains(w) && s.txns[w].outgoing;
+    let rejected=exists |w: int| #![trigger committed(s.history).contains(w)] newer_versions(s,t,k).contains(w) && committed(s.history).contains(w) && s.txns[w].outgoing;
     assert forall |r: int,w: int,key: int| c.txns.contains(r) && c.txns.contains(w) && #[trigger] overlap::edge(u,r,w,key)
         implies u.txns[r].outgoing && u.txns[w].incoming by {
         keys_math::append(s.history,e,r,true); keys_math::append(s.history,e,w,false);
@@ -54,7 +54,7 @@ pub proof fn acquire_safe(s: LState,c: Constants,t: int,k: int)
     let e=Event { txn: t,op: Op::Write(k) }; let fail=Event { txn: t,op: Op::Abort(Reason::WriteConflict) };
     history::append(s.history,e); history::append(s.history,fail); lifecycle::append(s.history,e); lifecycle::append(s.history,fail);
     assert(s.history.is_prefix_of(u.history));
-    let readers=concurrent_readers(s,c,t,k); let rejected=exists |r: int| readers.contains(r) && (committed(s.history).contains(r) || s.txns[r].incoming);
+    let readers=concurrent_readers(s,c,t,k); let rejected=exists |r: int| #![trigger readers.contains(r)] readers.contains(r) && (committed(s.history).contains(r) || s.txns[r].incoming);
     assert forall |r: int,w: int,key: int| c.txns.contains(r) && c.txns.contains(w) && #[trigger] overlap::edge(u,r,w,key)
         implies u.txns[r].outgoing && u.txns[w].incoming by {
         keys_math::append(s.history,e,r,true); keys_math::append(s.history,e,w,false);

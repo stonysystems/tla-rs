@@ -10,7 +10,7 @@ pub open spec fn node_inv(s: LState, c: Constants, i: int) -> bool {
     && (n.role != Role::Follower ==> n.voted_for == Some(i) && c.voters.contains(i))
     && n.granted.subset_of(c.voters)
     && (n.role == Role::Leader ==> quorum(n.granted, c))
-    && (forall |v: int| n.role != Role::Follower && n.granted.contains(v) ==> s.votes.contains(Ballot { voter: v, term: n.term, candidate: i }))
+    && (forall |v: int| #![trigger n.granted.contains(v)] n.role != Role::Follower && n.granted.contains(v) ==> s.votes.contains(Ballot { voter: v, term: n.term, candidate: i }))
 }
 pub open spec fn message_wf(m: Message, c: Constants) -> bool {
     c.servers.contains(m.source) && c.servers.contains(m.dest)
@@ -71,7 +71,7 @@ pub proof fn preserve_node(s: LState, c: Constants, a: Action, i: int)
             vstd::set_lib::lemma_len_subset(s.nodes[i].granted, u.nodes[i].granted);
         }
     }
-    assert forall |v: int| u.nodes[i].role != Role::Follower && u.nodes[i].granted.contains(v)
+    assert forall |v: int| #![trigger u.nodes[i].granted.contains(v)] u.nodes[i].role != Role::Follower && u.nodes[i].granted.contains(v)
         implies u.votes.contains(Ballot { voter: v, term: u.nodes[i].term, candidate: i }) by {
         if s.nodes[i].role != Role::Follower && s.nodes[i].granted.contains(v) {
             assert(s.votes.contains(Ballot { voter: v, term: s.nodes[i].term, candidate: i }));
@@ -208,7 +208,7 @@ pub proof fn unique_leader(s: LState, c: Constants)
     requires inductive(s, c)
     ensures more_than_one_leader(s, c)
 {
-    assert forall |i: int, j: int| c.servers.contains(i) && c.servers.contains(j)
+    assert forall |i: int, j: int| #![trigger c.servers.contains(i), c.servers.contains(j)] c.servers.contains(i) && c.servers.contains(j)
         && s.nodes[i].role == Role::Leader && s.nodes[j].role == Role::Leader && s.nodes[i].term == s.nodes[j].term implies i == j by {
         assert(node_inv(s, c, i)); assert(node_inv(s, c, j));
         let v = majorities_intersect(s.nodes[i].granted, s.nodes[j].granted, c);

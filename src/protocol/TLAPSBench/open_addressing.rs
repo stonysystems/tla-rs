@@ -176,28 +176,28 @@ pub open spec fn next(s: LState, u: LState, c: Constants) -> bool {
 // The five predicates in OpenAddressingDefs, with integer external sequences.
 pub open spec fn abs(x: int) -> int { if x < 0 { -x } else { x } }
 pub open spec fn contains(s: LState, c: Constants, f: int) -> bool {
-    (exists |i: int| 0 <= i <= c.limit && matches(s.table[idx(c, f, i)], f))
+    (exists |i: int| #![trigger idx(c, f, i)] 0 <= i <= c.limit && matches(s.table[idx(c, f, i)], f))
     || s.external.contains(f)
-    || (f != 0 && s.evict && exists |p: int| c.writers.contains(p) && s.threads[p].lo == Cell::Value(f))
+    || (f != 0 && s.evict && exists |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && s.threads[p].lo == Cell::Value(f))
 }
 pub open spec fn contained_in_table(s: LState, c: Constants, f: int) -> bool {
-    exists |i: int| 0 <= i <= c.limit && s.table[idx(c, abs(f), i)] == Cell::Value(f)
+    exists |i: int| #![trigger idx(c, abs(f), i)] 0 <= i <= c.limit && s.table[idx(c, abs(f), i)] == Cell::Value(f)
 }
 pub open spec fn complete_as_safety(s: LState, c: Constants) -> bool {
-    forall |p: int| c.writers.contains(p) && s.threads[p].pc == Pc::Done ==> s.history == c.fps
+    forall |p: int| #![trigger c.writers.contains(p)] c.writers.contains(p) && s.threads[p].pc == Pc::Done ==> s.history == c.fps
 }
 pub open spec fn consistent(s: LState, c: Constants) -> bool {
-    !s.evict ==> forall |f: int| s.history.contains(f) ==>
+    !s.evict ==> forall |f: int| #![trigger s.external.contains(f)] s.history.contains(f) ==>
         (contained_in_table(s, c, f) ==> !s.external.contains(f))
         && (contained_in_table(s, c, -f) ==> s.external.contains(f))
         && (!contained_in_table(s, c, f) ==> s.external.contains(f))
 }
 pub open spec fn contains_goal(s: LState, c: Constants) -> bool {
-    (forall |f: int| s.history.contains(f) ==> contains(s, c, f))
-    && (forall |f: int| c.fps.contains(f) && !s.history.contains(f) ==> !contains(s, c, f))
+    (forall |f: int| #![trigger contains(s, c, f)] s.history.contains(f) ==> contains(s, c, f))
+    && (forall |f: int| #![trigger contains(s, c, f)] c.fps.contains(f) && !s.history.contains(f) ==> !contains(s, c, f))
 }
 pub open spec fn duplicates(s: LState, c: Constants) -> bool {
-    !s.evict ==> forall |i: int, j: int| 1 <= i < j <= c.k
+    !s.evict ==> forall |i: int, j: int| #![trigger s.table[i], s.table[j]] 1 <= i < j <= c.k
         && s.table[i] is Value && s.table[j] is Value ==> abs(value(s.table[i])) != abs(value(s.table[j]))
 }
 // Pairwise strict ordering is equivalent to the benchmark's adjacent ordering.

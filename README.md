@@ -147,8 +147,8 @@ scripts/build_lion_runtime.sh --no-verify
 The Verus invocation covers all ten protocol modules in the crate. The current full-crate
 gate reports `1921 verified, 0 errors`, with no warnings or automatically chosen trigger
 notes. The TLAPS-Bench ports are a separate crate, verified by
-`scripts/verify_tlaps_bench_manual.sh` with the settings recorded in
-[their published results](reports/tlaps_bench_manual/README.md).
+`scripts/verify_tlaps_bench_manual.sh` in their own CI job to the same standard on the
+pinned release; see [their published results](reports/tlaps_bench_manual/README.md).
 Verification remains relative to the declared trusted boundaries:
 the native scheduler, marshalling, Lion's OS-facing glue, configuration, and TLS
 integration are runtime-tested, not covered by an end-to-end service theorem.

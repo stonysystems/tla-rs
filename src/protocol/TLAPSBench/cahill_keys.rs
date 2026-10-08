@@ -27,7 +27,7 @@ pub proof fn member(h: Seq<Event>,t: int,read: bool,k: int)
 pub proof fn concat(h: Seq<Event>,d: Seq<Event>,t: int,read: bool)
     ensures keys(h+d,t,read) =~= keys(h,t,read).union(keys(d,t,read))
 {
-    assert forall |k: int| keys(h+d,t,read).contains(k) <==> keys(h,t,read).union(keys(d,t,read)).contains(k) by {
+    assert forall |k: int| #![trigger keys(h+d,t,read).contains(k)] keys(h+d,t,read).contains(k) <==> keys(h,t,read).union(keys(d,t,read)).contains(k) by {
         member(h+d,t,read,k); member(h,t,read,k); member(d,t,read,k);
         if keys(h+d,t,read).contains(k) {
             let i=choose |i: int| 0 <= i < (h+d).len() && access(#[trigger] (h+d)[i],t,read) && key((h+d)[i]) == k;

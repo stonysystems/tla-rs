@@ -222,7 +222,7 @@ pub proof fn log_matching_from_inductive(g: ProofState,c: Constants)
     ensures log_matching(g.state,c)
 {
     let s=g.state;
-    assert forall |i: int,j: int,k: int| c.servers.contains(i) && c.servers.contains(j) && 1 <= k <= s.nodes[i].log.len() && k <= s.nodes[j].log.len()
+    assert forall |i: int,j: int,k: int| #![trigger c.servers.contains(i), sub(s.nodes[j].log,1,k)] #![trigger c.servers.contains(j), sub(s.nodes[i].log,1,k)] c.servers.contains(i) && c.servers.contains(j) && 1 <= k <= s.nodes[i].log.len() && k <= s.nodes[j].log.len()
         && s.nodes[i].log[k-1] == s.nodes[j].log[k-1] implies sub(s.nodes[i].log,1,k) == sub(s.nodes[j].log,1,k) by {
         let a=representing(g,s.nodes[i].log); let b=representing(g,s.nodes[j].log);
         assert(matching(a,b)); matching_prefix(s.nodes[i].log,s.nodes[j].log,a,b);

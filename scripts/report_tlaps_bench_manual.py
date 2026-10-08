@@ -155,8 +155,8 @@ def main():
     def proof_files():
         return sorted((ROOT / "src/protocol/TLAPSBench").glob("*.rs")) + [ROOT / "src/protocol/tlaps_bench_harness.rs", ROOT / "src/common/logic/temporal_s.rs"]
     before_proof_hashes = {str(p.relative_to(ROOT)): sha(p) for p in proof_files()}
-    command = [args.verus, "--crate-type=lib", "--no-cheating", "--triggers-mode", "silent", "--rlimit", "30",
-               "--num-threads", str(args.threads), "-V", "spinoff-all", "src/protocol/tlaps_bench_harness.rs"]
+    command = [args.verus, "--crate-type=lib", "--no-cheating",
+               "--num-threads", str(args.threads), "src/protocol/tlaps_bench_harness.rs"]
     run = subprocess.run(command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     after_proof_hashes = {str(p.relative_to(ROOT)): sha(p) for p in proof_files()}
     if after_proof_hashes != before_proof_hashes:

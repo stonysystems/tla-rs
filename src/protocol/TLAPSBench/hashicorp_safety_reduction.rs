@@ -122,12 +122,12 @@ pub proof fn benchmark_reduction(b: Behavior<LState>,c: Constants,horizon: int,b
     requires configs::safety_spec(b,c),prefixes::unique_below(b,c,horizon,bound),complete_below(b,c,horizon,bound),bounded(b,c,horizon,bound),horizon >= 0
     ensures election_safety(b[horizon]),log_matching(b[horizon],c),leader_completeness(b[horizon]),state_machine_safety(b[horizon]),committed_preserved(b[horizon])
 {
-    assert forall |a: Event,d: Event| b[horizon].elections.contains(a) && b[horizon].elections.contains(d) && a.term == d.term implies a.server == d.server by {
+    assert forall |a: Event,d: Event| #![trigger b[horizon].elections.contains(a), b[horizon].elections.contains(d)] b[horizon].elections.contains(a) && b[horizon].elections.contains(d) && a.term == d.term implies a.server == d.server by {
         let x=leader_view(b,c,horizon,a); let y=leader_view(b,c,horizon,d); history::term_role_interval(b,c,a.server,x+1,horizon);
         assert(b[x+1].nodes[a.server].term < bound);
     }
     matching::log_matching_from_election_safety(b,c,horizon);
-    assert forall |a: Event| b[horizon].commits.contains(a) implies prefix(a.entries,b[horizon].nodes[a.server].log) by { preserved_event(b,c,horizon,bound,a); }
+    assert forall |a: Event| #![trigger b[horizon].commits.contains(a)] b[horizon].commits.contains(a) implies prefix(a.entries,b[horizon].nodes[a.server].log) by { preserved_event(b,c,horizon,bound,a); }
     assert forall |a: Event,d: Event| b[horizon].commits.contains(a) && b[horizon].commits.contains(d) implies prefix(a.entries,d.entries) || prefix(d.entries,a.entries) by {
         agreement_pair(b,c,horizon,bound,a,d);
     }

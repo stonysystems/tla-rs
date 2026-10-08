@@ -46,6 +46,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
     logs::preserve(s,c,a);
     assert forall |i: int| c.servers.contains(i) implies #[trigger] node(apply(s,c,a).nodes[i]) by { preserve_node(s,c,a,i); }
 }
+#[verifier::spinoff_prover]
 pub proof fn was_broadcast(s: LState,c: Constants,a: Action,i: int)
     requires inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].role == Role::Leading,
         apply(s,c,a).nodes[i].phase == Phase::Broadcast,apply(s,c,a).nodes[i].sent > 0

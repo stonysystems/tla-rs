@@ -9,7 +9,7 @@ use super::temporal::Behavior;
 verus! {
 broadcast use { vstd::map_lib::group_map_properties, vstd::set_lib::group_set_lib_default, vstd::seq_lib::group_seq_properties };
 pub open spec fn recorded(s: LState,zxid: Zxid,value: int) -> bool {
-    exists |p: Proposal| s.proposals.contains(p) && p.zxid == zxid && p.value == value
+    exists |p: Proposal| #![trigger s.proposals.contains(p)] s.proposals.contains(p) && p.zxid == zxid && p.value == value
 }
 pub open spec fn packet(s: LState,m: Message) -> bool { match m { Message::Proposal(zxid,value) => recorded(s,zxid,value),_ => true } }
 pub open spec fn cell(s: LState,i: int,j: int,m: Message) -> bool { s.msgs[(i,j)].contains(m) ==> packet(s,m) }
@@ -28,6 +28,7 @@ pub proof fn bootstrap(c: Constants,i: int)
 {
     let p=Proposal { source: i,epoch: 0,zxid: z::boot(),value: 0 }; assert(initial(c).proposals.contains(p));
 }
+#[verifier::spinoff_prover]
 pub proof fn monotonic(s: LState,c: Constants,a: Action)
     ensures s.proposals.subset_of(apply(s,c,a).proposals)
 {
@@ -37,7 +38,7 @@ pub proof fn retained(s: LState,u: LState,zxid: Zxid,value: int)
     requires s.proposals.subset_of(u.proposals),recorded(s,zxid,value)
     ensures recorded(u,zxid,value)
 {
-    let p=choose |p: Proposal| s.proposals.contains(p) && p.zxid == zxid && p.value == value; assert(u.proposals.contains(p));
+    let p=choose |p: Proposal| #![trigger s.proposals.contains(p)] s.proposals.contains(p) && p.zxid == zxid && p.value == value; assert(u.proposals.contains(p));
 }
 pub proof fn packet_origin(h: Seq<Txn>,first: int,end: int,committed: int,zxid: Zxid,value: int) -> (k: int)
     requires packets(h,first,end,committed).contains(Message::Proposal(zxid,value))
@@ -70,7 +71,7 @@ pub proof fn sync_record(s: LState,c: Constants,x: int,y: int,i: int,j: int,zxid
     ensures recorded(apply(s,c,Action::Sync(x,y)),zxid,value)
 {
     reveal(apply);
-    let r=choose |r: Electing| s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
+    let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     let n=s.nodes[x]; let e=s.election.nodes[x]; let min=n.snapshot.index+1;
     let max=if n.phase == Phase::Broadcast { n.committed.index } else { e.history.len() as int };
     let lo=if min > max { e.processed.zxid } else { e.history[min-1].zxid };

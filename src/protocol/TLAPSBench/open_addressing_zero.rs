@@ -43,7 +43,7 @@ pub proof fn goals(s: LState,c: Constants)
     requires valid_constants(c),inductive(s,c)
     ensures consistent(s,c),contains_goal(s,c),duplicates(s,c)
 {
-    assert forall |f: int| c.fps.contains(f) && !s.history.contains(f) implies !contains(s,c,f) by {
+    assert forall |f: int| #![trigger contains(s,c,f)] c.fps.contains(f) && !s.history.contains(f) implies !contains(s,c,f) by {
         if contains(s,c,f) { contents::no_spurious(s,c,f); }
     }
 }

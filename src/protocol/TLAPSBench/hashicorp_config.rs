@@ -63,7 +63,7 @@ pub proof fn pending_at_most_one(n: LServer)
     config_positions(n.log);
     let singleton=set![last_config(n.log) as int];
     assert(pending_configs(n).subset_of(singleton)) by {
-        assert forall |k: int| pending_configs(n).contains(k) implies singleton.contains(k) by {
+        assert forall |k: int| #![trigger singleton.contains(k)] pending_configs(n).contains(k) implies singleton.contains(k) by {
             assert(k == last_config(n.log));
         }
     }
@@ -73,7 +73,7 @@ pub proof fn configuration_from_inductive(s: LState,c: Constants)
     requires inductive(s,c)
     ensures configuration_safety(s,c)
 {
-    assert forall |i: int| c.servers.contains(i) && s.nodes[i].role == Role::Leader implies pending_configs(s.nodes[i]).len() <= 1 by { pending_at_most_one(s.nodes[i]); }
+    assert forall |i: int| #![trigger c.servers.contains(i)] c.servers.contains(i) && s.nodes[i].role == Role::Leader implies pending_configs(s.nodes[i]).len() <= 1 by { pending_at_most_one(s.nodes[i]); }
 }
 pub open spec fn safety_spec(b: Behavior<LState>,c: Constants) -> bool {
     valid_constants(c) && b[0] == initial(c)

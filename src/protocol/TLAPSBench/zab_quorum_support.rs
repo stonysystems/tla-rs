@@ -27,7 +27,7 @@ pub proof fn above_grows(s: LState,c: Constants,a: Action,e: int)
     requires epochs::inductive(s,c),enabled(s,c,a)
     ensures above(s,c,e).subset_of(above(apply(s,c,a),c,e))
 {
-    assert forall |j: int| above(s,c,e).contains(j) implies above(apply(s,c,a),c,e).contains(j) by { epochs::preserve_node(s,c,a,j); }
+    assert forall |j: int| #![trigger above(s,c,e).contains(j)] above(s,c,e).contains(j) implies above(apply(s,c,a),c,e).contains(j) by { epochs::preserve_node(s,c,a,j); }
 }
 pub proof fn fresh_ids(n: LServer,i: int)
     ensures ce_ids(lead(n,i).ce) =~= lead(n,i).learners

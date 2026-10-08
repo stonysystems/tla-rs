@@ -9,12 +9,14 @@ use super::zab_sessions::{self as sessions,interval};
 use super::zab_ce_trace as ce;
 use super::temporal::Behavior;
 verus! {
+#[verifier::spinoff_prover]
 pub proof fn current_change(s: LState,c: Constants,a: Action,i: int) -> (leader: int)
     requires receipts::inductive(s,c),enabled(s,c,a),c.servers.contains(i),apply(s,c,a).nodes[i].current != s.nodes[i].current
     ensures c.servers.contains(leader),
         (leader == i && apply(s,c,a).nodes[i].role == Role::Leading && apply(s,c,a).nodes[i].phase != Phase::Discovery)
         || (s.nodes[leader].role == Role::Leading && s.nodes[leader].phase != Phase::Discovery && s.nodes[leader].current == apply(s,c,a).nodes[i].current)
 {
+    hide(update_ack);
     reveal(enabled); reveal(apply); receipts::facts(s,c,i,i);
     match a {
         Action::NewLeader(x,y) => { receipts::facts(s,c,x,y); assert(x == i); y },
@@ -50,7 +52,7 @@ pub proof fn same_session(b: Behavior<LState>,c: Constants,i: int,left: int,righ
     if since > left {
         let at=ce::proposal(b,c,since,right,i);
         epochs::at(b,c,at); epochs::facts(b[at],c,i,i);
-        let r=choose |r: CE| b[at].nodes[i].ce.contains(r) && r.sid == i && r.connected && r.epoch <= b[at].nodes[i].accepted
+        let r=choose |r: CE| #![trigger b[at].nodes[i].ce.contains(r)] b[at].nodes[i].ce.contains(r) && r.sid == i && r.connected && r.epoch <= b[at].nodes[i].accepted
             && (!quorum(ce_ids(b[at].nodes[i].ce),c) ==> r.epoch == b[at].nodes[i].accepted);
         assert(r.epoch < b[right].nodes[i].accepted);
         assert(ce::payload(b[at].nodes[i].ce,i,r.epoch));

@@ -32,16 +32,16 @@ pub proof fn children_map(edges: Set<(int,int)>,remaining: Set<int>,todo: Set<in
     else {
         let n=choose |n: int| todo.contains(n); children_map(edges,remaining,todo.remove(n));
         let tail=todo.remove(n).map(|n: int| search(edges,n,remaining));
-        assert forall |v: int| results.flatten().contains(v) <==> search(edges,n,remaining).union(tail.flatten()).contains(v) by {
+        assert forall |v: int| #![trigger results.flatten().contains(v)] results.flatten().contains(v) <==> search(edges,n,remaining).union(tail.flatten()).contains(v) by {
             if results.flatten().contains(v) {
-                let q=choose |q: Set<int>| results.contains(q) && q.contains(v);
+                let q=choose |q: Set<int>| #![trigger results.contains(q)] results.contains(q) && q.contains(v);
                 let w=choose |w: int| todo.contains(w) && search(edges,w,remaining) == q;
                 if w != n { assert(todo.remove(n).contains(w)); assert(tail.contains(q)); }
             }
             if search(edges,n,remaining).contains(v) { assert(results.contains(search(edges,n,remaining))); }
             if tail.flatten().contains(v) {
-                let q=choose |q: Set<int>| tail.contains(q) && q.contains(v);
-                let w=choose |w: int| todo.remove(n).contains(w) && search(edges,w,remaining) == q;
+                let q=choose |q: Set<int>| #![trigger tail.contains(q)] tail.contains(q) && q.contains(v);
+                let w=choose |w: int| #![trigger search(edges,w,remaining)] todo.remove(n).contains(w) && search(edges,w,remaining) == q;
                 assert(results.contains(q));
             }
         }
@@ -61,12 +61,12 @@ pub proof fn neighbor(edges: Set<(int,int)>,n: int,w: int)
     requires neighbors(edges,n).contains(w)
     ensures edges.contains((n,w)),nodes(edges).contains(n),nodes(edges).contains(w)
 {
-    let p=choose |p: (int,int)| edges.contains(p) && p.0 == n && p.1 == w; assert(p == (n,w));
+    let p=choose |p: (int,int)| #![trigger edges.contains(p)] edges.contains(p) && p.0 == n && p.1 == w; assert(p == (n,w));
     assert(edges.map(|p: (int,int)| p.0).contains(n)); assert(edges.map(|p: (int,int)| p.1).contains(w));
 }
 pub proof fn empty_search(edges: Set<(int,int)>,n: int,remaining: Set<int>,rank: spec_fn(int) -> int)
     requires nodes(edges).contains(n),remaining.subset_of(nodes(edges)),
-        forall |p: (int,int)| edges.contains(p) ==> rank(p.0) < rank(p.1),
+        forall |p: (int,int)| #![trigger edges.contains(p)] edges.contains(p) ==> rank(p.0) < rank(p.1),
         forall |v: int| nodes(edges).difference(remaining).contains(v) ==> rank(v) < rank(n)
     ensures search(edges,n,remaining).is_empty()
     decreases remaining.len()
@@ -85,7 +85,7 @@ pub proof fn empty_search(edges: Set<(int,int)>,n: int,remaining: Set<int>,rank:
     assert(search(edges,n,remaining) == results.flatten());
     assert forall |v: int| !results.flatten().contains(v) by {
         if results.flatten().contains(v) {
-            let q=choose |q: Set<int>| results.contains(q) && q.contains(v);
+            let q=choose |q: Set<int>| #![trigger results.contains(q)] results.contains(q) && q.contains(v);
             let w=choose |w: int| next.contains(w) && search(edges,w,rest) == q;
             assert(search(edges,w,rest).is_empty());
         }
@@ -107,7 +107,7 @@ pub open spec fn cycle_nodes(h: Seq<Event>,c: Constants) -> Set<int> {
     let es=edges(h,c); es.map(|p: (int,int)| p.0).map(|n: int| search(es,n,nodes(es))).flatten()
 }
 pub proof fn empty_nodes(h: Seq<Event>,c: Constants,rank: spec_fn(int) -> int)
-    requires forall |p: (int,int)| edges(h,c).contains(p) ==> rank(p.0) < rank(p.1)
+    requires forall |p: (int,int)| #![trigger edges(h,c).contains(p)] edges(h,c).contains(p) ==> rank(p.0) < rank(p.1)
     ensures cycle_nodes(h,c).is_empty()
 {
     let es=edges(h,c); let starts=es.map(|p: (int,int)| p.0);
@@ -117,8 +117,8 @@ pub proof fn empty_nodes(h: Seq<Event>,c: Constants,rank: spec_fn(int) -> int)
     let results=starts.map(|n: int| search(es,n,nodes(es)));
     assert forall |v: int| !results.flatten().contains(v) by {
         if results.flatten().contains(v) {
-            let q=choose |q: Set<int>| results.contains(q) && q.contains(v);
-            let n=choose |n: int| starts.contains(n) && search(es,n,nodes(es)) == q;
+            let q=choose |q: Set<int>| #![trigger results.contains(q)] results.contains(q) && q.contains(v);
+            let n=choose |n: int| #![trigger starts.contains(n)] starts.contains(n) && search(es,n,nodes(es)) == q;
             assert(search(es,n,nodes(es)).is_empty());
         }
     }
@@ -130,7 +130,7 @@ pub proof fn at(b: Behavior<LState>,c: Constants,time: int)
     support::at(b,c,time); super::cahill_lifecycle::at(b,c,time); super::cahill_unique::at(b,c,time);
     super::cahill_writer_intervals::at(b,c,time); super::cahill_conflicts::at(b,c,time); super::cahill_overlap_safety::at(b,c,time);
     let s=b[time]; let rank=|t: int| serial::rank(s,t);
-    assert forall |p: (int,int)| edges(s.history,c).contains(p) implies rank(p.0) < rank(p.1) by { serial::dependency_rank(s,c,p.0,p.1); }
+    assert forall |p: (int,int)| #![trigger edges(s.history,c).contains(p)] edges(s.history,c).contains(p) implies rank(p.0) < rank(p.1) by { serial::dependency_rank(s,c,p.0,p.1); }
     empty_nodes(s.history,c,rank); serial::acyclic(s,c);
 }
 pub proof fn benchmark_serializable(b: Behavior<LState>,c: Constants)

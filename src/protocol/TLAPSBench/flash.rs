@@ -25,7 +25,7 @@ pub struct LState {
 }
 pub open spec fn valid_constants(c: Constants) -> bool {
     !c.nodes.is_empty() && !c.data.is_empty() && !c.nodes.contains(-1) && !c.data.contains(-1)
-    && forall |n: int| c.nodes.contains(n) ==> !c.data.contains(n)
+    && forall |n: int| #![trigger c.data.contains(n)] c.nodes.contains(n) ==> !c.data.contains(n)
 }
 pub open spec fn no_uni() -> UniMsg { UniMsg { cmd: Uni::None, node: -1, data: -1 } }
 pub open spec fn initial(c: Constants, home: int, data: int) -> LState {
@@ -220,29 +220,29 @@ pub open spec fn type_ok(s: LState, c: Constants) -> bool {
     && node_u(c, s.dir.head) && s.dir.sharers.subset_of(c.nodes) && s.dir.invalidating.subset_of(c.nodes)
     && node_u(c, s.wb.node) && data_u(c, s.wb.data) && node_u(c, s.shwb.node) && data_u(c, s.shwb.data)
     && node_u(c, s.pending_src) && node_u(c, s.forward_src)
-    && forall |p: int| c.nodes.contains(p) ==> data_u(c, s.procs[p].data)
+    && forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) ==> data_u(c, s.procs[p].data)
         && node_u(c, s.uni[p].node) && data_u(c, s.uni[p].data)
 }
 pub open spec fn cache_data(s: LState, c: Constants) -> bool {
-    forall |p: int| c.nodes.contains(p) ==>
+    forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) ==>
         (s.procs[p].cache == Cache::E ==> s.procs[p].data == s.current)
         && (s.procs[p].cache == Cache::S ==> s.procs[p].data == if s.collecting { s.previous } else { s.current })
 }
 pub open spec fn mem_data(s: LState) -> bool { !s.dir.dirty ==> s.mem == s.current }
 pub open spec fn lemma_1(s: LState, c: Constants) -> bool {
-    forall |p: int| c.nodes.contains(p) && s.procs[p].cache == Cache::E ==>
+    forall |p: int| #![trigger c.nodes.contains(p)] c.nodes.contains(p) && s.procs[p].cache == Cache::E ==>
         s.dir.dirty && !s.wb.pending && s.shwb.cmd != Shared::ShWb && s.uni[s.home].cmd != Uni::Put
-        && (forall |q: int| c.nodes.contains(q) ==> (q != p ==> s.procs[q].cache != Cache::E) && s.uni[q].cmd != Uni::PutX)
+        && (forall |q: int| #![trigger c.nodes.contains(q)] c.nodes.contains(q) ==> (q != p ==> s.procs[q].cache != Cache::E) && s.uni[q].cmd != Uni::PutX)
 }
 pub open spec fn lemma_2_3(s: LState, c: Constants, exclusive: bool) -> bool {
-    forall |src: int, dst: int| c.nodes.contains(src) && c.nodes.contains(dst) && src != dst && dst != s.home
+    forall |src: int, dst: int| #![trigger c.nodes.contains(src), c.nodes.contains(dst)] c.nodes.contains(src) && c.nodes.contains(dst) && src != dst && dst != s.home
         && s.uni[src].cmd == get_cmd(exclusive) && s.uni[src].node == dst ==>
         s.dir.pending && !s.dir.local && s.pending_src == src && s.forward_cmd == get_cmd(exclusive)
 }
 pub open spec fn lemma_4(s: LState, c: Constants) -> bool {
-    forall |p: int| c.nodes.contains(p) && p != s.home && s.inv[p] == Inv::Ack ==>
+    forall |p: int| #![trigger s.inv[p]] c.nodes.contains(p) && p != s.home && s.inv[p] == Inv::Ack ==>
         s.dir.pending && s.collecting && !s.nakc && s.shwb.cmd == Shared::None
-        && (forall |q: int| c.nodes.contains(q) ==>
+        && (forall |q: int| #![trigger c.nodes.contains(q)] c.nodes.contains(q) ==>
             ((s.uni[q].cmd == Uni::Get || s.uni[q].cmd == Uni::GetX) ==> s.uni[q].node == s.home)
             && (s.uni[q].cmd == Uni::PutX ==> s.uni[q].node == s.home && s.pending_src == q))
 }

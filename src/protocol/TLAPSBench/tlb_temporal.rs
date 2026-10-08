@@ -51,7 +51,7 @@ pub open spec fn strong_fair(b: Behavior<LState>, c: Constants, g: Group) -> boo
 #[verifier::opaque]
 pub open spec fn fair_spec(b: Behavior<LState>, c: Constants) -> bool {
     safety::safety_spec(b, c)
-    && forall |p: int| c.processors.contains(p) ==> weak_fair(b, c, Group::Processor(p))
+    && forall |p: int| #![trigger c.processors.contains(p)] c.processors.contains(p) ==> weak_fair(b, c, Group::Processor(p))
         && strong_fair(b, c, Group::Boot(p)) && strong_fair(b, c, Group::Pmap(p))
         && strong_fair(b, c, Group::Responder(p))
 }
@@ -139,7 +139,7 @@ pub proof fn todo_finite(s: LState, c: Constants, p: int)
     requires inductive(s, c), c.processors.contains(p)
     ensures s.procs[p].todo.finite()
 {
-    assert forall |q: int| s.procs[p].todo.contains(q) implies booted(s, c).contains(q) by {
+    assert forall |q: int| #![trigger booted(s, c).contains(q)] s.procs[p].todo.contains(q) implies booted(s, c).contains(q) by {
         assert(safety::pair_inv(s, c, p, q));
     }
     vstd::iset_lib::lemma_iset_subset_finite(booted(s, c), s.procs[p].todo);

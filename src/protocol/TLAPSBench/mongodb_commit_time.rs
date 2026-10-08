@@ -62,7 +62,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
                     assert(time::router(s,c,r,t)); assert(time::selected(s,c,r,t)); parts::owner_is(s,c,r,t); parts::owner_fixed(s,c,a,t); assert(parts::router(s,c,r,t));
                     let q=if a is RouterSingle { seq![i] } else { participant_shards(s.routers[r][t].participants) };
                     assert(commit_messages(q,t,c.no_value).contains(m));
-                    let j=choose |j: int| q.to_set().contains(j) && Commit { shard: j,txn: t,ts: c.no_value } == m;
+                    let j=choose |j: int| #![trigger q.to_set().contains(j)] q.to_set().contains(j) && Commit { shard: j,txn: t,ts: c.no_value } == m;
                     assert(q.contains(j)); let p=choose |p: int| 0 <= p < q.len() && q[p] == j;
                     if a is RouterSingle { assert(j == i); assert(parts::shards(u,c,t) =~= q); }
                     else { assert(c.shards.contains(s.routers[r][t].participants[p].shard)); assert(issued::read_only(u,c,t)); }
@@ -72,7 +72,7 @@ pub proof fn preserve(s: LState,c: Constants,a: Action)
                     votes::decision(s,c,i,t); votes::ready_retained(s,c,a,t); coord::retained(s,c,a,t); coord::deciding(s,c,i,t);
                     let x=s.shards[i].txns[t]; let ts=maximum(x.votes.map(|v: (int,int)| v.1).to_iset());
                     assert(commit_messages(x.participants,t,ts).contains(m));
-                    let j=choose |j: int| x.participants.to_set().contains(j) && Commit { shard: j,txn: t,ts } == m;
+                    let j=choose |j: int| #![trigger x.participants.to_set().contains(j)] x.participants.to_set().contains(j) && Commit { shard: j,txn: t,ts } == m;
                     assert(x.participants.contains(j)); assert(parts::shards(s,c,t).contains(j));
                 },
                 _ => { assert(false); },

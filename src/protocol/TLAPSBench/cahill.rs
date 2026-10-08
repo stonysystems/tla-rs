@@ -69,7 +69,7 @@ pub open spec fn commit(s: LState,c: Constants,t: int) -> LState {
 #[verifier::opaque]
 pub open spec fn read(s: LState,c: Constants,t: int,k: int) -> LState {
     let newer=newer_versions(s,t,k);
-    if exists |w: int| newer.contains(w) && committed(s.history).contains(w) && s.txns[w].outgoing { abort(s,t,Reason::ReadConflict) } else {
+    if exists |w: int| #![trigger newer.contains(w)] newer.contains(w) && committed(s.history).contains(w) && s.txns[w].outgoing { abort(s,t,Reason::ReadConflict) } else {
         let v=choose |v: int| version(s,t,k).contains(v);
         let others=c.txns.filter(|w: int| w != t && s.txns[w].xlocks.contains(k));
         LState { history: s.history.push(Event { txn: t,op: Op::Read { key: k,version: v } }),txns: IMap::new(|r: int| c.txns.contains(r),|r: int|
@@ -81,7 +81,7 @@ pub open spec fn read(s: LState,c: Constants,t: int,k: int) -> LState {
 #[verifier::opaque]
 pub open spec fn acquire(s: LState,c: Constants,t: int,k: int) -> LState {
     let readers=concurrent_readers(s,c,t,k);
-    if exists |r: int| readers.contains(r) && (committed(s.history).contains(r) || s.txns[r].incoming) { abort(s,t,Reason::WriteConflict) } else {
+    if exists |r: int| #![trigger readers.contains(r)] readers.contains(r) && (committed(s.history).contains(r) || s.txns[r].incoming) { abort(s,t,Reason::WriteConflict) } else {
         LState { history: s.history.push(Event { txn: t,op: Op::Write(k) }),txns: IMap::new(|r: int| c.txns.contains(r),|r: int|
             LTxn { xlocks: if r == t { s.txns[r].xlocks.insert(k) } else { s.txns[r].xlocks },waiting: if r == t { None } else { s.txns[r].waiting },
                 incoming: s.txns[r].incoming || r == t && !readers.is_empty(),outgoing: s.txns[r].outgoing || readers.contains(r),..s.txns[r] }) }
