@@ -61,6 +61,16 @@ Verus collections, and the existing `common/logic/temporal_s.rs` behavior type.
 They are mathematical protocol models, with no executable implementation or
 networking changes. No transpiler participates, and `src/generated/` is untouched.
 
+The standalone [TLAPS-Bench workflow](../.github/workflows/tlaps-bench.yml)
+runs every Sunday at 04:17 UTC against both pinned and latest rolling Verus.
+It can also be started manually from GitHub Actions, or with
+`gh workflow run tlaps-bench.yml --repo stonysystems/tla-rs`.
+Each job checks `--no-cheating`, uses the default resource limit, rejects
+automatically chosen triggers, and uploads its verification log.
+The benchmark stays outside the main crate and does not run in PR/push CI,
+the daily latest-Verus workflow, or the Verita entry point. This avoids adding
+roughly 15 minutes of benchmark verification to routine checks.
+
 Every successful safety theorem has an initialization proof, a preservation proof
 for every modeled transition, and induction at an arbitrary nonnegative index of
 an infinite behavior. Stuttering is allowed. There is no configured bound on

@@ -268,58 +268,6 @@ jobs:
   # makes a build reproducible and gives the trigger ceiling a measured meaning;
   # without it, a red run could not be attributed to our change or to upstream
   # drift. Two jobs answer two different questions.
-  verify-tlaps-bench:
-    name: TLAPS-Bench Verification
-    # TLAPS-Bench is its own crate root (src/protocol/tlaps_bench_harness.rs),
-    # kept out of the main crate. It is held to the main gate's standard:
-    # default rlimit and zero automatically chosen trigger notes. It stays out
-    # of the main crate (and so out of verus-lang's verita) until the nightly
-    # TLAPS-Bench job has stayed green on rolling releases for a while.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    env:
-      VERUS_VERSION: "0.2026.08.02.b677dd5"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache Verus
-        id: cache-verus
-        uses: actions/cache@v4
-        with:
-          path: ~/verus
-          key: verus-ubuntu-24.04-${{ env.VERUS_VERSION }}
-
-      - name: Download Verus
-        if: steps.cache-verus.outputs.cache-hit != 'true'
-        run: |
-          wget -q https://github.com/verus-lang/verus/releases/download/release/${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip
-          unzip -q verus-${VERUS_VERSION}-x86-linux.zip -d ~/
-          mv ~/verus-x86-linux ~/verus
-
-      - name: Ensure Verus is executable
-        run: chmod +x ~/verus/verus
-
-      - name: Install Rust toolchain for Verus
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.97.1
-          components: rustfmt
-
-      - name: Verify TLAPS-Bench
-        run: |
-          set -o pipefail
-          VERUS_PATH=$HOME/verus/verus bash scripts/verify_tlaps_bench_manual.sh 2>&1 \
-            | tee tlaps-bench-verify.log
-
-      - name: Reject automatically chosen triggers
-        run: |
-          notes=$(grep -c "automatically chose triggers for this expression" tlaps-bench-verify.log || true)
-          echo "automatic-trigger notes: $notes"
-          if [ "$notes" != "0" ]; then
-            echo "::error::TLAPS-Bench emitted $notes automatic-trigger notes; annotate them explicitly"
-            exit 1
-          fi
-
   verify-rolling:
     name: Verus Verification (rolling)
     runs-on: ubuntu-24.04
