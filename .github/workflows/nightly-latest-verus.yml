@@ -28,7 +28,8 @@ jobs:
   verify-latest:
     name: Verus Verification (nightly, latest rolling)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # Two full verifications: the native build and Verita's dylib entry point.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -121,6 +122,20 @@ jobs:
           set -o pipefail
           scons --verus-path=$HOME/verus/verus 2>&1 \
             | tee verus-nightly.log
+
+      - name: Verify Verita entry point
+        run: |
+          set -o pipefail
+          VERUS_PATH="$HOME/verus/verus" scripts/verify_verita.sh 2>&1 \
+            | tee -a verus-nightly.log
+
+      - name: Upload verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verus-nightly-${{ steps.verus.outputs.version }}
+          path: verus-nightly.log
+          if-no-files-found: warn
 
       - name: Open an issue on failure
         if: failure()

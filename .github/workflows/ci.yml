@@ -323,7 +323,8 @@ jobs:
   verify-rolling:
     name: Verus Verification (rolling)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # Two full verifications: the native build and Verita's dylib entry point.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -423,6 +424,12 @@ jobs:
           scons --verus-path=$HOME/verus/verus 2>&1 \
             | tee verus-rolling.log
 
+      - name: Verify Verita entry point
+        run: |
+          set -o pipefail
+          VERUS_PATH="$HOME/verus/verus" scripts/verify_verita.sh 2>&1 \
+            | tee verus-verita.log
+
       # Report only. The committed ceiling of 0 was measured on the pinned
       # release; a rolling build may choose triggers differently, and a note
       # count that has never been measured on this version is not a threshold
@@ -460,6 +467,7 @@ jobs:
             trigger-inventory-rolling.json
             trigger-inventory-rolling.md
             verus-rolling.log
+            verus-verita.log
           if-no-files-found: warn
 
   model-check-evidence:
