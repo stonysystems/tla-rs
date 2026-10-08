@@ -1,34 +1,75 @@
-# Nightly verification against the newest rolling Verus release.
-#
-# Purpose: learn about upstream regressions before verus-lang's nightly-verita
-# does. Their run fires at ~08:00 UTC against Verus main; rolling releases are
-# cut around 02:30 UTC, so a 04:00 UTC (midnight EDT) run here catches any
-# regression that rode a rolling release about five hours earlier — the
-# 2026-08-12 marshalling rlimit failure (verus#2744) is exactly the case this
-# would have caught first. Regressions merged to Verus main but not yet cut
-# into a rolling release remain verita's to find; that is the deliberate
-# boundary, since rolling is also what our PR gate verifies against.
-#
-# On failure the job opens a GitHub issue (one at a time, guarded by label)
-# so the redness is loud rather than buried in the Actions tab.
-
-name: nightly-latest-verus
+# The standalone benchmark runs weekly or on demand because it takes about
+# 15 minutes per compiler. Keep it out of PR/push CI and the daily nightly.
+name: TLAPS-Bench
 
 on:
   schedule:
-    # 04:00 UTC = midnight EDT (23:00 EST in winter)
-    - cron: '0 4 * * *'
+    # Sunday at 04:17 UTC.
+    - cron: '17 4 * * 0'
   workflow_dispatch:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
-  verify-latest:
-    name: Verus Verification (nightly, latest rolling)
+  verify-tlaps-bench:
+    name: TLAPS-Bench Verification (pinned)
     runs-on: ubuntu-24.04
-    # Two full verifications: the native build and Verita's dylib entry point.
+    timeout-minutes: 90
+    env:
+      VERUS_VERSION: "0.2026.08.02.b677dd5"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Verus
+        id: cache-verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus
+          key: verus-ubuntu-24.04-${{ env.VERUS_VERSION }}
+
+      - name: Download Verus
+        if: steps.cache-verus.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/verus-lang/verus/releases/download/release/${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip
+          unzip -q verus-${VERUS_VERSION}-x86-linux.zip -d ~/
+          mv ~/verus-x86-linux ~/verus
+
+      - name: Ensure Verus is executable
+        run: chmod +x ~/verus/verus
+
+      - name: Install Rust toolchain for Verus
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+
+      - name: Verify TLAPS-Bench
+        run: |
+          set -o pipefail
+          VERUS_PATH=$HOME/verus/verus bash scripts/verify_tlaps_bench_manual.sh 2>&1 \
+            | tee tlaps-bench-verify.log
+
+      - name: Reject automatically chosen triggers
+        run: |
+          notes=$(grep -c "automatically chose triggers for this expression" tlaps-bench-verify.log || true)
+          echo "automatic-trigger notes: $notes"
+          if [ "$notes" != "0" ]; then
+            echo "::error::TLAPS-Bench emitted $notes automatic-trigger notes; annotate them explicitly"
+            exit 1
+          fi
+
+      - name: Upload verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlaps-bench-pinned-${{ env.VERUS_VERSION }}
+          path: tlaps-bench-verify.log
+          if-no-files-found: warn
+
+  verify-tlaps-bench-latest:
+    name: TLAPS-Bench Verification (latest rolling)
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -58,12 +99,6 @@ jobs:
           echo "Resolved $VERSION (toolchain $TOOLCHAIN) from $TAG"
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: Install Python and scons
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip pkg-config libssl-dev
-          pip3 install scons
 
       - name: Cache Verus
         id: cache-verus
@@ -117,50 +152,19 @@ jobs:
           toolchain: ${{ steps.verus.outputs.toolchain }}
           components: rustfmt
 
-      - name: Verify with Verus
+      - name: Verify TLAPS-Bench
         run: |
           set -o pipefail
-          scons --verus-path=$HOME/verus/verus 2>&1 \
-            | tee verus-nightly.log
-
-      - name: Verify Verita entry point
-        run: |
-          set -o pipefail
-          VERUS_PATH="$HOME/verus/verus" scripts/verify_verita.sh 2>&1 \
-            | tee -a verus-nightly.log
+          VERUS_PATH=$HOME/verus/verus bash scripts/verify_tlaps_bench_manual.sh 2>&1 \
+            | tee tlaps-bench-rolling.log
+          notes=$(grep -c "automatically chose triggers for this expression" tlaps-bench-rolling.log || true)
+          echo "automatic-trigger notes: $notes"
+          [ "$notes" = "0" ]
 
       - name: Upload verification log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verus-nightly-${{ steps.verus.outputs.version }}
-          path: verus-nightly.log
+          name: tlaps-bench-rolling-${{ steps.verus.outputs.version }}
+          path: tlaps-bench-rolling.log
           if-no-files-found: warn
-
-      - name: Open an issue on failure
-        if: failure()
-        run: |
-          set -o pipefail
-          V="${{ steps.verus.outputs.version }}"
-          # One open nightly issue at a time; a still-open one means the
-          # breakage is already known.
-          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
-            --label nightly-latest-verus --state open --json number --jq 'length')
-          if [ "$existing" != "0" ]; then
-            echo "an open nightly-latest-verus issue already exists; not filing another"
-            exit 0
-          fi
-          tail -n 60 verus-nightly.log > tail.txt 2>/dev/null || echo "(no log)" > tail.txt
-          gh label create nightly-latest-verus \
-            --repo "$GITHUB_REPOSITORY" \
-            --description "opened automatically by the nightly latest-Verus run" \
-            --color D93F0B 2>/dev/null || true
-          gh issue create --repo "$GITHUB_REPOSITORY" \
-            --label nightly-latest-verus \
-            --title "nightly: verification fails on rolling $V" \
-            --body "$(printf 'cc @ZhangZihao270 — the nightly run against the newest rolling Verus release failed.\n\nVersion: `%s`\nRun: %s\n\nLast lines of the log:\n\n```\n%s\n```\n\nIf the pinned CI on main is still green, this is an upstream change; see the run log and `verus-lang/verus` commits since the previous rolling release.' \
-              "$V" \
-              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-              "$(cat tail.txt)")"
-        env:
-          GH_TOKEN: ${{ github.token }}
