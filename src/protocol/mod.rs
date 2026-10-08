@@ -22,4 +22,9 @@ pub mod Tiga;
 pub mod CausalMesh;
 pub mod VerticalPaxos;
 pub mod common;
-pub mod TLAPSBench;
+// TLAPSBench is deliberately not part of this crate. It is verified as its
+// own crate root, src/protocol/tlaps_bench_harness.rs, by
+// scripts/verify_tlaps_bench_manual.sh under the settings its published
+// evidence (reports/tlaps_bench_manual/results.json) was recorded with.
+// The main-crate gate, which verus-lang's verita also runs, holds every
+// module to the default rlimit with zero trigger notes.
