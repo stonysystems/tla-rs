@@ -306,11 +306,17 @@ verus! {
                 payload: ae_payload,
             })
         } else { s.log })
+        // Raft's rule: commitIndex = min(leaderCommit, index of last new entry).
+        // A heartbeat confirms the follower's log only up to ae_prev_index;
+        // anything beyond it may be a stale entry from an older term, so the
+        // follower must not commit past it (and never moves its commit back).
         &&& s_.commit_index == (if ae_leader_commit > s.commit_index {
             if ae_has_entry {
                 if ae_leader_commit <= s.log.len() + 1 { ae_leader_commit } else { (s.log.len() + 1) as int }
             } else {
-                if ae_leader_commit <= s.log.len() { ae_leader_commit } else { s.log.len() as int }
+                if ae_leader_commit <= ae_prev_index { ae_leader_commit }
+                else if ae_prev_index > s.commit_index { ae_prev_index }
+                else { s.commit_index }
             }
         } else { s.commit_index })
         &&& s_.votes_granted == step_down_if_needed(s, ae_term).votes_granted
