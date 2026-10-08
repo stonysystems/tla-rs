@@ -84,10 +84,13 @@ pub proof fn sync_cell(s: LState,c: Constants,x: int,y: int,i: int,j: int,k: int
     let r=choose |r: Electing| #![trigger s.nodes[x].electing.contains(r)] s.nodes[x].electing.contains(r) && r.sid == y && r.zxid != unset() && s.nodes[x].learners.contains(y);
     follow_cell(s,x,y,r.zxid,i,j,k);
 }
+#[verifier::spinoff_prover]
 pub proof fn other_cell(s: LState,c: Constants,a: Action,i: int,j: int,k: int)
     requires channels::safe(s,c),ready::safe(s,c),forwarding::safe(s,c),safe(s,c),enabled(s,c,a),c.servers.contains(i),c.servers.contains(j),!(a is Sync)
     ensures cell(apply(s,c,a),i,j,k)
 {
+    // Sync is excluded here, so its recursive history search is irrelevant.
+    hide(floor_index);
     reveal(enabled); reveal(apply); reveal(fle::apply); let x=receiver(a); channel_pair(c,i,j); channels::facts(s,c,i,j);
     if a != Action::Stutter { channels::facts(s,c,i,x); channels::facts(s,c,j,x); }
     match a {

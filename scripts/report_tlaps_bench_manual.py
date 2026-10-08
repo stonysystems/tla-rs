@@ -105,7 +105,8 @@ def record_certificates(report, output):
         cert = record["verus_certificate"]
         assert cert["proof_sha256"] == report["proof_sha256"][f"src/protocol/TLAPSBench/{case}.rs"]
         assert cert["generator_sha256"] == sha(ROOT / f"scripts/build_tlaps_bench_{case}.py")
-        cert.update(full_harness_verified_functions=report["verified_functions"], verification_log_sha256=verification_hash, command=report["command"])
+        cert.update(full_harness_verified_functions=report["verified_functions"], verification_log_sha256=verification_hash,
+                    command=report["command"], verus=report["verus"])
         path.write_text(json.dumps(record, indent=2) + "\n")
     for case in ["zookeeper_counterexample", "zookeeper_bad_index"]:
         folder = output / case
