@@ -4,6 +4,7 @@ use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::invariants::*;
 use crate::protocol::Raft::refinement_proof::induction::*;
 use crate::protocol::Raft::refinement_proof::committed::*;
+use crate::protocol::Raft::refinement_proof::static_safety::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
 
@@ -34,8 +35,8 @@ verus! {
     // Top-level refinement theorem
     // =========================================================================
     //
-    // Given a valid Raft distributed behavior, there exists an abstract
-    // sequential state machine behavior that refines it.
+    // Given a valid Raft distributed behavior with fixed membership, there
+    // exists an abstract sequential state machine behavior that refines it.
     //
     // The abstract behavior is constructed by applying AbstractifyRaftState
     // pointwise to the distributed behavior.
@@ -47,11 +48,12 @@ verus! {
     // - lemma_abstract_step_valid: each distributed step maps to a valid abstract step
 
     pub proof fn lemma_refinement_correct(b: RaftBehavior)
-        requires IsValidRaftBehavior(b)
+        requires IsValidStaticRaftBehavior(b)
         ensures
             exists |h: Seq<RaftSystemState>|
                 RaftSystemBehaviorRefinementCorrect(b, h)
     {
+        lemma_static_behavior_is_valid(b);
         // Construct the abstract behavior pointwise
         let h = Seq::new(b.len(), |i: int| AbstractifyRaftState(b[i]));
 
@@ -90,7 +92,7 @@ verus! {
             lemma_invariant_holds_throughout_behavior(b, i);
             lemma_invariant_holds_throughout_behavior(b, i + 1);
 
-            // b[i] → b[i+1] is a valid distributed step (from IsValidRaftBehavior)
+            // b[i] → b[i+1] is a valid distributed step (from IsValidStaticRaftBehavior)
             // Invariants hold at both steps
             // Therefore the abstract step is valid
             lemma_abstract_step_valid(b[i], b[i + 1], h[i], h[i + 1]);

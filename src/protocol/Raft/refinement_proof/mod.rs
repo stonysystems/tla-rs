@@ -6,3 +6,4 @@ pub mod committed;
 pub mod refinement;
 pub mod reconfiguration;
 pub mod recovery;
+pub mod static_safety;

@@ -67,3 +67,18 @@ Using Verus `0.2026.08.02.b677dd5` with `--rlimit 220` and
 Repository searches confirm zero executable `assume` calls under
 `src/protocol/Raft/`, and zero `external_body` or `admit` markers under
 `src/protocol/Raft/refinement_proof/`.
+
+## Later correction (2026-10-08)
+
+Removing the `assume` calls did not remove every hidden assumption. The
+distributed transition relation itself required that a server's newly
+committed entries already match the global commit certificates, so steps
+that would have committed a conflicting entry were simply not in the model.
+That made committed-history safety hold by construction.
+
+The transition now only *records* a certificate when a leader commits, and
+the safety theorem is proved for fixed-membership behaviors
+(`IsValidStaticRaftBehavior`) in `static_safety.rs`: each certificate is held
+by a majority of servers, and every commit, by a leader or by a follower
+following a leader's advertisement, is shown to match an existing certificate
+or to create one. Joint-consensus behaviors are not covered by the theorem yet.

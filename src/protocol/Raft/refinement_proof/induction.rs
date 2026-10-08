@@ -3,6 +3,7 @@ use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::invariants::*;
+use crate::protocol::Raft::refinement_proof::static_safety::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
 
@@ -24,33 +25,26 @@ verus! {
     }
 
     // =========================================================================
-    // Main induction theorem: RaftSafetyInvariant is preserved by steps
+    // Main induction theorem: the fixed-membership invariant is preserved
     // =========================================================================
     //
-    // Delegates to lemma_safety_invariant_inductive in invariants.rs, which
-    // proves all conjuncts of RaftSafetyInvariant including the supporting
-    // invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf,
-    // VotersVotedForCandidate) and the core safety properties.
+    // The safety theorem is stated for behaviors in which no membership change
+    // is proposed (IsValidStaticRaftBehavior). Within that scope every step is
+    // an honest protocol step or a reboot: commit certificates are recorded by
+    // the transition, never required of it, and static_safety.rs proves that
+    // each one is backed by a majority. Joint-consensus behaviors are not yet
+    // covered by this theorem.
 
     pub proof fn lemma_next_preserves_invariant(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
-            RaftDistributedNext(ds, ds_),
+            StaticInvariant(ds),
+            RaftDistributedStaticNext(ds, ds_),
         ensures
-            RaftSafetyInvariant(ds_),
+            StaticInvariant(ds_),
     {
-        // Delegate to the composite induction lemma in invariants.rs,
-        // which proves all conjuncts of RaftSafetyInvariant (including
-        // VotesGrantedAreServers, CandidateOrLeaderVotedForSelf,
-        // VotersVotedForCandidate, and the 4 core safety invariants).
-        if RaftDistributedNormalNext(ds, ds_) {
-            lemma_safety_invariant_inductive(ds, ds_);
-        } else {
-            let sid = choose |sid: int| RaftDistributedReboot(ds, ds_, sid);
-            crate::protocol::Raft::refinement_proof::recovery::lemma_reboot_preserves_invariant(ds, ds_, sid);
-        }
+        lemma_static_invariant_inductive(ds, ds_);
     }
 
     // =========================================================================
@@ -59,31 +53,24 @@ verus! {
 
     pub proof fn lemma_invariant_holds_throughout_behavior(b: RaftBehavior, i: int)
         requires
-            IsValidRaftBehavior(b),
+            IsValidStaticRaftBehavior(b),
             0 <= i < b.len(),
         ensures
             RaftSafetyInvariant(b[i]),
-        decreases i
     {
-        if i == 0 {
-            lemma_init_establishes_invariant(b[0]);
-        } else {
-            lemma_invariant_holds_throughout_behavior(b, i - 1);
-            lemma_next_preserves_invariant(b[i - 1], b[i]);
-        }
+        lemma_static_invariant_holds_throughout_behavior(b, i);
     }
 
-    /// End-to-end dynamic-membership safety for physical Raft histories.
-    /// At every reachable behavior state, every committed Data or
-    /// Configuration entry is covered by one global commit certificate.
-    /// Consequently, two servers cannot commit different
-    /// physical entries at the same log index.
-    pub proof fn lemma_dynamic_membership_committed_histories_are_safe(
+    /// End-to-end fixed-membership safety for physical Raft histories.
+    /// At every reachable behavior state, every committed entry is covered by
+    /// one global commit certificate. Consequently, two servers cannot commit
+    /// different physical entries at the same log index.
+    pub proof fn lemma_committed_histories_are_safe(
         b: RaftBehavior,
         behavior_index: int,
     )
         requires
-            IsValidRaftBehavior(b),
+            IsValidStaticRaftBehavior(b),
             0 <= behavior_index < b.len(),
         ensures
             CommittedEntriesHaveLogCertificates(b[behavior_index]),
@@ -148,7 +135,7 @@ verus! {
         b: RaftBehavior, earlier: int, later: int, sid: int, k: int,
     )
         requires
-            IsValidRaftBehavior(b),
+            IsValidStaticRaftBehavior(b),
             0 <= earlier <= later < b.len(),
             0 <= sid < b[earlier].num_servers,
             0 <= k < b[earlier].server_states[sid].commit_index,
@@ -186,7 +173,7 @@ verus! {
         b: RaftBehavior, earlier: int, later: int, left: int, right: int, k: int,
     )
         requires
-            IsValidRaftBehavior(b),
+            IsValidStaticRaftBehavior(b),
             0 <= earlier <= later < b.len(),
             0 <= left < b[earlier].num_servers,
             0 <= right < b[later].num_servers,

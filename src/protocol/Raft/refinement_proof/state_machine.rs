@@ -143,6 +143,68 @@ verus! {
     /// to those sent_packets wrapped with src == server_id.
     /// For message-handling actions, response packets are routed back to the
     /// sender of the received packet (received_from).
+    /// The certificate a local leader commit records for one newly committed
+    /// physical log index.
+    pub open spec fn new_log_commit_certificate(
+        server_id: int, s: LState, s_: LState, c: LConstants, index: int,
+    ) -> LogCommitCertificate {
+        LogCommitCertificate {
+            log_index: index,
+            entry: s_.log[index],
+            committer: server_id,
+            governing_phase: active_membership_phase_from_raft_log(
+                s.log, index, MembershipPhase::Stable { config: c.servers }),
+            quorum: replicator_set(s, c, s_.commit_index),
+        }
+    }
+
+    /// Log certificates after one step of `server_id`.
+    pub open spec fn next_log_commit_certificates(
+        ds: RaftDistributedState, server_id: int,
+        s: LState, s_: LState, c: LConstants, received_from: Option<int>,
+    ) -> Map<int, LogCommitCertificate> {
+        if received_from is None && s_.commit_index > s.commit_index {
+            Map::new(
+                ds.log_commit_certificates.dom() + Set::range(
+                    s.commit_index,
+                    if s_.commit_index <= s_.log.len() { s_.commit_index } else { s_.log.len() as int },
+                ),
+                |index: int| if ds.log_commit_certificates.dom().contains(index) {
+                    ds.log_commit_certificates[index]
+                } else {
+                    new_log_commit_certificate(server_id, s, s_, c, index)
+                },
+            )
+        } else {
+            ds.log_commit_certificates
+        }
+    }
+
+    /// Configuration certificates after one step of `server_id`: a local
+    /// leader commit ending exactly at a Configuration entry records one.
+    pub open spec fn next_configuration_commit_certificates(
+        ds: RaftDistributedState, server_id: int,
+        s: LState, s_: LState, c: LConstants, received_from: Option<int>,
+    ) -> Map<int, ConfigurationCommitCertificate> {
+        let index = s_.commit_index - 1;
+        if received_from is None
+            && s_.commit_index > s.commit_index
+            && 0 <= index < s_.log.len()
+            && s_.log[index].payload is Configuration
+            && !ds.configuration_commit_certificates.dom().contains(index)
+        {
+            ds.configuration_commit_certificates.insert(index, ConfigurationCommitCertificate {
+                log_index: index,
+                entry: s_.log[index],
+                committer: server_id,
+                governing_phase: active_membership_phase_for_state(s, c),
+                quorum: replicator_set(s, c, s_.commit_index),
+            })
+        } else {
+            ds.configuration_commit_certificates
+        }
+    }
+
     /// The full obligations of one server step for a concrete witness
     /// (sent_packets, received_from): action, network routing, and ghost
     /// bookkeeping. RaftServerStepWithNetwork is exactly the existential
@@ -230,149 +292,17 @@ verus! {
                     && t == s_.current_term
                     && !(s.role is Leader)
                     && s_.role is Leader)
-            // Existing configuration-commit certificates are immutable.
-            &&& (forall |index: int| #![trigger ds.configuration_commit_certificates.dom().contains(index)] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
-                ds.configuration_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& ds_.configuration_commit_certificates.dom().contains(index)
-                    &&& ds_.configuration_commit_certificates[index].log_index
-                        == ds.configuration_commit_certificates[index].log_index
-                    &&& ds_.configuration_commit_certificates[index].entry
-                        == ds.configuration_commit_certificates[index].entry
-                    &&& ds_.configuration_commit_certificates[index].committer
-                        == ds.configuration_commit_certificates[index].committer
-                    &&& ds_.configuration_commit_certificates[index].governing_phase
-                        == ds.configuration_commit_certificates[index].governing_phase
-                    &&& ds_.configuration_commit_certificates[index].quorum
-                        == ds.configuration_commit_certificates[index].quorum
-                })
-            // A new certificate can only be created when a local leader commit
-            // ends exactly at a Configuration entry.
-            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.configuration_commit_certificates.dom().contains(index)] #![trigger ds.configuration_commit_certificates.dom().contains(index)]
-                ds_.configuration_commit_certificates.dom().contains(index)
-                && !ds.configuration_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& received_from is None
-                    &&& s_.commit_index > s.commit_index
-                    &&& index == s_.commit_index - 1
-                    &&& 0 <= index < s_.log.len()
-                    &&& s_.log[index].payload is Configuration
-                    &&& ds_.configuration_commit_certificates[index].log_index
-                        == index
-                    &&& ds_.configuration_commit_certificates[index].entry
-                        == s_.log[index]
-                    &&& ds_.configuration_commit_certificates[index].committer
-                        == server_id
-                    &&& ds_.configuration_commit_certificates[index].governing_phase
-                        == active_membership_phase_for_state(s, c)
-                    &&& ds_.configuration_commit_certificates[index].quorum
-                        == replicator_set(s, c, s_.commit_index)
-                })
-            // A local commit ending at a Configuration entry must leave the
-            // corresponding certificate in the post-state map.
-            &&& (received_from is None
-                && s_.commit_index > s.commit_index
-                && 0 <= s_.commit_index - 1 < s_.log.len()
-                && s_.log[s_.commit_index - 1].payload is Configuration
-                ==> {
-                    let index = s_.commit_index - 1;
-                    &&& ds_.configuration_commit_certificates.dom().contains(index)
-                    &&& ds_.configuration_commit_certificates[index].log_index
-                        == index
-                    &&& ds_.configuration_commit_certificates[index].entry
-                        == s_.log[index]
-                    &&& ds_.configuration_commit_certificates[index].committer
-                        == server_id
-                    &&& ds_.configuration_commit_certificates[index].governing_phase
-                        == active_membership_phase_for_state(s, c)
-                    &&& ds_.configuration_commit_certificates[index].quorum
-                        == replicator_set(s, c, s_.commit_index)
-                }
-            )
-            // Every Configuration entry in the stepping server's committed
-            // post-state prefix is tied to the same global history
-            // certificate. Followers therefore reuse an existing leader-created
-            // certificate rather than inventing a new one.
-            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.configuration_commit_certificates.dom().contains(index)]
-                0 <= index < s_.commit_index
-                && index < s_.log.len()
-                && s_.log[index].payload is Configuration
-                ==> {
-                    &&& ds_.configuration_commit_certificates.dom().contains(index)
-                    &&& ds_.configuration_commit_certificates[index].log_index
-                        == index
-                    &&& ds_.configuration_commit_certificates[index].entry
-                        == s_.log[index]
-                }
-            )
-            // Existing all-entry commit certificates are immutable.
-            &&& (forall |index: int| #![trigger ds.log_commit_certificates.dom().contains(index)] #![trigger ds_.log_commit_certificates.dom().contains(index)]
-                ds.log_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& ds_.log_commit_certificates.dom().contains(index)
-                    &&& ds_.log_commit_certificates[index].log_index
-                        == ds.log_commit_certificates[index].log_index
-                    &&& ds_.log_commit_certificates[index].entry
-                        == ds.log_commit_certificates[index].entry
-                    &&& ds_.log_commit_certificates[index].committer
-                        == ds.log_commit_certificates[index].committer
-                    &&& ds_.log_commit_certificates[index].governing_phase
-                        == ds.log_commit_certificates[index].governing_phase
-                    &&& ds_.log_commit_certificates[index].quorum
-                        == ds.log_commit_certificates[index].quorum
-                })
-            // New all-entry certificates can only describe entries in one
-            // local leader's newly committed physical-log interval.
-            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.log_commit_certificates.dom().contains(index)] #![trigger ds.log_commit_certificates.dom().contains(index)]
-                ds_.log_commit_certificates.dom().contains(index)
-                && !ds.log_commit_certificates.dom().contains(index)
-                ==> {
-                    &&& received_from is None
-                    &&& s_.commit_index > s.commit_index
-                    &&& s.commit_index <= index < s_.commit_index
-                    &&& index < s_.log.len()
-                    &&& ds_.log_commit_certificates[index].log_index == index
-                    &&& ds_.log_commit_certificates[index].entry == s_.log[index]
-                    &&& ds_.log_commit_certificates[index].committer == server_id
-                    &&& ds_.log_commit_certificates[index].governing_phase
-                        == active_membership_phase_from_raft_log(
-                            s.log,
-                            index,
-                            MembershipPhase::Stable { config: c.servers },
-                        )
-                    &&& ds_.log_commit_certificates[index].quorum
-                        == replicator_set(s, c, s_.commit_index)
-                })
-            // Every entry newly committed by a local leader receives an
-            // all-entry certificate backed by the quorum for the interval.
-            &&& (received_from is None
-                && s_.commit_index > s.commit_index
-                ==> forall |index: int| #![trigger s_.log[index]]
-                    s.commit_index <= index < s_.commit_index
-                    ==> {
-                        &&& ds_.log_commit_certificates.dom().contains(index)
-                        &&& ds_.log_commit_certificates[index].log_index == index
-                        &&& ds_.log_commit_certificates[index].entry == s_.log[index]
-                        &&& ds_.log_commit_certificates[index].committer == server_id
-                        &&& ds_.log_commit_certificates[index].governing_phase
-                            == active_membership_phase_from_raft_log(
-                                s.log,
-                                index,
-                                MembershipPhase::Stable { config: c.servers },
-                            )
-                        &&& ds_.log_commit_certificates[index].quorum
-                            == replicator_set(s, c, s_.commit_index)
-                    })
-            // Every committed post-state entry, including follower-learned
-            // entries, is tied to the unique global certificate at its index.
-            &&& (forall |index: int| #![trigger s_.log[index]] #![trigger ds_.log_commit_certificates.dom().contains(index)]
-                0 <= index < s_.commit_index
-                && index < s_.log.len()
-                ==> {
-                    &&& ds_.log_commit_certificates.dom().contains(index)
-                    &&& ds_.log_commit_certificates[index].log_index == index
-                    &&& ds_.log_commit_certificates[index].entry == s_.log[index]
-                })
+            // Certificates only record history: a local leader commit adds one
+            // for each newly committed index that has none yet, and existing
+            // certificates never change. Nothing here constrains the protocol
+            // state; whether committed entries agree with the certificates is
+            // proved, not assumed.
+            &&& ds_.configuration_commit_certificates
+                == next_configuration_commit_certificates(
+                    ds, server_id, s, s_, c, received_from)
+            &&& ds_.log_commit_certificates
+                == next_log_commit_certificates(
+                    ds, server_id, s, s_, c, received_from)
         }
     }
 
