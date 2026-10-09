@@ -3,7 +3,7 @@ use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::invariants::*;
-use crate::protocol::Raft::refinement_proof::static_safety::*;
+use crate::protocol::Raft::refinement_proof::dynamic_invariant::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
 
@@ -25,26 +25,24 @@ verus! {
     }
 
     // =========================================================================
-    // Main induction theorem: the fixed-membership invariant is preserved
+    // Main induction theorem: the invariant is preserved by every step
     // =========================================================================
     //
-    // The safety theorem is stated for behaviors in which no membership change
-    // is proposed (IsValidStaticRaftBehavior). Within that scope every step is
-    // an honest protocol step or a reboot: commit certificates are recorded by
-    // the transition, never required of it, and static_safety.rs proves that
-    // each one is backed by a majority. Joint-consensus behaviors are not yet
-    // covered by this theorem.
+    // Every step is an honest protocol step or a reboot, including steps that
+    // propose and commit membership changes. Commit certificates are recorded
+    // by the transition, never required of it; dynamic_*.rs prove that each
+    // one is backed by a quorum of the phase that governs its index.
 
     pub proof fn lemma_next_preserves_invariant(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            StaticInvariant(ds),
-            RaftDistributedStaticNext(ds, ds_),
+            DynamicInvariant(ds),
+            RaftDistributedNext(ds, ds_),
         ensures
-            StaticInvariant(ds_),
+            DynamicInvariant(ds_),
     {
-        lemma_static_invariant_inductive(ds, ds_);
+        lemma_dynamic_invariant_inductive(ds, ds_);
     }
 
     // =========================================================================
@@ -53,24 +51,26 @@ verus! {
 
     pub proof fn lemma_invariant_holds_throughout_behavior(b: RaftBehavior, i: int)
         requires
-            IsValidStaticRaftBehavior(b),
+            IsValidRaftBehavior(b),
             0 <= i < b.len(),
         ensures
             RaftSafetyInvariant(b[i]),
+            ElectionSafety(b[i]),
     {
-        lemma_static_invariant_holds_throughout_behavior(b, i);
+        lemma_dynamic_invariant_holds_throughout_behavior(b, i);
+        lemma_dynamic_election_safety(b[i]);
     }
 
-    /// End-to-end fixed-membership safety for physical Raft histories.
-    /// At every reachable behavior state, every committed entry is covered by
-    /// one global commit certificate. Consequently, two servers cannot commit
-    /// different physical entries at the same log index.
+    /// End-to-end safety for physical Raft histories, with membership
+    /// changes. At every reachable behavior state, every committed entry is
+    /// covered by one global commit certificate. Consequently, two servers
+    /// cannot commit different physical entries at the same log index.
     pub proof fn lemma_committed_histories_are_safe(
         b: RaftBehavior,
         behavior_index: int,
     )
         requires
-            IsValidStaticRaftBehavior(b),
+            IsValidRaftBehavior(b),
             0 <= behavior_index < b.len(),
         ensures
             CommittedEntriesHaveLogCertificates(b[behavior_index]),
@@ -135,7 +135,7 @@ verus! {
         b: RaftBehavior, earlier: int, later: int, sid: int, k: int,
     )
         requires
-            IsValidStaticRaftBehavior(b),
+            IsValidRaftBehavior(b),
             0 <= earlier <= later < b.len(),
             0 <= sid < b[earlier].num_servers,
             0 <= k < b[earlier].server_states[sid].commit_index,
@@ -173,7 +173,7 @@ verus! {
         b: RaftBehavior, earlier: int, later: int, left: int, right: int, k: int,
     )
         requires
-            IsValidStaticRaftBehavior(b),
+            IsValidRaftBehavior(b),
             0 <= earlier <= later < b.len(),
             0 <= left < b[earlier].num_servers,
             0 <= right < b[later].num_servers,

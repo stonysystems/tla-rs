@@ -11626,7 +11626,7 @@ verus! {
     /// When server_id extends its log via the network model (non-Leader),
     /// there exists a leader whose log matches the new entry and the
     /// follower's prev-log entry. Captures AE packet provenance via AEI.
-    proof fn lemma_follower_append_ae_in_network(
+    pub proof fn lemma_follower_append_ae_in_network(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s: LState, s_: LState, c: LConstants,
         k: int,
@@ -14916,7 +14916,7 @@ verus! {
     // =========================================================================
 
     /// LNext never decreases current_term.
-    proof fn lemma_lnext_term_monotone(s: LState, s_: LState, c: LConstants)
+    pub proof fn lemma_lnext_term_monotone(s: LState, s_: LState, c: LConstants)
         requires LNext(s, s_, c)
         ensures s_.current_term >= s.current_term
     {

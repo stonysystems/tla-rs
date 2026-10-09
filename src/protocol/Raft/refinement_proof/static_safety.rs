@@ -5,6 +5,9 @@
 //! classic fixed-majority Raft argument applies. This module restates that
 //! argument's invariants (election safety, log matching, leader completeness)
 //! for the current protocol, including reboots.
+//!
+//! The general theorem (dynamic_*.rs) covers membership changes too; it
+//! reuses the replication and certificate lemmas defined here.
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::membership::*;
@@ -687,14 +690,14 @@ verus! {
     // Leader match indexes agree with follower logs
     // =========================================================================
 
-    pub proof fn lemma_static_arla_inductive(
+    pub proof fn lemma_append_response_log_agreement_next(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires
             RaftSafetyInvariant(ds),
             LogMatching(ds),
             AppendResponseLogAgreement(ds),
-            RaftDistributedStaticNext(ds, ds_),
+            RaftDistributedNext(ds, ds_),
         ensures
             AppendResponseLogAgreement(ds_),
     {
@@ -707,14 +710,14 @@ verus! {
         }
     }
 
-    pub proof fn lemma_static_mib_inductive(
+    pub proof fn lemma_match_index_bounded_next(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires
             RaftSafetyInvariant(ds),
             MatchIndexBounded(ds),
             AppendResponseLogAgreement(ds),
-            RaftDistributedStaticNext(ds, ds_),
+            RaftDistributedNext(ds, ds_),
         ensures
             MatchIndexBounded(ds_),
     {
@@ -727,7 +730,7 @@ verus! {
         }
     }
 
-    pub proof fn lemma_static_mila_inductive(
+    pub proof fn lemma_match_index_log_agreement_next(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires
@@ -735,7 +738,7 @@ verus! {
             MatchIndexImpliesLogAgreement(ds),
             AppendResponseLogAgreement(ds),
             MatchIndexBounded(ds),
-            RaftDistributedStaticNext(ds, ds_),
+            RaftDistributedNext(ds, ds_),
         ensures
             MatchIndexImpliesLogAgreement(ds_),
     {
@@ -837,6 +840,44 @@ verus! {
     }
 
     /// Without Configuration entries no configuration certificate exists.
+    /// The part of the safety invariant the commit-side argument uses.
+    pub open spec fn CommitCore(ds: RaftDistributedState) -> bool {
+        &&& WellFormedRaftDistributed(ds)
+        &&& CommitHistoryValid(ds)
+        &&& CommittedEntriesHaveLogCertificates(ds)
+        &&& CommitIndexBounded(ds)
+        &&& CommitIndexNonnegative(ds)
+        &&& AppendEntriesIntegrity(ds)
+    }
+
+    /// Each certificate is stored under its own log index.
+    pub open spec fn CertificatesIndexed(ds: RaftDistributedState) -> bool {
+        forall |index: int| #![trigger ds.log_commit_certificates[index]]
+            ds.log_commit_certificates.dom().contains(index)
+            ==> ds.log_commit_certificates[index].log_index == index
+    }
+
+    pub proof fn lemma_certificates_indexed_next(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+    )
+        requires
+            CertificatesIndexed(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            CertificatesIndexed(ds_),
+    {
+        if RaftDistributedNormalNext(ds, ds_) {
+            let (server_id, sp, rf) = lemma_extract_step_with_network(ds, ds_);
+            let s = ds.server_states[server_id];
+            let s_ = ds_.server_states[server_id];
+            let c = ds.server_constants[server_id];
+            assert(ds_.log_commit_certificates
+                == next_log_commit_certificates(ds, server_id, s, s_, c, rf));
+        } else {
+            let sid = choose |sid: int| RaftDistributedReboot(ds, ds_, sid);
+        }
+    }
+
     pub open spec fn NoConfigurationCertificates(ds: RaftDistributedState) -> bool {
         ds.configuration_commit_certificates.dom() =~= Set::<int>::empty()
     }
@@ -898,7 +939,7 @@ verus! {
         server_id: int, sp: Seq<LRaftMessage>, rf: Option<int>,
     )
         requires
-            RaftSafetyInvariant(ds),
+            CommitCore(ds),
             NoConfigurationEntries(ds),
             MatchIndexImpliesLogAgreement(ds),
             MatchIndexBounded(ds),
@@ -1049,7 +1090,7 @@ verus! {
         }
     }
 
-    pub proof fn lemma_static_append_entries_commit_certified_inductive(
+    pub proof fn lemma_append_entries_commit_certified_next(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires
@@ -1057,7 +1098,7 @@ verus! {
             CommittedEntriesHaveLogCertificates(ds),
             CommitIndexBounded(ds),
             AppendEntriesCommitCertified(ds),
-            RaftDistributedStaticNext(ds, ds_),
+            RaftDistributedNext(ds, ds_),
         ensures
             AppendEntriesCommitCertified(ds_),
     {
@@ -1120,7 +1161,7 @@ verus! {
     /// and never past the leader's advertised commit index nor past the
     /// prefix it now shares with that leader. The advertisement is certified,
     /// so every newly committed entry already has a matching certificate.
-    proof fn lemma_follower_commit_is_certified(
+    pub proof fn lemma_follower_commit_is_certified(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, sp: Seq<LRaftMessage>, rf: Option<int>,
     )
@@ -1206,7 +1247,7 @@ verus! {
         server_id: int, sp: Seq<LRaftMessage>, rf: Option<int>,
     )
         requires
-            RaftSafetyInvariant(ds),
+            CommitCore(ds),
             NoConfigurationEntries(ds),
             MatchIndexImpliesLogAgreement(ds),
             MatchIndexBounded(ds),
@@ -1267,11 +1308,11 @@ verus! {
         }
     }
 
-    proof fn lemma_static_log_certificates_cover_reboot(
+    pub proof fn lemma_static_log_certificates_cover_reboot(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires
-            RaftSafetyInvariant(ds),
+            CommitCore(ds),
             RaftDistributedNext(ds, ds_),
             !RaftDistributedNormalNext(ds, ds_),
         ensures
@@ -1296,12 +1337,12 @@ verus! {
 
     /// Coverage after one server step, from coverage before it, unchanged
     /// other servers, a preserved prefix, and covered newly committed indices.
-    proof fn lemma_log_certificates_cover_after_step(
+    pub proof fn lemma_log_certificates_cover_after_step(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
     )
         requires
             CommittedEntriesHaveLogCertificates(ds),
-            CertificatesHeldByMajority(ds_),
+            CertificatesIndexed(ds_),
             0 <= server_id < ds.num_servers,
             ds_.num_servers == ds.num_servers,
             forall |j: int| #![trigger ds_.server_states[j]]
@@ -1352,7 +1393,7 @@ verus! {
     }
 
     /// The recorded certificates only grow; existing ones never change.
-    proof fn lemma_next_log_commit_certificates_extend(
+    pub proof fn lemma_next_log_commit_certificates_extend(
         ds: RaftDistributedState, server_id: int,
         s: LState, s_: LState, c: LConstants, rf: Option<int>,
     )
@@ -1370,7 +1411,7 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState,
     )
         requires
-            RaftSafetyInvariant(ds),
+            CommitCore(ds),
             NoConfigurationEntries(ds),
             LogMatching(ds),
             MatchIndexImpliesLogAgreement(ds),
@@ -1382,6 +1423,8 @@ verus! {
         ensures
             CommittedEntriesHaveLogCertificates(ds_),
     {
+        assert(CertificatesIndexed(ds));
+        lemma_certificates_indexed_next(ds, ds_);
         let (server_id, sp, rf) = lemma_extract_step_with_network(ds, ds_);
         let s = ds.server_states[server_id];
         let s_ = ds_.server_states[server_id];
@@ -1490,12 +1533,12 @@ verus! {
                 ds, ds_, sid);
         }
         lemma_static_core_inductive(ds, ds_);
-        lemma_static_arla_inductive(ds, ds_);
-        lemma_static_mib_inductive(ds, ds_);
-        lemma_static_mila_inductive(ds, ds_);
+        lemma_append_response_log_agreement_next(ds, ds_);
+        lemma_match_index_bounded_next(ds, ds_);
+        lemma_match_index_log_agreement_next(ds, ds_);
         lemma_static_no_configuration_certificates_inductive(ds, ds_);
         lemma_static_certificates_held_inductive(ds, ds_);
-        lemma_static_append_entries_commit_certified_inductive(ds, ds_);
+        lemma_append_entries_commit_certified_next(ds, ds_);
     }
 
     /// A behavior of the protocol in which no configuration change is ever
