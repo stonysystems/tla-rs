@@ -27,12 +27,14 @@ The two flagship protocols carry machine-checked refinement proofs, verified end
   every behavior of the distributed protocol refines an abstract replicated
   state machine — the IronFleet theorem, mechanized in Verus.
 - **Raft** —
-  [`lemma_refinement_correct`](src/protocol/Raft/refinement_proof/refinement.rs):
-  every valid fixed-membership behavior, with message loss, reordering, and
-  crash-reboot, refines a sequential state machine over the committed log (no
-  two reachable servers commit different entries at the same index). The
-  protocol also implements joint-consensus membership changes; extending the
-  safety theorem to them is in progress.
+  [`lemma_raw_refinement_correct`](src/protocol/Raft/refinement_proof/lift.rs):
+  every behavior of the raw protocol, with message loss, reordering,
+  crash-reboot, and joint-consensus membership changes, refines a sequential
+  state machine over the committed log (no two reachable servers commit
+  different entries at the same index, and each term has at most one leader)
+  — a property IronFleet's original development did not cover. The theorem is
+  stated over protocol state alone; proof-only history is shown never to
+  restrict the protocol.
 
 The repository also extends that foundation with additional distributed protocols, bidirectional
 TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and

@@ -13,3 +13,4 @@ pub mod dynamic_winners;
 pub mod dynamic_completeness;
 pub mod dynamic_election;
 pub mod dynamic_invariant;
+pub mod lift;

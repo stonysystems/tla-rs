@@ -76,9 +76,16 @@ committed entries already match the global commit certificates, so steps
 that would have committed a conflicting entry were simply not in the model.
 That made committed-history safety hold by construction.
 
-The transition now only *records* a certificate when a leader commits, and
-the safety theorem is proved for fixed-membership behaviors
-(`IsValidStaticRaftBehavior`) in `static_safety.rs`: each certificate is held
-by a majority of servers, and every commit, by a leader or by a follower
-following a leader's advertisement, is shown to match an existing certificate
-or to create one. Joint-consensus behaviors are not covered by the theorem yet.
+The transition now only *records* a certificate when a leader commits. The
+safety theorem is proved for every behavior, including joint-consensus
+membership changes, in `dynamic_*.rs`. Each certificate is held by a quorum
+of the phase that governs its index in the committed history. Every commit,
+whether by a leader or by a follower acting on a leader's advertisement,
+matches an existing certificate or creates one. `static_safety.rs` keeps the
+simpler fixed-membership proof (`IsValidStaticRaftBehavior`).
+
+To rule out this class of problem for good, `lift.rs` states the protocol
+without any proof-only state and proves that every one of its behaviors is a
+behavior of the proof model (`lemma_lift_behavior`). The final theorems,
+`lemma_raw_behaviors_are_safe` and `lemma_raw_refinement_correct`, are
+stated over those raw behaviors.
