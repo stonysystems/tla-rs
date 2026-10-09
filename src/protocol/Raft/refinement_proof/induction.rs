@@ -3,6 +3,7 @@ use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::invariants::*;
+use crate::protocol::Raft::refinement_proof::dynamic_invariant::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
 
@@ -24,33 +25,24 @@ verus! {
     }
 
     // =========================================================================
-    // Main induction theorem: RaftSafetyInvariant is preserved by steps
+    // Main induction theorem: the invariant is preserved by every step
     // =========================================================================
     //
-    // Delegates to lemma_safety_invariant_inductive in invariants.rs, which
-    // proves all conjuncts of RaftSafetyInvariant including the supporting
-    // invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf,
-    // VotersVotedForCandidate) and the core safety properties.
+    // Every step is an honest protocol step or a reboot, including steps that
+    // propose and commit membership changes. Commit certificates are recorded
+    // by the transition, never required of it; dynamic_*.rs prove that each
+    // one is backed by a quorum of the phase that governs its index.
 
     pub proof fn lemma_next_preserves_invariant(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            DynamicInvariant(ds),
             RaftDistributedNext(ds, ds_),
         ensures
-            RaftSafetyInvariant(ds_),
+            DynamicInvariant(ds_),
     {
-        // Delegate to the composite induction lemma in invariants.rs,
-        // which proves all conjuncts of RaftSafetyInvariant (including
-        // VotesGrantedAreServers, CandidateOrLeaderVotedForSelf,
-        // VotersVotedForCandidate, and the 4 core safety invariants).
-        if RaftDistributedNormalNext(ds, ds_) {
-            lemma_safety_invariant_inductive(ds, ds_);
-        } else {
-            let sid = choose |sid: int| RaftDistributedReboot(ds, ds_, sid);
-            crate::protocol::Raft::refinement_proof::recovery::lemma_reboot_preserves_invariant(ds, ds_, sid);
-        }
+        lemma_dynamic_invariant_inductive(ds, ds_);
     }
 
     // =========================================================================
@@ -63,22 +55,17 @@ verus! {
             0 <= i < b.len(),
         ensures
             RaftSafetyInvariant(b[i]),
-        decreases i
+            ElectionSafety(b[i]),
     {
-        if i == 0 {
-            lemma_init_establishes_invariant(b[0]);
-        } else {
-            lemma_invariant_holds_throughout_behavior(b, i - 1);
-            lemma_next_preserves_invariant(b[i - 1], b[i]);
-        }
+        lemma_dynamic_invariant_holds_throughout_behavior(b, i);
+        lemma_dynamic_election_safety(b[i]);
     }
 
-    /// End-to-end dynamic-membership safety for physical Raft histories.
-    /// At every reachable behavior state, every committed Data or
-    /// Configuration entry is covered by one global commit certificate.
-    /// Consequently, two servers cannot commit different
-    /// physical entries at the same log index.
-    pub proof fn lemma_dynamic_membership_committed_histories_are_safe(
+    /// End-to-end safety for physical Raft histories, with membership
+    /// changes. At every reachable behavior state, every committed entry is
+    /// covered by one global commit certificate. Consequently, two servers
+    /// cannot commit different physical entries at the same log index.
+    pub proof fn lemma_committed_histories_are_safe(
         b: RaftBehavior,
         behavior_index: int,
     )

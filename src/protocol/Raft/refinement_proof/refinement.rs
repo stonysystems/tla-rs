@@ -34,8 +34,9 @@ verus! {
     // Top-level refinement theorem
     // =========================================================================
     //
-    // Given a valid Raft distributed behavior, there exists an abstract
-    // sequential state machine behavior that refines it.
+    // Given a valid Raft distributed behavior, including membership changes,
+    // there exists an abstract sequential state machine behavior that
+    // refines it.
     //
     // The abstract behavior is constructed by applying AbstractifyRaftState
     // pointwise to the distributed behavior.

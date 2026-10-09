@@ -67,3 +67,25 @@ Using Verus `0.2026.08.02.b677dd5` with `--rlimit 220` and
 Repository searches confirm zero executable `assume` calls under
 `src/protocol/Raft/`, and zero `external_body` or `admit` markers under
 `src/protocol/Raft/refinement_proof/`.
+
+## Later correction (2026-10-08)
+
+Removing the `assume` calls did not remove every hidden assumption. The
+distributed transition relation itself required that a server's newly
+committed entries already match the global commit certificates, so steps
+that would have committed a conflicting entry were simply not in the model.
+That made committed-history safety hold by construction.
+
+The transition now only *records* a certificate when a leader commits. The
+safety theorem is proved for every behavior, including joint-consensus
+membership changes, in `dynamic_*.rs`. Each certificate is held by a quorum
+of the phase that governs its index in the committed history. Every commit,
+whether by a leader or by a follower acting on a leader's advertisement,
+matches an existing certificate or creates one. `static_safety.rs` keeps the
+simpler fixed-membership proof (`IsValidStaticRaftBehavior`).
+
+To rule out this class of problem for good, `lift.rs` states the protocol
+without any proof-only state and proves that every one of its behaviors is a
+behavior of the proof model (`lemma_lift_behavior`). The final theorems,
+`lemma_raw_behaviors_are_safe` and `lemma_raw_refinement_correct`, are
+stated over those raw behaviors.

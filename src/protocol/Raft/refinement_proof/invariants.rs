@@ -5740,6 +5740,14 @@ verus! {
         true
     }
 
+    /// The trigger device holds everywhere; other modules instantiate it here.
+    pub proof fn lemma_entry_term_has_vote_quorum_trigger(
+        ds: RaftDistributedState, i: int, k: int,
+    )
+        ensures entry_term_has_vote_quorum_trigger(ds, i, k),
+    {
+    }
+
     pub open spec fn EntryTermHasVoteQuorum(ds: RaftDistributedState) -> bool {
         let quorum_size = ds.num_servers / 2 + 1;
         forall |i: int, k: int|
@@ -6226,7 +6234,7 @@ verus! {
 
     /// Helper: turn vote-set membership into an explicit VoteResponse packet
     /// witness and aligned voter facts from VoteResponseIntegrity.
-    proof fn lemma_vote_witness_from_votes_granted(
+    pub proof fn lemma_vote_witness_from_votes_granted(
         ds: RaftDistributedState, candidate: int, voter: int,
     )
         requires
@@ -6790,7 +6798,7 @@ verus! {
     ///
     /// Does NOT require VotersVotedForCandidate, VoteResponseIntegrity,
     /// or EntryTermHasVoteQuorum — only ETHVQ-safe invariants.
-    proof fn lemma_ethvq_entry_transfer_from_overlap_voter(
+    pub proof fn lemma_ethvq_entry_transfer_from_overlap_voter(
         ds: RaftDistributedState,
         d: int,
         ov: int,
@@ -8429,7 +8437,7 @@ verus! {
     ///
     /// This is extracted from lemma_leader_completeness_inductive to
     /// reduce rlimit pressure on that already-large proof.
-    proof fn lemma_overlap_voter_entry_transfer(
+    pub proof fn lemma_overlap_voter_entry_transfer(
         ds: RaftDistributedState,
         leader_id: int,
         overlap_voter: int,
@@ -9268,7 +9276,7 @@ verus! {
         }
     }
 
-    proof fn lemma_vote_sets_disjoint(
+    pub proof fn lemma_vote_sets_disjoint(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         stepping: int, other: int, term: int, n: int,
     )
@@ -9349,7 +9357,7 @@ verus! {
         // The s_mid passed to sub-actions has votes_granted ⊆ s.votes_granted ∪ {}.
     }
 
-    proof fn lemma_votes_granted_are_servers_inductive(
+    pub proof fn lemma_votes_granted_are_servers_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9426,7 +9434,7 @@ verus! {
         // Step-down/follower actions: s_ is Follower → conclusion vacuous.
     }
 
-    proof fn lemma_candidate_or_leader_voted_for_self_inductive(
+    pub proof fn lemma_candidate_or_leader_voted_for_self_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9489,7 +9497,7 @@ verus! {
         // Step-down/follower actions: s_ is Follower → conclusion vacuous.
     }
 
-    proof fn lemma_candidate_or_leader_voted_for_self_id_inductive(
+    pub proof fn lemma_candidate_or_leader_voted_for_self_id_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9540,7 +9548,7 @@ verus! {
     ///   VoteResponse packet is already in the network with matching term
     ///   (ensured by the term check guard: term == s.current_term)
     /// - votes_granted is reset on term change (step_down/LTimeout)
-    proof fn lemma_voters_voted_for_candidate_inductive(
+    pub proof fn lemma_voters_voted_for_candidate_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -10746,7 +10754,7 @@ verus! {
 
     /// Extract step parameters and establish LNext for LeaderLogLongEnough.
     /// Isolated to keep RaftDistributedNormalNext axioms out of the assert-forall.
-    proof fn lemma_lllong_extract_step(
+    pub proof fn lemma_lllong_extract_step(
         ds: RaftDistributedState, ds_: RaftDistributedState,
     ) -> (result: (int, LState, LState, LConstants))
         requires
@@ -10797,7 +10805,7 @@ verus! {
     /// Phase 1 of i != server_id: light invariants only (no ETHVQ, no message).
     /// Establishes disjunctive postcondition: either proved, or needs quorum
     /// intersection (l == server_id && !Leader at ds).
-    proof fn lemma_lllong_body_i_ne_sid_light(
+    pub proof fn lemma_lllong_body_i_ne_sid_light(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s: LState, s_: LState, c: LConstants,
     )
@@ -10845,7 +10853,7 @@ verus! {
     /// Phase 2 of i != server_id: for the remaining case (l == server_id,
     /// new Leader), use ETHVQ + quorum intersection.
     /// Has ETHVQ + message invariants but NO RaftServerStepWithNetwork.
-    proof fn lemma_lllong_body_i_ne_sid_heavy(
+    pub proof fn lemma_lllong_body_i_ne_sid_heavy(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s: LState, s_: LState,
     )
@@ -10913,7 +10921,7 @@ verus! {
 
     /// Body for i == server_id case. Has RaftServerStepWithNetwork
     /// but NO ETHVQ or message invariants.
-    proof fn lemma_lllong_body_i_eq_sid(
+    pub proof fn lemma_lllong_body_i_eq_sid(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s: LState, s_: LState, c: LConstants,
     )
@@ -11275,7 +11283,7 @@ verus! {
     ///
     /// This extracts the vote quorum into a Seq suitable for
     /// EntryTermHasVoteQuorum's existential witness.
-    proof fn lemma_votes_granted_to_voter_seq(
+    pub proof fn lemma_votes_granted_to_voter_seq(
         ds: RaftDistributedState, d: int, term: int,
     ) -> (voters: Seq<int>)
         requires
@@ -11385,7 +11393,7 @@ verus! {
     }
 
     /// Helper: ExistsGrantedVoteResponse transfers across network monotonicity.
-    proof fn lemma_vote_response_transfers(
+    pub proof fn lemma_vote_response_transfers(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         src: int, dst: int, term: int,
     )
@@ -11435,7 +11443,7 @@ verus! {
     }
 
     /// Step 1 of follower case: find the AE leader (isolated from transfer).
-    proof fn lemma_follower_find_ae_leader(
+    pub proof fn lemma_follower_find_ae_leader(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, k: int,
     ) -> (ae_leader: int)
@@ -11483,7 +11491,7 @@ verus! {
 
     /// Helper: LNext preserves log for most branches (only LClientRequest
     /// and LFollowerAppendEntries modify the log).
-    proof fn lemma_lnext_log_preserved_or_extended(s: LState, s_: LState, c: LConstants)
+    pub proof fn lemma_lnext_log_preserved_or_extended(s: LState, s_: LState, c: LConstants)
         requires LNext(s, s_, c)
         ensures
             // The log is either unchanged or extended by exactly one entry
@@ -11519,7 +11527,7 @@ verus! {
     }
 
     /// Inner proof for LogMatching induction, separated for modularity.
-    proof fn lemma_log_matching_inner(
+    pub proof fn lemma_log_matching_inner(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s: LState, s_: LState, c: LConstants,
     )
@@ -11618,7 +11626,7 @@ verus! {
     /// When server_id extends its log via the network model (non-Leader),
     /// there exists a leader whose log matches the new entry and the
     /// follower's prev-log entry. Captures AE packet provenance via AEI.
-    proof fn lemma_follower_append_ae_in_network(
+    pub proof fn lemma_follower_append_ae_in_network(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s: LState, s_: LState, c: LConstants,
         k: int,
@@ -12029,7 +12037,7 @@ verus! {
     /// Sub-helper for LeaderCompleteness induction: if the leader is unchanged
     /// across a distributed step and the committed-entry witness is from the
     /// pre-state, the LeaderCompleteness obligation transfers directly.
-    proof fn lemma_leader_completeness_unchanged_leader_for_prestate_commit(
+    pub proof fn lemma_leader_completeness_unchanged_leader_for_prestate_commit(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         leader_id: int, k: int, entry: LLogEntry,
     )
@@ -12053,7 +12061,7 @@ verus! {
     /// Sub-helper for LeaderCompleteness induction: a post-state committed
     /// witness either already existed in the pre-state, or it is a fresh
     /// append at index `k` on the stepping server this step.
-    proof fn lemma_entry_committed_post_implies_pre_or_fresh_step_append(
+    pub proof fn lemma_entry_committed_post_implies_pre_or_fresh_step_append(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         k: int, entry: LLogEntry,
     )
@@ -12183,77 +12191,6 @@ verus! {
     // State Machine Safety Induction
     // =========================================================================
 
-    /// Main induction lemma for State Machine Safety
-    ///
-    /// StateMachineSafety states: for any two servers i and j, entries below
-    /// both commit_index[i] and commit_index[j] are identical.
-    ///
-    /// Structure:
-    /// - If neither i nor j stepped: SMS(ds) + LogAppendOnly gives result.
-    /// - If both are the stepping server: trivial (same server).
-    /// - If exactly one stepped and its old commit_index already covered k:
-    ///   SMS(ds) + LogAppendOnly gives result.
-    /// - If exactly one stepped and k is NEWLY committed: the post-state
-    ///   commit-certificate map identifies the same entry for both servers.
-    proof fn lemma_state_machine_safety_inductive(
-        ds: RaftDistributedState, ds_: RaftDistributedState
-    )
-        requires
-            RaftSafetyInvariant(ds),
-            RaftDistributedNormalNext(ds, ds_),
-        ensures
-            StateMachineSafety(ds_)
-    {
-        lemma_committed_entries_have_log_certificates_inductive(ds, ds_);
-        lemma_log_certificate_coverage_implies_state_machine_safety(ds_);
-        lemma_normal_next_implies_legacy(ds, ds_);
-        lemma_log_append_only(ds, ds_);
-
-        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
-            &&& 0 <= sid < ds.num_servers
-            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
-                       ds.server_constants[sid])
-            &&& (forall |j: int| #![trigger ds_.server_states[j]]
-                0 <= j < ds.num_servers && j != sid ==>
-                ds_.server_states[j] == ds.server_states[j])
-        };
-
-        assert forall |i: int, j: int, k: int| #![trigger ds_.server_states[i], ds_.server_states[j].log[k]] #![trigger ds_.server_states[j], ds_.server_states[i].log[k]]
-            0 <= i < ds_.num_servers && 0 <= j < ds_.num_servers
-            && 0 <= k < ds_.server_states[i].commit_index
-            && 0 <= k < ds_.server_states[j].commit_index
-            && k < ds_.server_states[i].log.len()
-            && k < ds_.server_states[j].log.len()
-        implies ds_.server_states[i].log[k] == ds_.server_states[j].log[k]
-        by {
-            if i != server_id && j != server_id {
-                // Both unchanged: SMS(ds) + LogAppendOnly
-                assert(ds_.server_states[i] == ds.server_states[i]);
-                assert(ds_.server_states[j] == ds.server_states[j]);
-                assert(StateMachineSafety(ds));
-            } else if i == j {
-                // Same server: trivial
-            } else {
-                // Exactly one is the stepping server.
-                // WLOG let stepping = the one that is server_id.
-                let (stepping, other) = if i == server_id { (i, j) } else { (j, i) };
-                assert(ds_.server_states[other] == ds.server_states[other]);
-
-                if k < ds.server_states[stepping].commit_index {
-                    // k was already below old commit_index.
-                    // SMS(ds): old entries agree. LogAppendOnly: entries preserved.
-                    assert(StateMachineSafety(ds));
-                    assert(k < ds.server_states[other].commit_index);
-                } else {
-                    // k is NEWLY committed by the stepping server.
-                    // The post-state certificate map gives both committed
-                    // entries the same unique certificate value.
-                    assert(StateMachineSafety(ds_));
-                }
-            }
-        }
-    }
-
     // =========================================================================
     // Message Invariant Induction
     // =========================================================================
@@ -12276,7 +12213,7 @@ verus! {
 
     /// Extract step parameters from RaftDistributedNormalNext.
     /// Returns (server_id, sent_pkts, recv_from) with all relevant properties.
-    proof fn lemma_extract_step_with_network(
+    pub proof fn lemma_extract_step_with_network(
         ds: RaftDistributedState,
         ds_: RaftDistributedState,
     ) -> (res: (int, Seq<LRaftMessage>, Option<int>))
@@ -12312,99 +12249,6 @@ verus! {
         lemma_normal_next_implies_legacy(ds, ds_);
 
         (server_id, sent_pkts, recv_from)
-    }
-
-    /// The global certificate map continues to cover every committed
-    /// Configuration entry after one distributed step.
-    pub proof fn lemma_committed_configurations_have_certificates_inductive(
-        ds: RaftDistributedState,
-        ds_: RaftDistributedState,
-    )
-        requires
-            CommittedConfigurationsHaveCertificates(ds),
-            RaftDistributedNormalNext(ds, ds_),
-        ensures
-            CommittedConfigurationsHaveCertificates(ds_),
-    {
-        let (server_id, sent_pkts, recv_from) =
-            lemma_extract_step_with_network(ds, ds_);
-
-        assert forall |server: int, index: int|
-            #![trigger ds_.server_states[server].log[index]]
-            0 <= server < ds_.num_servers
-            && 0 <= index < ds_.server_states[server].commit_index
-            && index < ds_.server_states[server].log.len()
-            && ds_.server_states[server].log[index].payload is Configuration
-            implies {
-                &&& ds_.configuration_commit_certificates.dom().contains(index)
-                &&& ds_.configuration_commit_certificates[index].log_index
-                    == index
-                &&& ds_.configuration_commit_certificates[index].entry
-                    == ds_.server_states[server].log[index]
-            }
-        by {
-            if server == server_id {
-                assert(ds_.server_states[server]
-                    == ds_.server_states[server_id]);
-            } else {
-                assert(ds_.server_states[server]
-                    == ds.server_states[server]);
-                assert(CommittedConfigurationsHaveCertificates(ds));
-                assert(ds.configuration_commit_certificates
-                    .dom().contains(index));
-                assert(ds.configuration_commit_certificates[index].log_index
-                    == index);
-                assert(ds.configuration_commit_certificates[index].entry
-                    == ds.server_states[server].log[index]);
-            }
-        };
-    }
-
-    /// All-entry certificate coverage is preserved for the stepping server by
-    /// the transition rule and for every other server by certificate
-    /// immutability plus unchanged local state.
-    pub proof fn lemma_committed_entries_have_log_certificates_inductive(
-        ds: RaftDistributedState,
-        ds_: RaftDistributedState,
-    )
-        requires
-            CommittedEntriesHaveLogCertificates(ds),
-            RaftDistributedNormalNext(ds, ds_),
-        ensures
-            CommittedEntriesHaveLogCertificates(ds_),
-    {
-        let (server_id, sent_pkts, recv_from) =
-            lemma_extract_step_with_network(ds, ds_);
-
-        assert forall |server: int, index: int|
-            #![trigger ds_.server_states[server].log[index]]
-            0 <= server < ds_.num_servers
-            && 0 <= index < ds_.server_states[server].commit_index
-            && index < ds_.server_states[server].log.len()
-        implies {
-            &&& ds_.log_commit_certificates.dom().contains(index)
-            &&& ds_.log_commit_certificates[index].log_index == index
-            &&& ds_.log_commit_certificates[index].entry
-                == ds_.server_states[server].log[index]
-        } by {
-            if server == server_id {
-                assert(ds_.server_states[server]
-                    == ds_.server_states[server_id]);
-            } else {
-                assert(ds_.server_states[server]
-                    == ds.server_states[server]);
-                assert(CommittedEntriesHaveLogCertificates(ds));
-                assert(ds.log_commit_certificates.dom().contains(index));
-                assert(ds.log_commit_certificates[index].log_index == index);
-                assert(ds.log_commit_certificates[index].entry
-                    == ds.server_states[server].log[index]);
-                assert(ds_.log_commit_certificates.dom().contains(index));
-                assert(ds_.log_commit_certificates[index].log_index
-                    == ds.log_commit_certificates[index].log_index);
-                assert(ds_.log_commit_certificates[index].entry
-                    == ds.log_commit_certificates[index].entry);
-            }
-        };
     }
 
     /// All-entry certificate validity is preserved. Old certificates retain
@@ -13163,7 +13007,7 @@ verus! {
         };
     }
 
-    proof fn lemma_vote_response_integrity_inductive(
+    pub proof fn lemma_vote_response_integrity_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -14023,7 +13867,7 @@ verus! {
         }
     }
 
-    proof fn lemma_one_vote_per_term_inductive(
+    pub proof fn lemma_one_vote_per_term_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -14969,7 +14813,7 @@ verus! {
     // CandidateVoteDestinationUnique inductive proof
     // =========================================================================
 
-    proof fn lemma_candidate_vote_destination_unique_inductive(
+    pub proof fn lemma_candidate_vote_destination_unique_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -15072,7 +14916,7 @@ verus! {
     // =========================================================================
 
     /// LNext never decreases current_term.
-    proof fn lemma_lnext_term_monotone(s: LState, s_: LState, c: LConstants)
+    pub proof fn lemma_lnext_term_monotone(s: LState, s_: LState, c: LConstants)
         requires LNext(s, s_, c)
         ensures s_.current_term >= s.current_term
     {
@@ -15112,7 +14956,7 @@ verus! {
     // =========================================================================
 
     /// If LNext produces a Leader from a non-Leader, the pre-state was Candidate.
-    proof fn lemma_lnext_non_leader_to_leader_was_candidate(
+    pub proof fn lemma_lnext_non_leader_to_leader_was_candidate(
         s: LState, s_: LState, c: LConstants
     )
         requires
@@ -15134,7 +14978,7 @@ verus! {
     // =========================================================================
 
     /// The integer range [0, n) is finite with length n.
-    proof fn lemma_range_set_finite(n: int)
+    pub proof fn lemma_range_set_finite(n: int)
         requires n >= 0
         ensures
             Set::<int>::range(0, n).len() == n,
@@ -16446,7 +16290,7 @@ verus! {
     /// New packets: only LFollowerAppendEntries sends success ARs.
     ///   Prev_log check + AEI + LogMatching gives agreement.
     ///   match_index bounds from AR creation logic.
-    proof fn lemma_append_response_log_agreement_inductive(
+    pub proof fn lemma_append_response_log_agreement_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -16527,7 +16371,7 @@ verus! {
     /// successful AppendResponse packet whose handling produced that entry.
     /// This keeps RaftActionProduces case analysis out of the quantified MILA
     /// proof below.
-    proof fn lemma_mila_changed_match_index_packet(
+    pub proof fn lemma_mila_changed_match_index_packet(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s: LState, s_: LState, c: LConstants,
         follower_id: int,
@@ -16615,7 +16459,7 @@ verus! {
     /// - new_match_index <= follower.log.len() (from ARLA: AR.match_index <= AR.src.log.len()).
     /// match_index is cleared when becoming leader (empty map → vacuous).
     /// For preserved entries: LogAppendOnly grows logs, so bounds are preserved.
-    proof fn lemma_match_index_bounded_inductive(
+    pub proof fn lemma_match_index_bounded_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -16954,6 +16798,11 @@ verus! {
         requires
             RaftSafetyInvariant(ds),
             RaftDistributedNormalNext(ds, ds_),
+            // Certificate coverage is not a consequence of one step alone: it
+            // needs the quorum argument for the membership regime in force.
+            // Callers discharge it (static_safety.rs for fixed membership).
+            CommittedConfigurationsHaveCertificates(ds_),
+            CommittedEntriesHaveLogCertificates(ds_),
         ensures
             RaftSafetyInvariant(ds_)
     {
@@ -16967,10 +16816,6 @@ verus! {
         lemma_voters_voted_for_candidate_inductive(ds, ds_);
         lemma_leader_has_recorded_election_quorum_inductive(ds, ds_);
         lemma_leader_has_recorded_election_log_provenance_inductive(ds, ds_);
-        lemma_committed_configurations_have_certificates_inductive(
-            ds, ds_);
-        lemma_committed_entries_have_log_certificates_inductive(
-            ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);
         lemma_commit_index_nonnegative_inductive(ds, ds_);
         lemma_entry_term_leader_witness_inductive(ds, ds_);
