@@ -266,7 +266,7 @@ VERUS_PATH=/path/to/verus scripts/verify_mako_controls.py
 (cd src/tla+/Mako && java -cp /path/to/tla2tools.jar tla2sany.SANY MakoOCC.tla)
 ```
 
-Validation result: **123 verified, 0 errors**, with all eleven negative controls
+Validation result: **126 verified, 0 errors**, with all eleven negative controls
 rejected as intended. SANY reports no syntax or semantic errors for all three
 TLA+ companion modules.
 
@@ -277,13 +277,14 @@ The standalone proof contains no `assume`, `admit`, external proof bodies, or
 trusted-module annotations. No files under `src/generated` are changed.
 
 The standalone proof and all eleven controls also pass on rolling Verus
-`0.2026.10.04.426d8b0`. Publication checks must cover both the pinned and rolling
+`0.2026.10.12.4bfc2b4`. Publication checks must cover both the pinned and rolling
 toolchains, including CI's whole-crate verification (`scons --verus-path=/path/to/verus`),
 not just the standalone harness. On the rolling toolchain, unfolding `read_max`
 inside `step_streams` caused excessive quantifier instantiation; this lemma
 keeps that predicate locally opaque because it needs only the allocated-clock
 equation. The partial-failure scenario supplies explicit installed-transaction
-and missing-shard witnesses. These proof hints do not change the model,
+and missing-shard witnesses, and runs in three stages that each hand the next
+the exact state reached, so no single function carries all sixteen steps. These proof hints do not change the model,
 theorem statements, or solver resource limits.
 
 The constructive scenario proofs establish that the model permits:

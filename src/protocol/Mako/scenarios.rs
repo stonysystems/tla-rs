@@ -90,14 +90,46 @@ pub proof fn theorem_normal_commit_reachable() -> (h: Seq<State>)
     h
 }
 
-pub proof fn theorem_partial_failure_reachable() -> (h: Seq<State>)
-    ensures behavior(Config { shards: 2, workers: 1 }, h),
-        h.last().installed.contains((0, 0)), !h.last().installed.contains((0, 1)),
-        h.last().rolled.contains((0, 0)), h.last().rolled.contains((1, 0)),
-        h.last().acked.contains(2), !h.last().acked.contains(0), !h.last().acked.contains(1),
-        h.last().tx[2].epoch == 1
+// The partial-failure scenario runs in stages so that no single function
+// carries all sixteen steps. Each stage hands the next one the exact state it
+// reached, written as the effects of its actions.
+pub open spec fn pf_config() -> Config { Config { shards: 2, workers: 1 } }
+
+/// Transaction 0 begins on both shards and installs only on shard 0;
+/// transaction 1 reads it and installs on shard 0.
+pub open spec fn pf_state1() -> State {
+    let c = pf_config();
+    let s = effect(c, empty_state(c), Action::Begin { id: 0, tx: both(0) });
+    let s = effect(c, s, Action::Install { id: 0, shard: 0 });
+    let s = effect(c, s, Action::Begin { id: 1, tx: one(0, 2, 1, Set::empty().insert(0)) });
+    effect(c, s, Action::Install { id: 1, shard: 0 })
+}
+
+/// Shard 0 replicates, the epoch advances, and transaction 2 installs in
+/// the new epoch.
+pub open spec fn pf_state2() -> State {
+    let c = pf_config();
+    let s = effect(c, pf_state1(), Action::Replicate { stream: k(0, 0), progress: 2 });
+    let s = effect(c, s, Action::Advance);
+    let s = effect(c, s, Action::Begin { id: 2, tx: one(1, 1, 0, Set::empty()) });
+    effect(c, s, Action::Install { id: 2, shard: 0 })
+}
+
+/// Transaction 2 is acknowledged, then epoch 0 closes with shard 1 missing.
+pub open spec fn pf_state3() -> State {
+    let c = pf_config();
+    let s = effect(c, pf_state2(), Action::Replicate { stream: k(1, 0), progress: 1 });
+    let s = effect(c, s, Action::Publish { epoch: 1, shard: 0, bound: Bound::Finite(1) });
+    let s = effect(c, s, Action::Ack { id: 2 });
+    let s = effect(c, s, Action::Close { stream: k(0, 0), good: true });
+    let s = effect(c, s, Action::Close { stream: k(0, 1), good: false });
+    effect(c, s, Action::Finalize { epoch: 0 })
+}
+
+proof fn partial_failure_stage1() -> (h: Seq<State>)
+    ensures behavior(pf_config(), h), inv(pf_config(), h.last()), h.last() == pf_state1()
 {
-    let c = Config { shards: 2, workers: 1 };
+    let c = pf_config();
     reveal(step);
     let h = start(c);
     assert(both(0).vc.dom() =~= Set::new(|i: int| shard(c, i)));
@@ -116,6 +148,15 @@ pub proof fn theorem_partial_failure_reachable() -> (h: Seq<State>)
     assert(read_max(h.last(), one(0, 2, 1, Set::empty().insert(0)), 1, 1));
     let h = take(c, h, Action::Begin { id: 1, tx: one(0, 2, 1, Set::empty().insert(0)) });
     let h = take(c, h, Action::Install { id: 1, shard: 0 });
+    h
+}
+
+proof fn partial_failure_stage2(h: Seq<State>) -> (z: Seq<State>)
+    requires behavior(pf_config(), h), inv(pf_config(), h.last()), h.last() == pf_state1()
+    ensures behavior(pf_config(), z), inv(pf_config(), z.last()), z.last() == pf_state2()
+{
+    let c = pf_config();
+    reveal(step);
     // Supply the installed transaction witnessing the replicated endpoint.
     assert(h.last().tx.dom().contains(1));
     assert(h.last().installed.contains((1, 0)));
@@ -129,6 +170,15 @@ pub proof fn theorem_partial_failure_reachable() -> (h: Seq<State>)
     assert(read_max(h.last(), one(1, 1, 0, Set::empty()), 1, 0));
     let h = take(c, h, Action::Begin { id: 2, tx: one(1, 1, 0, Set::empty()) });
     let h = take(c, h, Action::Install { id: 2, shard: 0 });
+    h
+}
+
+proof fn partial_failure_stage3(h: Seq<State>) -> (z: Seq<State>)
+    requires behavior(pf_config(), h), inv(pf_config(), h.last()), h.last() == pf_state2()
+    ensures behavior(pf_config(), z), inv(pf_config(), z.last()), z.last() == pf_state3()
+{
+    let c = pf_config();
+    reveal(step);
     assert(h.last().installed.contains((2, 0)));
     assert(h.last().tx.dom().contains(2));
     let h = take(c, h, Action::Replicate { stream: k(1, 0), progress: 1 });
@@ -137,6 +187,21 @@ pub proof fn theorem_partial_failure_reachable() -> (h: Seq<State>)
     let h = take(c, h, Action::Close { stream: k(0, 0), good: true });
     let h = take(c, h, Action::Close { stream: k(0, 1), good: false });
     let h = take(c, h, Action::Finalize { epoch: 0 });
+    h
+}
+
+pub proof fn theorem_partial_failure_reachable() -> (h: Seq<State>)
+    ensures behavior(Config { shards: 2, workers: 1 }, h),
+        h.last().installed.contains((0, 0)), !h.last().installed.contains((0, 1)),
+        h.last().rolled.contains((0, 0)), h.last().rolled.contains((1, 0)),
+        h.last().acked.contains(2), !h.last().acked.contains(0), !h.last().acked.contains(1),
+        h.last().tx[2].epoch == 1
+{
+    let c = pf_config();
+    let h = partial_failure_stage1();
+    let h = partial_failure_stage2(h);
+    let h = partial_failure_stage3(h);
+    reveal(step);
     // The missing shard is an explicit counterexample to both final cuts.
     assert(endpoint(h.last(), k(0, 1)) == Bound::Finite(0));
     assert(!covered(h.last().tx[0].vc[1], endpoint(h.last(), k(0, 1))));
