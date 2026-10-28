@@ -26,8 +26,8 @@ For specification and proof techniques, see Chapters 4 and 20 of
 ## A small example: ping-pong
 
 Two players take turns: Ping starts, then each step passes the turn to the other player.
-The model defines the allowed behavior; the proofs establish properties of that model
-independently of the implementation.
+First, write the specification: `LInit` describes the initial state, and `LNext`
+describes the allowed transitions.
 
 ```rust
 use vstd::prelude::*;
@@ -43,8 +43,14 @@ verus! {
         (turn == Turn::Ping && turn_ == Turn::Pong)
         || (turn == Turn::Pong && turn_ == Turn::Ping)
     }
+}
+```
 
-    // Model properties: every step changes the turn; two steps restore it.
+Now we can write properties of the model and prove them: every valid step changes
+the turn, and any two valid steps return to the starting turn.
+
+```rust
+verus! {
     pub proof fn lemma_alternates(turn: Turn, turn_: Turn)
         requires LNext(turn, turn_),
         ensures turn_ != turn,
@@ -54,8 +60,19 @@ verus! {
         requires LNext(a, b), LNext(b, c),
         ensures c == a,
     {}
+}
+```
 
-    // Executable Rust, checked against the model.
+The proof bodies are empty because Verus can discharge these small logical
+obligations automatically.
+
+Finally, write the implementation and prove that it refines the specification.
+The `ensures` contracts establish that `init` satisfies `LInit` and `step` satisfies
+`LNext`. For this deterministic model, the implementation's turn transitions
+exactly match the specification.
+
+```rust
+verus! {
     pub fn init() -> (turn: Turn)
         ensures LInit(turn),
     {
@@ -85,23 +102,13 @@ fn main() {
 }
 ```
 
-`LInit` specifies the starting state, and `LNext` relates consecutive states.
-`lemma_alternates` proves that a valid step cannot keep the same turn;
-`lemma_round_trip` proves that any two valid steps return to the starting turn.
-Their empty bodies mean Verus can discharge these small logical obligations automatically.
+The driver prints alternating `Ping` and `Pong` lines, three times each.
+This example proves turn-taking properties, not network delivery or eventual
+progress; the printing driver is not verified.
 
-The executable `init` and `step` functions satisfy the model's initialization and
-transition relations through their `ensures` contracts. The driver prints alternating
-`Ping` and `Pong` lines, three times each. This example proves turn-taking properties,
-not network delivery or eventual progress; the printing driver is not verified.
-
-Save the complete snippet as `ping_pong.rs`, then verify, compile, and run it after
-installing [Verus below](#requirements):
-
-```bash
-"$VERUS_PATH" --compile ping_pong.rs -o ping_pong
-./ping_pong
-```
+Copy the three snippets, in order, into `ping_pong.rs`. After installing
+[Verus below](#requirements), verify and compile with
+`"$VERUS_PATH" --compile ping_pong.rs -o ping_pong`, then run `./ping_pong`.
 
 ## Verified refinement theorems
 
