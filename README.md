@@ -3,8 +3,8 @@
 **Stop looking for bugs. Start proving your code.**
 
 `tla-rs` lets you write **TLA-style specifications in Rust with
-[Verus](https://github.com/verus-lang/verus)**, generate executable Rust from supported
-specifications, and prove that the code implements the behavior you specified.
+[Verus](https://github.com/verus-lang/verus)** and prove that your Rust code implements
+the behavior you specified.
 Describe your system's state, initial conditions, and allowed transitions as logical
 relations—not just a collection of test cases.
 
@@ -12,84 +12,20 @@ Tests find executions that go wrong. Proofs establish stated properties for ever
 execution covered by the theorem's assumptions. The goal is not just to check a model
 beside your code, but to connect the specification to the Rust that runs.
 
-## Specify, generate, prove
+## Specify and prove
 
 1. **Specify the behavior.** Write TLA-style state machines and invariants directly in
    Verus's Rust syntax. You do not need to start with a separate TLA+ file.
-2. **Generate the implementation.** Annotate inputs and outputs with `// @automan`,
-   then use the transpiler to derive executable Rust and refinement contracts from
-   supported specification patterns.
-3. **Prove the connection.** Use Verus to check that the generated functions satisfy
-   their contracts, and supply the invariants and lemmas needed for system-level
-   safety and refinement proofs.
+2. **Prove your code.** State the contracts your Rust implementation must satisfy
+   and use Verus to check them. Supply invariants and lemmas to establish
+   system-level safety and refinement properties.
 
-Generation is not itself a proof, and proofs are not automatic for arbitrary Rust or
-arbitrary TLA+ specifications. Verification covers the stated properties under explicit
-preconditions and trusted boundaries. Testing and model checking still help find
-specification mistakes and exercise runtime code outside those boundaries.
+Verification covers the stated properties under explicit preconditions and trusted
+boundaries. Testing and model checking still help find specification mistakes and
+exercise runtime code outside those boundaries.
 
-## Quick Start: From a Spec to Verified Rust
-
-Here is a complete counter transition written as a TLA-style relation in Verus
-([`examples/quickstart/counter_spec.rs`](examples/quickstart/counter_spec.rs)):
-
-```rust
-verus! {
-    // @automan predicate(value: out)
-    pub open spec fn LInit(value: int) -> bool {
-        value == 0
-    }
-
-    // @automan predicate(value: in, value_: out)
-    pub open spec fn LIncrement(value: int, value_: int) -> bool {
-        value_ == value + 1
-    }
-}
-```
-
-The functions are relations: their signatures do not say which parameters are
-known before execution. The `// @automan` directive above each function
-declares that dataflow — `in` parameters are supplied to the generated
-function, `out` parameters are what it must compute. Thus `LInit` generates a
-zero-argument `CInit` returning the initial value, and `LIncrement` generates
-`CIncrement(value)` returning the new value represented by `value_`. Bindings
-are matched by parameter name, so renaming or reordering a parameter without
-updating the directive is an error rather than a silent meaning change.
-
-From the repository root, generate the executable functions, verify them, compile them, and
-run the result:
-
-```bash
-cargo run --manifest-path transpiler/Cargo.toml -- \
-  -i examples/quickstart/counter_spec.rs \
-  -c examples/quickstart/counter_transpile.toml \
-  -o examples/quickstart/counter_gen.rs
-
-"$VERUS_PATH" --compile examples/quickstart/main.rs -o /tmp/tla-rs-counter
-/tmp/tla-rs-counter
-```
-
-Inline directives are the default. As an alternative, the same modes can live
-in a separate `.automan` sidecar file passed with `-a`, using positional
-`+`/`-` markers — `LInit(-); LIncrement(+, -);` inside a `module counter_spec
-{ ... }` block. The sidecar form predates the inline form and remains fully
-supported; `migrate-inline` converts a sidecar into inline directives, and a
-function annotated in both places must agree.
-
-The generated `CInit` and `CIncrement` functions have `ensures` clauses tying their concrete
-`i64` results back to `LInit` and `LIncrement`. The increment also requires
-`*value < i64::MAX`: the specification uses mathematical integers, but executable Rust
-must not overflow. Verus checks the contract for every input satisfying that precondition,
-not just the example value. The final output is:
-
-```text
-verification results:: 2 verified, 0 errors
-Counter: 0 -> 1
-```
-
-All source (with its inline annotations), configuration, generated code, and runner files are in
-[`examples/quickstart/`](examples/quickstart/). CI regenerates the code, rejects proof shortcuts,
-and verifies, compiles, and runs this example.
+For specification and proof techniques, see Chapters 4 and 20 of
+[*The tla-rs Book*](docs/tla-rs-book.md).
 
 ## Verified refinement theorems
 
@@ -109,14 +45,11 @@ The two flagship protocols carry machine-checked refinement proofs, verified end
   stated over protocol state alone; proof-only history is shown never to
   restrict the protocol.
 
-The repository also extends that foundation with additional distributed protocols, bidirectional
-TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
-deployable services with a native Rust+Lion runtime, configuration tool, and workload client.
+The repository also includes bidirectional TLA+/Verus translation and source-first
+model checking.
 
 ## What is included
 
-- A spec-to-executable transpiler that generates Rust implementations and Verus
-  refinement contracts.
 - Ten distributed protocols: RSL (Multi-Paxos), Single-Decree Paxos, Raft, EPaxos,
   PBFT, Chain Replication, Primary-Backup, Vertical Paxos, Two-Phase Commit, and
   Bully leader election.
@@ -172,12 +105,15 @@ integration are runtime-tested, not covered by an end-to-end service theorem.
 For service configuration, deployment, client workloads, and transport options,
 see [Chapter 10 of *The tla-rs Book*](docs/tla-rs-book.md#run-a-three-node-rsl-service).
 
-## Performance
+## Code generation
 
-Generated transitions support functional state updates with selective `Arc` sharing
-and opt-in mutable-receiver lowering for eligible hot paths. RSL uses mutable lowering
-for selected actions, avoiding unnecessary whole-state reconstruction while preserving
-the same Verus postconditions.
+The repository also includes an AutoMan-style transpiler that generates executable
+Rust and refinement contracts from supported, annotated Verus specifications.
+The generated code must still be checked by Verus.
+See the [counter example](examples/quickstart/) and Chapters 5–7 of
+[*The tla-rs Book*](docs/tla-rs-book.md) for annotations, configuration, and usage.
+
+## Performance
 
 Native measurements and methodology are recorded in the
 [Lion runtime report](reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md).
