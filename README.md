@@ -8,10 +8,26 @@ the behavior you specified.
 Describe your system's state, initial conditions, and allowed transitions as logical
 relations—not just a collection of test cases.
 
+## Specify and prove
+
+1. **Specify the behavior.** Write TLA-style state machines and invariants directly in
+   Verus's Rust syntax. You do not need to start with a separate TLA+ file.
+2. **Prove your code.** State the contracts your Rust implementation must satisfy
+   and use Verus to check them. Supply invariants and lemmas to establish
+   system-level safety and refinement properties.
+
+Verification covers the stated properties under explicit preconditions and trusted
+boundaries. Testing and model checking still help find specification mistakes and
+exercise runtime code outside those boundaries.
+
+For specification and proof techniques, see Chapters 4 and 20 of
+[*The tla-rs Book*](docs/tla-rs-book.md).
+
 ## A small example: ping-pong
 
 Two players take turns: Ping starts, then each step passes the turn to the other player.
-`LInit` describes the initial state; `LNext` relates the state before and after a step.
+The model defines the allowed behavior; the proofs establish properties of that model
+independently of the implementation.
 
 ```rust
 use vstd::prelude::*;
@@ -28,6 +44,24 @@ verus! {
         || (turn == Turn::Pong && turn_ == Turn::Ping)
     }
 
+    // Model properties: every step changes the turn; two steps restore it.
+    pub proof fn lemma_alternates(turn: Turn, turn_: Turn)
+        requires LNext(turn, turn_),
+        ensures turn_ != turn,
+    {}
+
+    pub proof fn lemma_round_trip(a: Turn, b: Turn, c: Turn)
+        requires LNext(a, b), LNext(b, c),
+        ensures c == a,
+    {}
+
+    // Executable Rust, checked against the model.
+    pub fn init() -> (turn: Turn)
+        ensures LInit(turn),
+    {
+        Turn::Ping
+    }
+
     pub fn step(turn: Turn) -> (turn_: Turn)
         ensures LNext(turn, turn_),
     {
@@ -37,29 +71,37 @@ verus! {
         }
     }
 }
+
+// A finite demo driver; printing is outside the verified model.
+fn main() {
+    let mut turn = init();
+    for _ in 0..6 {
+        match turn {
+            Turn::Ping => println!("Ping"),
+            Turn::Pong => println!("Pong"),
+        }
+        turn = step(turn);
+    }
+}
 ```
 
-`step` is ordinary executable Rust with a Verus contract: `ensures` requires every
-call to follow `LNext`. Verus proves that contract for either input state.
-This is a turn-taking model, not a proof of network delivery or eventual progress.
+`LInit` specifies the starting state, and `LNext` relates consecutive states.
+`lemma_alternates` proves that a valid step cannot keep the same turn;
+`lemma_round_trip` proves that any two valid steps return to the starting turn.
+Their empty bodies mean Verus can discharge these small logical obligations automatically.
 
-Save the snippet as `ping_pong.rs` and verify it with
-`"$VERUS_PATH" --crate-type lib ping_pong.rs` after installing [Verus below](#requirements).
+The executable `init` and `step` functions satisfy the model's initialization and
+transition relations through their `ensures` contracts. The driver prints alternating
+`Ping` and `Pong` lines, three times each. This example proves turn-taking properties,
+not network delivery or eventual progress; the printing driver is not verified.
 
-## Specify and prove
+Save the complete snippet as `ping_pong.rs`, then verify, compile, and run it after
+installing [Verus below](#requirements):
 
-1. **Specify the behavior.** Write TLA-style state machines and invariants directly in
-   Verus's Rust syntax. You do not need to start with a separate TLA+ file.
-2. **Prove your code.** State the contracts your Rust implementation must satisfy
-   and use Verus to check them. Supply invariants and lemmas to establish
-   system-level safety and refinement properties.
-
-Verification covers the stated properties under explicit preconditions and trusted
-boundaries. Testing and model checking still help find specification mistakes and
-exercise runtime code outside those boundaries.
-
-For specification and proof techniques, see Chapters 4 and 20 of
-[*The tla-rs Book*](docs/tla-rs-book.md).
+```bash
+"$VERUS_PATH" --compile ping_pong.rs -o ping_pong
+./ping_pong
+```
 
 ## Verified refinement theorems
 
