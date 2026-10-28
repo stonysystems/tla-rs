@@ -8,10 +8,6 @@ the behavior you specified.
 Describe your system's state, initial conditions, and allowed transitions as logical
 relations—not just a collection of test cases.
 
-Tests find executions that go wrong. Proofs establish stated properties for every
-execution covered by the theorem's assumptions. The goal is not just to check a model
-beside your code, but to connect the specification to the Rust that runs.
-
 ## A small example: ping-pong
 
 Two players take turns: Ping starts, then each step passes the turn to the other player.
