@@ -23,6 +23,13 @@ exercise runtime code outside those boundaries.
 For specification and proof techniques, see Chapters 4 and 20 of
 [*The tla-rs Book*](docs/tla-rs-book.md).
 
+## Feeling lucky with your agents?
+
+Try these prompts with your coding agent:
+
+- "Verify my code with the approach in tla-rs: <https://github.com/stonysystems/tla-rs>"
+- "Build this with the approach in tla-rs: <https://github.com/stonysystems/tla-rs>"
+
 ## A small example: ping-pong
 
 Two players take turns: Ping starts, then each step passes the turn to the other player.
