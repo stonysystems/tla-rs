@@ -25,10 +25,9 @@ For specification and proof techniques, see Chapters 4 and 20 of
 
 ## Feeling lucky with your agents?
 
-Try these prompts with your coding agent:
+Try this prompt with your coding agent:
 
 - "Verify my code with the approach in tla-rs: <https://github.com/stonysystems/tla-rs>"
-- "Build this with the approach in tla-rs: <https://github.com/stonysystems/tla-rs>"
 
 ## A small example: ping-pong
 
