@@ -112,32 +112,18 @@ Chapter 2 of [*The tla-rs Book*](docs/tla-rs-book.md), then verify and compile w
 
 ## More Examples
 
-Beyond ping-pong, the repository includes ten distributed-protocol examples.
-The two flagship protocols carry machine-checked refinement proofs, verified by Verus:
+| Example folder | Proof coverage |
+|---|---|
+| [RSL / Multi-Paxos](src/protocol/RSL/) | Protocol-behavior refinement to an abstract replicated state machine. |
+| [Raft](src/protocol/Raft/) | Committed-log refinement, agreement, and leader uniqueness, including reboots and joint consensus. |
+| [EPaxos*](src/protocol/EPaxos/star/) | Model safety, recovery, and abstract-history refinement; executable refinement remains open. |
+| [CausalMesh](src/protocol/CausalMesh/) | Two-round model: causal and session guarantees over arbitrary finite executions. |
+| [Mako-v1](src/protocol/Mako/) | Watermark safety and OCC serializability; composition is conditional and C++ refinement remains open. |
+| [Consensus studies](docs/non-bft-consensus/) | Chain Replication, Mencius, Jetpack, Om, Gaios, CORFU, Replicated Commit, and SpecPaxos: scoped safety/refinement proofs, with remaining obligations documented. |
+| [Other protocols](src/protocol/) | Paxos, PBFT, Primary-Backup, Vertical Paxos, Two-Phase Commit, and Bully election: action-level implementation contracts; proof depth varies. |
+| [TLAPS-Bench](src/protocol/TLAPSBench/) | Nine models: 38/47 invariants and 9/9 liveness goals proved; 6 goals refuted and 3 unresolved. |
 
-- **RSL (Multi-Paxos)** —
-  [`lemma_GetBehaviorRefinement`](src/protocol/RSL/refinement_proof/refinement.rs):
-  every behavior of the distributed protocol refines an abstract replicated
-  state machine — the IronFleet theorem, mechanized in Verus.
-- **Raft** —
-  [`lemma_raw_refinement_correct`](src/protocol/Raft/refinement_proof/lift.rs):
-  every behavior of the raw protocol, with message loss, reordering,
-  crash-reboot, and joint-consensus membership changes, refines a sequential
-  state machine over the committed log (no two reachable servers commit
-  different entries at the same index, and each term has at most one leader)
-  — a property IronFleet's original development did not cover. The theorem is
-  stated over protocol state alone; proof-only history is shown never to
-  restrict the protocol.
-
-Other protocol examples include Single-Decree Paxos, EPaxos, PBFT, Chain Replication,
-Primary-Backup, Vertical Paxos, Two-Phase Commit, and Bully leader election.
-
-A native Rust+Lion server supports all ten protocols, with native configuration/identity
-generation and workload clients; no C# or .NET is required on this path.
-Runtime integration is tested, but is not covered by an end-to-end service theorem.
-
-The repository also includes bidirectional TLA+/Verus translation and source-first
-model checking.
+Coverage is relative to each model's assumptions, not an end-to-end service guarantee.
 
 ## Code generation
 
