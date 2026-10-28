@@ -1,46 +1,34 @@
-# tla-rs: IronFleet and AutoMan in Verus
+# tla-rs: TLA-Style Specifications for Verified Rust
 
-`tla-rs` lets you write TLA-style distributed-system specifications in
-Rust/[Verus](https://github.com/verus-lang/verus), then automatically derive executable Rust
-implementations and the proof obligations connecting them to their specifications. It is
-primarily a reimplementation of the systems and methodology described in two papers:
+**Stop looking for bugs. Start proving your code.**
 
-- [**IronFleet: Proving Practical Distributed Systems Correct**](https://doi.org/10.1145/2815400.2815428)
-  ([code](https://github.com/microsoft/Ironclad/tree/main/ironfleet)) — the verified
-  distributed-systems framework, refinement methodology, and Multi-Paxos replicated state
-  machine on which this project is based.
-- [**AutoMan: Facilitating Verified Distributed Systems Development Through Automatic Code
-  Generation and Manual Optimizations**](https://doi.org/10.1145/3731569.3764822)
-  ([code](https://github.com/stonysystems/automan)) — the workflow for generating executable
-  implementations and their verification obligations from protocol specifications.
+`tla-rs` lets you write **TLA-style specifications in Rust with
+[Verus](https://github.com/verus-lang/verus)**, generate executable Rust from supported
+specifications, and prove that the code implements the behavior you specified.
+Describe your system's state, initial conditions, and allowed transitions as logical
+relations—not just a collection of test cases.
 
-Both original systems use Dafny. This project re-expresses their core ideas in verified Rust:
-IronFleet's specifications, proofs, and runtime structure are ported to Verus, while AutoMan's
-specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
+Tests find executions that go wrong. Proofs establish stated properties for every
+execution covered by the theorem's assumptions. The goal is not just to check a model
+beside your code, but to connect the specification to the Rust that runs.
 
-## Verified refinement theorems
+## Specify, generate, prove
 
-The two flagship protocols carry machine-checked refinement proofs, verified end to end by Verus:
+1. **Specify the behavior.** Write TLA-style state machines and invariants directly in
+   Verus's Rust syntax. You do not need to start with a separate TLA+ file.
+2. **Generate the implementation.** Annotate inputs and outputs with `// @automan`,
+   then use the transpiler to derive executable Rust and refinement contracts from
+   supported specification patterns.
+3. **Prove the connection.** Use Verus to check that the generated functions satisfy
+   their contracts, and supply the invariants and lemmas needed for system-level
+   safety and refinement proofs.
 
-- **RSL (Multi-Paxos)** —
-  [`lemma_GetBehaviorRefinement`](src/protocol/RSL/refinement_proof/refinement.rs):
-  every behavior of the distributed protocol refines an abstract replicated
-  state machine — the IronFleet theorem, mechanized in Verus.
-- **Raft** —
-  [`lemma_raw_refinement_correct`](src/protocol/Raft/refinement_proof/lift.rs):
-  every behavior of the raw protocol, with message loss, reordering,
-  crash-reboot, and joint-consensus membership changes, refines a sequential
-  state machine over the committed log (no two reachable servers commit
-  different entries at the same index, and each term has at most one leader)
-  — a property IronFleet's original development did not cover. The theorem is
-  stated over protocol state alone; proof-only history is shown never to
-  restrict the protocol.
+Generation is not itself a proof, and proofs are not automatic for arbitrary Rust or
+arbitrary TLA+ specifications. Verification covers the stated properties under explicit
+preconditions and trusted boundaries. Testing and model checking still help find
+specification mistakes and exercise runtime code outside those boundaries.
 
-The repository also extends that foundation with additional distributed protocols, bidirectional
-TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
-deployable services with a native Rust+Lion runtime, configuration tool, and workload client.
-
-## Quick Start: From a Spec to a Program
+## Quick Start: From a Spec to Verified Rust
 
 Here is a complete counter transition written as a TLA-style relation in Verus
 ([`examples/quickstart/counter_spec.rs`](examples/quickstart/counter_spec.rs)):
@@ -89,7 +77,10 @@ supported; `migrate-inline` converts a sidecar into inline directives, and a
 function annotated in both places must agree.
 
 The generated `CInit` and `CIncrement` functions have `ensures` clauses tying their concrete
-`i64` results back to `LInit` and `LIncrement`. The final output is:
+`i64` results back to `LInit` and `LIncrement`. The increment also requires
+`*value < i64::MAX`: the specification uses mathematical integers, but executable Rust
+must not overflow. Verus checks the contract for every input satisfying that precondition,
+not just the example value. The final output is:
 
 ```text
 verification results:: 2 verified, 0 errors
@@ -100,13 +91,35 @@ All source (with its inline annotations), configuration, generated code, and run
 [`examples/quickstart/`](examples/quickstart/). CI regenerates the code, rejects proof shortcuts,
 and verifies, compiles, and runs this example.
 
+## Verified refinement theorems
+
+The two flagship protocols carry machine-checked refinement proofs, verified end to end by Verus:
+
+- **RSL (Multi-Paxos)** —
+  [`lemma_GetBehaviorRefinement`](src/protocol/RSL/refinement_proof/refinement.rs):
+  every behavior of the distributed protocol refines an abstract replicated
+  state machine — the IronFleet theorem, mechanized in Verus.
+- **Raft** —
+  [`lemma_raw_refinement_correct`](src/protocol/Raft/refinement_proof/lift.rs):
+  every behavior of the raw protocol, with message loss, reordering,
+  crash-reboot, and joint-consensus membership changes, refines a sequential
+  state machine over the committed log (no two reachable servers commit
+  different entries at the same index, and each term has at most one leader)
+  — a property IronFleet's original development did not cover. The theorem is
+  stated over protocol state alone; proof-only history is shown never to
+  restrict the protocol.
+
+The repository also extends that foundation with additional distributed protocols, bidirectional
+TLA+/Verus translation, source-first model checking, mutation-oriented code generation, and
+deployable services with a native Rust+Lion runtime, configuration tool, and workload client.
+
 ## What is included
 
+- A spec-to-executable transpiler that generates Rust implementations and Verus
+  refinement contracts.
 - Ten distributed protocols: RSL (Multi-Paxos), Single-Decree Paxos, Raft, EPaxos,
   PBFT, Chain Replication, Primary-Backup, Vertical Paxos, Two-Phase Commit, and
   Bully leader election.
-- A spec-to-executable transpiler that generates Rust implementations and Verus
-  refinement contracts.
 - A native Rust+Lion server for all ten protocols, native configuration/identity
   generation, and native workload clients. No C# or .NET is required on this path.
 
@@ -237,6 +250,23 @@ edited in place. When unsure which kind a function is, diff against fresh
 transpiler output rather than guessing. See
 [`AGENTS.md`](AGENTS.md) for project rules, the book's developer guide for the normal
 workflow, and [`TODO.md`](TODO.md) for current work and known gaps.
+
+## Foundations
+
+`tla-rs` brings the methodology of two verified-systems projects to Rust and Verus:
+
+- [**IronFleet: Proving Practical Distributed Systems Correct**](https://doi.org/10.1145/2815400.2815428)
+  ([code](https://github.com/microsoft/Ironclad/tree/main/ironfleet)) — the verified
+  distributed-systems framework, refinement methodology, and Multi-Paxos replicated state
+  machine on which this project is based.
+- [**AutoMan: Facilitating Verified Distributed Systems Development Through Automatic Code
+  Generation and Manual Optimizations**](https://doi.org/10.1145/3731569.3764822)
+  ([code](https://github.com/stonysystems/automan)) — the workflow for generating executable
+  implementations and their verification obligations from protocol specifications.
+
+Both original systems use Dafny. This project re-expresses their core ideas in verified Rust:
+IronFleet's specifications, proofs, and runtime structure are ported to Verus, while AutoMan's
+specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
 
 ## Attribution and license
 
