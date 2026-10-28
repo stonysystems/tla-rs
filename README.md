@@ -106,13 +106,14 @@ The driver prints alternating `Ping` and `Pong` lines, three times each.
 This example proves turn-taking properties, not network delivery or eventual
 progress; the printing driver is not verified.
 
-Copy the three snippets, in order, into `ping_pong.rs`. After installing
-[Verus below](#requirements), verify and compile with
-`"$VERUS_PATH" --compile ping_pong.rs -o ping_pong`, then run `./ping_pong`.
+Copy the three snippets, in order, into `ping_pong.rs`. Install Verus using
+Chapter 2 of [*The tla-rs Book*](docs/tla-rs-book.md), then verify and compile with
+`"$VERUS_PATH" --compile ping_pong.rs -o ping_pong` and run `./ping_pong`.
 
-## Verified refinement theorems
+## More Examples
 
-The two flagship protocols carry machine-checked refinement proofs, verified end to end by Verus:
+Beyond ping-pong, the repository includes ten distributed-protocol examples.
+The two flagship protocols carry machine-checked refinement proofs, verified by Verus:
 
 - **RSL (Multi-Paxos)** —
   [`lemma_GetBehaviorRefinement`](src/protocol/RSL/refinement_proof/refinement.rs):
@@ -128,65 +129,15 @@ The two flagship protocols carry machine-checked refinement proofs, verified end
   stated over protocol state alone; proof-only history is shown never to
   restrict the protocol.
 
+Other protocol examples include Single-Decree Paxos, EPaxos, PBFT, Chain Replication,
+Primary-Backup, Vertical Paxos, Two-Phase Commit, and Bully leader election.
+
+A native Rust+Lion server supports all ten protocols, with native configuration/identity
+generation and workload clients; no C# or .NET is required on this path.
+Runtime integration is tested, but is not covered by an end-to-end service theorem.
+
 The repository also includes bidirectional TLA+/Verus translation and source-first
 model checking.
-
-## What is included
-
-- Ten distributed protocols: RSL (Multi-Paxos), Single-Decree Paxos, Raft, EPaxos,
-  PBFT, Chain Replication, Primary-Backup, Vertical Paxos, Two-Phase Commit, and
-  Bully leader election.
-- A native Rust+Lion server for all ten protocols, native configuration/identity
-  generation, and native workload clients. No C# or .NET is required on this path.
-
-## Requirements
-
-Ubuntu 24.04 or newer — the Verus release binaries link against glibc 2.39. On an older
-distribution, build Verus from source instead.
-
-```bash
-# rustup — must be rustup, not just a matching rustc: the verus launcher shells out to it
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-rustup toolchain install 1.97.1
-
-# Verus 0.2026.08.02.b677dd5 — the zip drops the executable bit, hence chmod
-V=0.2026.08.02.b677dd5
-wget https://github.com/verus-lang/verus/releases/download/release/$V/verus-$V-x86-linux.zip
-unzip -q verus-$V-x86-linux.zip -d ~/ && mv ~/verus-x86-linux ~/verus
-chmod +x ~/verus/verus && export VERUS_PATH=~/verus/verus
-
-sudo apt install scons pkg-config libssl-dev
-```
-
-The native runtime uses Linux batched UDP syscalls and OpenSSL for identity generation
-and TLS. Lion is pinned in the runtime Cargo manifests; lockfiles are checked in.
-See [*The tla-rs Book*](docs/tla-rs-book.md), Chapters 2 and 16, for complete
-installation and development-environment guidance.
-
-## Verify and build
-
-```bash
-# Verify the protocol library and build all three native executables
-scons --verus-path="$VERUS_PATH"
-
-# Equivalent native-only build without SCons
-scripts/build_lion_runtime.sh
-
-# Explicitly skip proof checking during runtime iteration
-scripts/build_lion_runtime.sh --no-verify
-```
-
-The Verus invocation covers all ten protocol modules in the crate. The current full-crate
-gate reports `1921 verified, 0 errors`, with no warnings or automatically chosen trigger
-notes. The TLAPS-Bench ports are a separate crate, verified by
-`scripts/verify_tlaps_bench_manual.sh` in their own CI job to the same standard; see
-[their published results](reports/tlaps_bench_manual/README.md).
-Verification remains relative to the declared trusted boundaries:
-the native scheduler, marshalling, Lion's OS-facing glue, configuration, and TLS
-integration are runtime-tested, not covered by an end-to-end service theorem.
-
-For service configuration, deployment, client workloads, and transport options,
-see [Chapter 10 of *The tla-rs Book*](docs/tla-rs-book.md#run-a-three-node-rsl-service).
 
 ## Code generation
 
