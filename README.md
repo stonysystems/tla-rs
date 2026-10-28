@@ -12,6 +12,44 @@ Tests find executions that go wrong. Proofs establish stated properties for ever
 execution covered by the theorem's assumptions. The goal is not just to check a model
 beside your code, but to connect the specification to the Rust that runs.
 
+## A small example: ping-pong
+
+Two players take turns: Ping starts, then each step passes the turn to the other player.
+`LInit` describes the initial state; `LNext` relates the state before and after a step.
+
+```rust
+use vstd::prelude::*;
+
+verus! {
+    pub enum Turn { Ping, Pong }
+
+    pub open spec fn LInit(turn: Turn) -> bool {
+        turn == Turn::Ping
+    }
+
+    pub open spec fn LNext(turn: Turn, turn_: Turn) -> bool {
+        (turn == Turn::Ping && turn_ == Turn::Pong)
+        || (turn == Turn::Pong && turn_ == Turn::Ping)
+    }
+
+    pub fn step(turn: Turn) -> (turn_: Turn)
+        ensures LNext(turn, turn_),
+    {
+        match turn {
+            Turn::Ping => Turn::Pong,
+            Turn::Pong => Turn::Ping,
+        }
+    }
+}
+```
+
+`step` is ordinary executable Rust with a Verus contract: `ensures` requires every
+call to follow `LNext`. Verus proves that contract for either input state.
+This is a turn-taking model, not a proof of network delivery or eventual progress.
+
+Save the snippet as `ping_pong.rs` and verify it with
+`"$VERUS_PATH" --crate-type lib ping_pong.rs` after installing [Verus below](#requirements).
+
 ## Specify and prove
 
 1. **Specify the behavior.** Write TLA-style state machines and invariants directly in
