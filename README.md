@@ -125,58 +125,15 @@ Chapter 2 of [*The tla-rs Book*](docs/tla-rs-book.md), then verify and compile w
 
 Coverage is relative to each model's assumptions, not an end-to-end service guarantee.
 
-## Code generation
+## More tools
 
-The repository also includes an AutoMan-style transpiler that generates executable
-Rust and refinement contracts from supported, annotated Verus specifications.
-The generated code must still be checked by Verus.
-See the [counter example](examples/quickstart/) and Chapters 5–7 of
-[*The tla-rs Book*](docs/tla-rs-book.md) for annotations, configuration, and usage.
-
-## Performance
-
-Native measurements and methodology are recorded in the
-[Lion runtime report](reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md).
-`scripts/bench_rsl_runtime.sh` defaults to Lion's unbatched RSL methodology:
-plaintext TCP with `TCP_NODELAY`, two clients connected to every replica, a
-1-second request timeout, three seconds of initial idle time, five seconds of
-active warmup, three 30-second measured trials, and unpinned versus
-one-physical-core-per-replica configurations.
-RSL defaults are one request per batch, a 1,000-entry log bound, 1,000 ms baseline
-view timeout, 100 ms heartbeat, and 10 ms partial-batch timer. The timer no longer
-delays a lone request. UDP and TLS remain supported.
-
-The default benchmark is native-only. An explicit, isolated reference can be built
-with `scripts/build_lion_reference.sh --install-prerequisites`, then selected with
-`RUNTIMES='native csharp' REFERENCE_SERVER=/path/printed/by/the/builder`.
-This uses Lion's pinned original Dafny/C# server, not a production dependency.
-The same native load generator measures both arms, using their respective wire
-codecs. Results are **local end-to-end service comparisons**, not an identical-core
-I/O-only experiment or reproduction of Lion's remote-client hardware results.
-CSV and JSON evidence record actual post-warmup timing, latency/error counters,
-server CPU intervals, threads/RSS, affinity, compiled parameters, and binary hashes.
-Unverified external `BASELINE_SERVICE` comparisons are no longer accepted.
-
-An October 2026 sweep of the **pre-fix** batch-1 binary measured 1,273 ops/s
-at two workers, versus 2,868 ops/s for the original C# service at four
-workers. The transpiler was deep-cloning unchanged protocol fields on each
-mutable action; after fixing its lowering and regenerating the affected
-modules, the Verus-verified native batch-1 server reached a **4,482 ops/s**
-median at 64 workers (three 30-second trials). At the same four workers and
-batch size, the corrected native server reached **4,274 ops/s** versus
-**2,854 ops/s** for the original C# server. The 64-worker configuration favors
-throughput over latency (14.2 ms mean versus 0.94 ms at four workers).
-An isolated **pre-fix** native batch-32 variant reached 3,891 ops/s at 32
-workers; it uses a different batch limit and predates the generator fix, so
-it is not a matched comparison with the corrected server. The
-[runtime report](reports/benchmarks/LION_RUNTIME_BENCHMARK_COMPARISON.md)
-records the profiling evidence, concurrency curve, per-trial errors, source
-provenance, and comparisons. `NATIVE_BATCH_SIZE=32` is only a driver check
-for an explicitly built native variant; the production default remains 1.
-
-The benchmark requirements and runtime profiling workflow remain documented in
-[Chapter 25 of the book](docs/tla-rs-book.md) and the
-[generated-code performance record](transpiler/docs/EFFICIENT_EMIT.md).
+- [**Code generation**](transpiler/) — generate executable Rust and refinement
+  contracts from supported, annotated Verus specifications; the output still needs
+  verification.
+- [**Lion runtime**](runtime/) — native Rust networking and protocol-server
+  integration.
+- [**TLA+ → tla-rs translator**](transpiler/src/tla/) — import supported TLA+
+  specifications as Verus models; translation alone is not a proof.
 
 ## Documentation
 
