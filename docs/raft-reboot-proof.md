@@ -81,3 +81,16 @@ This command passes with **354 verified, 0 errors**. The recovery proof adds no
 `assume`, `admit`, or trusted proof bodies. Building the transpiler and generating
 Raft actions from the original and updated specifications produces identical
 executable output.
+
+## Rolling Verus compatibility
+
+Rolling Verus `0.2026.10.28.6048d5d` exhausted the default solver resource limit in
+[`lemma_configuration_followed_inductive`](../src/protocol/Raft/refinement_proof/dynamic_logs.rs)
+through repeated expansion of the global log invariants. The lemma now uses
+`hide(StateMachineSafety)` and `hide(LogMatching)` to keep those predicates opaque
+locally; verified helper contracts supply the needed log facts.
+
+This controls unfolding, not which properties are checked. Preconditions,
+postconditions, helper proofs, and resource limits are unchanged; no assumptions
+or trusted proof bodies were added. The full native protocol crate verifies and
+compiles on that rolling release with **2055 verified, 0 errors**.

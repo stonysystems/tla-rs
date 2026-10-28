@@ -237,6 +237,10 @@ verus! {
         ensures
             ConfigurationFollowedIsCommitted(ds_),
     {
+        // Helper lemmas supply the needed log facts without expanding these
+        // global quantified invariants in this proof.
+        hide(StateMachineSafety);
+        hide(LogMatching);
         assert(CommitHistoryValid(ds) && CommitHistoryValid(ds_));
         if !RaftDistributedNormalNext(ds, ds_) {
             let sid = choose |sid: int| RaftDistributedReboot(ds, ds_, sid);
