@@ -240,7 +240,6 @@ impl CProposer{
             })
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::hash_map::group_hash_map_axioms;
         broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 

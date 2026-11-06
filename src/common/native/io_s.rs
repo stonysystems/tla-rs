@@ -129,6 +129,25 @@ verus! {
     {
     }
 
+    /// EndPoint equality is structural: `eq_spec` is view equality, and equal
+    /// views are equal endpoints. Hash-table specifications need this to turn
+    /// a lookup's result into a fact about the map's view. Proved, not assumed.
+    pub broadcast proof fn lemma_endpoint_obeys_concrete_eq()
+        ensures #[trigger] vstd::laws_eq::obeys_concrete_eq::<EndPoint>()
+    {
+        broadcast use axiom_endpoint_view;
+        reveal(vstd::laws_eq::obeys_concrete_eq);
+    }
+
+    /// Everything a hash table keyed by `EndPoint` needs: the key model, and
+    /// that equality on endpoints is structural (so distinct keys in a map
+    /// never compare equal).
+    pub broadcast group group_endpoint_hash_key {
+        axiom_endpoint_key_model,
+        axiom_endpoint_view,
+        lemma_endpoint_obeys_concrete_eq,
+    }
+
     pub open spec fn abstractify_end_points(end_points: Vec<EndPoint>) -> Seq<AbstractEndPoint>
     {
         end_points@.map(|i, end_point: EndPoint| end_point@)

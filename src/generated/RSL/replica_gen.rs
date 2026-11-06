@@ -161,9 +161,10 @@ ensures
     forall |i:int| #![trigger sent_packets@[i]] 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
     LReplicaNextProcessRequest(old(s)@, s@, received_packet@, sent_packets@.map(|i, p: CPacket| p@)),
 {
+    broadcast use crate::common::native::io_s::group_endpoint_hash_key;
     let ghost old_self = old(s)@;
     proof {
-        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::group_endpoint_hash_key;
     }
     let seqno_req = match &received_packet.msg {
         CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,

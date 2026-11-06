@@ -278,7 +278,6 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
         abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
 {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
     broadcast use crate::common::native::io_s::axiom_endpoint_view;
 
@@ -311,7 +310,6 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
         proof {
             // Broadcast axioms must be re-stated inside loop body
             broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use vstd::hash_map::group_hash_map_axioms;
             broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
             broadcast use crate::common::native::io_s::axiom_endpoint_view;
             assert(k == replies@[i as int].client);
@@ -328,7 +326,6 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
 
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use vstd::hash_map::group_hash_map_axioms;
             broadcast use vstd::map::group_map_lemmas;
             broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
             broadcast use crate::common::native::io_s::axiom_endpoint_view;
@@ -485,7 +482,6 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
         ),
 {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
     broadcast use crate::common::native::io_s::axiom_endpoint_view;
 
@@ -533,7 +529,6 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
 
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use vstd::hash_map::group_hash_map_axioms;
             broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
             broadcast use crate::common::native::io_s::axiom_endpoint_view;
             assert(c@.contains_key(c_keys@[j as int]));
@@ -545,7 +540,6 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
 
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use vstd::hash_map::group_hash_map_axioms;
             broadcast use vstd::map::group_map_lemmas;
             broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
             broadcast use crate::common::native::io_s::axiom_endpoint_view;
@@ -610,7 +604,6 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
     // Verus should equate this with `abs_replies` from the exec-level ghost binding.
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::hash_map::group_hash_map_axioms;
         broadcast use vstd::map::group_map_lemmas;
         broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
         broadcast use crate::common::native::io_s::axiom_endpoint_view;

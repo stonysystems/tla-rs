@@ -233,7 +233,6 @@ ensures
         m@.contains_key(k),
 {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
     broadcast use axiom_clearner_tuple_view;
 
     let keys = hashmap_keys_to_vec(m);
@@ -373,6 +372,7 @@ ensures
     self.valid(),
     LLearnerProcess2b(old(self)@, self@, packet@),
 {
+    broadcast use crate::common::native::io_s::group_endpoint_hash_key;
     let ghost old_self = old(self)@;
     let (bal_2b, opn_2b, val_2b) = match &packet.msg {
         CMessage::CMessage2b { bal_2b, opn_2b, val_2b } => (*bal_2b, *opn_2b, val_2b),
@@ -381,7 +381,7 @@ ensures
     let (src_in_config, src_idx) = self.constants.all.config.CGetReplicaIndex(&packet.src);
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use crate::common::native::io_s::group_endpoint_hash_key;
         assert(self.max_ballot_seen.valid());
         assert(packet.msg.valid());
         assert(packet.msg is CMessage2b);
@@ -569,6 +569,7 @@ ensures
     self.valid(),
     LLearnerForgetOperationsBefore(old(self)@, self@, *ops_complete as int),
 {
+    broadcast use crate::common::native::io_s::group_endpoint_hash_key;
     let ghost old_self = old(self)@;
     let filtered = filter_clearnerstate(&self.unexecuted_learner_state, *ops_complete);
     learnerstate_set(&mut self.unexecuted_learner_state, filtered);

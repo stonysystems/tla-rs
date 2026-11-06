@@ -297,10 +297,10 @@ verus! {
             forall |k| res@.contains_key(k) ==> cache@.contains_key(k),
             forall |k| #![trigger res@[k]] #![trigger cache@[k]] res@.contains_key(k) ==> res@[k] == cache@[k]
     {
+        broadcast use crate::common::native::io_s::group_endpoint_hash_key;
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::hash_map::group_hash_map_axioms;
         broadcast use crate::common::native::io_s::axiom_endpoint_view;
-        broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use crate::common::native::io_s::group_endpoint_hash_key;
 
         let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(cache);
         let mut result: HashMap<EndPoint, CReply> = HashMap::new();
@@ -317,9 +317,8 @@ verus! {
         {
             let k = keys[i].clone_eq();
             proof {
-                broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+                broadcast use crate::common::native::io_s::group_endpoint_hash_key;
                 broadcast use vstd::std_specs::hash::group_hash_axioms;
-                broadcast use vstd::hash_map::group_hash_map_axioms;
                 assert(k == keys@[i as int]);
                 assert(cache@.contains_key(k));
             }
@@ -437,7 +436,6 @@ verus! {
             forall |k| #![trigger res@.index(k)] #![trigger votes@.index(k)] res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::hash_map::group_hash_map_axioms;
         broadcast use axiom_cvote_view;
 
         let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(votes);
@@ -628,7 +626,6 @@ verus! {
             res@ == m@,
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::hash_map::group_hash_map_axioms;
         broadcast use axiom_clearner_tuple_view;
 
         let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(m);

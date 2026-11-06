@@ -456,6 +456,7 @@ ensures
     forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].abstractable(),
     LExecutorProcessRequest(self@, inp@, result@.map(|i, p: CPacket| p@)),
 {
+    broadcast use crate::common::native::io_s::group_endpoint_hash_key;
     let seqno_req = match &inp.msg {
         CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,
         _ => { proof { assert(false); } unreachable_value() }
@@ -463,11 +464,11 @@ ensures
     let ghost ss = self@;
     let ghost sp = inp@;
     proof {
-        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::group_endpoint_hash_key;
     }
     let r_opt = self.reply_cache.get(&inp.src);
     proof {
-        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::group_endpoint_hash_key;
         assert(r_opt.is_some());
         lemma_creplycache_get(&self.reply_cache, inp.src);
     }
