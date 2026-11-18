@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use vstd::prelude::*;
 
-use crate::common::collections::hashsets::hashset_to_vec;
 use crate::common::collections::seq_is_unique_v::do_end_points_match;
 use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::{LIoOp, LPacket};
@@ -238,10 +237,11 @@ pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &C
     requires
         pkt.msg is CMessage1b,
         crate::common::collections::hash_wf::hash_set_ok(received_1b_packets),
+        forall |p: CPacket| #![trigger p.valid()] received_1b_packets@.contains(p) ==> p.valid(),
     ensures
         res == (forall |op: CPacket| #![trigger received_1b_packets@.contains(op)] received_1b_packets@.contains(op) ==> op.src@ != pkt.src@),
 {
-    let vec = hashset_to_vec(received_1b_packets);
+    let vec = cpacket_set_to_vec(received_1b_packets);
     let mut res = true;
     let mut i: usize = 0;
     while i < vec.len()
@@ -771,7 +771,7 @@ pub exec fn CGetPacketsFromReplies(
         assert(
             new_rep@.map(|i, r: CReply| r@) == replies@.map(|i, r: CReply| r@).drop_first()
         );
-        let rest = CGetPacketsFromReplies(&me, &new_req, &new_rep);
+        let mut rest = CGetPacketsFromReplies(&me, &new_req, &new_rep);
         assert(
             rest@.map(|i, p: CPacket| p@)
                 == GetPacketsFromReplies(
@@ -802,7 +802,13 @@ pub exec fn CGetPacketsFromReplies(
         first.push(pkt);
         assert(first@.map(|i, p: CPacket| p@) == seq![spkt]);
 
-        let res = concat_vecs(&first, &rest);
+        // Move the packets rather than copy them: copying needs a packet's
+        // clone to equal it, which vstd only supports for well-formed tables.
+        let ghost first_view = first@;
+        let ghost rest_view = rest@;
+        first.append(&mut rest);
+        let res = first;
+        assert(res@ == first_view + rest_view);
         assert(
             res@.map(|i, p: CPacket| p@)
                 == seq![spkt]

@@ -227,7 +227,10 @@ impl CReplica {
     }
 
     pub fn Packet1bHasUniqueSrc(s:&HashSet<CPacket>, pkt:&CPacket) -> (res:bool)
-        requires pkt.msg is CMessage1b, crate::common::collections::hash_wf::hash_set_ok(s),
+        requires
+            pkt.msg is CMessage1b,
+            crate::common::collections::hash_wf::hash_set_ok(s),
+            forall |p: CPacket| #![trigger p.valid()] s@.contains(p) ==> p.valid(),
         ensures res == (forall |op:CPacket| #![trigger s@.contains(op)] s@.contains(op) ==> op.src@ != pkt.src@)
     {
         crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc(s, pkt)

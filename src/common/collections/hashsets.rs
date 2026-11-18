@@ -56,10 +56,27 @@ verus! {
         res
     }
 
-    #[verifier(external_body)]
     pub fn hashset_to_vec<T>(s:&HashSet<T>) -> (res:Vec<T>)
     where
             T: crate::common::collections::element_laws::HashKeyModel
+    ensures
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |x: T| s@.contains(x) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == x),
+    {
+        proof { T::lemma_hash_key_model(); }
+        hashset_to_vec_where(s, Ghost(|x: T| true))
+    }
+
+    /// `hashset_to_vec` for an element type whose clone is known to return an
+    /// equal value only for some elements, those satisfying `ok`; every
+    /// element of the set must. (A packet, for example, clones to an equal
+    /// packet when the hash tables in its message are well formed.)
+    #[verifier(external_body)]
+    pub fn hashset_to_vec_where<T: Clone + Eq + Hash>(s: &HashSet<T>, Ghost(ok): Ghost<spec_fn(T) -> bool>) -> (res: Vec<T>)
+    requires
+        obeys_key_model::<T>(),
+        forall |x: T| #[trigger] s@.contains(x) ==> ok(x),
+        forall |a: T, b: T| ok(a) && #[trigger] vstd::pervasive::cloned(a, b) ==> a == b,
     ensures
         crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
         crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |x: T| s@.contains(x) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == x),

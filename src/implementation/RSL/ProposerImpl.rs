@@ -242,6 +242,7 @@ impl CProposer{
     pub fn CIsAfterLogTruncationPoint(opn:COperationNumber, S:&HashSet<CPacket>) -> (res:bool)
         requires
             crate::common::collections::hash_wf::hash_set_ok(S),
+            forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
         ensures
             ({
                 let lr = LIsAfterLogTruncationPoint(opn as int, S@.map(|p:CPacket| p@));
@@ -252,7 +253,7 @@ impl CProposer{
         broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
-        let vec = hashset_to_vec(S);
+        let vec = crate::implementation::RSL::cmessage::cpacket_set_to_vec(S);
         let mut i: usize = 0;
         while i < vec.len()
             invariant
@@ -305,6 +306,7 @@ impl CProposer{
     pub fn CSetOfMessage1b(S : &HashSet<CPacket>) -> (res:bool)
         requires
             crate::common::collections::hash_wf::hash_set_ok(S),
+            forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
         ensures
             ({
                 let lr = LSetOfMessage1b(S@.map(|p:CPacket| p@));
@@ -315,7 +317,7 @@ impl CProposer{
         broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
-        let vec = hashset_to_vec(S);
+        let vec = crate::implementation::RSL::cmessage::cpacket_set_to_vec(S);
         let mut i: usize = 0;
         while i < vec.len()
             invariant
@@ -366,6 +368,7 @@ impl CProposer{
     pub fn CSetOfMessage1bAboutBallot(S:&HashSet<CPacket>, b:&CBallot) -> (res:bool)
         requires
             crate::common::collections::hash_wf::hash_set_ok(S),
+            forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
         ensures
             res == LSetOfMessage1bAboutBallot(S@.map(|p:CPacket| p@), b@)
     {
@@ -380,7 +383,7 @@ impl CProposer{
         // LSetOfMessage1b(S@.map(...)) is true at this point
 
         // Second check: all Message1b packets have ballot == b
-        let vec = hashset_to_vec(S);
+        let vec = crate::implementation::RSL::cmessage::cpacket_set_to_vec(S);
         let mut i: usize = 0;
         while i < vec.len()
             invariant
@@ -441,7 +444,7 @@ impl CProposer{
         broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
-        let vec = hashset_to_vec(S);
+        let vec = crate::implementation::RSL::cmessage::cpacket_set_to_vec(S);
         let mut i: usize = 0;
         while i < vec.len()
             invariant
@@ -599,7 +602,7 @@ impl CProposer{
         broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
-        let vec = hashset_to_vec(S);
+        let vec = crate::implementation::RSL::cmessage::cpacket_set_to_vec(S);
         let mut i: usize = 0;
         while i < vec.len()
             invariant

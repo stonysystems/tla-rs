@@ -169,9 +169,13 @@ fn vec_set(dest: &mut Vec<CRequest>, new_val: Vec<CRequest>)
     *dest = new_val;
 }
 
+// Trusted for the set view, which needs `==` on CPacket to be structural.
+// Keeping the table well formed is what vstd's `insert` promises for any key.
 #[verifier::external_body]
 fn hashset_insert_cpacket(hs: &mut HashSet<CPacket>, p: CPacket)
-    ensures hs@ == old(hs)@.insert(p)
+    ensures
+        hs@ == old(hs)@.insert(p),
+        crate::common::collections::hash_wf::hash_set_ok(old(hs)) ==> crate::common::collections::hash_wf::hash_set_ok(hs),
 {
     hs.insert(p);
 }
@@ -664,7 +668,7 @@ ensures
     // Find the highest-ballot vote for opn across all 1b packets
     let mut best_val: Option<CRequestBatch> = None;
     let mut best_bal: Option<CBallot> = None;
-    let packets = hashset_to_vec(&self.received_1b_packets);
+    let packets = cpacket_set_to_vec(&self.received_1b_packets);
     let mut idx: usize = 0;
     let ghost mut ghost_best_idx: Option<int> = None;
     while idx < packets.len()

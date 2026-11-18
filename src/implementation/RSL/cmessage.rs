@@ -369,33 +369,35 @@ verus! {
     {
     }
 
-    /// Reading a set of packets back out needs only the key model and that
-    /// cloning a packet returns an equal packet (its clone keeps the view,
-    /// and equal views are equal packets by axiom_cpacket_view).
-    /// Cloning a packet keeps its view, and equal views are equal packets.
-    pub proof fn lemma_cpacket_clone_is_eq()
-        ensures crate::common::collections::element_laws::clone_is_eq::<CPacket>()
+    /// A valid packet clones to an equal packet: the hash tables in its
+    /// message are well formed, so the clone keeps the view, and equal views
+    /// are equal packets by axiom_cpacket_view. (vstd says nothing about
+    /// copies of tables that are not well formed, so this is as far as it goes.)
+    pub proof fn lemma_valid_cpacket_clone_is_eq()
+        ensures
+            forall |a: CPacket, b: CPacket| a.valid() && #[trigger] vstd::pervasive::cloned(a, b) ==> a == b,
     {
-        assert forall |a: CPacket, b: CPacket| #[trigger] vstd::pervasive::cloned(a, b)
+        assert forall |a: CPacket, b: CPacket| a.valid() && #[trigger] vstd::pervasive::cloned(a, b)
             implies a == b by {
             if vstd::pervasive::strictly_cloned(a, b) {
+                assert(a.msg.hash_tables_ok());
                 assert(b@ == a@);
             }
             axiom_cpacket_view(a, b);
         }
     }
 
-    impl crate::common::collections::element_laws::CloneIsEq for CPacket {
-        proof fn lemma_clone_is_eq() {
-            lemma_cpacket_clone_is_eq();
-        }
-    }
-
-    impl crate::common::collections::element_laws::HashKeyModel for CPacket {
-        proof fn lemma_hash_key_model() {
-            broadcast use axiom_cpacket_key_model;
-            lemma_cpacket_clone_is_eq();
-        }
+    /// The packets of a set of valid packets, as a Vec.
+    pub fn cpacket_set_to_vec(s: &HashSet<CPacket>) -> (res: Vec<CPacket>)
+        requires
+            forall |p: CPacket| #![trigger p.valid()] s@.contains(p) ==> p.valid(),
+        ensures
+            crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
+            crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |x: CPacket| s@.contains(x) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == x),
+    {
+        broadcast use axiom_cpacket_key_model;
+        proof { lemma_valid_cpacket_clone_is_eq(); }
+        crate::common::collections::hashsets::hashset_to_vec_where(s, Ghost(|p: CPacket| p.valid()))
     }
 }
 
