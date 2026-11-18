@@ -29,8 +29,8 @@ impl Clone for CState {
     #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&*self.promises_rcvd) && crate::common::collections::hash_wf::hash_set_ok(&*self.accepts_rcvd) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.promised_bal == self.promised_bal,
         res.accepted_bal == self.accepted_bal,
         res.accepted_val == self.accepted_val,
@@ -60,6 +60,8 @@ impl Clone for CState {
 impl CState {
     pub open spec fn valid(&self) -> bool {
         &&& self.phase.valid()
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.promises_rcvd)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.accepts_rcvd)
     }
 }
 
@@ -92,8 +94,8 @@ pub struct CConstants {
 impl Clone for CConstants {
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&self.acceptors) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.quorum_size == self.quorum_size,
         res.node_id == self.node_id,
     {
@@ -107,7 +109,7 @@ impl Clone for CConstants {
 
 impl CConstants {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.acceptors)
     }
 }
 

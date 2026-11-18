@@ -34,6 +34,13 @@ pub struct CExecutor {
 }
 
 impl CExecutor {
+
+    /// Every hash table in the struct is well formed (always true on vstd
+    /// releases without hash-table well-formedness; see hash_wf.rs).
+    pub open spec fn hash_tables_ok(&self) -> bool {
+        crate::common::collections::hash_wf::hash_map_ok(&self.reply_cache)
+    }
+
     pub open spec fn valid(&self) -> bool {
         self.abstractable()
             && self.constants.valid()
@@ -41,6 +48,7 @@ impl CExecutor {
             && self.max_bal_reflected.valid()
             && self.next_op_to_execute.valid()
             && creplycache_is_valid(&self.reply_cache)
+            && crate::common::collections::hash_wf::hash_map_ok(&self.reply_cache)
     }
 
     pub open spec fn abstractable(&self) -> bool {
@@ -67,8 +75,8 @@ impl CExecutor {
 
     pub fn clone_up_to_view(&self) -> (result: Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
+            self.hash_tables_ok() ==> result@ == self@,
+            self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         let constants_clone = self.constants.clone();
         // Clone impl ensures: constants_clone == *self.constants, constants_clone@ == self.constants@
@@ -97,8 +105,8 @@ impl CExecutor {
 impl Clone for CExecutor {
     fn clone(&self) -> (result: Self)
     ensures
-        result@ == self@,
-        result.valid() == self.valid(),
+        self.hash_tables_ok() ==> result@ == self@,
+        self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         self.clone_up_to_view()
     }

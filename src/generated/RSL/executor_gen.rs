@@ -4,6 +4,7 @@
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::common::collections::hashsets::clone_hashset;
 use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::{EndPoint, AbstractEndPoint};
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
@@ -43,15 +44,6 @@ ensures
     let s = Set::<u64>::empty().map(f);
     assert forall|y: int| !(#[trigger] s.contains(y)) by {
     }
-}
-
-/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
-#[verifier(external_body)]
-fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
-ensures
-    res@ == s@,
-{
-    s.clone()
 }
 
 /// Helper proof: mapping over an empty Seq yields an empty Seq.
@@ -115,26 +107,30 @@ ensures
 
 }
 
-#[verifier::external_body]
 fn replycache_set(rc: &mut CReplyCache, new_val: CReplyCache)
-    ensures rc@ == new_val@
+    ensures
+        *rc == new_val,
+        rc@ == new_val@,
 {
     *rc = new_val;
 }
 
-#[verifier::external_body]
+// vstd describes copies of well-formed maps only (verus#3494).
 fn replycache_clone_from(rc: &mut CReplyCache, src: &CReplyCache)
-    ensures rc@ == src@
+    ensures
+        crate::common::collections::hash_wf::hash_map_ok(rc),
+        crate::common::collections::hash_wf::hash_map_ok(src) ==> rc@ == src@,
 {
-    *rc = src.clone();
+    *rc = clone_creply_cache_up_to_view(src);
 }
 
 /// Helper: clone a CReplyCache preserving view and validity.
 fn clone_reply_cache(m: &CReplyCache) -> (res: CReplyCache)
 ensures
-    res@ == m@,
-    creplycache_is_abstractable(&res) == creplycache_is_abstractable(m),
-    creplycache_is_valid(&res) == creplycache_is_valid(m),
+    crate::common::collections::hash_wf::hash_map_ok(&res),
+    crate::common::collections::hash_wf::hash_map_ok(m) ==> res@ == m@,
+    crate::common::collections::hash_wf::hash_map_ok(m) ==> creplycache_is_abstractable(&res) == creplycache_is_abstractable(m),
+    crate::common::collections::hash_wf::hash_map_ok(m) ==> creplycache_is_valid(&res) == creplycache_is_valid(m),
 {
     clone_creply_cache_up_to_view(m)
 }

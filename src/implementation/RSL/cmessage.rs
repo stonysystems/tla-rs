@@ -93,9 +93,9 @@ verus! {
     impl Clone for CMessage {
         fn clone(&self) -> (result: Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
-            result.abstractable() == self.abstractable(),
+            self.hash_tables_ok() ==> result@ == self@,
+            self.hash_tables_ok() ==> result.valid() == self.valid(),
+            self.hash_tables_ok() ==> result.abstractable() == self.abstractable(),
         {
             self.clone_up_to_view()
         }
@@ -104,11 +104,21 @@ verus! {
 
     impl CMessage{
 
+        /// The message's hash tables are well formed (always true on vstd
+        /// releases without hash-table well-formedness; see hash_wf.rs).
+        pub open spec fn hash_tables_ok(&self) -> bool {
+            match self {
+                CMessage::CMessage1b { votes, .. } => crate::common::collections::hash_wf::hash_map_ok(votes),
+                CMessage::CMessageAppStateSupply { reply_cache, .. } => crate::common::collections::hash_wf::hash_map_ok(reply_cache),
+                _ => true,
+            }
+        }
+
         pub fn clone_up_to_view(&self) -> (res: Self)
         ensures
-            res@ == self@,
-            res.valid() == self.valid(),
-            res.abstractable() == self.abstractable(),
+            self.hash_tables_ok() ==> res@ == self@,
+            self.hash_tables_ok() ==> res.valid() == self.valid(),
+            self.hash_tables_ok() ==> res.abstractable() == self.abstractable(),
     {
         match self {
             CMessage::CMessageInvalid {} => CMessage::CMessageInvalid {},
@@ -124,12 +134,19 @@ verus! {
                     bal_1a: bal_1a.clone_up_to_view(),
                 },
 
-            CMessage::CMessage1b { bal_1b, log_truncation_point, votes } =>
+            CMessage::CMessage1b { bal_1b, log_truncation_point, votes } => {
+                let votes_clone = clone_cvotes_up_to_view(votes);
+                proof {
+                    if self.hash_tables_ok() {
+                        lemma_cvotes_is_valid_same_view(&votes_clone, votes);
+                    }
+                }
                 CMessage::CMessage1b {
                     bal_1b: bal_1b.clone_up_to_view(),
                     log_truncation_point: *log_truncation_point,
-                    votes: clone_cvotes_up_to_view(votes),
-                },
+                    votes: votes_clone,
+                }
+            },
 
             CMessage::CMessage2a { bal_2a, opn_2a, val_2a } =>
                 CMessage::CMessage2a {
@@ -164,13 +181,20 @@ verus! {
                     opn_state_req: *opn_state_req,
                 },
 
-            CMessage::CMessageAppStateSupply { bal_state_supply, opn_state_supply, app_state, reply_cache } =>
+            CMessage::CMessageAppStateSupply { bal_state_supply, opn_state_supply, app_state, reply_cache } => {
+                let cache_clone = clone_creply_cache_up_to_view(reply_cache);
+                proof {
+                    if self.hash_tables_ok() {
+                        lemma_creplycache_is_valid_same_view(&cache_clone, reply_cache);
+                    }
+                }
                 CMessage::CMessageAppStateSupply {
                     bal_state_supply: bal_state_supply.clone_up_to_view(),
                     opn_state_supply: *opn_state_supply,
                     app_state: *app_state,
-                    reply_cache: clone_creply_cache_up_to_view(reply_cache),
-                },
+                    reply_cache: cache_clone,
+                }
+            },
 
             CMessage::CMessageStartingPhase2 { bal_2, logTruncationPoint_2 } =>
                 CMessage::CMessageStartingPhase2 {
@@ -204,13 +228,13 @@ verus! {
                 CMessage::CMessageInvalid{} => true,
                 CMessage::CMessageRequest{seqno_req, val} => self->val.valid(),
                 CMessage::CMessage1a{bal_1a} => self->bal_1a.valid(),
-                CMessage::CMessage1b{bal_1b, log_truncation_point, votes} => self->bal_1b.valid() && COperationNumberIsValid(self->log_truncation_point) && cvotes_is_valid(&self->votes),
+                CMessage::CMessage1b{bal_1b, log_truncation_point, votes} => self->bal_1b.valid() && COperationNumberIsValid(self->log_truncation_point) && cvotes_is_valid(&self->votes) && crate::common::collections::hash_wf::hash_map_ok(&self->votes),
                 CMessage::CMessage2a{bal_2a, opn_2a, val_2a} => self->bal_2a.valid() && COperationNumberIsValid(self->opn_2a) && crequestbatch_is_valid(&self->val_2a),
                 CMessage::CMessage2b{bal_2b, opn_2b, val_2b} => self->bal_2b.valid() && COperationNumberIsValid(self->opn_2b) && crequestbatch_is_valid(&self->val_2b),
                 CMessage::CMessageHeartbeat{bal_heartbeat, suspicious, opn_ckpt} => self->bal_heartbeat.valid() && COperationNumberIsValid(self->opn_ckpt),
                 CMessage::CMessageReply{seqno_reply, reply} => self->reply.valid(),
                 CMessage::CMessageAppStateRequest{bal_state_req, opn_state_req} => self->bal_state_req.valid() && COperationNumberIsValid(self->opn_state_req),
-                CMessage::CMessageAppStateSupply{bal_state_supply, opn_state_supply, app_state, reply_cache} => self->bal_state_supply.valid() && COperationNumberIsValid(self->opn_state_supply) && CAppStateIsValid(&self->app_state) && creplycache_is_valid(&self->reply_cache),
+                CMessage::CMessageAppStateSupply{bal_state_supply, opn_state_supply, app_state, reply_cache} => self->bal_state_supply.valid() && COperationNumberIsValid(self->opn_state_supply) && CAppStateIsValid(&self->app_state) && creplycache_is_valid(&self->reply_cache) && crate::common::collections::hash_wf::hash_map_ok(&self->reply_cache),
                 CMessage::CMessageStartingPhase2{bal_2, logTruncationPoint_2} => self->bal_2.valid() && COperationNumberIsValid(self->logTruncationPoint_2),
             }
         }
@@ -265,9 +289,9 @@ verus! {
     impl Clone for CPacket {
         fn clone(&self) -> (result: Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
-            result.abstractable() == self.abstractable(),
+            self.msg.hash_tables_ok() ==> result@ == self@,
+            self.msg.hash_tables_ok() ==> result.valid() == self.valid(),
+            self.msg.hash_tables_ok() ==> result.abstractable() == self.abstractable(),
         {
             self.clone_up_to_view()
         }
@@ -277,9 +301,9 @@ verus! {
 
         pub fn clone_up_to_view(&self) -> (res: CPacket)
         ensures
-            res@ == self@,
-            res.valid() == self.valid(),
-            res.abstractable() == self.abstractable(),
+            self.msg.hash_tables_ok() ==> res@ == self@,
+            self.msg.hash_tables_ok() ==> res.valid() == self.valid(),
+            self.msg.hash_tables_ok() ==> res.abstractable() == self.abstractable(),
         {
             CPacket{
                 dst: self.dst.clone_up_to_view(),
@@ -343,6 +367,35 @@ verus! {
     pub broadcast proof fn axiom_cpacket_key_model()
         ensures #[trigger] obeys_key_model::<CPacket>()
     {
+    }
+
+    /// Reading a set of packets back out needs only the key model and that
+    /// cloning a packet returns an equal packet (its clone keeps the view,
+    /// and equal views are equal packets by axiom_cpacket_view).
+    /// Cloning a packet keeps its view, and equal views are equal packets.
+    pub proof fn lemma_cpacket_clone_is_eq()
+        ensures crate::common::collections::element_laws::clone_is_eq::<CPacket>()
+    {
+        assert forall |a: CPacket, b: CPacket| #[trigger] vstd::pervasive::cloned(a, b)
+            implies a == b by {
+            if vstd::pervasive::strictly_cloned(a, b) {
+                assert(b@ == a@);
+            }
+            axiom_cpacket_view(a, b);
+        }
+    }
+
+    impl crate::common::collections::element_laws::CloneIsEq for CPacket {
+        proof fn lemma_clone_is_eq() {
+            lemma_cpacket_clone_is_eq();
+        }
+    }
+
+    impl crate::common::collections::element_laws::HashKeyModel for CPacket {
+        proof fn lemma_hash_key_model() {
+            broadcast use axiom_cpacket_key_model;
+            lemma_cpacket_clone_is_eq();
+        }
     }
 }
 

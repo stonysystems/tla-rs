@@ -45,8 +45,8 @@ pub struct CReplica {
 impl Clone for CReplica {
     fn clone(&self) -> (result: Self)
     ensures
-        result@ == self@,
-        result.valid() == self.valid(),
+        self.hash_tables_ok() ==> result@ == self@,
+        self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         self.clone_up_to_view()
     }
@@ -103,10 +103,19 @@ impl CReplica{
 }
 
 impl CReplica {
+    /// Every hash table in the replica is well formed (always true on vstd
+    /// releases without hash-table well-formedness; see hash_wf.rs).
+    pub open spec fn hash_tables_ok(&self) -> bool {
+        &&& self.proposer.hash_tables_ok()
+        &&& self.acceptor.hash_tables_ok()
+        &&& self.learner.hash_tables_ok()
+        &&& self.executor.hash_tables_ok()
+    }
+
     pub fn clone_up_to_view(&self) -> (result: Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
+            self.hash_tables_ok() ==> result@ == self@,
+            self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         let constants = self.constants.clone();
         let proposer = self.proposer.clone_up_to_view();
@@ -148,8 +157,8 @@ pub struct CScheduler {
 impl Clone for CScheduler {
     fn clone(&self) -> (result: Self)
     ensures
-        result@ == self@,
-        result.valid() == self.valid(),
+        self.replica.hash_tables_ok() ==> result@ == self@,
+        self.replica.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         self.clone_up_to_view()
     }
@@ -158,8 +167,8 @@ impl Clone for CScheduler {
 impl CScheduler {
     pub fn clone_up_to_view(&self) -> (result: Self)
     ensures
-        result@ == self@,
-        result.valid() == self.valid(),
+        self.replica.hash_tables_ok() ==> result@ == self@,
+        self.replica.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         CScheduler {
             replica: self.replica.clone(),
@@ -218,7 +227,7 @@ impl CReplica {
     }
 
     pub fn Packet1bHasUniqueSrc(s:&HashSet<CPacket>, pkt:&CPacket) -> (res:bool)
-        requires pkt.msg is CMessage1b,
+        requires pkt.msg is CMessage1b, crate::common::collections::hash_wf::hash_set_ok(s),
         ensures res == (forall |op:CPacket| #![trigger s@.contains(op)] s@.contains(op) ==> op.src@ != pkt.src@)
     {
         crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc(s, pkt)

@@ -142,10 +142,53 @@ verus! {
     /// Everything a hash table keyed by `EndPoint` needs: the key model, and
     /// that equality on endpoints is structural (so distinct keys in a map
     /// never compare equal).
+    /// EndPoint equality is view equality.
+    pub broadcast proof fn lemma_endpoint_obeys_view_eq()
+        ensures #[trigger] vstd::laws_eq::obeys_view_eq::<EndPoint>()
+    {
+        reveal(vstd::laws_eq::obeys_view_eq);
+    }
+
+    /// Cloning an EndPoint returns an equal EndPoint: `clone` preserves the
+    /// view, and equal views are equal endpoints.
+    pub broadcast proof fn lemma_endpoint_clone_is_eq()
+        ensures #[trigger] crate::common::collections::element_laws::clone_is_eq::<EndPoint>()
+    {
+        broadcast use axiom_endpoint_view;
+    }
+
     pub broadcast group group_endpoint_hash_key {
         axiom_endpoint_key_model,
         axiom_endpoint_view,
         lemma_endpoint_obeys_concrete_eq,
+        lemma_endpoint_obeys_view_eq,
+        lemma_endpoint_clone_is_eq,
+    }
+
+    impl crate::common::collections::element_laws::CloneIsEq for EndPoint {
+        proof fn lemma_clone_is_eq() {
+            broadcast use lemma_endpoint_clone_is_eq;
+        }
+    }
+
+    impl crate::common::collections::element_laws::ViewEq for EndPoint {
+        proof fn lemma_view_eq() {
+            broadcast use lemma_endpoint_obeys_concrete_eq;
+            broadcast use lemma_endpoint_obeys_view_eq;
+        }
+    }
+
+    impl crate::common::collections::element_laws::HashKeyModel for EndPoint {
+        proof fn lemma_hash_key_model() {
+            broadcast use axiom_endpoint_key_model;
+            broadcast use lemma_endpoint_clone_is_eq;
+        }
+    }
+
+    impl crate::common::collections::element_laws::HashKey for EndPoint {
+        proof fn lemma_hash_key() {
+            broadcast use lemma_endpoint_obeys_concrete_eq;
+        }
     }
 
     pub open spec fn abstractify_end_points(end_points: Vec<EndPoint>) -> Seq<AbstractEndPoint>

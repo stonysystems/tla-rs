@@ -56,6 +56,7 @@ pub fn membership_servers_set(
 ) -> (result: HashSet<u64>)
     ensures
         result@ == servers@.to_set(),
+        crate::common::collections::hash_wf::hash_set_ok(&result),
 {
     broadcast use group_hash_axioms;
 
@@ -66,6 +67,7 @@ pub fn membership_servers_set(
         invariant
             0 <= i <= servers.len(),
             result@ == servers@.subrange(0, i as int).to_set(),
+            crate::common::collections::hash_wf::hash_set_ok(&result),
         decreases
             servers.len() - i,
     {
@@ -95,6 +97,9 @@ pub fn hashset_is_subset(
     subset: &HashSet<u64>,
     superset: &HashSet<u64>,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(subset),
+        crate::common::collections::hash_wf::hash_set_ok(superset),
     ensures
         result == subset@.subset_of(superset@),
 {
@@ -106,6 +111,7 @@ pub fn hashset_is_subset(
     while i < elements.len()
         invariant
             0 <= i <= elements.len(),
+            crate::common::collections::hash_wf::hash_set_ok(superset),
             forall |k: int|
                 0 <= k < i
                 ==> superset@.contains(#[trigger] elements@[k]),
@@ -148,6 +154,8 @@ pub fn is_majority_of_servers(
     quorum: &HashSet<u64>,
     servers: &Vec<u64>,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(quorum),
     ensures
         result == is_u64_majority_of(
             quorum@,
@@ -256,6 +264,8 @@ pub fn is_majority_of_membership_view(
     quorum: &HashSet<u64>,
     servers: &Vec<u64>,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(quorum),
     ensures
         result == is_majority_of(
             quorum@.map(|server: u64| server as int),
@@ -298,6 +308,7 @@ pub fn membership_union_set(
 ) -> (result: HashSet<u64>)
     ensures
         result@ == old_servers@.to_set() + new_servers@.to_set(),
+        crate::common::collections::hash_wf::hash_set_ok(&result),
 {
     broadcast use group_hash_axioms;
 
@@ -309,6 +320,7 @@ pub fn membership_union_set(
             0 <= i <= new_servers.len(),
             result@ == old_servers@.to_set()
                 + new_servers@.subrange(0, i as int).to_set(),
+            crate::common::collections::hash_wf::hash_set_ok(&result),
         decreases
             new_servers.len() - i,
     {
@@ -343,8 +355,11 @@ pub fn quorum_intersection_with_servers(
     quorum: &HashSet<u64>,
     servers: &Vec<u64>,
 ) -> (result: HashSet<u64>)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(quorum),
     ensures
         result@ == quorum@.intersect(servers@.to_set()),
+        crate::common::collections::hash_wf::hash_set_ok(&result),
 {
     broadcast use group_hash_axioms;
 
@@ -357,6 +372,8 @@ pub fn quorum_intersection_with_servers(
             result@ == quorum@.intersect(
                 servers@.subrange(0, i as int).to_set(),
             ),
+            crate::common::collections::hash_wf::hash_set_ok(quorum),
+            crate::common::collections::hash_wf::hash_set_ok(&result),
         decreases
             servers.len() - i,
     {
@@ -405,6 +422,8 @@ pub fn is_joint_quorum_servers(
     old_servers: &Vec<u64>,
     new_servers: &Vec<u64>,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(quorum),
     ensures
         result == is_u64_joint_quorum(
             quorum@,
@@ -675,6 +694,8 @@ pub fn is_joint_quorum_membership_view(
     old_servers: &Vec<u64>,
     new_servers: &Vec<u64>,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(quorum),
     ensures
         result == is_joint_quorum(
             quorum@.map(|server: u64| server as int),
@@ -707,6 +728,9 @@ pub fn is_majority_of_hashset_membership_view(
     quorum: &HashSet<u64>,
     config: &HashSet<u64>,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(quorum),
+        crate::common::collections::hash_wf::hash_set_ok(config),
     ensures
         result == is_majority_of(
             quorum@.map(|server: u64| server as int),
@@ -765,6 +789,8 @@ pub fn is_quorum_for_membership_phase(
     quorum: &HashSet<u64>,
     phase: &CMembershipPhase,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(quorum),
     ensures
         result == is_quorum_for_phase(
             quorum@.map(|server: u64| server as int),
@@ -826,6 +852,8 @@ pub fn active_membership_phase_exec(
     s: &CState,
     c: &CConstants,
 ) -> (result: CMembershipPhase)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(&c.servers),
     ensures
         membership_phase_view(result@)
         == active_membership_phase_for_state(s@, c@),
@@ -1020,6 +1048,9 @@ pub fn has_active_election_quorum_exec(
     s: &CState,
     c: &CConstants,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(&*s.votes_granted),
+        crate::common::collections::hash_wf::hash_set_ok(&c.servers),
     ensures
         result == has_active_election_quorum(s@, c@),
 {
@@ -1049,6 +1080,7 @@ pub fn has_active_election_quorum_exec(
 
     while remaining > 0
         invariant
+            crate::common::collections::hash_wf::hash_set_ok(&*s.votes_granted),
             0 <= remaining <= s.log.len() as u64,
             remaining <= s.log.len() as u64,
             active_membership_phase_from_raft_log(
@@ -1213,6 +1245,11 @@ pub fn has_active_election_quorum_after_vote_exec(
     c: &CConstants,
     voter: &u64,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_map_ok(&*s.match_index),
+        crate::common::collections::hash_wf::hash_map_ok(&*s.next_index),
+        crate::common::collections::hash_wf::hash_set_ok(&*s.votes_granted),
+        crate::common::collections::hash_wf::hash_set_ok(&c.servers),
     ensures
         result == has_active_election_quorum_after_vote(
             s@,
@@ -1268,6 +1305,11 @@ pub fn Chas_active_election_quorum_after_vote(
     c: &CConstants,
     voter: &u64,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_map_ok(&*s.match_index),
+        crate::common::collections::hash_wf::hash_map_ok(&*s.next_index),
+        crate::common::collections::hash_wf::hash_set_ok(&*s.votes_granted),
+        crate::common::collections::hash_wf::hash_set_ok(&c.servers),
     ensures
         result == has_active_election_quorum_after_vote(
             s@,
@@ -1408,7 +1450,11 @@ pub fn replicator_set_exec(
     c: &CConstants,
     idx: &u64,
 ) -> (result: HashSet<u64>)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(&c.servers),
+        crate::common::collections::hash_wf::hash_map_ok(&*s.match_index),
     ensures
+        crate::common::collections::hash_wf::hash_set_ok(&result),
         result@ == u64_replicator_set(
             c.servers@,
             s.match_index@,
@@ -1432,6 +1478,8 @@ pub fn replicator_set_exec(
     while i < servers.len()
         invariant
             0 <= i <= servers.len(),
+            crate::common::collections::hash_wf::hash_map_ok(&*s.match_index),
+            crate::common::collections::hash_wf::hash_set_ok(&result),
             result@ == servers@.subrange(
                 0,
                 i as int,
@@ -1655,6 +1703,9 @@ pub fn has_active_commit_quorum_exec(
     c: &CConstants,
     idx: &u64,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(&c.servers),
+        crate::common::collections::hash_wf::hash_map_ok(&*s.match_index),
     ensures
         result == has_active_commit_quorum(
             s@,
@@ -1711,6 +1762,9 @@ pub fn Chas_active_commit_quorum(
     c: &CConstants,
     idx: &u64,
 ) -> (result: bool)
+    requires
+        crate::common::collections::hash_wf::hash_set_ok(&c.servers),
+        crate::common::collections::hash_wf::hash_map_ok(&*s.match_index),
     ensures
         result == has_active_commit_quorum(
             s@,

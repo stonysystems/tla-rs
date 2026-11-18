@@ -21,7 +21,8 @@ if [[ "$mode" != --reuse-protocol ]]; then
         printf 'Compiling protocol without verification (explicit --no-verify).\n'
         args+=(--no-verify)
     fi
-    "$VERUS_PATH" "${args[@]}" "$ROOT/src/lib.rs" -o "$ROOT/bin/libtla_protocol.rlib"
+    read -r -a cfg_flags <<< "$("$ROOT/scripts/verus_cfg.sh" "$VERUS_PATH")"
+    "$VERUS_PATH" "${args[@]}" "${cfg_flags[@]}" "$ROOT/src/lib.rs" -o "$ROOT/bin/libtla_protocol.rlib"
 fi
 [[ -f "$ROOT/bin/libtla_protocol.rlib" ]] || { printf 'Native protocol rlib missing\n' >&2; exit 1; }
 # Same Rust toolchain as Verus; owned Rust values never cross a foreign ABI.

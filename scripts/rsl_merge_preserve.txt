@@ -79,3 +79,8 @@ proposer CProposerResetViewTimerDueToExecution
 learner lemma_abstractify_clearnerstate_insert accept-fresh
 learner lemma_abstractify_clearnerstate_remove accept-fresh
 learner lemma_abstractify_singleton_clearnerstate accept-fresh
+
+# verus-lang/verus#3494 (hash-table well-formedness). The clone wrapper is
+# emitted conditional on `clearnerstate_hash_tables_ok`, since vstd only
+# describes copies of well-formed tables; take fresh.
+learner clone_clearnerstate accept-fresh

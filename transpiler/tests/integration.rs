@@ -18246,7 +18246,9 @@ fn test_impl_files_size_after_stripping() {
     let files_and_max_lines = [
         ("../src/implementation/RSL/acceptorimpl.rs", 200),
         ("../src/implementation/RSL/ExecutorImpl.rs", 350),
-        ("../src/implementation/RSL/ElectionImpl.rs", 300),
+        // 350: hash-table well-formedness (verus#3494) and CRequestHeader's
+        // key laws (tla-rs#17) added spec and proof code, not dead code.
+        ("../src/implementation/RSL/ElectionImpl.rs", 350),
         ("../src/implementation/RSL/ProposerImpl.rs", 700),
     ];
 

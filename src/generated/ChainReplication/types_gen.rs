@@ -28,8 +28,8 @@ impl Clone for CState {
     #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&*self.pending_sent) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.role == self.role,
         res.committed_count == self.committed_count,
         res.obj_value == self.obj_value,
@@ -57,6 +57,7 @@ impl Clone for CState {
 impl CState {
     pub open spec fn valid(&self) -> bool {
         &&& self.role.valid()
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.pending_sent)
     }
 }
 

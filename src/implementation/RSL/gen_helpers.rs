@@ -129,6 +129,8 @@ proof fn lemma_ExtractSentPacketsFromIos_snoc(s: Seq<RslIo>, x: RslIo)
 /// Convert runtime IO events to sent packets with the exact spec projection.
 /// Re-homed from replica_manual.rs to shrink manual_code footprint.
 pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacket>)
+requires
+    forall |i: int| #![trigger ios@[i]] 0 <= i < ios@.len() && ios@[i] is Send ==> ios@[i]->s.msg.hash_tables_ok(),
 ensures
     result@.map(|i, p: CPacket| p@) == ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)),
 {
@@ -140,6 +142,7 @@ ensures
         invariant
             0 <= i <= ios.len(),
             abs_ios == abstractify_crslio_seq(ios@),
+            forall |k: int| #![trigger ios@[k]] 0 <= k < ios@.len() && ios@[k] is Send ==> ios@[k]->s.msg.hash_tables_ok(),
             result@.map(|j: int, p: CPacket| p@) =~=
                 ExtractSentPacketsFromIos(abs_ios.take(i as int)),
         decreases ios.len() - i,
@@ -234,6 +237,7 @@ pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpointsOutbound(s: &CRe
 pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &CPacket) -> (res: bool)
     requires
         pkt.msg is CMessage1b,
+        crate::common::collections::hash_wf::hash_set_ok(received_1b_packets),
     ensures
         res == (forall |op: CPacket| #![trigger received_1b_packets@.contains(op)] received_1b_packets@.contains(op) ==> op.src@ != pkt.src@),
 {
@@ -275,6 +279,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
         forall |i: int| #![trigger replies[i]] 0 <= i < replies.len() ==> replies[i].valid(),
     ensures
         creplycache_is_valid(&result),
+        crate::common::collections::hash_wf::hash_map_ok(&result),
         abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
 {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
@@ -292,6 +297,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
             0 <= i <= replies.len(),
             // Validity: keys abstractable, values abstractable+valid
             creplycache_is_valid(&result),
+            crate::common::collections::hash_wf::hash_map_ok(&result),
             // Abstract equality with spec function on the suffix
             abstractify_creplycache(&result) =~= LClientsInReplies(abs_replies.subrange(i as int, len)),
             // Preserved
@@ -327,8 +333,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
             broadcast use vstd::map::group_map_lemmas;
-            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+            broadcast use crate::common::native::io_s::group_endpoint_hash_key;
 
             // Establish HashMap insert postcondition explicitly
             assert(result@ =~= old_map.insert(k, v));
@@ -472,9 +477,11 @@ proof fn lemma_clients_in_replies_witness(replies: Seq<Reply>, client: AbstractE
 pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime: CReplyCache)
     requires
         creplycache_is_valid(c),
+        crate::common::collections::hash_wf::hash_map_ok(c),
         forall |i: int| #![trigger replies[i]] 0 <= i < replies.len() ==> replies[i].valid(),
     ensures
         creplycache_is_valid(&c_prime),
+        crate::common::collections::hash_wf::hash_map_ok(&c_prime),
         UpdateNewCache(
             abstractify_creplycache(c),
             abstractify_creplycache(&c_prime),
@@ -521,6 +528,9 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
             forall |k: EndPoint| c@.contains_key(k) ==> (exists |idx: int| 0 <= idx < c_keys@.len() && c_keys@[idx] == k),
             creplycache_is_valid(c),
             creplycache_is_valid(&nc),
+            crate::common::collections::hash_wf::hash_map_ok(c),
+            crate::common::collections::hash_wf::hash_map_ok(&nc),
+            crate::common::collections::hash_wf::hash_map_ok(&result),
             abs_nc == abstractify_creplycache(&nc),
             abs_c == abstractify_creplycache(c),
         decreases c_keys.len() - j,
@@ -529,8 +539,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
 
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+            broadcast use crate::common::native::io_s::group_endpoint_hash_key;
             assert(c@.contains_key(c_keys@[j as int]));
         }
 
@@ -541,8 +550,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
             broadcast use vstd::map::group_map_lemmas;
-            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+            broadcast use crate::common::native::io_s::group_endpoint_hash_key;
 
             assert(k == c_keys@[j as int]);
             assert(v == c@[k]);

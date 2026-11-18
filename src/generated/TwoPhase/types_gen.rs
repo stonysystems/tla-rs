@@ -21,8 +21,8 @@ pub struct CState {
 impl Clone for CState {
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&self.tm_prepared) && crate::common::collections::hash_wf::hash_set_ok(&self.rm_prepared) && crate::common::collections::hash_wf::hash_set_ok(&self.rm_committed) && crate::common::collections::hash_wf::hash_set_ok(&self.rm_aborted) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.tm_state == self.tm_state,
     {
         CState {
@@ -38,6 +38,10 @@ impl Clone for CState {
 impl CState {
     pub open spec fn valid(&self) -> bool {
         &&& self.tm_state.valid()
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.tm_prepared)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.rm_prepared)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.rm_committed)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.rm_aborted)
     }
 }
 
@@ -62,8 +66,8 @@ pub struct CConstants {
 impl Clone for CConstants {
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&self.rm) ==> res@ == self@,
+        self.valid() ==> res.valid(),
     {
         CConstants {
             rm: clone_hashset_u64(&self.rm),
@@ -73,7 +77,7 @@ impl Clone for CConstants {
 
 impl CConstants {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.rm)
     }
 }
 

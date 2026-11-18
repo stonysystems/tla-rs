@@ -67,7 +67,8 @@ cd "$REPO_ROOT"
 # Verus exits non-zero when the crate has verification errors; the trigger
 # notes are still emitted, so capture them either way and report the status.
 set +e
-"$VERUS" --crate-type=lib src/lib.rs --triggers-mode "$MODE" >"$LOG" 2>&1
+read -r -a CFG_FLAGS <<< "$(scripts/verus_cfg.sh "$VERUS")"
+"$VERUS" --crate-type=lib src/lib.rs "${CFG_FLAGS[@]}" --triggers-mode "$MODE" >"$LOG" 2>&1
 VERUS_STATUS=$?
 set -e
 echo "verus exit status: $VERUS_STATUS"

@@ -275,9 +275,9 @@ impl TypeGenerator {
     ) {
         code.push_str(&format!("impl Clone for {} {{\n", exec_name));
         code.push_str(&format!(
-            "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n",
+            "{}#[verifier(external_body)]\n{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    {},\n{}    self.{}() ==> res.{}(),\n",
             self.indent, self.indent, self.indent,
-            self.indent, self.indent,
+            self.indent, self.clone_view_ensures(exec_name, fields), self.indent,
             self.validity_predicate_name, self.validity_predicate_name,
         ));
         // Add concrete field-level ensures for fields whose types support spec equality.
@@ -337,8 +337,9 @@ impl TypeGenerator {
     fn generate_verified_clone(&self, exec_name: &str, fields: &[&FieldDef], code: &mut String) {
         code.push_str(&format!("impl Clone for {} {{\n", exec_name));
         code.push_str(&format!(
-            "{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n",
+            "{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    {},\n{}    self.{}() ==> res.{}(),\n",
             self.indent, self.indent, self.indent,
+            self.clone_view_ensures(exec_name, fields),
             self.indent,
             self.validity_predicate_name, self.validity_predicate_name,
         ));
@@ -664,7 +665,11 @@ impl TypeGenerator {
             })
             .collect();
 
-        if fields_needing_check.is_empty() {
+        // Hash-table fields must be well formed for vstd to describe their
+        // operations (verus-lang/verus#3494); see hash_wf.rs in the crate.
+        let hash_checks = self.hash_table_ok_checks(exec_name, fields.iter());
+
+        if fields_needing_check.is_empty() && hash_checks.is_empty() {
             // All fields are primitives, just return true
             code.push_str(&format!("{}{}true\n", self.indent, self.indent));
         } else {
@@ -676,11 +681,61 @@ impl TypeGenerator {
                     self.indent, self.indent, prefix, field.name, pred_name
                 ));
             }
+            for check in hash_checks.iter() {
+                code.push_str(&format!("{}{}&&& {}\n", self.indent, self.indent, check));
+            }
         }
 
         code.push_str(&format!("{}}}\n", self.indent));
         code.push_str("}\n");
         code
+    }
+
+    /// Well-formedness conditions for the struct's hash-table fields, one per
+    /// field, as spec expressions over `self`. Fields skipped for validity are
+    /// skipped here too.
+    fn hash_table_ok_checks<'f>(
+        &self,
+        exec_name: &str,
+        fields: impl Iterator<Item = &'f FieldDef>,
+    ) -> Vec<String> {
+        let skip = self.skip_fields.get(exec_name);
+        fields
+            .filter(|f| !skip.is_some_and(|skips| skips.contains(&f.name)))
+            .filter_map(|f| {
+                let pred = self.hash_table_ok_predicate(&self.translate_type(&f.ty))?;
+                let deref = if self.should_arc_wrap_named_field(exec_name, &f.name, &f.ty) {
+                    "*"
+                } else {
+                    ""
+                };
+                Some(format!("{}(&{}self.{})", pred, deref, f.name))
+            })
+            .collect()
+    }
+
+    /// The postcondition that a clone has the original's view. vstd only
+    /// describes copies of well-formed hash tables, so for a struct with
+    /// hash-table fields it is conditional on those being well formed (which
+    /// the validity predicate includes).
+    fn clone_view_ensures(&self, exec_name: &str, fields: &[&FieldDef]) -> String {
+        let checks = self.hash_table_ok_checks(exec_name, fields.iter().copied());
+        if checks.is_empty() {
+            "res@ == self@".to_string()
+        } else {
+            format!("{} ==> res@ == self@", checks.join(" && "))
+        }
+    }
+
+    /// The well-formedness predicate for an exec hash-table type, if it is one.
+    fn hash_table_ok_predicate(&self, exec_type: &str) -> Option<&'static str> {
+        if exec_type.starts_with("HashSet<") {
+            Some("crate::common::collections::hash_wf::hash_set_ok")
+        } else if exec_type.starts_with("HashMap<") {
+            Some("crate::common::collections::hash_wf::hash_map_ok")
+        } else {
+            None
+        }
     }
 
     /// Generate validity predicate for an enum
@@ -3910,7 +3965,7 @@ mod tests {
             code
         );
         assert!(
-            code.contains("res.well_formed() == self.well_formed()"),
+            code.contains("self.well_formed() ==> res.well_formed()"),
             "Should have validity preservation ensure: {}",
             code
         );

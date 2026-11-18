@@ -11,8 +11,10 @@ verus! {
     // Verified HashMap filtering: keep only entries with key >= log_truncation_point.
     pub exec fn CRemoveVotesBeforeLogTruncationPoint(votes: &CVotes, log_truncation_point: &u64) -> (result: CVotes)
     requires
+        crate::common::collections::hash_wf::hash_map_ok(votes),
         cvotes_is_valid(votes),
     ensures
+        crate::common::collections::hash_wf::hash_map_ok(&result),
         cvotes_is_valid(&result),
         RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(votes), abstractify_cvotes(&result), *log_truncation_point as int),
     {
@@ -24,6 +26,8 @@ verus! {
         let mut i: usize = 0;
         while i < keys.len()
             invariant
+                crate::common::collections::hash_wf::hash_map_ok(votes),
+                crate::common::collections::hash_wf::hash_map_ok(&result),
                 0 <= i <= keys.len(),
                 // Keys in result are from votes and are >= log_truncation_point
                 forall |k: u64| result@.contains_key(k) ==> votes@.contains_key(k) && k >= *log_truncation_point,
@@ -94,9 +98,11 @@ verus! {
     // Verified HashMap insert+filter: filter votes keeping key >= log_truncation_point, then insert new entry.
     pub exec fn CAddVoteAndRemoveOldOnes(votes: &CVotes, new_opn: &u64, new_vote: &CVote, log_truncation_point: &u64) -> (result: CVotes)
     requires
+        crate::common::collections::hash_wf::hash_map_ok(votes),
         cvotes_is_valid(votes),
         new_vote.valid(),
     ensures
+        crate::common::collections::hash_wf::hash_map_ok(&result),
         cvotes_is_valid(&result),
         LAddVoteAndRemoveOldOnes(abstractify_cvotes(votes), abstractify_cvotes(&result), *new_opn as int, new_vote@, *log_truncation_point as int),
     {
@@ -109,6 +115,8 @@ verus! {
         let mut i: usize = 0;
         while i < keys.len()
             invariant
+                crate::common::collections::hash_wf::hash_map_ok(votes),
+                crate::common::collections::hash_wf::hash_map_ok(&result),
                 0 <= i <= keys.len(),
                 forall |k: u64| result@.contains_key(k) ==> votes@.contains_key(k) && k >= *log_truncation_point,
                 forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k])@ == votes@[k]@ && result@[k].valid(),
@@ -311,8 +319,10 @@ verus! {
 
     pub exec fn CRemoveVotesBeforeLogTruncationPoint_mut(votes: &mut CVotes, log_truncation_point: &u64)
     requires
+        crate::common::collections::hash_wf::hash_map_ok(&*old(votes)),
         cvotes_is_valid(&*old(votes)),
     ensures
+        crate::common::collections::hash_wf::hash_map_ok(votes),
         cvotes_is_valid(votes),
         RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(&*old(votes)), abstractify_cvotes(votes), *log_truncation_point as int),
     {
@@ -322,9 +332,11 @@ verus! {
 
     pub exec fn CAddVoteAndRemoveOldOnes_mut(votes: &mut CVotes, new_opn: &u64, new_vote: &CVote, log_truncation_point: &u64)
     requires
+        crate::common::collections::hash_wf::hash_map_ok(&*old(votes)),
         cvotes_is_valid(&*old(votes)),
         new_vote.valid(),
     ensures
+        crate::common::collections::hash_wf::hash_map_ok(votes),
         cvotes_is_valid(votes),
         LAddVoteAndRemoveOldOnes(abstractify_cvotes(&*old(votes)), abstractify_cvotes(votes), *new_opn as int, new_vote@, *log_truncation_point as int),
     {

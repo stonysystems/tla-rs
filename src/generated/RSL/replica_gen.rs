@@ -5,6 +5,7 @@ use crate::common::collections::count_matches::*;
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::common::collections::hashsets::clone_hashset;
 use crate::common::framework::environment_s::LIoOp;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::acceptor_gen::*;
@@ -45,15 +46,6 @@ ensures
     let s = Set::<u64>::empty().map(f);
     assert forall|y: int| !(#[trigger] s.contains(y)) by {
     }
-}
-
-/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
-#[verifier(external_body)]
-fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
-ensures
-    res@ == s@,
-{
-    s.clone()
 }
 
 /// Helper proof: mapping over an empty Seq yields an empty Seq.

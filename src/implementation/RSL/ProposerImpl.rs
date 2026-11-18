@@ -41,6 +41,15 @@ pub struct CProposer {
 }
 
 impl CProposer{
+
+    /// Every hash table in the struct is well formed (always true on vstd
+    /// releases without hash-table well-formedness; see hash_wf.rs).
+    pub open spec fn hash_tables_ok(&self) -> bool {
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.received_1b_packets)
+        &&& crate::common::collections::hash_wf::hash_map_ok(&self.highest_seqno_requested_by_client_this_view)
+        &&& self.election_state.hash_tables_ok()
+    }
+
     pub open spec fn abstractable(self) -> bool {
         &&& self.constants.abstractable()
         &&& (forall |i:int| #![trigger self.request_queue@[i]] 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].abstractable())
@@ -60,16 +69,18 @@ impl CProposer{
         &&& (forall |k:EndPoint| #[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k) ==> k.valid_public_key())
         &&& self.incomplete_batch_timer.valid()
         &&& self.election_state.valid()
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.received_1b_packets)
+        &&& crate::common::collections::hash_wf::hash_map_ok(&self.highest_seqno_requested_by_client_this_view)
     }
 
     pub fn clone_up_to_view(&self) -> (result: Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
+            self.hash_tables_ok() ==> result@ == self@,
+            self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         let constants = self.constants.clone();
         let request_queue = clone_request_batch_up_to_view(&self.request_queue);
-        let received_1b_packets = clone_hashset(&self.received_1b_packets);
+        let received_1b_packets = clone_cpacket_hashset(&self.received_1b_packets);
         let highest_seqno = clone_endpoint_seqno_map(&self.highest_seqno_requested_by_client_this_view);
         let incomplete_batch_timer = match self.incomplete_batch_timer {
             CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } =>
@@ -142,25 +153,82 @@ impl View for CProposer {
 }
 
 // CProposer contains HashSet<CPacket> and HashMap<EndPoint, u64>, so Clone can't be derived by Verus.
-// Delegation to clone_up_to_view() which uses verified clone helpers (clone_hashset, clone_endpoint_seqno_map,
-// clone_request_batch_up_to_view) instead of raw HashSet::clone()/HashMap::clone().
+// Delegation to clone_up_to_view(), which uses clone helpers (clone_cpacket_hashset, which is trusted;
+// clone_endpoint_seqno_map and clone_request_batch_up_to_view, which are verified).
 impl Clone for CProposer {
     fn clone(&self) -> (result: Self)
     ensures
-        result@ == self@,
-        result.valid() == self.valid(),
+        self.hash_tables_ok() ==> result@ == self@,
+        self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         self.clone_up_to_view()
     }
 }
 
-/// Deep clone of HashMap<EndPoint, u64> preserving view.
+/// Clone of the proposer's received-1b set.
+///
+/// Trusted: CPacket has no proof that `==` is structural (CMessage holds hash
+/// tables), so vstd cannot describe inserting a CPacket into a HashSet. This
+/// is the generic external_body `clone_hashset` it replaces, narrowed to the
+/// one set that needs it; storing the 1b packets in a map keyed by sender
+/// removes it.
 #[verifier::external_body]
+pub fn clone_cpacket_hashset(s: &HashSet<CPacket>) -> (res: HashSet<CPacket>)
+    ensures
+        crate::common::collections::hash_wf::hash_set_ok(&res),
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> res@ == s@,
+{
+    s.clone()
+}
+
+/// Deep clone of HashMap<EndPoint, u64> preserving view.
 pub fn clone_endpoint_seqno_map(m: &HashMap<EndPoint, u64>) -> (res: HashMap<EndPoint, u64>)
     ensures
-        res@ == m@,
+        crate::common::collections::hash_wf::hash_map_ok(&res),
+        crate::common::collections::hash_wf::hash_map_ok(m) ==> res@ == m@,
 {
-    m.clone()
+    broadcast use crate::common::native::io_s::group_endpoint_hash_key;
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+
+    let ghost ok = crate::common::collections::hash_wf::hash_map_ok(m);
+    let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(m);
+    let mut res: HashMap<EndPoint, u64> = HashMap::new();
+    let mut i: usize = 0;
+    while i < keys.len()
+        invariant
+            0 <= i <= keys.len(),
+            ok == crate::common::collections::hash_wf::hash_map_ok(m),
+            crate::common::collections::hash_wf::hash_map_ok(&res),
+            ok ==> forall |k: EndPoint| res@.contains_key(k) ==> m@.contains_key(k),
+            ok ==> forall |k: EndPoint| res@.contains_key(k) ==> (#[trigger] res@[k]) == m@[k],
+            ok ==> forall |j: int| 0 <= j < i as int ==> res@.contains_key(#[trigger] keys@[j]),
+            ok ==> forall |k: int| 0 <= k < keys@.len() ==> m@.contains_key(#[trigger] keys@[k]),
+            ok ==> forall |k: EndPoint| m@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+        decreases keys.len() - i,
+    {
+        broadcast use crate::common::native::io_s::group_endpoint_hash_key;
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        let k = keys[i].clone_eq();
+        match m.get(&k) {
+            Some(v) => {
+                let _ = res.insert(k, *v);
+            },
+            None => {},
+        }
+        i = i + 1;
+    }
+    proof {
+        if ok {
+            assert forall |k: EndPoint| res@.contains_key(k) <==> m@.contains_key(k) by {
+                if m@.contains_key(k) {
+                    let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                    assert(res@.contains_key(keys@[j]));
+                }
+            };
+            assert(res@ =~= m@);
+        }
+    }
+    res
 }
 
 broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
@@ -172,6 +240,8 @@ impl CProposer{
     // =========================================================================
 
     pub fn CIsAfterLogTruncationPoint(opn:COperationNumber, S:&HashSet<CPacket>) -> (res:bool)
+        requires
+            crate::common::collections::hash_wf::hash_set_ok(S),
         ensures
             ({
                 let lr = LIsAfterLogTruncationPoint(opn as int, S@.map(|p:CPacket| p@));
@@ -233,6 +303,8 @@ impl CProposer{
     // =========================================================================
 
     pub fn CSetOfMessage1b(S : &HashSet<CPacket>) -> (res:bool)
+        requires
+            crate::common::collections::hash_wf::hash_set_ok(S),
         ensures
             ({
                 let lr = LSetOfMessage1b(S@.map(|p:CPacket| p@));
@@ -292,6 +364,8 @@ impl CProposer{
     // =========================================================================
 
     pub fn CSetOfMessage1bAboutBallot(S:&HashSet<CPacket>, b:&CBallot) -> (res:bool)
+        requires
+            crate::common::collections::hash_wf::hash_set_ok(S),
         ensures
             res == LSetOfMessage1bAboutBallot(S@.map(|p:CPacket| p@), b@)
     {
@@ -353,6 +427,7 @@ impl CProposer{
 
     pub fn CAllAcceptorsHadNoProposal(S:&HashSet<CPacket>, opn:COperationNumber) -> (result_CAllAcceptorsHadNoProposal:bool)
     requires
+        crate::common::collections::hash_wf::hash_set_ok(S),
         forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(opn),
         LSetOfMessage1b(S@.map(|p:CPacket| p@)),
@@ -382,6 +457,12 @@ impl CProposer{
             decreases
                 vec.len() - i,
         {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            broadcast use vstd::laws_eq::group_laws_eq;
+            proof {
+                assert(S@.contains(vec@[i as int]));
+                assert(vec@[i as int].valid());
+            }
             if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &vec[i].msg {
                 if votes.contains_key(&opn) {
                     // Found a Message1b with votes containing opn — spec is false
@@ -427,6 +508,7 @@ impl CProposer{
     // Proven against abstractify_cvotes(votes), avoiding the pattern-binding gap.
     fn CExistVotesHasProposalLargeThanOpn_inner(votes: &CVotes, op: COperationNumber) -> (result: bool)
     requires
+        crate::common::collections::hash_wf::hash_map_ok(votes),
         cvotes_is_abstractable(votes),
     ensures
         result == (exists |opn: int| abstractify_cvotes(votes).contains_key(opn) && opn > op as int),
@@ -503,6 +585,7 @@ impl CProposer{
 
     pub fn CExistsAcceptorHasProposalLargeThanOpn(S:&HashSet<CPacket>, op:COperationNumber) -> (result_CExistsAcceptorHasProposalLargeThanOpn:bool)
     requires
+        crate::common::collections::hash_wf::hash_set_ok(S),
         forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(op),
         LSetOfMessage1b(S@.map(|p:CPacket| p@)),

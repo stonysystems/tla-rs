@@ -5,6 +5,9 @@ impl CState {
             Some(phase) => phase.valid(),
             None => true,
         }
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.votes_granted)
+        &&& crate::common::collections::hash_wf::hash_map_ok(&*self.match_index)
+        &&& crate::common::collections::hash_wf::hash_map_ok(&*self.next_index)
     }
 }
 

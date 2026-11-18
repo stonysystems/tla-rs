@@ -18,7 +18,8 @@ if [[ "${1:-}" == "--integrated" ]]; then
     for consensus_module in "${consensus_modules[@]}"; do
         consensus_args+=(--verify-only-module "protocol::$consensus_module")
     done
-    exec "$consensus_verus" --crate-type=lib src/lib.rs --triggers-mode silent "${consensus_args[@]}" "$@"
+    read -r -a consensus_cfg <<< "$(scripts/verus_cfg.sh "$consensus_verus")"
+    exec "$consensus_verus" --crate-type=lib src/lib.rs "${consensus_cfg[@]}" --triggers-mode silent "${consensus_args[@]}" "$@"
 fi
 "$consensus_verus" --crate-type=lib src/protocol/next_five_harness.rs \
     --triggers-mode silent --no-cheating "$@"

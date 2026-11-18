@@ -17,5 +17,6 @@ for epaxos_module_file in src/protocol/EPaxos/star/*.rs; do
     fi
 done
 
-exec "$epaxos_verus" --crate-type=lib src/lib.rs "${epaxos_modules[@]}" \
+read -r -a epaxos_cfg <<< "$(scripts/verus_cfg.sh "$epaxos_verus")"
+exec "$epaxos_verus" --crate-type=lib src/lib.rs "${epaxos_cfg[@]}" "${epaxos_modules[@]}" \
     --num-threads 4 --triggers-mode selective "$@"

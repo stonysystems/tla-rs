@@ -13,5 +13,6 @@ for tiga_file in src/protocol/Tiga/*.rs; do
         tiga_modules+=(--verify-only-module "protocol::Tiga::$tiga_module")
     fi
 done
-exec "$tiga_verus" --crate-type=lib src/lib.rs "${tiga_modules[@]}" \
+read -r -a tiga_cfg <<< "$(scripts/verus_cfg.sh "$tiga_verus")"
+exec "$tiga_verus" --crate-type=lib src/lib.rs "${tiga_cfg[@]}" "${tiga_modules[@]}" \
     --num-threads 4 --triggers-mode selective "$@"

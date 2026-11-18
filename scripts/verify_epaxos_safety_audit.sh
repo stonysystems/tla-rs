@@ -8,7 +8,8 @@ epaxos_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 epaxos_verus="${VERUS_PATH:-verus}"
 cd "$epaxos_repo_root"
 
-exec "$epaxos_verus" --crate-type=lib src/lib.rs \
+read -r -a epaxos_cfg <<< "$(scripts/verus_cfg.sh "$epaxos_verus")"
+exec "$epaxos_verus" --crate-type=lib src/lib.rs "${epaxos_cfg[@]}" \
     --verify-only-module protocol::EPaxos::epaxos \
     --verify-only-module protocol::EPaxos::types \
     --verify-only-module protocol::EPaxos::safety_audit \
