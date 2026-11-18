@@ -4,6 +4,7 @@
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::common::collections::hashsets::clone_hashset;
 use crate::common::native::io_s::{AbstractEndPoint, EndPoint};
 use crate::generated::RSL::types_gen::*;
 use crate::protocol::RSL::learner::*;
@@ -26,15 +27,6 @@ ensures
     let s = Set::<u64>::empty().map(f);
     assert forall|y: int| !(#[trigger] s.contains(y)) by {
     }
-}
-
-/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
-#[verifier(external_body)]
-fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
-ensures
-    res@ == s@,
-{
-    s.clone()
 }
 
 /// Helper proof: removing an element commutes with mapping for injective functions.
@@ -118,6 +110,7 @@ ensures
         if i == k { assert(m2@[i] == v); }
         else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }
     }
+    assert(clearnerstate_is_abstractable(m2));
     if clearnerstate_is_valid(old_m) && v.valid() {
         assert forall |i: COperationNumber| #![auto] m2@.contains_key(i) implies
             COperationNumberIsValid(i) && m2@[i].valid()
@@ -125,6 +118,7 @@ ensures
             if i == k { assert(m2@[i] == v); }
             else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }
         }
+        assert(clearnerstate_is_valid(m2));
     }
 }
 
@@ -213,7 +207,8 @@ ensures
 /// Helper: clone a CLearnerState preserving view.
 fn clone_clearnerstate(m: &CLearnerState) -> (res: CLearnerState)
 ensures
-    res@ == m@,
+    crate::common::collections::hash_wf::hash_map_ok(&res),
+    clearnerstate_hash_tables_ok(m) ==> res@ == m@,
 {
     clone_clearnerstate_up_to_view(m)
 }
@@ -222,7 +217,9 @@ ensures
 fn filter_clearnerstate(m: &CLearnerState, threshold: u64) -> (res: CLearnerState)
 requires
     clearnerstate_is_valid(m),
+    crate::common::collections::hash_wf::hash_map_ok(m),
 ensures
+    crate::common::collections::hash_wf::hash_map_ok(&res),
     clearnerstate_is_valid(&res),
     clearnerstate_is_abstractable(&res),
     forall |k: COperationNumber| res@.contains_key(k) ==>
@@ -242,6 +239,8 @@ ensures
         invariant
             0 <= i <= keys.len(),
             clearnerstate_is_valid(m),
+            crate::common::collections::hash_wf::hash_map_ok(m),
+            crate::common::collections::hash_wf::hash_map_ok(&result),
             forall |k: u64| result@.contains_key(k) ==> m@.contains_key(k),
             forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
             forall |k: u64| result@.contains_key(k) ==> k >= threshold,
@@ -253,6 +252,9 @@ ensures
     {
         let k = keys[i];
         if k >= threshold {
+            proof {
+                lemma_clearnerstate_valid_key(m, k);
+            }
             let v = m.get(&k).unwrap().clone_up_to_view();
             proof {
                 broadcast use axiom_clearner_tuple_view;
@@ -308,31 +310,40 @@ ensures
 
 }
 
-#[verifier::external_body]
+// vstd describes HashMap updates only on well-formed maps (verus#3494); the
+// map stays well formed, and `clear` makes it so.
 fn learnerstate_clear_and_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
-    ensures state@ == Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup)
+    ensures
+        state@ == Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup),
+        crate::common::collections::hash_wf::hash_map_ok(state),
 {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
     state.clear();
     state.insert(opn, tup);
 }
 
-#[verifier::external_body]
 fn learnerstate_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
-    ensures state@ == old(state)@.insert(opn, tup)
+    ensures
+        crate::common::collections::hash_wf::hash_map_ok(old(state)) ==> state@ == old(state)@.insert(opn, tup),
+        crate::common::collections::hash_wf::hash_map_ok(old(state)) ==> crate::common::collections::hash_wf::hash_map_ok(state),
 {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
     state.insert(opn, tup);
 }
 
-#[verifier::external_body]
 fn learnerstate_remove(state: &mut CLearnerState, opn: &COperationNumber)
-    ensures state@ == old(state)@.remove(*opn)
+    ensures
+        crate::common::collections::hash_wf::hash_map_ok(old(state)) ==> state@ == old(state)@.remove(*opn),
+        crate::common::collections::hash_wf::hash_map_ok(old(state)) ==> crate::common::collections::hash_wf::hash_map_ok(state),
 {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
     state.remove(opn);
 }
 
-#[verifier::external_body]
 fn learnerstate_set(state: &mut CLearnerState, new_val: CLearnerState)
-    ensures state@ == new_val@
+    ensures
+        *state == new_val,
+        state@ == new_val@,
 {
     *state = new_val;
 }
@@ -454,12 +465,25 @@ ensures
         learnerstate_insert(&mut self.unexecuted_learner_state, opn_2b, tup);
     } else {
         let existing = self.unexecuted_learner_state.get(&opn_2b).unwrap();
+        proof {
+            lemma_clearnerstate_valid_key(&self.unexecuted_learner_state, opn_2b);
+            assert(*existing == self.unexecuted_learner_state@[opn_2b]);
+            assert(existing.hash_tables_ok());
+        }
         if existing.received_2b_message_senders.contains(&packet.src) {
             // Branch 4: already seen this sender — no change
         } else {
             // Branch 5: add sender to existing entry
             let mut new_senders = clone_hashset(&existing.received_2b_message_senders);
-            new_senders.insert(packet.src.clone_up_to_view());
+            let src_clone = packet.src.clone_up_to_view();
+            let ghost cloned_senders = new_senders@;
+            hashset_insert_endpoint(&mut new_senders, src_clone);
+            proof {
+                broadcast use crate::common::native::io_s::group_endpoint_hash_key;
+                assert(cloned_senders == existing.received_2b_message_senders@);
+                assert(new_senders@ == cloned_senders.insert(src_clone));
+                assert(src_clone == packet.src);
+            }
             let tup = CLearnerTuple {
                 received_2b_message_senders: new_senders,
                 candidate_learned_value: clone_request_batch_up_to_view(&existing.candidate_learned_value),
@@ -585,11 +609,18 @@ ensures
             && COperationNumberIsValid(i)
             && self.unexecuted_learner_state@[i].valid() by {
             assert(filtered@.contains_key(i));
+            lemma_clearnerstate_valid_key(&filtered, i);
             assert(COperationNumberIsValid(i) && filtered@[i].valid());
             assert(COperationNumberIsAbstractable(i) && filtered@[i].abstractable());
         };
         assert(clearnerstate_is_abstractable(&self.unexecuted_learner_state));
         assert(clearnerstate_is_valid(&self.unexecuted_learner_state));
+        assert(clearnerstate_hash_tables_ok(&self.unexecuted_learner_state)) by {
+            assert forall |k| #[trigger] self.unexecuted_learner_state@.contains_key(k)
+                implies self.unexecuted_learner_state@[k].hash_tables_ok() by {
+                lemma_clearnerstate_valid_key(&self.unexecuted_learner_state, k);
+            }
+        }
         assert(self.valid());
 
         let abs_filtered = abstractify_clearnerstate(&self.unexecuted_learner_state);

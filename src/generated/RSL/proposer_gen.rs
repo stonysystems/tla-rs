@@ -4,6 +4,7 @@
 use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::common::collections::hashsets::clone_hashset;
 use crate::common::native::io_s::{AbstractEndPoint, EndPoint};
 use crate::generated::RSL::broadcast_gen::CBroadcastToEveryone;
 use crate::generated::RSL::election_gen::*;
@@ -38,15 +39,6 @@ ensures
     let s = Set::<u64>::empty().map(f);
     assert forall|y: int| !(#[trigger] s.contains(y)) by {
     }
-}
-
-/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
-#[verifier(external_body)]
-fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
-ensures
-    res@ == s@,
-{
-    s.clone()
 }
 
 /// Helper proof: mapping over an empty Vec<CRequest> yields an empty seq.
@@ -177,30 +169,42 @@ fn vec_set(dest: &mut Vec<CRequest>, new_val: Vec<CRequest>)
     *dest = new_val;
 }
 
+// Trusted for the set view, which needs `==` on CPacket to be structural.
+// Keeping the table well formed is what vstd's `insert` promises for any key.
 #[verifier::external_body]
 fn hashset_insert_cpacket(hs: &mut HashSet<CPacket>, p: CPacket)
-    ensures hs@ == old(hs)@.insert(p)
+    ensures
+        hs@ == old(hs)@.insert(p),
+        crate::common::collections::hash_wf::hash_set_ok(old(hs)) ==> crate::common::collections::hash_wf::hash_set_ok(hs),
 {
     hs.insert(p);
 }
 
-#[verifier::external_body]
 fn hashset_clear_cpacket(hs: &mut HashSet<CPacket>)
-    ensures hs@.len() == 0, hs@ =~= Set::<CPacket>::empty()
+    ensures
+        hs@.len() == 0,
+        hs@ =~= Set::<CPacket>::empty(),
+        crate::common::collections::hash_wf::hash_set_ok(hs),
 {
     hs.clear();
 }
 
-#[verifier::external_body]
+// vstd describes HashMap updates only on well-formed maps (verus#3494).
 fn hashmap_insert_seqno(hm: &mut HashMap<EndPoint, u64>, k: EndPoint, v: u64)
-    ensures hm@ == old(hm)@.insert(k, v)
+    ensures
+        crate::common::collections::hash_wf::hash_map_ok(old(hm)) ==> hm@ == old(hm)@.insert(k, v),
+        crate::common::collections::hash_wf::hash_map_ok(old(hm)) ==> crate::common::collections::hash_wf::hash_map_ok(hm),
 {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use crate::common::native::io_s::group_endpoint_hash_key;
     hm.insert(k, v);
 }
 
-#[verifier::external_body]
 fn hashmap_clear_seqno(hm: &mut HashMap<EndPoint, u64>)
-    ensures hm@.len() == 0, hm@ =~= Map::<EndPoint, u64>::empty()
+    ensures
+        hm@.len() == 0,
+        hm@ =~= Map::<EndPoint, u64>::empty(),
+        crate::common::collections::hash_wf::hash_map_ok(hm),
 {
     hm.clear();
 }
@@ -664,7 +668,7 @@ ensures
     // Find the highest-ballot vote for opn across all 1b packets
     let mut best_val: Option<CRequestBatch> = None;
     let mut best_bal: Option<CBallot> = None;
-    let packets = hashset_to_vec(&self.received_1b_packets);
+    let packets = cpacket_set_to_vec(&self.received_1b_packets);
     let mut idx: usize = 0;
     let ghost mut ghost_best_idx: Option<int> = None;
     while idx < packets.len()

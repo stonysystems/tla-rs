@@ -124,6 +124,11 @@ verus! {
             self.clone_up_to_view()
         }
     }
+
+    impl crate::common::collections::element_laws::CloneIsEq for CRequest {
+        proof fn lemma_clone_is_eq() {
+        }
+    }
     }
 
     impl View for CRequest {
@@ -194,6 +199,11 @@ verus! {
             result == *self,
         {
             self.clone_up_to_view()
+        }
+    }
+
+    impl crate::common::collections::element_laws::CloneIsEq for CReply {
+        proof fn lemma_clone_is_eq() {
         }
     }
     }
@@ -292,48 +302,53 @@ verus! {
 
     pub fn clone_creply_cache_up_to_view(cache: &CReplyCache) -> (res: CReplyCache)
         ensures
-            res@ == cache@,
-            forall |k| cache@.contains_key(k) ==> res@.contains_key(k),
-            forall |k| res@.contains_key(k) ==> cache@.contains_key(k),
-            forall |k| #![trigger res@[k]] #![trigger cache@[k]] res@.contains_key(k) ==> res@[k] == cache@[k]
+            crate::common::collections::hash_wf::hash_map_ok(&res),
+            crate::common::collections::hash_wf::hash_map_ok(cache) ==> res@ == cache@,
+            crate::common::collections::hash_wf::hash_map_ok(cache) ==> forall |k| cache@.contains_key(k) ==> res@.contains_key(k),
+            crate::common::collections::hash_wf::hash_map_ok(cache) ==> forall |k| res@.contains_key(k) ==> cache@.contains_key(k),
+            crate::common::collections::hash_wf::hash_map_ok(cache) ==> forall |k| #![trigger res@[k]] #![trigger cache@[k]] res@.contains_key(k) ==> res@[k] == cache@[k],
     {
         broadcast use crate::common::native::io_s::group_endpoint_hash_key;
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use crate::common::native::io_s::axiom_endpoint_view;
-        broadcast use crate::common::native::io_s::group_endpoint_hash_key;
 
+        let ghost ok = crate::common::collections::hash_wf::hash_map_ok(cache);
         let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(cache);
         let mut result: HashMap<EndPoint, CReply> = HashMap::new();
         let mut i: usize = 0;
         while i < keys.len()
             invariant
                 0 <= i <= keys.len(),
-                forall |k: EndPoint| result@.contains_key(k) ==> cache@.contains_key(k),
-                forall |k: EndPoint| result@.contains_key(k) ==> (#[trigger] result@[k]) == cache@[k],
-                forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
-                forall |k: int| 0 <= k < keys@.len() ==> cache@.contains_key(#[trigger] keys@[k]),
-                forall |k: EndPoint| cache@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+                ok == crate::common::collections::hash_wf::hash_map_ok(cache),
+                crate::common::collections::hash_wf::hash_map_ok(&result),
+                ok ==> forall |k: EndPoint| result@.contains_key(k) ==> cache@.contains_key(k),
+                ok ==> forall |k: EndPoint| result@.contains_key(k) ==> (#[trigger] result@[k]) == cache@[k],
+                ok ==> forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
+                ok ==> forall |k: int| 0 <= k < keys@.len() ==> cache@.contains_key(#[trigger] keys@[k]),
+                ok ==> forall |k: EndPoint| cache@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
             decreases keys.len() - i,
         {
+            broadcast use crate::common::native::io_s::group_endpoint_hash_key;
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
             let k = keys[i].clone_eq();
-            proof {
-                broadcast use crate::common::native::io_s::group_endpoint_hash_key;
-                broadcast use vstd::std_specs::hash::group_hash_axioms;
-                assert(k == keys@[i as int]);
-                assert(cache@.contains_key(k));
+            match cache.get(&k) {
+                Some(found) => {
+                    let v = found.clone_up_to_view();
+                    let _ = result.insert(k, v);
+                },
+                None => {},
             }
-            let v = cache.get(&k).unwrap().clone_up_to_view();
-            let _ = result.insert(k, v);
             i = i + 1;
         }
         proof {
-            assert forall |k: EndPoint| result@.contains_key(k) <==> cache@.contains_key(k) by {
-                if cache@.contains_key(k) {
-                    let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
-                    assert(result@.contains_key(k));
-                }
-            };
-            assert(result@ =~= cache@);
+            if ok {
+                assert forall |k: EndPoint| result@.contains_key(k) <==> cache@.contains_key(k) by {
+                    if cache@.contains_key(k) {
+                        let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                        assert(result@.contains_key(keys@[j]));
+                    }
+                };
+                assert(result@ =~= cache@);
+            }
         }
         result
     }
@@ -346,6 +361,16 @@ verus! {
     pub open spec fn creplycache_is_valid(m:&CReplyCache) -> bool {
         &&& creplycache_is_abstractable(m)
         &&& (forall |i| #![auto] m@.contains_key(i) ==> m@[i].valid())
+    }
+
+    /// Validity depends only on the view.
+    pub proof fn lemma_creplycache_is_valid_same_view(a: &CReplyCache, b: &CReplyCache)
+        requires a@ == b@,
+        ensures
+            creplycache_is_abstractable(a) == creplycache_is_abstractable(b),
+            creplycache_is_valid(a) == creplycache_is_valid(b),
+    {
+        assert forall |i| #![auto] a@.contains_key(i) == b@.contains_key(i) && a@[i] == b@[i] by {};
     }
 
     pub open spec fn abstractify_creplycache(m:&CReplyCache) -> ReplyCache
@@ -430,44 +455,56 @@ verus! {
 
     pub fn clone_cvotes_up_to_view(votes: &CVotes) -> (res: CVotes)
         ensures
-            res@ == votes@,
-            forall |k| votes@.contains_key(k) ==> res@.contains_key(k),
-            forall |k| res@.contains_key(k) ==> votes@.contains_key(k),
-            forall |k| #![trigger res@.index(k)] #![trigger votes@.index(k)] res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
+            crate::common::collections::hash_wf::hash_map_ok(&res),
+            crate::common::collections::hash_wf::hash_map_ok(votes) ==> res@ == votes@,
+            crate::common::collections::hash_wf::hash_map_ok(votes) ==> forall |k| votes@.contains_key(k) ==> res@.contains_key(k),
+            crate::common::collections::hash_wf::hash_map_ok(votes) ==> forall |k| res@.contains_key(k) ==> votes@.contains_key(k),
+            crate::common::collections::hash_wf::hash_map_ok(votes) ==> forall |k| #![trigger res@.index(k)] #![trigger votes@.index(k)] res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use axiom_cvote_view;
 
+        let ghost ok = crate::common::collections::hash_wf::hash_map_ok(votes);
         let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(votes);
         let mut result: HashMap<COperationNumber, CVote> = HashMap::new();
         let mut i: usize = 0;
         while i < keys.len()
             invariant
                 0 <= i <= keys.len(),
-                forall |k: u64| result@.contains_key(k) ==> votes@.contains_key(k),
-                forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == votes@[k],
-                forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
-                forall |k: int| 0 <= k < keys@.len() ==> votes@.contains_key(#[trigger] keys@[k]),
-                forall |k: u64| votes@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+                ok == crate::common::collections::hash_wf::hash_map_ok(votes),
+                crate::common::collections::hash_wf::hash_map_ok(&result),
+                ok ==> forall |k: u64| result@.contains_key(k) ==> votes@.contains_key(k),
+                ok ==> forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == votes@[k],
+                ok ==> forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
+                ok ==> forall |k: int| 0 <= k < keys@.len() ==> votes@.contains_key(#[trigger] keys@[k]),
+                ok ==> forall |k: u64| votes@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
             decreases keys.len() - i,
         {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
             let k = keys[i];
-            let v = votes.get(&k).unwrap().clone_up_to_view();
-            proof {
-                broadcast use axiom_cvote_view;
-                assert(v == votes@[k]);
+            match votes.get(&k) {
+                Some(found) => {
+                    let v = found.clone_up_to_view();
+                    proof {
+                        broadcast use axiom_cvote_view;
+                        assert(v == *found);
+                    }
+                    let _ = result.insert(k, v);
+                },
+                None => {},
             }
-            let _ = result.insert(k, v);
             i = i + 1;
         }
         proof {
-            assert forall |k: u64| result@.contains_key(k) <==> votes@.contains_key(k) by {
-                if votes@.contains_key(k) {
-                    let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
-                    assert(result@.contains_key(k));
-                }
-            };
-            assert(result@ =~= votes@);
+            if ok {
+                assert forall |k: u64| result@.contains_key(k) <==> votes@.contains_key(k) by {
+                    if votes@.contains_key(k) {
+                        let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                        assert(result@.contains_key(keys@[j]));
+                    }
+                };
+                assert(result@ =~= votes@);
+            }
         }
         result
     }
@@ -480,6 +517,16 @@ verus! {
     pub open spec fn cvotes_is_valid(m:&CVotes) -> bool {
         &&& cvotes_is_abstractable(m)
         &&& (forall |i| #![auto] m@.contains_key(i) ==> COperationNumberIsValid(i) && m@[i].valid())
+    }
+
+    /// Validity depends only on the view.
+    pub proof fn lemma_cvotes_is_valid_same_view(a: &CVotes, b: &CVotes)
+        requires a@ == b@,
+        ensures
+            cvotes_is_abstractable(a) == cvotes_is_abstractable(b),
+            cvotes_is_valid(a) == cvotes_is_valid(b),
+    {
+        assert forall |i| #![auto] a@.contains_key(i) == b@.contains_key(i) && a@[i] == b@[i] by {};
     }
 
     /// Helper lemma to instantiate the cvotes_is_valid quantifier for a specific key.
@@ -522,8 +569,8 @@ verus! {
     impl Clone for CLearnerTuple {
         fn clone(&self) -> (result: Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
+            self.hash_tables_ok() ==> result@ == self@,
+            self.hash_tables_ok() ==> result.valid() == self.valid(),
         {
             self.clone_up_to_view()
         }
@@ -531,11 +578,17 @@ verus! {
 
 
     impl CLearnerTuple{
+        /// The sender set is well formed (always true on vstd releases
+        /// without hash-table well-formedness; see hash_wf.rs).
+        pub open spec fn hash_tables_ok(&self) -> bool {
+            crate::common::collections::hash_wf::hash_set_ok(&self.received_2b_message_senders)
+        }
+
         pub fn clone_up_to_view(&self) -> (res:CLearnerTuple)
             ensures
-                res@ == self@,
-                (self.abstractable() ==> res.abstractable()),
-                res.valid() == self.valid(),
+                self.hash_tables_ok() ==> res@ == self@,
+                (self.hash_tables_ok() && self.abstractable() ==> res.abstractable()),
+                self.hash_tables_ok() ==> res.valid() == self.valid(),
         {
             let new_senders = clone_hashset(&self.received_2b_message_senders);
             let new_batch = clone_request_batch_up_to_view(&self.candidate_learned_value);
@@ -563,6 +616,7 @@ verus! {
 
         pub open spec fn valid(self) -> bool{
             &&& self.abstractable()
+            &&& crate::common::collections::hash_wf::hash_set_ok(&self.received_2b_message_senders)
             // &&& (forall |p| self.received_2b_message_senders@.contains(p) ==> p.valid())
             &&& crequestbatch_is_valid(&self.candidate_learned_value)
         }
@@ -621,49 +675,83 @@ verus! {
         )
     }
 
+    /// Instantiate clearnerstate_is_valid at one key (its quantifier's trigger
+    /// does not fire on `m@[k]` alone), as lemma_cvotes_valid_key does.
+    pub proof fn lemma_clearnerstate_valid_key(m: &CLearnerState, k: u64)
+    requires
+        clearnerstate_is_valid(m),
+        m@.contains_key(k),
+    ensures
+        COperationNumberIsValid(k),
+        m@[k].valid(),
+    {
+        assert(m@.contains_key(k));
+        let ghost _v = m@[k];
+        assert(COperationNumberIsValid(k));
+    }
+
+    /// The map and every tuple's sender set are well formed (always true on
+    /// vstd releases without hash-table well-formedness; see hash_wf.rs).
+    pub open spec fn clearnerstate_hash_tables_ok(m: &CLearnerState) -> bool {
+        &&& crate::common::collections::hash_wf::hash_map_ok(m)
+        &&& forall |k| #[trigger] m@.contains_key(k) ==> m@[k].hash_tables_ok()
+    }
+
     pub fn clone_clearnerstate_up_to_view(m: &CLearnerState) -> (res: CLearnerState)
         ensures
-            res@ == m@,
+            crate::common::collections::hash_wf::hash_map_ok(&res),
+            clearnerstate_hash_tables_ok(m) ==> res@ == m@,
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use axiom_clearner_tuple_view;
 
+        let ghost ok = clearnerstate_hash_tables_ok(m);
         let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(m);
         let mut result: HashMap<COperationNumber, CLearnerTuple> = HashMap::new();
         let mut i: usize = 0;
         while i < keys.len()
             invariant
                 0 <= i <= keys.len(),
-                forall |k: u64| result@.contains_key(k) ==> m@.contains_key(k),
-                forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
-                forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
-                forall |k: int| 0 <= k < keys@.len() ==> m@.contains_key(#[trigger] keys@[k]),
-                forall |k: u64| m@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+                ok == clearnerstate_hash_tables_ok(m),
+                crate::common::collections::hash_wf::hash_map_ok(&result),
+                ok ==> forall |k: u64| result@.contains_key(k) ==> m@.contains_key(k),
+                ok ==> forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
+                ok ==> forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
+                ok ==> forall |k: int| 0 <= k < keys@.len() ==> m@.contains_key(#[trigger] keys@[k]),
+                ok ==> forall |k: u64| m@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
             decreases keys.len() - i,
         {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
             let k = keys[i];
-            let v = m.get(&k).unwrap().clone_up_to_view();
-            proof {
-                broadcast use axiom_clearner_tuple_view;
-                // Create explicit trigger terms for axiom_clearner_tuple_view
-                let ghost t1: CLearnerTuple = v;
-                let ghost t2: CLearnerTuple = m@[k];
-                // clone_up_to_view ensures: t1@ == self@, get ensures: *self == m@[k]
-                // so t1@ == (m@[k])@ == t2@
-                assert(t1@ == t2@);
-                // axiom fires: t1 == t2, i.e., v == m@[k]
+            match m.get(&k) {
+                Some(found) => {
+                    let v = found.clone_up_to_view();
+                    proof {
+                        broadcast use axiom_clearner_tuple_view;
+                        if ok {
+                            // Create explicit trigger terms for axiom_clearner_tuple_view
+                            let ghost t1: CLearnerTuple = v;
+                            let ghost t2: CLearnerTuple = m@[k];
+                            assert(m@.contains_key(k));
+                            assert(t1@ == t2@);
+                        }
+                    }
+                    let _ = result.insert(k, v);
+                },
+                None => {},
             }
-            let _ = result.insert(k, v);
             i = i + 1;
         }
         proof {
-            assert forall |k: u64| result@.contains_key(k) <==> m@.contains_key(k) by {
-                if m@.contains_key(k) {
-                    let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
-                    assert(result@.contains_key(k));
-                }
-            };
-            assert(result@ =~= m@);
+            if ok {
+                assert forall |k: u64| result@.contains_key(k) <==> m@.contains_key(k) by {
+                    if m@.contains_key(k) {
+                        let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                        assert(result@.contains_key(keys@[j]));
+                    }
+                };
+                assert(result@ =~= m@);
+            }
         }
         result
     }

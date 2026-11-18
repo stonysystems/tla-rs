@@ -778,11 +778,7 @@ impl TranspilerConfig {
 
         // Check if the remapped exec type is in primitive_types or skip_valid_types
         let exec_type = self.get_exec_type(type_name);
-        if self.primitive_types.contains(&exec_type) || self.skip_valid_types.contains(&exec_type) {
-            return true;
-        }
-
-        false
+        self.primitive_types.contains(&exec_type) || self.skip_valid_types.contains(&exec_type)
     }
 
     /// Check if a type is strictly primitive (maps to `*param as int` in ensures).

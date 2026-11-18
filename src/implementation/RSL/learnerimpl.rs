@@ -11,6 +11,13 @@ pub struct CLearner {
 }
 
 impl CLearner {
+
+    /// Every hash table in the struct is well formed (always true on vstd
+    /// releases without hash-table well-formedness; see hash_wf.rs).
+    pub open spec fn hash_tables_ok(&self) -> bool {
+        clearnerstate_hash_tables_ok(&self.unexecuted_learner_state)
+    }
+
     pub open spec fn abstractable(self) -> bool {
         &&& self.constants.abstractable()
         &&& self.max_ballot_seen.abstractable()
@@ -22,12 +29,13 @@ impl CLearner {
         &&& self.constants.valid()
         &&& self.max_ballot_seen.valid()
         &&& clearnerstate_is_valid(&self.unexecuted_learner_state)
+        &&& self.hash_tables_ok()
     }
 
     pub fn clone_up_to_view(&self) -> (res: CLearner)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        self.hash_tables_ok() ==> res@ == self@,
+        self.hash_tables_ok() ==> res.valid() == self.valid(),
     {
         let constants_clone = self.constants.clone();
         let state_clone = clone_clearnerstate_up_to_view(&self.unexecuted_learner_state);
@@ -42,8 +50,8 @@ impl CLearner {
 impl Clone for CLearner {
     fn clone(&self) -> (result: Self)
     ensures
-        result@ == self@,
-        result.valid() == self.valid(),
+        self.hash_tables_ok() ==> result@ == self@,
+        self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         self.clone_up_to_view()
     }

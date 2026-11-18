@@ -17,12 +17,19 @@ verus! {
             true
         }
     }
+    // These postconditions speak of structural equality, so the element type
+    // must obey the laws in element_laws.rs: it clones to equal values, obeys
+    // vstd's key model, and compares structurally when the helper inserts
+    // (tla-rs#17). vstd only describes well-formed tables (verus#3494), so the
+    // results are stated for well-formed inputs; the tables built here are
+    // well formed, since they come from `new` and `insert`.
     #[verifier(external_body)]
     pub fn union_sets<T>(s1:&HashSet<T>, s2:&HashSet<T>) -> (res:HashSet<T>)
     where
-        T: Clone + Eq + Hash
+        T: crate::common::collections::element_laws::HashKey
     ensures
-        res@ == s1@.union(s2@),
+        crate::common::collections::hash_wf::hash_set_ok(s1) && crate::common::collections::hash_wf::hash_set_ok(s2) ==> res@ == s1@.union(s2@),
+        crate::common::collections::hash_wf::hash_set_ok(&res),
     {
         let mut result = HashSet::new();
         for elem in s1 {
@@ -37,9 +44,10 @@ verus! {
     #[verifier(external_body)]
     pub fn clone_hashset<T>(s:&HashSet<T>) -> (res:HashSet<T>)
     where
-            T: Clone + Eq + Hash
+            T: crate::common::collections::element_laws::HashKey
     ensures
-        res@ == s@,
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> res@ == s@,
+        crate::common::collections::hash_wf::hash_set_ok(&res),
     {
         let mut res = HashSet::new();
         for elem in s {
@@ -48,13 +56,30 @@ verus! {
         res
     }
 
-    #[verifier(external_body)]
     pub fn hashset_to_vec<T>(s:&HashSet<T>) -> (res:Vec<T>)
     where
-            T: Clone + Eq + Hash
+            T: crate::common::collections::element_laws::HashKeyModel
     ensures
-        forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
-        forall |x: T| s@.contains(x) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == x),
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |x: T| s@.contains(x) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == x),
+    {
+        proof { T::lemma_hash_key_model(); }
+        hashset_to_vec_where(s, Ghost(|x: T| true))
+    }
+
+    /// `hashset_to_vec` for an element type whose clone is known to return an
+    /// equal value only for some elements, those satisfying `ok`; every
+    /// element of the set must. (A packet, for example, clones to an equal
+    /// packet when the hash tables in its message are well formed.)
+    #[verifier(external_body)]
+    pub fn hashset_to_vec_where<T: Clone + Eq + Hash>(s: &HashSet<T>, Ghost(ok): Ghost<spec_fn(T) -> bool>) -> (res: Vec<T>)
+    requires
+        obeys_key_model::<T>(),
+        forall |x: T| #[trigger] s@.contains(x) ==> ok(x),
+        forall |a: T, b: T| ok(a) && #[trigger] vstd::pervasive::cloned(a, b) ==> a == b,
+    ensures
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> forall |x: T| s@.contains(x) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == x),
     {
         s.iter().cloned().collect()
     }
@@ -65,10 +90,10 @@ verus! {
     #[verifier(external_body)]
     pub fn hashmap_keys_to_vec<K, V>(m: &HashMap<K, V>) -> (res: Vec<K>)
     where
-            K: Clone + Eq + Hash
+            K: crate::common::collections::element_laws::HashKeyModel
     ensures
-        forall |i: int| 0 <= i < res@.len() ==> m@.contains_key(#[trigger] res@[i]),
-        forall |k: K| m@.contains_key(k) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == k),
+        crate::common::collections::hash_wf::hash_map_ok(m) ==> forall |i: int| 0 <= i < res@.len() ==> m@.contains_key(#[trigger] res@[i]),
+        crate::common::collections::hash_wf::hash_map_ok(m) ==> forall |k: K| m@.contains_key(k) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == k),
     {
         m.keys().cloned().collect()
     }
@@ -259,6 +284,22 @@ verus! {
     // Trusted primitive: HashSet view is always finite (Phase 30)
     // ══════════════════════════════════════════════════════════════════
     //
+    /// Insert into a set of endpoints. vstd describes the insertion on a
+    /// well-formed set whose element type compares structurally (verus#3494);
+    /// EndPoint does (group_endpoint_hash_key).
+    pub fn hashset_insert_endpoint(
+        s: &mut HashSet<crate::common::native::io_s::EndPoint>,
+        e: crate::common::native::io_s::EndPoint,
+    )
+    ensures
+        crate::common::collections::hash_wf::hash_set_ok(old(s)) ==> s@ == old(s)@.insert(e),
+        crate::common::collections::hash_wf::hash_set_ok(old(s)) ==> crate::common::collections::hash_wf::hash_set_ok(s),
+    {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use crate::common::native::io_s::group_endpoint_hash_key;
+        s.insert(e);
+    }
+
     /// Verified clone for HashSet<u64>.
     ///
     /// Unlike the generic `clone_hashset<T>` (which is `external_body` because
@@ -266,31 +307,36 @@ verus! {
     /// `hashset_to_vec` + a while loop to build a proven-equal copy.
     pub fn clone_hashset_u64(s: &HashSet<u64>) -> (res: HashSet<u64>)
     ensures
-        res@ == s@,
+        crate::common::collections::hash_wf::hash_set_ok(s) ==> res@ == s@,
+        crate::common::collections::hash_wf::hash_set_ok(&res),
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         let vec = hashset_to_vec(s);
+        let ghost ok = crate::common::collections::hash_wf::hash_set_ok(s);
         let mut cloned: HashSet<u64> = HashSet::new();
         let mut i: usize = 0;
         while i < vec.len()
             invariant
                 0 <= i <= vec.len(),
-                forall |j: int| 0 <= j < vec@.len() ==> s@.contains(#[trigger] vec@[j]),
-                forall |x: u64| cloned@.contains(x) ==> s@.contains(x),
+                ok == crate::common::collections::hash_wf::hash_set_ok(s),
+                ok ==> forall |j: int| 0 <= j < vec@.len() ==> s@.contains(#[trigger] vec@[j]),
+                ok ==> forall |x: u64| cloned@.contains(x) ==> s@.contains(x),
                 forall |j: int| 0 <= j < i ==> cloned@.contains(#[trigger] vec@[j]),
+                crate::common::collections::hash_wf::hash_set_ok(&cloned),
             decreases vec.len() - i,
         {
             let val = vec[i];
-            assert(s@.contains(vec@[i as int]));
             cloned.insert(val);
             i += 1;
         }
         proof {
-            assert forall |x: u64| s@.contains(x) implies cloned@.contains(x) by {
-                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == x;
-                assert(cloned@.contains(vec@[j]));
-            };
-            assert(cloned@ =~= s@);
+            if ok {
+                assert forall |x: u64| s@.contains(x) implies cloned@.contains(x) by {
+                    let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == x;
+                    assert(cloned@.contains(vec@[j]));
+                };
+                assert(cloned@ =~= s@);
+            }
         }
         cloned
     }

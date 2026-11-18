@@ -69,6 +69,14 @@ if verus_script is not None:
     sys.stderr.write("ERROR:  Could not find %s\n" % (verus_script))
     exit(-1)
 
+# --cfg flags that depend on the Verus release in use (scripts/verus_cfg.sh).
+verus_cfg_flags = []
+if verus_script is not None and not GetOption('skip_verus'):
+  verus_cfg_flags = shlex.split(subprocess.run(
+      ['bash', os.path.join(Dir('#').abspath, 'scripts', 'verus_cfg.sh'), verus_script],
+      check=True, capture_output=True, text=True).stdout)
+  print("Verus cfg flags: %s" % (' '.join(verus_cfg_flags) or '(none)'))
+
 env = Environment(ENV=os.environ)
 
 ####################################################################
@@ -117,7 +125,7 @@ def generate_verus_actions(source, target, env, for_signature):
   # anything here.
   # https://users.rust-lang.org/t/do-rust-compilers-have-optimization-flags-like-c-compilers-have/48833/7
   opt_flag = ["-g"] if GetOption('debug_build') else ["-C", "opt-level=3"]
-  cmd_line = [verus_script, "--crate-name=tla_protocol", "--crate-type=rlib", "--expand-errors"] + opt_flag + ["--compile", str(source[0]), "-o", str(target[0])]
+  cmd_line = [verus_script, "--crate-name=tla_protocol", "--crate-type=rlib", "--expand-errors"] + opt_flag + verus_cfg_flags + ["--compile", str(source[0]), "-o", str(target[0])]
   if GetOption("no_verify"):
       cmd_line.append("--no-verify")
   # Phase 54.2.c: let callers append verifier flags (e.g. --time-expanded)

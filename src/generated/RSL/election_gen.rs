@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::*;
 use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
+use crate::common::collections::hashsets::clone_hashset;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::*;
@@ -233,15 +234,6 @@ ensures
 
 }
 
-/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
-#[verifier(external_body)]
-fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
-ensures
-    res@ == s@,
-{
-    s.clone()
-}
-
 /// Push a request and bound the Vec in-place. O(1) amortized.
 /// Replaces clone + push + CBoundRequestSequence (O(2n)) with in-place ops.
 #[verifier::external_body]
@@ -261,12 +253,21 @@ fn vec_push_and_bound_requests(v: &mut Vec<CRequest>, req: CRequest, bound: u64)
 
 /// Build a HashSet<CRequestHeader> from a Vec<CRequest>. O(n).
 /// Used to rebuild cur_req_set/prev_req_set after epoch transitions.
-#[verifier::external_body]
 fn build_req_set(v: &Vec<CRequest>) -> (res: HashSet<CRequestHeader>)
+    ensures
+        crate::common::collections::hash_wf::hash_set_ok(&res),
 {
     let mut s = HashSet::with_capacity(v.len());
-    for r in v.iter() {
+    let mut i: usize = 0;
+    while i < v.len()
+        invariant
+            i <= v.len(),
+            crate::common::collections::hash_wf::hash_set_ok(&s),
+        decreases v.len() - i,
+    {
+        let r = &v[i];
         s.insert(CRequestHeader { client: r.client.clone(), seqno: r.seqno });
+        i += 1;
     }
     s
 }

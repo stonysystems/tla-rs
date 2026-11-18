@@ -37,6 +37,15 @@ pub struct CElectionState {
 }
 
 impl CElectionState {
+
+    /// Every hash table in the struct is well formed (always true on vstd
+    /// releases without hash-table well-formedness; see hash_wf.rs).
+    pub open spec fn hash_tables_ok(&self) -> bool {
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.current_view_suspectors)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.cur_req_set)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.prev_req_set)
+    }
+
     pub open spec fn abstractable(self) -> bool {
         &&& self.constants.abstractable()
         &&& self.current_view.abstractable()
@@ -50,6 +59,9 @@ impl CElectionState {
         &&& self.current_view.valid()
         &&& (forall |i:int| #![trigger self.requests_received_this_epoch@[i]] 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].valid())
         &&& (forall |i:int| #![trigger self.requests_received_prev_epochs@[i]] 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].valid())
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.current_view_suspectors)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.cur_req_set)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.prev_req_set)
     }
 
     pub open spec fn view(self) -> ElectionState
@@ -170,8 +182,8 @@ impl View for COutstandingOperation {
 impl Clone for CElectionState {
     fn clone(&self) -> (result: Self)
     ensures
-        result@ == self@,
-        result.valid() == self.valid(),
+        self.hash_tables_ok() ==> result@ == self@,
+        self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         self.clone_up_to_view()
     }
@@ -196,6 +208,30 @@ impl Clone for CRequestHeader {
     }
 }
 
+/// CRequestHeader's `Hash` is derived from its fields, and its `==` compares
+/// the same fields (the client by its id), so the two agree and the key model
+/// holds. Verus cannot see the derived `Hash`, so this is stated, as
+/// `axiom_endpoint_key_model` and `axiom_cpacket_key_model` are.
+#[verifier(external_body)]
+pub broadcast proof fn axiom_crequestheader_key_model()
+    ensures #[trigger] vstd::std_specs::hash::obeys_key_model::<CRequestHeader>()
+{
+}
+
+impl crate::common::collections::element_laws::HashKeyModel for CRequestHeader {
+    proof fn lemma_hash_key_model() {
+        broadcast use axiom_crequestheader_key_model;
+        broadcast use axiom_endpoint_view;
+    }
+}
+
+impl crate::common::collections::element_laws::HashKey for CRequestHeader {
+    proof fn lemma_hash_key() {
+        broadcast use axiom_endpoint_view;
+        reveal(vstd::laws_eq::obeys_concrete_eq);
+    }
+}
+
 impl PartialEqSpecImpl for CRequestHeader {
     open spec fn obeys_eq_spec() -> bool {
         true
@@ -217,8 +253,8 @@ impl CElectionState
 
     pub fn clone_up_to_view(&self) -> (result:Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
+            self.hash_tables_ok() ==> result@ == self@,
+            self.hash_tables_ok() ==> result.valid() == self.valid(),
     {
         let constants_clone = self.constants.clone();
         let suspectors_clone = clone_hashset_u64(&self.current_view_suspectors);

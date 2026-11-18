@@ -1,5 +1,7 @@
 pub mod comparable;
 pub mod count_matches;
+pub mod element_laws;
+pub mod hash_wf;
 pub mod hashsets;
 pub mod maps;
 pub mod maps2;

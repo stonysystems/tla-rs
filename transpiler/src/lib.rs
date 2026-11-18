@@ -388,7 +388,7 @@ impl Transpiler {
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
         // Auto-add proof-related imports when generate_proofs is enabled
-        // Only add set_lib when HashSet fields are present (clone_hashset is generated locally)
+        // Only add set_lib when HashSet fields are present
         if self.config.translator.generate_proofs && self.needs_set_helpers() {
             let proof_imports = ["use vstd::set_lib::*;"];
             for imp in &proof_imports {
@@ -416,18 +416,19 @@ impl Transpiler {
                 sorted_imports.push(hashset_import);
             }
         }
-        // Phase 42.8: the untyped `clone_hashset` helper (emitted when the
-        // verified variant is off) mentions `HashSet` in its signature, so the
-        // output has to import it. Without this the emitted module does not
-        // compile -- which is why regenerating broadcast_gen.rs failed with
-        // "cannot find type `HashSet` in this scope".
+        // When the verified u64 variant is off, set fields are cloned with the
+        // crate's generic `clone_hashset`, whose element type must obey the
+        // laws in element_laws.rs (tla-rs#17) and whose result is described
+        // for well-formed sets (verus#3494). It used to be emitted locally as
+        // an unconstrained `external_body` helper.
         if !self.config.translator.use_verified_hashset_clone && self.needs_set_helpers() {
-            let hashset_import = "use std::collections::HashSet;".to_string();
-            if !sorted_imports
-                .iter()
-                .any(|i| i.contains("std::collections::HashSet"))
-            {
-                sorted_imports.push(hashset_import);
+            for import in [
+                "use std::collections::HashSet;",
+                "use crate::common::collections::hashsets::clone_hashset;",
+            ] {
+                if !sorted_imports.iter().any(|i| i.trim() == import) {
+                    sorted_imports.push(import.to_string());
+                }
             }
         }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
@@ -526,7 +527,6 @@ impl Transpiler {
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
                 &self.config.msg_vec_type,
-                self.config.translator.use_verified_hashset_clone,
                 &self.config.translator.arc_wrap_fields,
             );
             if !helpers.is_empty() {
@@ -567,7 +567,6 @@ impl Transpiler {
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
                 &None,
-                self.config.translator.use_verified_hashset_clone,
                 &self.config.translator.arc_wrap_fields,
             );
             if !helpers.is_empty() {
@@ -1129,7 +1128,7 @@ impl Transpiler {
         // Add custom imports before verus! block (sorted case-insensitively for rustfmt compatibility)
         let mut sorted_imports = self.config.custom_imports.clone();
         // Auto-add proof-related imports when generate_proofs is enabled
-        // Only add set_lib when HashSet fields are present (clone_hashset is generated locally)
+        // Only add set_lib when HashSet fields are present
         if self.config.translator.generate_proofs && self.needs_set_helpers() {
             let proof_imports = ["use vstd::set_lib::*;"];
             for imp in &proof_imports {
@@ -1148,6 +1147,14 @@ impl Transpiler {
                 .any(|i| i.contains("clone_hashset_u64"))
             {
                 sorted_imports.push(hashset_import);
+            }
+        }
+        // Otherwise set fields are cloned with the crate's generic
+        // `clone_hashset` (see the matching import in the module path).
+        if !self.config.translator.use_verified_hashset_clone && self.needs_set_helpers() {
+            let import = "use crate::common::collections::hashsets::clone_hashset;";
+            if !sorted_imports.iter().any(|i| i.trim() == import) {
+                sorted_imports.push(import.to_string());
             }
         }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
@@ -1243,7 +1250,6 @@ impl Transpiler {
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
                 &self.config.msg_vec_type,
-                self.config.translator.use_verified_hashset_clone,
                 &self.config.translator.arc_wrap_fields,
             );
             if !helpers.is_empty() {
@@ -1374,7 +1380,6 @@ impl Transpiler {
         int_type: &str,
         clone_up_to_view_types: &std::collections::HashSet<String>,
         msg_vec_type: &Option<(String, String)>,
-        use_verified_hashset_clone: bool,
         arc_wrap_fields: &std::collections::HashMap<String, std::collections::HashSet<String>>,
     ) -> String {
         let mut output = String::new();
@@ -1398,23 +1403,9 @@ impl Transpiler {
             output.push_str("    }\n");
             output.push_str("}\n\n");
 
-            if !use_verified_hashset_clone {
-                // clone_hashset — external_body helper for cloning HashSet fields
-                output.push_str(
-                    "/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).\n",
-                );
-                output.push_str("#[verifier(external_body)]\n");
-                output.push_str(
-                    "fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)\n"
-                );
-                output.push_str("ensures\n");
-                output.push_str("    res@ == s@,\n");
-                output.push_str("{\n");
-                output.push_str("    s.clone()\n");
-                output.push_str("}\n\n");
-            }
-            // When use_verified_hashset_clone is true, clone_hashset_u64 is imported
-            // from crate::common::collections::hashsets instead.
+            // Set fields are cloned with the crate's helpers, imported above:
+            // `clone_hashset_u64` when the verified variant is on, the generic
+            // `clone_hashset` otherwise.
         }
 
         // lemma_set_map_remove_commute — only when spec uses .remove() and has set fields
@@ -1876,6 +1867,9 @@ impl Transpiler {
                 "        else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }\n",
             );
             output.push_str("    }\n");
+            // State the postcondition outright: the quantifier above proves it,
+            // but the solver does not reliably connect the two on its own.
+            output.push_str(&format!("    assert({}_is_abstractable(m2));\n", prefix));
             // Validity (conditional)
             output.push_str(&format!(
                 "    if {}_is_valid(old_m) && v.valid() {{\n",
@@ -1887,6 +1881,7 @@ impl Transpiler {
             output.push_str("            if i == k { assert(m2@[i] == v); }\n");
             output.push_str("            else { assert(old_m@.contains_key(i)); assert(m2@[i] == old_m@[i]); }\n");
             output.push_str("        }\n");
+            output.push_str(&format!("        assert({}_is_valid(m2));\n", prefix));
             output.push_str("    }\n");
             output.push_str("}\n\n");
 
@@ -2022,6 +2017,11 @@ impl Transpiler {
                 "/// Helper: clone a {} preserving view.\n",
                 exec_type
             ));
+            // vstd only describes copies of well-formed hash tables
+            // (verus-lang/verus#3494), so the copy has the original's view
+            // when `{prefix}_hash_tables_ok` holds; the hand-written types
+            // define that predicate (true on vstd releases without
+            // hash-table well-formedness).
             if let Some(verified_fn) = verified_clone_fns.get(prefix.as_str()) {
                 // Verified: delegate to the proven clone function
                 output.push_str(&format!(
@@ -2029,7 +2029,11 @@ impl Transpiler {
                     prefix, exec_type, exec_type
                 ));
                 output.push_str("ensures\n");
-                output.push_str("    res@ == m@,\n");
+                output.push_str("    crate::common::collections::hash_wf::hash_map_ok(&res),\n");
+                output.push_str(&format!(
+                    "    {}_hash_tables_ok(m) ==> res@ == m@,\n",
+                    prefix
+                ));
                 output.push_str("{\n");
                 output.push_str(&format!("    {}(m)\n", verified_fn));
                 output.push_str("}\n\n");
@@ -2041,7 +2045,10 @@ impl Transpiler {
                     prefix, exec_type, exec_type
                 ));
                 output.push_str("ensures\n");
-                output.push_str("    res@ == m@,\n");
+                output.push_str(&format!(
+                    "    {}_hash_tables_ok(m) ==> res@ == m@,\n",
+                    prefix
+                ));
                 output.push_str("{\n");
                 output.push_str("    m.clone()\n");
                 output.push_str("}\n\n");
@@ -3018,7 +3025,7 @@ mod tests {
 
     #[test]
     fn test_generate_proofs_auto_imports() {
-        // With collection_fields configured, set_lib and clone_hashset should be auto-imported
+        // With collection_fields configured, set_lib and the crate's clone_hashset should be auto-imported
         let config = TranspilerConfig {
             translator: TranslatorConfig {
                 generate_proofs: true,
@@ -3052,8 +3059,13 @@ mod tests {
             result
         );
         assert!(
-            result.contains("fn clone_hashset"),
-            "Should generate local clone_hashset when collection_fields present: {}",
+            result.contains("use crate::common::collections::hashsets::clone_hashset;"),
+            "Should import the crate's clone_hashset when collection_fields present: {}",
+            result
+        );
+        assert!(
+            !result.contains("fn clone_hashset"),
+            "Should not emit a local clone_hashset: {}",
             result
         );
     }
@@ -3108,7 +3120,6 @@ mod tests {
             "u64",
             &std::collections::HashSet::new(),
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
 
@@ -3133,13 +3144,13 @@ mod tests {
         assert!(!output.contains("lemma_empty_seq_map"));
         assert!(!output.contains("lemma_seq_push_map_commute"));
 
-        // Verify clone_hashset helper is generated
+        // Set fields are cloned with the crate's lawful clone_hashset
+        // (tla-rs#17), never a locally emitted external_body copy
         assert!(
-            output.contains("fn clone_hashset"),
-            "clone_hashset helper should be generated when has_set_fields=true"
+            !output.contains("fn clone_hashset"),
+            "clone_hashset must not be emitted locally"
         );
-        assert!(output.contains("#[verifier(external_body)]"));
-        assert!(output.contains("res@ == s@"));
+        assert!(!output.contains("#[verifier(external_body)]"));
 
         // When has_set_remove=false, remove_commute should NOT be present
         let output_no_remove = Transpiler::generate_proof_helper_lemmas(
@@ -3150,7 +3161,6 @@ mod tests {
             "u64",
             &std::collections::HashSet::new(),
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
         assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
@@ -3164,7 +3174,6 @@ mod tests {
             "u64",
             &std::collections::HashSet::new(),
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
         assert!(!output_no_sets.contains("lemma_empty_set_map"));
@@ -3185,7 +3194,6 @@ mod tests {
             "i64",
             &std::collections::HashSet::new(),
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
         assert!(output_i64.contains("Set::<i64>::empty()"));
@@ -3201,7 +3209,6 @@ mod tests {
             "u64",
             &std::collections::HashSet::new(),
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
         assert!(output_u64.contains("Set::<u64>::empty()"));
@@ -3219,7 +3226,6 @@ mod tests {
             "u64",
             &std::collections::HashSet::new(),
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
 
@@ -3247,7 +3253,6 @@ mod tests {
             "u64",
             &std::collections::HashSet::new(),
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
 
@@ -3289,7 +3294,6 @@ mod tests {
             "u64",
             &cutv,
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
 
@@ -3353,7 +3357,6 @@ mod tests {
             "u64",
             &cutv,
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
 
@@ -3914,7 +3917,6 @@ mod tests {
             "u64",
             &config.translator.clone_up_to_view_types,
             &None,
-            false,
             &std::collections::HashMap::new(),
         );
 

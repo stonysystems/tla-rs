@@ -26,8 +26,8 @@ impl Clone for CState {
     #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&*self.electing) && crate::common::collections::hash_wf::hash_set_ok(&*self.alive) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.has_leader == self.has_leader,
         res.leader == self.leader,
         res.has_highest == self.has_highest,
@@ -50,7 +50,8 @@ impl Clone for CState {
 
 impl CState {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.electing)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.alive)
     }
 }
 
@@ -79,8 +80,8 @@ pub struct CConstants {
 impl Clone for CConstants {
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&self.nodes) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.num_nodes == self.num_nodes,
     {
         CConstants {
@@ -92,7 +93,7 @@ impl Clone for CConstants {
 
 impl CConstants {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.nodes)
     }
 }
 

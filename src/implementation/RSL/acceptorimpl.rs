@@ -24,14 +24,21 @@ verus! {
     impl Clone for CAcceptor {
         fn clone(&self) -> (result: Self)
         ensures
-            result@ == self@,
-            result.valid() == self.valid(),
+            self.hash_tables_ok() ==> result@ == self@,
+            self.hash_tables_ok() ==> result.valid() == self.valid(),
         {
             self.clone_up_to_view()
         }
     }
 
     impl CAcceptor{
+
+        /// Every hash table in the struct is well formed (always true on vstd
+        /// releases without hash-table well-formedness; see hash_wf.rs).
+        pub open spec fn hash_tables_ok(&self) -> bool {
+            crate::common::collections::hash_wf::hash_map_ok(&self.votes)
+        }
+
         pub open spec fn abstractable(self) -> bool
         {
             &&& self.constants.abstractable()
@@ -46,6 +53,7 @@ verus! {
             &&& self.constants.valid()
             &&& self.max_bal.valid()
             &&& cvotes_is_valid(&self.votes)
+            &&& crate::common::collections::hash_wf::hash_map_ok(&self.votes)
             &&& (forall |i:int| #![trigger self.last_checkpointed_operation[i]] 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsValid(self.last_checkpointed_operation[i]))
             &&& COperationNumberIsValid(self.log_truncation_point)
             &&& self.last_checkpointed_operation.len() == self.constants.all.config.replica_ids.len()
@@ -65,8 +73,8 @@ verus! {
 
         pub fn clone_up_to_view(&self) -> (result: Self)
             ensures
-                result@ == self@,
-                result.valid() == self.valid(),
+                self.hash_tables_ok() ==> result@ == self@,
+                self.hash_tables_ok() ==> result.valid() == self.valid(),
         {
             let constants_clone = self.constants.clone();
             // Clone impl ensures: constants_clone@ == self.constants@, valid() biconditional, len preserved

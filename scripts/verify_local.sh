@@ -59,7 +59,8 @@ export VERUS_Z3_PATH="$Z3_PATH"
 cd "$REPO_ROOT"
 START=$(date +%s)
 set +e
-"$RUST_VERIFY" --crate-type=dylib --expand-errors "$@" src/lib.rs >"$LOG" 2>&1
+read -r -a CFG_FLAGS <<< "$(scripts/verus_cfg.sh "$RUST_VERIFY")"
+"$RUST_VERIFY" --crate-type=dylib --expand-errors "${CFG_FLAGS[@]}" "$@" src/lib.rs >"$LOG" 2>&1
 STATUS=$?
 set -e
 ELAPSED=$(( $(date +%s) - START ))

@@ -30,8 +30,8 @@ impl Clone for CState {
     #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&*self.promises_rcvd) && crate::common::collections::hash_wf::hash_set_ok(&*self.accepts_rcvd) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.config_num == self.config_num,
         res.max_bal == self.max_bal,
         res.max_v_bal == self.max_v_bal,
@@ -62,7 +62,8 @@ impl Clone for CState {
 
 impl CState {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.promises_rcvd)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.accepts_rcvd)
     }
 }
 

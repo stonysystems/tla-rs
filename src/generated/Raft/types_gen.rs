@@ -77,8 +77,8 @@ impl Clone for CState {
     #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&*self.votes_granted) && crate::common::collections::hash_wf::hash_map_ok(&*self.match_index) && crate::common::collections::hash_wf::hash_map_ok(&*self.next_index) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.current_term == self.current_term,
         res.role == self.role,
         res.has_voted == self.has_voted,
@@ -155,8 +155,8 @@ pub struct CConstants {
 impl Clone for CConstants {
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&self.servers) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.quorum_size == self.quorum_size,
         res.my_id == self.my_id,
     {
@@ -170,7 +170,7 @@ impl Clone for CConstants {
 
 impl CConstants {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.servers)
     }
 }
 
@@ -338,6 +338,9 @@ impl CState {
             Some(phase) => phase.valid(),
             None => true,
         }
+        &&& crate::common::collections::hash_wf::hash_set_ok(&*self.votes_granted)
+        &&& crate::common::collections::hash_wf::hash_map_ok(&*self.match_index)
+        &&& crate::common::collections::hash_wf::hash_map_ok(&*self.next_index)
     }
 }
 

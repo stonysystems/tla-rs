@@ -29,8 +29,8 @@ pub struct CState {
 impl Clone for CState {
     fn clone(&self) -> (res: Self)
     ensures
-        res@ == self@,
-        res.valid() == self.valid(),
+        crate::common::collections::hash_wf::hash_set_ok(&self.preaccept_senders) && crate::common::collections::hash_wf::hash_set_ok(&self.accept_senders) ==> res@ == self@,
+        self.valid() ==> res.valid(),
         res.ballot == self.ballot,
         res.phase == self.phase,
         res.cmd == self.cmd,
@@ -62,6 +62,8 @@ impl Clone for CState {
 impl CState {
     pub open spec fn valid(&self) -> bool {
         &&& self.phase.valid()
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.preaccept_senders)
+        &&& crate::common::collections::hash_wf::hash_set_ok(&self.accept_senders)
     }
 }
 

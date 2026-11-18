@@ -6,42 +6,10 @@ use vstd::view::*;
 verus! {
 
     #[verifier(external_body)]
-    pub fn update_vec_at<T>(v: &Vec<T>, idx: usize, val: T) -> (res: Vec<T>)
-        where T: Clone + vstd::view::View<V = T>
-        requires
-            idx < v.len(),
-        ensures
-            res@.len() == v@.len(),
-            res@ == v@.update(idx as int, val@),
-            forall |i: int| #![trigger res@[i]]
-                0 <= i < res@.len() ==> res@[i] == (if i == idx as int { val@ } else { v[i]@ }),
-    {
-        let mut res = Vec::new();
-        let mut i = 0;
-        while i < v.len()
-            invariant
-                0 <= i <= v.len(),
-                res.len() == i,
-                forall |j: int| 0 <= j < i ==> res@[j] == (if j == idx as int { val@ } else { v[j]@ }),
-        {
-            if i == idx {
-                res.push(val.clone());
-            } else {
-                res.push(v[i].clone());
-            }
-            i += 1;
-        }
-        res
-    }
-
-
-
-    #[verifier(external_body)]
     pub fn contains<T>(v: &Vec<T>, item:&T) -> (found: bool)
-        where T: PartialEq + Clone + vstd::view::View
-        // where T: Comparable + Clone,
-        // requires
-        //     v.len() > 0,
+        // The body compares with `==`; the result means structural (and view)
+        // membership only when `==` is both (tla-rs#17).
+        where T: Clone + crate::common::collections::element_laws::ViewEq
         ensures
             found == v@.contains(*item),
             found == v@.map(|i, t:T| t@).contains(item@),
@@ -97,7 +65,8 @@ verus! {
 
     #[verifier(external_body)]
     pub fn truncate_vec<T>(v: &Vec<T>, start: usize, end: usize) -> (result: Vec<T>)
-        where T: Clone + vstd::view::View,
+        // The copy is built with `clone` (tla-rs#17).
+        where T: vstd::view::View + crate::common::collections::element_laws::CloneIsEq,
         requires
             start <= end,
             end <= v.len(),
@@ -177,7 +146,8 @@ verus! {
 
     #[verifier(external_body)]
     pub fn concat_vecs<T>(v1: &Vec<T>, v2: &Vec<T>) -> (result: Vec<T>)
-        where T: Clone + vstd::view::View,
+        // The copy is built with `clone` (tla-rs#17).
+        where T: vstd::view::View + crate::common::collections::element_laws::CloneIsEq,
         ensures
             result@ == v1@ + v2@,
             result@.len() == v1@.len() + v2@.len(),
