@@ -1693,11 +1693,7 @@ impl<'a> VerusBlockParser<'a> {
 
         // After identifier, skip whitespace and check for ':'
         let after_ident = &trimmed[ident_len..].trim_start();
-        if after_ident.starts_with(':') && !after_ident.starts_with("::") {
-            return true;
-        }
-
-        false
+        after_ident.starts_with(':') && !after_ident.starts_with("::")
     }
 
     /// Parse a record literal: `field: value, field: value, ... }`

@@ -9433,10 +9433,7 @@ impl Translator {
     fn contains_spec_prefixed_call(expr: &Expr, spec_prefix: &str) -> bool {
         match expr {
             Expr::Call { func, .. } => {
-                if func.segments.len() == 1 && func.segments[0].starts_with(spec_prefix) {
-                    return true;
-                }
-                false
+                func.segments.len() == 1 && func.segments[0].starts_with(spec_prefix)
             }
             Expr::Field(base, _) => Self::contains_spec_prefixed_call(base, spec_prefix),
             Expr::Not(inner) | Expr::View(inner) => {
