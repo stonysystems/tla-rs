@@ -73,6 +73,10 @@ verus! {
         &&& !s.has_voted || s.voted_for == candidate_id
         // State updates
         &&& s_.current_term == candidate_term
+        &&& (candidate_last_log_term > s.last_log_term || (
+            candidate_last_log_term == s.last_log_term
+            && candidate_last_log_index >= s.last_log_index
+            ))
         &&& s_.role is Follower
         &&& s_.has_voted == true
         &&& s_.voted_for == candidate_id
