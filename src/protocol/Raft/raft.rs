@@ -75,7 +75,7 @@ verus! {
         &&& s_.current_term == candidate_term
         &&& (candidate_last_log_term > s.last_log_term || (
             candidate_last_log_term == s.last_log_term
-            && candidate_last_log_index >= s.last_log_index
+            && candidate_last_log_index >= s.log.len()
             ))
         &&& s_.role is Follower
         &&& s_.has_voted == true
